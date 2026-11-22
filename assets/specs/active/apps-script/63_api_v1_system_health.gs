@@ -1,1657 +1,1817 @@
-// ============================================================
-// Kitchen Mama Operation System — Apps Script (modularized source mirror)
-// 63_api_v1_system_health.gs — F1-7N-FB-2 §D/§K read-only production health + flow readiness
-// NOTE: All .gs files in this folder share ONE global scope. Copy them into the project TOGETHER.
-// ------------------------------------------------------------
-// WHY THIS EXISTS. The production failure this closes was undiagnosable from the browser: a POST to the Web App
-// returned "HTTP 404, text/html", and there was no way to tell whether the deployment was unreachable, the
-// deployed code was a partial sync missing a router action, the DB headers had drifted, or the transport simply
-// flaked. Note what the router already guarantees: BOTH doGet and doPost return jsonResponse_ on every path,
-// including the unknown-action and top-level-catch paths — so a 404 text/html body can NEVER be produced by this
-// script. It comes from upstream of the router (deployment not resolving, an access/redirect page, or the
-// POST -> googleusercontent echo hop). `system.health` is the probe that tells those apart.
-//
-// STRICTLY READ-ONLY and deliberately NON-SENSITIVE. It returns operational facts only: no spreadsheet id, no
-// Drive id, no token, no credential, no user identity, no row data, no header names beyond a present/ok flag.
-// It performs no write, takes no lock, and touches no Drive API.
-// ============================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 var SYS_API_CONTRACT_VERSION_ = '1';
-// ------------------------------------------------------------------------------------------------------------
-// F1-7N-FB-3A §C — DEPLOYMENT IDENTITY. This is the field that failed us, and the failure was mine.
-//
-// The live evidence read `build=F1-7N-FB-2` while the editor could already run the FB-3 registry successfully.
-// That looked like a stale deployment, but it was not diagnostic of anything: FB-3 added 64_/65_ and new router
-// branches and NEVER BUMPED THIS CONSTANT. So the one field whose entire purpose is "prove which code
-// answered" could not distinguish FB-2 from FB-3 at all.
-//
-// Worse, `missing_actions=[]` is SELF-REFERENTIAL: it is computed from the DEPLOYED code's own
-// SYS_REQUIRED_ACTIONS_ list. A deployment that predates an action cannot know the action exists, so it
-// reports "nothing missing" while genuinely missing it. An empty missing_actions is therefore NOT evidence
-// that a deployment is complete — only the version fields below can establish that, by being compared against
-// what the FRONTEND expects.
-//
-// Rules for these constants:
-//   • SYS_DEPLOYMENT_RELEASE_ MUST be bumped in the same commit as any sync-visible backend change.
-//   • SYS_BUILD_VERSION_ MUST be bumped in the same commit as any change to THIS FILE.
-//   • SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ MUST be bumped whenever a router ACTION is added or removed.
-//   • SYS_REQUIRED_ACTION_LIST_VERSION_ MUST be bumped whenever SYS_REQUIRED_ACTIONS_ changes.
-// The frontend pins the versions it needs and refuses a mismatch with a NAMED error, never a generic one.
-// ------------------------------------------------------------------------------------------------------------
-// F1-7N-FC-1B-E3-R4-A2-R1-R6-R6 §4 — ONE CONSTANT WAS ANSWERING TWO QUESTIONS, AND IT ANSWERED THE WRONG ONE.
-//
-// THE LIVE OBSERVATION. After R6-R5 was deployed the operator read `identity.build_id = ...-R6-R2` beside
-// `router_build = ...-R6-R5` and `SIR_BUILD_VERSION_ = ...-R6-R5`, with `mixed_deployment: false`. The
-// reasonable conclusion — that R6-R5 had not been deployed — was wrong, and the field that produced it is the
-// one whose entire purpose is to prove which code answered. That is the FB-3A defect recorded at the top of
-// this file, recurring, and the recurrence is worth naming rather than quietly patching.
-//
-// WHY THE EXISTING GUARD DID NOT FIRE. There IS a standing check (R5 suite E4: no manifest owner may carry a
-// stamp older than its own last change), and running it against a clean tree reports 63_ correctly. It was
-// silent during R6-R5 for a timing reason: it SKIPS any file with uncommitted changes, on the reasoning that
-// a dirty file is the round's own edit in progress. So it goes quiet during exactly the window in which the
-// rule is broken, and by the time it would speak, the round has shipped. The check is repaired in the same
-// change as the stamp, because a rule with a hole this shaped is how the omission happened at all.
-//
-// WHY THE MANIFEST COULD NOT SEE IT EITHER. 63_'s own entry in SYS_MODULE_BUILD_STAMPS_ compares
-// SYS_BUILD_VERSION_ against a literal written a few lines above it in the SAME FILE. That comparison is
-// tautological — it cannot fail, and it cannot detect anything — which is precisely the `missing_actions=[]`
-// self-reference this file's header warns about, in a new place. It stays (a stale 63_ is caught first and by
-// different evidence: its action-contract version is older than the frontend pins), but it is now DOCUMENTED
-// as self-referential instead of being mistaken for coverage.
-//
-// THE SPLIT. Two different questions were sharing one answer:
-//
-//   • WHICH RELEASE is this deployment meant to be?  → SYS_DEPLOYMENT_RELEASE_. It moves whenever ANY
-//     sync-visible backend file changes, which is what an operator means by "is R6-R5 deployed?".
-//   • WHICH ROUND did THIS FILE last change?          → SYS_BUILD_VERSION_. It is 63_'s module stamp, the
-//     same kind of fact every other owner file declares, and it must NOT be bumped to look current.
-//
-// Those two are equal today and will usually be equal, because a release that changes any server file
-// normally touches this manifest too. They are still separate constants, because "usually equal" is not a
-// contract and a round that changes only 60_ would silently make them differ.
-//
-// WHAT `mixed_deployment: false` STILL MEANS, UNCHANGED AND STILL HONEST. It is a PER-FILE claim: every
-// probed owner declares the build its manifest entry expects. It was true during the live observation and it
-// was not the misleading field. build_id says which release this deployment INTENDS to be; mixed_deployment
-// says whether the files actually AGREE with that intention. Neither substitutes for the other, and a reader
-// needs both — which is why the identity block below now names each build it can see, individually, instead
-// of publishing one string and leaving the operator to guess its scope.
-// ------------------------------------------------------------------------------------------------------------
-// R6-R6-R4-R2 — THE RELEASE MOVES, because this round changes 16_ (an UPDATE that declares no
-// expected_draft_version is now refused) and therefore REQUIRES a new Web App deployment version. The
-// release says which release a deployment intends to be; leaving it behind would report a deployment
-// carrying the new refusal as though it were the one that did not have it.
-// R6-R7-R1 — THE RELEASE MOVES AGAIN, because this round changes 61_ (a valid zero recommendation is now
-// a typed success rather than a REQUESTED_SCOPE_EMPTY refusal) and therefore REQUIRES a new Web App
-// deployment version. A deployment still answering the old 61_ would keep reporting a correct finish as a
-// failure, and the release id is what says which of those two a deployment is.
-// R6-R7-R3 — THE RELEASE MOVES AGAIN, because this round changes 61_ (the NO_ACTION success envelope now
-// states `reservations` as an explicit 0) and therefore REQUIRES a new Web App deployment version. A
-// deployment still answering the old 61_ omits that key, and a browser proof reading it can only record
-// "unmeasured" — which is indistinguishable from "a reservation was created and we did not see it".
-// R6-R7-R4 - THE RELEASE MOVES AGAIN: 61_ changed, so a new Web App deployment version is required. A
-// deployment still on R3 answers NO_ACTION only after the full KMAF pipeline, which is the 90-second
-// request this round exists to end.
-// R6-R7-R7 - THE RELEASE MOVES AGAIN, and this time for a file that did not exist before. P1-B1 added
-// 72_api_v1_product_pricing_workspace.gs, routed productPricing.workspace.get to it in 01_router.gs, and
-// changed 00_config.gs and this file. Four sync-visible backend files, so a new Web App deployment version
-// is required and the release id is what says which of the two a deployment is.
-//
-// IT MOVED A ROUND LATE, AND THE STANDING CHECKS ARE WHAT SAID SO. P1-B1 shipped those four files while
-// this constant still read R6-R7-R6, and three assertions failed: the release-window suite (a third
-// runtime file changed inside a window that permits two) and the stamp-rotation check (three manifest
-// owners edited without moving their stamps). Neither was a false alarm and neither is repaired by being
-// re-scoped; they are repaired by the bookkeeping they were asking for, which is this line.
-//
-// THIS IS A DEPLOYMENT CANDIDATE, NOT A DEPLOYMENT. Nothing has been synced, no Web App version exists,
-// and PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release still answers
-// FEATURE_DISABLED before it opens a spreadsheet. The release id names what a sync WOULD be; the ledger
-// entry in docs/planning/DEPLOYMENT_RELEASE_LOG.md records that it has not happened.
-// P1-B3 - THE RELEASE MOVES AGAIN, and R7 was never synced. That is not a reason to reuse the id:
-// R7's tree and this one differ (72_ now carries the five-state source discriminator, the per-table
-// schema fingerprint and the read timestamp), and an id that names two different trees cannot answer
-// the one question it exists for. R7 is superseded as a CANDIDATE; no deployment ever carried it.
-//
-// STILL A CANDIDATE, STILL NOT A DEPLOYMENT. Nothing has been synced, no Web App version exists, and
-// PRODUCT_STRATEGY_ENABLED_ is false - so a project that DOES carry this release answers
-// FEATURE_DISABLED before it opens a spreadsheet. The ledger records that it has not happened.
-// P1-B8D - THE RELEASE MOVES, AND THIS ONE IS MEANT TO BE CUT. R10 was a candidate that was never
-// synced; every release since R7 has said "still a candidate, still not a deployment" because
-// PRODUCT_STRATEGY_ENABLED_ was false and a project carrying the release still answered FEATURE_DISABLED
-// before opening a spreadsheet. That sentence is no longer true. R11 carries the activation, so the
-// difference between R10 and R11 is not a shape of a response - it is whether the feature answers at all.
-//
-// R10 IS SUPERSEDED AS A CANDIDATE AND MAY NOT BE REUSED, for the reason the ledger has recorded every
-// time this has come up: R10's tree and this one differ, and an id that names two different trees cannot
-// answer the one question it exists for. Nothing ever deployed R10, so nothing is being replaced - it is
-// being withdrawn.
-// R12 -- THE RELEASE MOVES BECAUSE THE BACKEND MOVED, and this one is a CONSUMER UNIFICATION rather than a
-// feature. Five live resolvers read fc_target_rules and no two implemented the same contract; three of them
-// are server-side (13_, and the shared module reached through 90_). They now resolve through ONE function.
-// That is a sync-visible backend change, which is precisely the condition for rotating this constant, and it
-// is the dangerous kind: every one of those files answers every action it ever answered, both before and
-// after. A half-copied sync of this release returns SUCCESS everywhere and a DIFFERENT forecast number.
-//
-// R11 IS SUPERSEDED, NOT WITHDRAWN -- and that is the difference from every 'candidate' note above. R11 was
-// cut. An id that names two different trees cannot answer the one question it exists for, so the tree that
-// carries 13_/14_/90_/63_ as changed here gets its own id.
-// R13 — ONE OWNER MOVED, AND THE RELEASE MOVES WITH IT. R12 unified the Target Rule RESOLVER; R13
-// repairs the Target Rule WRITER, which is a narrower change and a sharper one: the modal never asked
-// whether the rule it was about to write already existed, so saving a form full of new-rule defaults
-// would have replaced stored months with 100s. The page now rehydrates and carries a version, and the
-// handler refuses anything composed against a version it no longer holds.
-//
-// 13_ and 90_ do NOT move. Neither changed: reading a Target Rule is not writing one, and a release
-// that marched them along would put two unchanged files on the sync list and destroy the only signal
-// that says which files a project is actually missing.
-//
-// R14 — FC-SUMMARY-R3-R1 §B. The FC Summary read owner learned to answer SLICES and to read each sheet
-// once instead of two or three times, and it acquired its first build stamp. TWO files move: 58_ because
-// it changed, and this one because the release and the manifest live here. 14_ stays at R13 — no write
-// handler was touched — and 13_, 90_, 00_, 01_ and 72_ stay exactly where they were, for the same reason
-// as above: a sync list is only useful while it names the files that actually differ.
-//
-// R15 — FC-SUMMARY-R2B-A3-R1. The Special Event WRITE path. THREE files move: 20_, because the campaign
-// business key changed from company|country|marketplace|NAME|year to the event WINDOW and it gained the
-// version gate and its first build stamp; 14_, because fc_special_events gained the same gate and the
-// unchanged short-circuit; and this one, because the release, 20_'s new manifest row and 14_'s expected
-// stamp all live here. 58_ does NOT move — reading an event is not writing one — and neither do 13_, 90_,
-// 00_, 01_ or 72_. A sync list is only useful while it names the files that actually differ.
-//
-// THIS RELEASE IS NOT OPTIONAL TO SYNC TOGETHER. An old 20_ beside a new 14_ keys campaigns by name and
-// ignores the version it is sent, so the pair would refuse stale event writes while still merging two
-// windows into one campaign — half a repair, and the half that is missing is the one that loses data.
-//
-// R16 — FC-SUMMARY-R2B-A3-R4. The campaign REUSE contract. TWO files move: 20_, because it now
-// classifies a resolved row as IDENTICAL HEADER or HEADER MUTATION before consulting the version, and
-// this one, because the release and 20_'s expected stamp live here. 14_ stays at R15 — no handler in it
-// was touched — and 58_, 13_, 90_, 00_, 01_ and 72_ stay where they were.
-//
-// WHAT R15 GOT WRONG, AND WHY IT HAD TO BE THE SERVER THAT FIXED IT. R15 refused every versionless save
-// that resolved to an existing campaign. That is right for an update and wrong for the commonest
-// legitimate operation in the Builder: adding another SKU to a window that already exists. One campaign
-// header owns many campaign_sku_lines and many fc_special_events, and an operator adding CO1150 to the
-// BFCM window the CO1100 family already uses is not editing the header at all — yet stage 1 answered
-// STALE_CAMPAIGN_VERSION. Only the server holds the stored row, so only the server can say whether a
-// save would change it; the exemption is granted by that comparison, never by the absence of a version.
-// An old 20_ beside this release still refuses the new-SKU save, so the two must be synced together.
-// R17 - FC-SUMMARY-R2B-A3-R6: THE CAMPAIGN LOCK STOPPED COVERING THE READING. LockService.getScriptLock()
-// is ONE lock for the entire Apps Script project; nineteen other handlers across eleven files take the same
-// one. 20_ acquired it as its first act and held it for its whole body - two to three full
-// getDataRange().getValues() reads of the campaigns sheet included - and then, on the commonest path of all,
-// returned 'nothing was written'. So stage 1 of a Special Event save queued behind every other writer in the
-// project and intermittently failed at the 30s bound with CAMPAIGN_LOCK_TIMEOUT for a save that writes no
-// campaign cell. Resolve and classify now run unlocked through one shared classifier, every zero-write
-// outcome (reuse and all five refusals) answers without taking the lock at all, and the write path re-resolves
-// UNDER the lock from a fresh read - which is what keeps two concurrent creates of one identity from both
-// appending. A project holding the R16 copy of 20_ still takes the global lock to answer a read, so the two
-// files must be synced together and a new deployment version cut.
-// R21 - PRICING-R2: the field-level manual price authority, its canonical writer, and the audit log. A NEW
-// FILE (73_) and a NEW ACTION, so a project holding R20 cannot serve pricing.update at all — and, because
-// R20 and R21 are two DIFFERENT trees, they may not both answer to one release id. That is the whole job of
-// the id. 04_ does NOT move: it still creates a pricing row exactly as it did, and its stamp records the
-// round it last changed rather than the round it was last correct in.
-// R22 - PRICING-R3: the FX reconciliation. NO new file — pricing.fxReconcile is a second action inside the
-// SAME owner (73_), which is the whole point: pricing_list keeps ONE writer. So this release's partial-sync
-// hazard is not a missing file but a missing ROUTE — a project that copied 73_ and not 01_ holds the handler
-// and cannot reach it, and one that copied 01_ and not 73_ routes a live reconciliation into nothing.
-// 72_ does NOT move: the read owner still publishes the same effective prices, because R3 changed which
-// VALUES those fields hold and not which field is read. 04_ does NOT move.
-// R23 - PRICING-R4E: the pricing_list CREATION contract. R22 has not shipped, so this is the SAME
-// unshipped release with one more file in it — and it takes a new id because R22 and R22-R1 are two
-// different trees, which is the rule stated for R20/R21 above. 04_ MOVES this time, and it is the whole
-// round: it is the only path that creates a pricing_list row, and it was creating every cross-currency
-// row with an invented fx_rate of 1, the base prices copied into auto_* and into the effective fields,
-// and the ownership flags left blank — so R22's own reconciliation could rebuild the reference value and
-// was forbidden to repair the price the site was serving. 72_ still does NOT move: the read owner
-// publishes the same three fields.
-// R24 - PRICING-R4G: THE RESOLVED-PRICE RUNTIME. The three pricing columns stop being the price and
-// become the user OVERRIDE; what a site charges is resolved as override-else-auto-else-null. 73_'s
-// resolver drops its flag gate, `Use Auto Price` CLEARS the override instead of copying auto into it,
-// and an FX run writes no override column at all. 72_ JOINS THE RELEASE because it was the blocker: it
-// published the override cell under a business name and carried no auto_* at all, so a row priced
-// through auto_* reached the Product Strategy Board as a missing price. R23 is SUPERSEDED AS A
-// CANDIDATE and may not be reused — its tree and this one differ, which is the ruling recorded for R7,
-// R10 and R11 above, each of them likewise never deployed. 59_ does NOT move: it is a raw passthrough
-// that already carried every layer, so the client resolves on that transport without it changing.
-//
-// THE HALF-SYNC THIS RELEASE CAN PRODUCE, and why the five files travel together: 72_ at R24 beside an
-// older 73_ has no resolver to call and answers PRICING_RESOLVER_UNAVAILABLE rather than guessing; an
-// older 72_ beside 73_ at R24 keeps publishing override cells as prices, which looks entirely correct
-// and is the old model's numbers wearing the new model's labels.
-// S3-R10: R24 -> R25. Three owners change together and must be copied together — 73_ gains the commit
-// receipt and the read-only status handler, 01_router routes pricing.write.status, and this file carries
-// the manifest row plus the contract and list versions. A project with 73_ at R25 and an OLD router cannot
-// reach the status handler at all, which is precisely the partial sync a release id exists to make visible.
-// S5-R6: R25 -> R26 -> R27 -> R28. The ONLY sync-visible change is the generated bundle: KMRDV2P gained a
-// PURE operator-decision write-plan gate (planOperatorDecision), so the bundle content hash below moves and
-// this file moves with it. R27 has not shipped, and that is not a licence to reuse its id — R27 and this
-// tree differ, which is the ruling recorded for R7, R10, R11, R22->R23 and R23->R24 above, every one of them
-// likewise never deployed. 01_router and 73_ deliberately do NOT move: no action was added, none removed, no
-// request or response shape changed, and nothing new is routed — the gate is a library function no route
-// reaches yet. A project holding R27 simply lacks a function nothing calls, so this release has no
-// half-sync hazard of its own beyond copying the bundle and this file together.
-// S5-R7A: R28 -> R29. TWO owners change and must be copied together — 47_ attaches the canonical KMREC
-// verdict at the one place a gap row becomes a draft body, and the generated bundle carries the eligibility
-// owner that reads it. A project with 47_ at R29 and an older bundle gets RECOMMENDATION_OWNER_UNAVAILABLE
-// and writes nothing, which is the intended fail-closed half; the reverse — a new bundle beside an older 47_ —
-// is the dangerous one, because the guard exists and nothing ever hands it a verdict, so every SKU is written
-// exactly as before while the deployment reports itself healthy. That is the partial sync a release id is for.
-// R28 has not shipped, and that is not a licence to reuse its id: R28 and this tree differ, the ruling
-// recorded for R7, R10, R11, R22->R23, R23->R24 and R27->R28 above. 01_router and 73_ still do NOT move.
-// FC-SUMMARY-STABILITY-R3: R30 -> R31. ONE backend owner changes — 58_ gains the scoped pricing slice —
-// and 63_ moves with it because its manifest row for 58_ is part of this file. The half-sync hazard here
-// is ASYMMETRIC and worth stating, because it decides which file to copy first. A project holding the NEW
-// fc-summary.js against an OLD 58_ asks for slice 'pricing'; an unrecognised slice resolves to FULL, so
-// the answer carries no pricingList, the page commits an empty projection and every card reads MISSING
-// price for a site whose prices exist. The reverse — new 58_, old page — is inert: nothing asks for the
-// slice and the four primary-render tables are byte-identical to what they were. So the backend goes
-// first, and the frontend deploy is what completes the repair. 01_router, 14_, 47_ and 73_ do NOT move.
-// S6-R7A — R36. The ONLY runtime change is inside the generated bundle: KMSNF no longer refuses a complete
-// snapshot from the previous business day merely because the month rolled over, which it did for most of a
-// working day on the 1st of every month. 63_ moves because it declares 90_'s content hash. No other .gs file
-// changed and no other stamp moves. BACKEND FIRST is not asymmetric here — there is no frontend half.
-// S7-R2A — R38. 57_ gains the carriers master so the Shipment Draft, the Confirm summary and the On-the-Way
-// Map resolve carrier_id to a NAME through one shared presentation resolver instead of printing the id. 57_
-// declares no build symbol (its row below is proven by the CALLER probe), so this manifest is the only file
-// that moves. No router action was added or removed: the action-contract version stays where it is.
-// S6-R8A — R37. Dispatch consumes the DECLARED source warehouse and nothing else. 22_ and this file move;
-// 90_ does not, because no core module changed. DEPLOY ORDER MATTERS HERE: 22_ now calls 12_'s
-// shipmentSourceDomain_ / shipmentDomainSheets_ and 05_'s ovsOwnerReservedTx_, so a new 22_ against an old
-// 12_ or 05_ resolves those to undefined INSIDE the dispatch lock. 05_ and 12_ are already ahead of 22_ in
-// the standing order; this release does not change that, it depends on it.
-// S8-R4B-1 - R41. 01_router.gs reclassifies factoryStockGuard.get from the POST write chain onto the GET
-// read table. That is a RUNTIME change to the router, and R40 was already cut against a tree in which 01_
-// did not change, so R40 cannot absorb it: an id that names two trees cannot answer the question it exists
-// for. R41 owns 01_ and this file. The Factory Guard HANDLER owner (71_) did NOT change and is NOT an R41
-// owner. No action was added or removed - the action already existed on the POST chain - so the
-// action-contract version stays at 18, and 90_'s content hash is untouched because no core module moved.
-// S8-R4B-2D - R42. 60_api_v1_inventory_replenishment_workspace.gs gains a SITE SCOPE on the Inventory
-// Replenishment workspace read. The second layer of the Site Inventory read had a per-Site CACHE in front of
-// an all-Site QUERY, so every Site was served every Site's exposure rows and then told to keep them under
-// its own key; the handler has no scope parameter at all, which is why this cannot be a frontend round.
-// R42 owns 60_ and this file. 01_ did NOT change and keeps the R41 it earned - the router's table is
-// untouched, because NO ACTION WAS ADDED OR REMOVED: siteScope is an optional field on the payload of an
-// action that already exists, so the action-contract version stays at 18 and 90_'s content hash is
-// untouched. R41 cannot absorb this for the reason R41 itself was cut: R41 is already cut against a tree in
-// which 60_ had not changed.
-// S8-R4D-C - R43. 60_api_v1_inventory_replenishment_workspace.gs stops fetching each table's header row
-// separately. Its `io.readTable` asked prodRequireSheet_ to validate the header (one range read), then for
-// four tables asked prodRequireColumns_ to re-read it (another), and only then read the whole sheet - whose
-// row 0 IS that header. Thirteen tables cost thirty range reads; they now cost thirteen. The validators are
-// the same ones, given the same header array; only the fetching is gone.
-// R43 owns 60_ and this file. 01_ did NOT change and keeps R41. NO ACTION, NO REQUEST FIELD and NO RESPONSE
-// FIELD moved - this is a change in how the handler obtains bytes it already obtained - so the
-// action-contract version stays at 18 and 90_'s content hash is untouched. R42 cannot absorb it: R42 is
-// already cut, deployed and ACCEPTED against a tree in which this read path had not changed, and the whole
-// point of R43 is that an acceptance must be able to say which of the two it measured.
-// S8-R4D-E4-B owns R45: 60_ and this file. R44 is cut, deployed and UNACCEPTED - its acceptance failed on
-// performance, not on correctness, and the number it failed on was its own. The E3D one-shot measured
-// normalizationMs 74,621 ms inside serverDurationMs 83,465 ms against batchValuesMs 3,110: R44 made the
-// Sheets read ten times faster and then spent twenty-four times the saving converting serials to Dates,
-// because the conversion crossed the Utilities bridge TWICE PER CELL over 38,347 declared cells. R45
-// removes the per-cell crossing and keeps the conversion: the zone offset is PROBED once per distinct year
-// and the arithmetic runs in pure JS only where the probe proves the offset constant - a year it cannot
-// prove keeps the original path, cell by cell. Nothing about row SELECTION moved; Candidate A (trimming
-// before normalizing) was considered, costed and deliberately NOT taken in this round.
-// R44 IS NOT JOINED. It is deployed, so folding R45's bytes into it would give the Production evidence that
-// failed and the Production evidence that passes the same release id - and telling those two apart is the
-// entire reason this round exists. No action moved, no request field moved, no response field moved, so the
-// action contract stays where it is; two diagnostic counters joined timings that were already reported.
-// S8-R5-B — R46. 42_ stops gating the canonical §22 Avg Sales resolver on the Planning Model. R45 IS NOT
-// JOINED, and the reason is the mirror of R44's: R45 is cut but NEVER SYNCED, so its 60_ bytes are still
-// pending. A pending release cannot absorb a later change either — 60_ did not change in R46, so marching
-// its module stamp here would claim a round it had no part in. The two travel to Production as ONE paste
-// set while keeping separate identities. No action, request field or response field moved; horizonBasis
-// gains four additive diagnostic fields that were already present on the resolver's own return.
-// S8-R49-L — R49, THE CUT. R46 is deployed and its acceptance is still OPEN against the tree it was written
-// for; this release does not touch that evidence. R49 carries four files to Apps Script as ONE paste set:
-// 61_ (marketplace priority resolved by company + country + marketplace), 66_ (the §14 Send refusal when no
-// usable carton size exists), 90_ (the same priority identity repair in the two bundled core producers) and
-// this file.
-//
-// WHY R49 AND NOT R48, WHICH IS WHAT THIS CUT WAS ASKED FOR. R47 and R48 were both minted as MODULE-STAMP
-// ROTATIONS in rounds that were explicitly not authorized to cut a release: R47 for 61_, and R48 for this
-// file when S8-R49-J repaired 90_'s manifest hash. A release token has to be MINTED BY THE CUT, because two
-// gates meet on it — E4 requires a changed owner's last commit to be the commit that introduced its stamp,
-// and the release contract requires SYS_BUILD_VERSION_ below to EQUAL the release. R48 was already this
-// file's stamp at HEAD, so no commit could introduce it again; declaring it would have left E4 failing on a
-// tree that is otherwise correct. R49 is the next token in the same series and satisfies both.
-//
-// R47 AND R48 ARE NOT SEPARATE RELEASES AND NEITHER WAS EVER DEPLOYED. Both stay in the ledger exactly where
-// they were appended — stampAtOrAfter compares INDEXES, so removing either would silently reorder every
-// floor written against the list — and both are recorded in the release log as unshipped and absorbed here.
-// 61_ therefore SHIPS under R49 while still DECLARING R47, which is correct and is the rule this file has
-// stated since R6-R6-R4-R2: a module stamp records the round the file last changed, never the release that
-// carries it.
-//
-// S8-B1-R50 — R50, AND R49 IS NOW A DEPLOYED RELEASE THAT MUST NOT BE REOPENED.
-//
-// This is the first cut taken against a tree whose previous release is live: R49 was synced and a version was
-// published, and `system.health` reported build_id = deployment_release = R49, UNIFORM. S8-B1 then changed
-// production runtime — 43_ stopped substituting 0 for an unresolved allocation priority, and 90_ was rebuilt
-// because five bundled core modules changed with it. Folding those bytes into R49 would relabel work the
-// deployed project does not contain, and an acceptance could no longer say which tree it measured.
-//
-// THREE GATES CAUGHT IT INDEPENDENTLY, which is why the cut exists rather than a hash edit: the manifest's
-// expected bundle hash stopped matching the generated bundle, 43_ appeared in the copy list without being a
-// declared owner, and the deployment-uniformity probe reported a mixed tree. None of them was wrong.
-//
-// NOTHING HERE CLAIMS A DEPLOYMENT. No Apps Script version exists for R50, Production still runs R49, and the
-// release log records R50 as NOT DEPLOYED until a user performs the sync and writes the version down.
-var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
-// 63_'s OWN module build stamp — the round in which THIS FILE last changed. Not the release; see above.
-// R6-R6-R4-R2 — moved because 16_'s manifest row moved with 16_ itself. The RELEASE above is deliberately
-// not marched to it: it says which release this deployment intends to be, and cutting one is the user's act.
-// R6-R7-R3 — moved because 61_'s manifest row moved with 61_ itself, which is a change to THIS FILE.
-// R6-R7-R4 - moved because 61_'s manifest row moved with 61_, which is a change to THIS FILE.
-// R6-R7-R7 - moved because THIS FILE changed: 72_'s manifest row was added, 00_config's, 01_router's and
-// this file's own rows moved, and the action-contract version was bumped for the new route.
-// P1-B3 - moved because THIS FILE changed again: the release above and 72_'s expected stamp. The action
-// contract does NOT move with it - no action was added this round, only the shape of one response.
-// P1-B8D - moved because THIS FILE changed: the release above, and 00_config's expected stamp below.
-// The ACTION CONTRACT does not move with it, and that is the load-bearing half of this round's release
-// identity: no action was added, no action was removed, no request or response shape changed. Activation
-// is a flag, and a flag is not a contract. Bumping the action-contract version here would tell every
-// deployed client that it must re-check a vocabulary that is byte-identical to the one it already has.
-// R12 - moved because THIS FILE changed: the release above, 13_'s expected stamp, and two manifest rows
-// that did not exist (14_ and 90_). The ACTION CONTRACT does not move with it and neither does the transport
-// contract: no action was added, none removed, no request or response shape changed. A resolver that returns
-// a different NUMBER through the same action is not a vocabulary change, and telling every deployed client
-// to re-check a byte-identical vocabulary would be a lie about what this release contains.
-// 00_config.gs is deliberately NOT rotated: it did not change, and its manifest row below still expects R11.
-// R13 - moved because THIS FILE changed: the release above and 14_'s expected stamp below. Nothing
-// else in this file moved — no action was added or removed, no response shape changed, and the
-// transport contract is untouched. A write handler that refuses a stale body is not a new vocabulary.
-// R14 - moved because THIS FILE changed: the release above, 58_'s new manifest row below, and 63_'s own
-// expected stamp. No action was added or removed and the transport contract is untouched; a read owner
-// that answers a narrower slice of the same action is not a new vocabulary either.
-// R17 - moved because THIS FILE changed: the release above, and 20_'s expected stamp and ownership row
-// below. No action was added or removed and the transport contract is untouched.
-// R21 - moved because THIS FILE changed: the release above, 73_'s new manifest row and registry entry
-// below, this file's own expected stamp, and the ACTION CONTRACT — which moves this time, unlike the last
-// several rounds, because an action was genuinely added to the vocabulary.
-// PRICING-R3 - moved because the registry gained pricing.fxReconcile, three manifest rows moved and the
-// action contract moved, all of which are changes to THIS FILE.
-// S5-R6 - moved because THIS FILE changed: the release above, its own expected stamp below, and 90_'s
-// manifest row, whose content hash moved with the bundle. No action was added or removed and the transport
-// contract is untouched; a pure planner that no route reaches is not a new vocabulary.
-// S5-R7A - moved because THIS FILE changed: the release above, its own expected stamp, 47_'s expected stamp
-// and 90_'s content hash. No action was added or removed and the transport contract is untouched.
-// S6-R7A - moved for the same reason again: the release above, its own expected stamp and 90_'s content hash.
-// S6-R8A - and again: the release above, its own expected stamp and 22_'s. 90_'s hash is unchanged.
-// S8-R4B-1 - and again: the release above, its own expected stamp and 01_'s. 90_'s hash is unchanged.
-// S8-R4B-2D - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged.
-// S8-R4D-E4-B - and again: the release above, its own expected stamp and 60_'s. 90_'s hash is unchanged,
-// and so is the action contract - a handler that reaches the same Dates by cheaper arithmetic is not a new
-// vocabulary.
-// S8-R49-J - moved because THIS FILE changed: 90_s manifest content hash below, which R49-F left at the
-// pre-rebuild value. The RELEASE above is deliberately NOT marched to it, on this rounds explicit
-// authorization - cutting one is the users act. 61_ did not change and keeps R47.
-// S8-R49-L - R49, and this time it moves WITH the release above rather than ahead of it. THIS FILE changed:
-// the release, 66_'s expected stamp, and its own row below. The two rounds in which this stamp ran ahead of
-// the release (R47, R48) were rotations without a cut, and this is the cut that absorbs them.
-// S8-B1-R50 - moves WITH the release again, and for the ordinary reason: THIS FILE changed. The release above,
-// 66_'s row returning to a CARRIED stamp, this row, and the generated bundle's expected content hash all moved
-// in one commit, which is also what the stamp gate requires - a release stamp has to be minted by its own cut.
-var SYS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
-// ------------------------------------------------------------------------------------------------------------
-// F1-7N-FB-4E §H — THE SHARED-TRANSPORT CONTRACT IS A SEPARATE AXIS FROM THE ACTION CONTRACT.
-//
-// `deployed_action_contract_version` answers "does this deployment know the actions the pages call?". It cannot
-// answer "does this deployment speak the transport dialect the frontend needs?" — and that is the axis this
-// round added, because the typed method/handler/body facts the client's §L proof depends on are emitted by the
-// ROUTER, not by any action. A deployment can know every action and still be unable to say which handler
-// answered, and a frontend on a newer transport contract must be able to name THAT rather than report a
-// mysterious classification gap.
-//
-// Bump this when the router's response IDENTITY fields change (handler / received_method / post_body_present /
-// action_present_in_query / router_build). v1 = the FB-4E set.
-// ------------------------------------------------------------------------------------------------------------
-var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
-// Incremented when the set of router actions changes. The frontend compares this against its own pinned
-// minimum, so a deployment that predates an action it needs is rejected BY VERSION rather than discovered
-// through a confusing per-action failure.
-// F1-7N-FB-4E-R2: 7 -> 8. A router ACTION was added (system.executionPlanDuplicateLineDiagnostic), which is
-// precisely the condition this constant's rule names. The frontend raises its pinned minimum to 8 in the same
-// change, so a deployment that predates the new route is rejected BY VERSION rather than only by the per-action
-// probe — two independent gates for the same fact, which is the point of having both.
-// F1-7N-FB-4E-R3: 8 -> 9. overseasStock.workspace.get is a NEW router ACTION, which is exactly the condition
-// this constant's rule names. The frontend raises its pinned minimum to 9 in the same change: an Overseas page
-// that has been cut over to the workspace read CANNOT work against a deployment that does not route it, so the
-// version gate must reject that deployment by version rather than let the page discover it as a failed read.
-// F1-7N-FC-1A-R1: 10 -> 11. THE RULE FIRES HERE. This constant's rule is "bump whenever a router ACTION is
-// added or removed", and R1 adds `cancelShipmentDraft`. It is not a formality in this round: FC-1A made
-// Shipment Draft creation ACQUIRE a factory stock reservation, and until this action exists there is no routed
-// way to release one before dispatch. A deployment carrying FC-1A without R1 can therefore strand units
-// permanently, so it must be rejected BY VERSION at the browser's first contract check rather than discovered
-// when an operator finds the Cancel button does nothing. The frontend raises its pinned minimum to 11 in the
-// same commit.
-// R6-R7-R5 — 12. One router ACTION was added (factoryStockGuard.get), which is exactly this constant's
-// stated rule. No action was removed and no existing action changed shape, so the frontend's pinned minimum
-// is satisfied by 11 and by 12 alike; what moves here is the deployment's ability to answer "do you have the
-// guard read?" without anyone having to call it and see.
-// R6-R7-R7 - 13. One router ACTION was added (productPricing.workspace.get), which is exactly this
-// constant's stated rule, and P1-B1 added the route without moving it. The frontend's pinned minimum
-// (KM_EXPECTED_ACTION_CONTRACT_VERSION_) deliberately STAYS AT 12: no page calls this action - the
-// accessor is loaded by nothing and the flag is false - so raising the browser's floor would make every
-// currently-deployed project refuse to boot over a feature nobody can reach. What moves here is the
-// deployment's ability to answer "do you route the pricing workspace?" without anyone calling it to find
-// out. SYS_REQUIRED_ACTION_LIST_VERSION_ does NOT move either: SYS_REQUIRED_ACTIONS_ is the list of
-// actions PAGES depend on, and no page depends on this one yet - the same reason createShipmentFromPlan
-// waited for a page before it was listed.
-// R6-R7-R9 - 14. One router ACTION was added (productPricing.siteUniverse.get), which is exactly
-// this constant's stated rule. P1-B5 measured why it had to exist: the board derives its
-// Company -> Country -> Marketplace ladder from the rows its adapter hands over, and the workspace
-// read is site-scoped BY CONSTRUCTION, so it can never publish the set of sites to choose from.
-// The frontend's pinned minimum (KM_EXPECTED_ACTION_CONTRACT_VERSION_) deliberately STAYS AT 13:
-// no page calls this action - the navigation entry is not enabled and the flag is false - and
-// raising the browser's floor would make every currently-deployed project refuse to boot over a
-// feature nobody can reach. What moves here is the deployment's ability to answer "do you route the
-// site universe?" without anyone calling it to find out. SYS_REQUIRED_ACTION_LIST_VERSION_ does NOT
-// move either: SYS_REQUIRED_ACTIONS_ is the list of actions PAGES depend on, and no page depends on
-// this one yet - the same reason productPricing.workspace.get waited, and createShipmentFromPlan
-// before it.
-// PRICING-R2: 14 -> 15. SYS_REQUIRED_ACTIONS_ gained pricing.update, which is a genuinely NEW vocabulary
-// entry rather than a changed response shape: a deployment that predates it cannot serve the action at all,
-// and the SKU Regional Details price editor fails closed against it rather than writing through some other
-// path. This is the case the number exists for.
-// PRICING-R3: 15 -> 16. SYS_REQUIRED_ACTIONS_ is NOT what moved it — 01_router.gs gained a genuinely new
-// route, pricing.fxReconcile, and this number's rule is "bump whenever a router ACTION is added or removed".
-// A deployment at v15 has every pricing.update capability and cannot reconcile at all, and the two states
-// have to be distinguishable without calling the action to find out.
-// S3-R10: 16 -> 17. 01_router.gs gained pricing.write.status, and this number's rule is "bump whenever a
-// router ACTION is added or removed". It matters more than usual here: a deployment at v16 serves
-// pricing.update but cannot answer whether a write committed, so a client that lost a response would be
-// unable to verify and would sit on OUTCOME_UNKNOWN forever. The two states have to be distinguishable
-// without calling the action to find out.
-// S8-B3-R1A (R51): 18 -> 19. 01_router.gs gained FOUR genuinely new routes —
-// overseasAllocationPreview.job.start / .job.status / .result.get / .job.cancel — and this number's rule is
-// "bump whenever a router ACTION is added or removed". It moves by ONE, not by four: the rule counts the
-// release in which the action surface changed, not the number of actions, which is why every prior bump is
-// +1 regardless of how many entries moved. A deployment at v18 routes none of the four and must be
-// distinguishable from one that routes all of them WITHOUT calling an action to find out — which matters
-// more than usual while the feature is staged OFF, because a disabled Preview and an unsynced deployment
-// both refuse, and only the version tells them apart.
-// S8-B3-R3-CP2I (R52): 19 -> 20. ONE new route, marketplace.allocationPriority.set. It matters more than
-// usual because that action is the ONLY way a priority can be written from R52 - upsertMarketplace now
-// REFUSES the field outright - so a v19 deployment cannot store one by any route, and the frontend must be
-// able to learn that WITHOUT attempting a write to find out.
-// FX1-R4: 20 -> 21. 01_router gained fxRateBook.get and fxRateBook.save, and this number's rule is
-// "bump whenever a router ACTION is added or removed". A deployment at 20 serves pricing.fxReconcile
-// but has nowhere to keep a rate, so the page can read and never save.
-var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 21;
-// Incremented when SYS_REQUIRED_ACTIONS_ changes, so a caller can tell a "nothing missing" answer from an
-// OLD list apart from a "nothing missing" answer from the CURRENT list.
-// F1-7N-FB-4E-R2: 7 -> 8. SYS_REQUIRED_ACTIONS_ gained four entries, and the whole purpose of this number is
-// to let a caller tell a "nothing missing" answer computed from an OLD list apart from one computed from the
-// current list. Not bumping it would make the R2 registry indistinguishable from the R1 registry that omitted
-// four actions — which is the exact failure this constant exists to prevent.
-// F1-7N-FB-4E-R3: 8 -> 9. SYS_REQUIRED_ACTIONS_ gained overseasStock.workspace.get.
-// F1-7N-FB-4G-A2-R3: 9 -> 10. SYS_REQUIRED_ACTIONS_ gained upsertShippingAllocationDraftAtomic.
-//
-// SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ deliberately does NOT move. Its rule is "bump whenever a router ACTION
-// is added or removed", and this round adds NO route: upsertShippingAllocationDraftAtomic has been in
-// 01_router.gs since F1-7N-FA-3C-R6F1. Any deployment already at action-contract v10 therefore routes it, and
-// the per-action handler probe is the second, independent gate for a partial file-by-file sync.
-// SYS_TRANSPORT_CONTRACT_VERSION_ does not move either: the envelope shape is unchanged.
-// F1-7N-FC-1A: 10 -> 11. SYS_REQUIRED_ACTIONS_ gained createShipmentFromPlan. The action itself has been
-// routed since the Shipment Center work, so SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ deliberately does NOT move
-// (its rule is "bump when a router ACTION is added or removed"). What changed is that a PAGE now depends on
-// it: the Weekly Shipping Plan card's Retry Shipment Draft is the recovery path for a committed approval whose
-// Execution Commit failed, and a deployment missing it must be a named deployment fact rather than a Retry
-// button that does nothing.
-// F1-7N-FC-1A-R1: 11 -> 12. SYS_REQUIRED_ACTIONS_ gained cancelShipmentDraft.
-// PRICING-R2: 12 -> 13. SYS_REQUIRED_ACTIONS_ gained pricing.update.
-//
-// PRICING-R3 deliberately does NOT move this, and the restraint is the point. SYS_REQUIRED_ACTIONS_ is the
-// list of actions PAGES depend on, and no page calls pricing.fxReconcile: it is an operator reconciliation
-// run against the whole table, not a save a screen performs. Adding it would report every deployment that
-// has never needed it as missing something, which is how a registry of real partial-sync faults turns into
-// a list nobody reads. The same reason productPricing.workspace.get and createShipmentFromPlan both waited.
-// S3-R10: 13 -> 14. SYS_REQUIRED_ACTIONS_ gained pricing.write.status. Unlike pricing.fxReconcile, which
-// deliberately stayed out, a PAGE depends on this one: SKU Regional Details calls it whenever a pricing
-// write loses its response, which is exactly the partial-sync fault this registry exists to surface.
-// S8-B3-R3-CP2I (R52): 14 -> 16, BY TWO, because two entries arrive. The release-stamp gate asserts this
-// number moves EXACTLY as far as the list grows - so it cannot be a number somebody typed - and nothing
-// compares it for equality against a pin, so a step of two distinguishes list versions as well as a step of
-// one. The second entry is a REPAIR: `upsertMarketplace` has been routed since before this registry existed
-// and was never listed, so sysProbeRequested_ - which resolves a caller-named action ONLY through this table -
-// answered `known_to_this_build: false` for an action the deployment serves correctly. That is the
-// F1-7N-FB-4E-R2 fault exactly. The new action is listed in the SAME change that routes it, for R2's reason:
-// a write owner's absence must never be discoverable only by a save that silently fails.
-// FX1-R4: 16 -> 18. SYS_REQUIRED_ACTIONS_ gained the TWO fxRateBook actions, and this number
-// moves as far as the list GROWS.
-var SYS_REQUIRED_ACTION_LIST_VERSION_ = 18;
 
-// The router actions the affected pages depend on. A partial Apps Script sync is the one failure mode that
-// looks like a transport fault from the browser, so availability is reported per action by probing the handler
-// symbol in the shared global scope — never by calling it.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71';
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var SYS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4";
+
+
+
+
+
+
+
+
+
+
+
+
+
+var SYS_TRANSPORT_CONTRACT_VERSION_ = 1;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ = 24;
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var SYS_REQUIRED_ACTION_LIST_VERSION_ = 20;
+
+
+
+
 var SYS_REQUIRED_ACTIONS_ = [
-  // FX1-R3 — the FX rate book (owner = 75_). A deployment that has 73_ but not 75_ can reconcile only
-  // from rates typed into the request, and the Administration page would show an empty book that it
-  // cannot save. Named here so that is visible as a partial sync rather than as a page with no rates.
-  { action: 'fxRateBook.get', handler: 'handleFxRateBookGet_', used_by: 'FX Rate Book (Administration)' },
-  { action: 'fxRateBook.save', handler: 'handleFxRateBookSave_', used_by: 'FX Rate Book save' },
-  { action: 'weeklyShipping.workspace.get', handler: 'handleWeeklyShippingWorkspaceGet_', used_by: 'Weekly Shipping Plan' },
-  { action: 'shipment.workspace.get', handler: 'handleShipmentWorkspaceGet_', used_by: 'Shipment Draft / Overview / Map' },
-  { action: 'purchaseOrder.workspace.get', handler: 'handlePurchaseOrderWorkspaceGet_', used_by: 'Purchase Order Workspace' },
-  { action: 'inventoryReplenishment.workspace.get', handler: 'handleInventoryReplenishmentWorkspaceGet_', used_by: 'Site Inventory' },
-  // F1-7N-FB-3 §C/§G — the slim scope registry is now what Site Inventory's selectors depend on at mount, so a
-  // partial sync that omits 64_ must be visible here rather than looking like a slow page.
-  { action: 'inventoryScope.registry.get', handler: 'handleInventoryScopeRegistryGet_', used_by: 'Site Inventory scope selectors' },
-  { action: 'system.shippingAllocationSchemaDiagnostic', handler: 'handleShippingAllocationSchemaDiagnostic_', used_by: 'Execution Plan schema diagnostic' },
-  { action: 'system.requestOrderSendDiagnostic', handler: 'handleRequestOrderSendDiagnostic_', used_by: 'Send Request diagnostic' },
-  { action: 'system.twoVerticalFlowsDiagnostic', handler: 'handleTwoVerticalFlowsDiagnostic_', used_by: 'Two-vertical flow diagnostic' },
-  { action: 'system.requestOrderSendReconcile', handler: 'handleRequestOrderSendReconcile_', used_by: 'Interrupted Send Request reconciliation' },
-  // F1-7N-FB-3B §E/§F — the Send Request SERVER ORCHESTRATION and its slim workset read (owner = 66_). These are
-  // the two actions one Send click now depends on, so a partial sync that omits 66_ must be named here rather
-  // than reaching the user as a Send that silently does nothing.
-  { action: 'requestOrder.send.orchestrate', handler: 'handleRequestOrderSendOrchestrate_', used_by: 'Send Request (server orchestration)' },
-  { action: 'requestOrder.sendWorkset.get', handler: 'handleRequestOrderSendWorksetGet_', used_by: 'Send Request (slim workset / confirmation counts)' },
-  // F1-7N-FB-3C — the reload-resume status read, the user-edit draft-creation boundary, and the read-only
-  // identity reconciliation. A partial sync that omits 15_/66_/67_ must be named here rather than reaching the
-  // user as an edit that saves nothing or a Send that cannot resume.
-  { action: 'requestOrder.send.status', handler: 'handleRequestOrderSendStatus_', used_by: 'Send Request (reload resume / progress)' },
-  { action: 'requestOrder.allocationDraft.ensureAndEdit', handler: 'handleRequestOrderAllocationDraftEnsureAndEdit_', used_by: 'Order Allocation quantity edit (canonical draft create/update)' },
-  { action: 'system.allocationDraftIdentityDiagnostic', handler: 'handleAllocationDraftIdentityDiagnostic_', used_by: 'Allocation-draft identity reconciliation (read-only)' },
-  // Vertical B — Procurement. Send Request writes through these three, then the PO vertical continues.
-  { action: 'upsertRequestOrderAllocationDraft', handler: 'handleUpsertRequestOrderAllocationDraft_', used_by: 'Send Request (allocation draft)' },
-  { action: 'upsertRequestOrderAllocationDraftLines', handler: 'handleUpsertRequestOrderAllocationDraftLines_', used_by: 'Send Request (allocation lines)' },
-  { action: 'submitRequestOrderAllocationDrafts', handler: 'handleSubmitRequestOrderAllocationDrafts_', used_by: 'Send Request (lifecycle advance)' },
-  { action: 'createRequestOrderDraft', handler: 'handleCreateRequestOrderDraft_', used_by: 'Send Request (Request Order)' },
-  { action: 'createPurchaseOrderFromRequest', handler: 'handleCreatePurchaseOrderFromRequest_', used_by: 'Request Order -> PO Draft' },
-  { action: 'requestOrder.workspace.get', handler: 'handleRequestOrderWorkspaceGet_', used_by: 'Request Order Workspace' },
-  // F1-7N-FB-2A §G — the Execution Plan write/read set. These are the actions the Site Inventory route save
-  // depends on, and a partial sync of 16_ is indistinguishable from a transport fault without probing them.
-  { action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
-  { action: 'system.executionPlanConflictDiagnostic', handler: 'handleExecutionPlanConflictDiagnostic_', used_by: 'F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic' },
-  { action: 'system.requestOrderSendDiagnosticStatus', handler: 'handleRequestOrderSendDiagnosticStatus_', used_by: 'F1-7N-FB-4A addendum §G read-only Request Order Send diagnostic ownership + cycle resolution' },
-  { action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
-  // F1-7N-FB-4G-A2-R3 §E — THE ATOMIC WRITER, WHICH THE EXECUTION PLAN NOW DEPENDS ON.
-  //
-  // It has been routed since F1-7N-FA-3C-R6F1 but was never in this registry, so a deployment missing it could
-  // only be discovered by a save failing. A2-R3 makes it the ONE path that creates or edits a route ticket
-  // (header + line together or not at all), and the client fails closed rather than falling back to the
-  // two-call writer — so its absence must be a named deployment fact before any save is attempted.
-  { action: 'upsertShippingAllocationDraftAtomic', handler: 'handleUpsertShippingAllocationDraftAtomic_', used_by: 'Execution Plan route CREATE/UPDATE (atomic header + line)' },
-  { action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
-  { action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
-  { action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
-  { action: 'submitAllocationDraftsToShippingPlans', handler: 'handleSubmitAllocationDraftsToShippingPlans_', used_by: 'Site Inventory Submit Plan' },
-  // R6-R7-R5 §4/§7 — READ ONLY, and the only guard action there is. An overage is confirmed by sending the
-  // confirmation WITH updateShippingPlanStatus, so there is deliberately no confirm action to register: a
-  // second endpoint would be a way to reach the write without passing the gate.
-  { action: 'factoryStockGuard.get', handler: 'handleFactoryStockGuardGet_', used_by: 'Weekly Shipping Plan factory-availability indicator + operator guard preflight (read only)' },
-  { action: 'confirmShipmentAndDispatch', handler: 'handleConfirmShipmentAndDispatch_', used_by: 'Confirm Shipment' },
-  // F1-7N-FC-1A §C/§J — THE SHIPMENT DRAFT RECOVERY ACTION.
-  //
-  // The FC-0A audit measured this as router + handler + adapter with NO caller anywhere in the frontend, while
-  // the Approve failure message had been promising "You can retry from Shipment Overview" for rounds -- a
-  // promise nothing could keep, on a page that renders `shipped` onward and so could never show the state
-  // needing recovery. It is now called by the Approved plan card, which makes its absence from a deployment a
-  // user-visible break and therefore something this registry must name.
-  { action: 'createShipmentFromPlan', handler: 'handleCreateShipmentFromPlan_', used_by: 'Weekly Shipping Plan -- Retry Shipment Draft (approval recovery)' },
-  // F1-7N-FC-1A-R1 §D — THE ONLY ROUTED WAY TO RELEASE A RESERVATION BEFORE DISPATCH.
-  //
-  // FC-1A made Shipment Draft creation acquire a reservation and shipped with no cancellation trigger, so a
-  // reservation could become operationally unreleasable. A deployment missing this action does not merely lose
-  // a button: it loses the ability to give units back, and the symptom is shipments refused for stock that is
-  // physically present. That has to be a named deployment fact.
-  { action: 'cancelShipmentDraft', handler: 'handleCancelShipmentDraft_', used_by: 'Shipment Draft -- Cancel Shipment Draft (releases the factory stock reservation)' },
-  { action: 'updatePurchaseOrderStatus', handler: 'handleUpdatePurchaseOrderStatus_', used_by: 'Send PO' },
-  { action: 'document.list', handler: 'handleEntityDocumentList_', used_by: 'Document Panels' },
-  { action: 'document.retry', handler: 'handleDocumentRetry_', used_by: 'Document retry' },
-  { action: 'document.diagnostic.purchaseOrder', handler: 'handlePoDocumentDiagnostic_', used_by: 'PO diagnostic' },
-  { action: 'document.diagnostic.shipment', handler: 'handleShipmentDocumentDiagnostic_', used_by: 'Shipment diagnostic' },
-  { action: 'finalizeShipmentFinalOutput', handler: 'handleFinalizeShipmentFinalOutput_', used_by: 'Shipment snapshot' },
-  // F1-7N-FB-4E-R2 §2 — FOUR ACTIONS THE FRONTEND REQUIRES THAT THIS LIST DID NOT NAME.
-  //
-  // sysProbeRequested_ resolves a caller-named action ONLY through this table. So an action that is routed, has
-  // a defined handler and is served correctly still came back `known_to_this_build: false` — and the
-  // deployment-contract probe reported it MISSING from a deployment that was in fact serving it. Three of the
-  // four below were exactly that: a registry omission reported as a stale deployment, which sends an operator
-  // to re-publish something that was never wrong. The list is part of how this deployment describes itself, and
-  // a self-description that omits what it serves is a defect in the same family as one that overstates it.
-  //
-  // The first three were routed all along (31_ and 59_); only their registry rows were missing. The fourth was
-  // genuinely unreachable until R2 added its router branch — see 01_router.gs and 68_.
-  { action: 'shipment.eta.update', handler: 'handleUpdateShipmentEta_', used_by: 'Shipment Map ETA edit (bounded eta-only writer; owner = 31_)' },
-  { action: 'shipment.route.advance', handler: 'handleAdvanceShipmentRoutePoint_', used_by: 'Shipment Map route-point advance (owner = 31_)' },
-  { action: 'skuDetails.workspace.get', handler: 'handleSkuDetailsWorkspaceGet_', used_by: 'SKU Details / SKU Regional Details scoped read (owner = 59_)' },
-  { action: 'system.executionPlanDuplicateLineDiagnostic', handler: 'handleExecutionPlanDuplicateLineDiagnostic_', used_by: 'F1-7N-FB-4E-R2 §3 read-only Execution Plan duplicate-line diagnostic (owner = 68_)' },
-  // F1-7N-FB-4E-R3 §C — the Overseas Stock scoped read. Registered in the SAME change that routes it, because
-  // R2 exists precisely because an action was routed without being registered and the probe then reported a
-  // deployment missing something it was serving.
-  { action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' },
-  // PRICING-R2 — THE CANONICAL PRICING WRITE. SKU Regional Details is the primary site-price UI and every
-  // price edit and every template import it performs goes through this one action, so a deployment that
-  // carries the R21 router but not 73_ turns each of them into a save that appears to do nothing. That is
-  // exactly the partial sync this registry exists to name, and it is worse for a WRITE than for a read: a
-  // read that fails is visibly empty, whereas a price that did not save looks identical to one that did
-  // until someone reloads the page.
-  { action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' },
-  { action: 'pricing.write.status', handler: 'handlePricingWriteStatus_', used_by: 'SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)' },
-  // S8-B3-R3-CP2I (R52) - THE TWO `marketplaces` WRITERS, BOTH NAMED, FOR TWO DIFFERENT REASONS. The priority
-  // action is NEW and Site Priority fails closed against it (the page refuses to dispatch when the probe
-  // cannot confirm it), so its absence must be a named deployment fact. upsertMarketplace is NOT new - its
-  // absence here was the F1-7N-FB-4E-R2 defect - and from R52 it also carries a REFUSAL the frontend relies
-  // on, so a deployment serving a pre-R52 03_ is a correctness fault, not a missing feature.
-  { action: 'marketplace.allocationPriority.set', handler: 'handleSetMarketplaceAllocationPriority_', used_by: 'Site Priority — the bounded allocation_priority writer (canonical-collision refusal + marketplace_id identity guard + mandatory compare-and-set; owner = 03_)' },
-  { action: 'upsertMarketplace', handler: 'handleUpsertMarketplace_', used_by: 'Add Marketplace — the marketplace master upsert (owner = 03_)' }
-  // PRICING-R3 — pricing.fxReconcile is DELIBERATELY ABSENT from this list, and that is the same restraint
-  // recorded on SYS_REQUIRED_ACTION_LIST_VERSION_ above. This list is the actions PAGES depend on, probed so
-  // that a partial sync stops looking like a transport fault; a reconciliation is run by an operator, and
-  // listing it would report every deployment that has never needed it as missing something. Its availability
-  // is published by the two things that do not need a page to care: 73_'s manifest row at R22, and
-  // SYS_DEPLOYED_ACTION_CONTRACT_VERSION_ at 16. productPricing.workspace.get and createShipmentFromPlan
-  // both waited here in exactly the same way until a page actually called them.
+{ action: 'auth.config', handler: 'paControl_', used_by: 'Password login configuration only' },
+{ action: 'auth.login', handler: 'paControl_', used_by: 'Password login' },
+{ action: 'auth.logout', handler: 'paControl_', used_by: 'Session revocation' },
+{ action: 'siteSku.planning.list', handler: 'handleSiteSkuPlanningList_', used_by: 'Site Inventory scoped SKU editor' },
+{ action: 'siteSku.planning.update', handler: 'handleSiteSkuPlanningUpdate_', used_by: 'Site Inventory model and sales status only' },
+
+
+
+{ action: 'fxRateBook.get', handler: 'handleFxRateBookGet_', used_by: 'FX Rate Book (Administration)' },
+{ action: 'fxRateBook.save', handler: 'handleFxRateBookSave_', used_by: 'FX Rate Book save' },
+{ action: 'system.sourceRevision', handler: 'handleSourceRevisionGet_', used_by: 'Site Inventory held-answer check' },
+{ action: 'weeklyShipping.workspace.get', handler: 'handleWeeklyShippingWorkspaceGet_', used_by: 'Weekly Shipping Plan' },
+{ action: 'shipment.workspace.get', handler: 'handleShipmentWorkspaceGet_', used_by: 'Shipment Draft / Overview / Map' },
+{ action: 'purchaseOrder.workspace.get', handler: 'handlePurchaseOrderWorkspaceGet_', used_by: 'Purchase Order Workspace' },
+{ action: 'inventoryReplenishment.workspace.get', handler: 'handleInventoryReplenishmentWorkspaceGet_', used_by: 'Site Inventory' },
+
+
+{ action: 'inventoryScope.registry.get', handler: 'handleInventoryScopeRegistryGet_', used_by: 'Site Inventory scope selectors' },
+{ action: 'system.shippingAllocationSchemaDiagnostic', handler: 'handleShippingAllocationSchemaDiagnostic_', used_by: 'Execution Plan schema diagnostic' },
+{ action: 'system.requestOrderSendDiagnostic', handler: 'handleRequestOrderSendDiagnostic_', used_by: 'Send Request diagnostic' },
+{ action: 'system.twoVerticalFlowsDiagnostic', handler: 'handleTwoVerticalFlowsDiagnostic_', used_by: 'Two-vertical flow diagnostic' },
+{ action: 'system.requestOrderSendReconcile', handler: 'handleRequestOrderSendReconcile_', used_by: 'Interrupted Send Request reconciliation' },
+
+
+
+{ action: 'requestOrder.send.orchestrate', handler: 'handleRequestOrderSendOrchestrate_', used_by: 'Send Request (server orchestration)' },
+{ action: 'requestOrder.sendWorkset.get', handler: 'handleRequestOrderSendWorksetGet_', used_by: 'Send Request (slim workset / confirmation counts)' },
+
+
+
+{ action: 'requestOrder.send.status', handler: 'handleRequestOrderSendStatus_', used_by: 'Send Request (reload resume / progress)' },
+{ action: 'requestOrder.allocationDraft.ensureAndEdit', handler: 'handleRequestOrderAllocationDraftEnsureAndEdit_', used_by: 'Order Allocation quantity edit (canonical draft create/update)' },
+{ action: 'system.allocationDraftIdentityDiagnostic', handler: 'handleAllocationDraftIdentityDiagnostic_', used_by: 'Allocation-draft identity reconciliation (read-only)' },
+
+{ action: 'upsertRequestOrderAllocationDraft', handler: 'handleUpsertRequestOrderAllocationDraft_', used_by: 'Send Request (allocation draft)' },
+{ action: 'upsertRequestOrderAllocationDraftLines', handler: 'handleUpsertRequestOrderAllocationDraftLines_', used_by: 'Send Request (allocation lines)' },
+{ action: 'submitRequestOrderAllocationDrafts', handler: 'handleSubmitRequestOrderAllocationDrafts_', used_by: 'Send Request (lifecycle advance)' },
+{ action: 'createRequestOrderDraft', handler: 'handleCreateRequestOrderDraft_', used_by: 'Send Request (Request Order)' },
+{ action: 'createPurchaseOrderFromRequest', handler: 'handleCreatePurchaseOrderFromRequest_', used_by: 'Request Order -> PO Draft' },
+{ action: 'requestOrder.workspace.get', handler: 'handleRequestOrderWorkspaceGet_', used_by: 'Request Order Workspace' },
+
+
+{ action: 'upsertShippingAllocationDraft', handler: 'handleUpsertShippingAllocationDraft_', used_by: 'Execution Plan route save (header)' },
+{ action: 'system.executionPlanConflictDiagnostic', handler: 'handleExecutionPlanConflictDiagnostic_', used_by: 'F1-7N-FB-4A §C read-only Execution Plan identity conflict diagnostic' },
+{ action: 'system.requestOrderSendDiagnosticStatus', handler: 'handleRequestOrderSendDiagnosticStatus_', used_by: 'F1-7N-FB-4A addendum §G read-only Request Order Send diagnostic ownership + cycle resolution' },
+{ action: 'upsertShippingAllocationDraftLines', handler: 'handleUpsertShippingAllocationDraftLines_', used_by: 'Execution Plan route save (lines)' },
+
+
+
+
+
+
+{ action: 'upsertShippingAllocationDraftAtomic', handler: 'handleUpsertShippingAllocationDraftAtomic_', used_by: 'Execution Plan route CREATE/UPDATE (atomic header + line)' },
+{ action: 'getShippingAllocationDraftWorkspace', handler: 'handleGetShippingAllocationDraftWorkspace_', used_by: 'Execution Plan persisted readback' },
+{ action: 'cancelShippingAllocationDraft', handler: 'handleCancelShippingAllocationDraft_', used_by: 'Execution Plan draft cancel' },
+{ action: 'system.shippingAllocationDraftDiagnostic', handler: 'handleShippingAllocationDraftDiagnostic_', used_by: 'Execution Plan save diagnostic' },
+{ action: 'submitAllocationDraftsToShippingPlans', handler: 'handleSubmitAllocationDraftsToShippingPlans_', used_by: 'Site Inventory Submit Plan' },
+
+
+
+{ action: 'factoryStockGuard.get', handler: 'handleFactoryStockGuardGet_', used_by: 'Weekly Shipping Plan factory-availability indicator + operator guard preflight (read only)' },
+{ action: 'confirmShipmentAndDispatch', handler: 'handleConfirmShipmentAndDispatch_', used_by: 'Confirm Shipment' },
+
+
+
+
+
+
+
+{ action: 'createShipmentFromPlan', handler: 'handleCreateShipmentFromPlan_', used_by: 'Weekly Shipping Plan -- Retry Shipment Draft (approval recovery)' },
+
+
+
+
+
+
+{ action: 'cancelShipmentDraft', handler: 'handleCancelShipmentDraft_', used_by: 'Shipment Draft -- Cancel Shipment Draft (releases the factory stock reservation)' },
+{ action: 'updatePurchaseOrderStatus', handler: 'handleUpdatePurchaseOrderStatus_', used_by: 'Send PO' },
+{ action: 'document.list', handler: 'handleEntityDocumentList_', used_by: 'Document Panels' },
+{ action: 'document.retry', handler: 'handleDocumentRetry_', used_by: 'Document retry' },
+{ action: 'document.diagnostic.purchaseOrder', handler: 'handlePoDocumentDiagnostic_', used_by: 'PO diagnostic' },
+{ action: 'document.diagnostic.shipment', handler: 'handleShipmentDocumentDiagnostic_', used_by: 'Shipment diagnostic' },
+{ action: 'finalizeShipmentFinalOutput', handler: 'handleFinalizeShipmentFinalOutput_', used_by: 'Shipment snapshot' },
+{ action: 'import.template.get', handler: 'handleImportTemplateGet_', used_by: 'XLSX import (R67)' },
+{ action: 'import.validate', handler: 'handleImportValidate_', used_by: 'XLSX import (R67)' },
+{ action: 'import.commit', handler: 'handleImportCommit_', used_by: 'XLSX import (R67)' },
+{ action: 'import.receipt.get', handler: 'handleImportReceiptGet_', used_by: 'XLSX import (R67)' },
+{ action: 'import.history.list', handler: 'handleImportHistoryList_', used_by: 'XLSX import (R67)' },
+
+
+
+
+
+
+
+
+
+
+
+{ action: 'shipment.eta.update', handler: 'handleUpdateShipmentEta_', used_by: 'Shipment Map ETA edit (bounded eta-only writer; owner = 31_)' },
+{ action: 'shipment.route.advance', handler: 'handleAdvanceShipmentRoutePoint_', used_by: 'Shipment Map route-point advance (owner = 31_)' },
+{ action: 'skuDetails.workspace.get', handler: 'handleSkuDetailsWorkspaceGet_', used_by: 'SKU Details / SKU Regional Details scoped read (owner = 59_)' },
+{ action: 'system.executionPlanDuplicateLineDiagnostic', handler: 'handleExecutionPlanDuplicateLineDiagnostic_', used_by: 'F1-7N-FB-4E-R2 §3 read-only Execution Plan duplicate-line diagnostic (owner = 68_)' },
+
+
+
+{ action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' },
+
+
+
+
+
+
+{ action: 'pricing.update', handler: 'handlePricingUpdate_', used_by: 'SKU Regional Details — per-field price editor + price template import (owner = 73_)' },
+{ action: 'pricing.write.status', handler: 'handlePricingWriteStatus_', used_by: 'SKU Regional Details — read-only commit-receipt lookup after a lost write response (owner = 73_)' },
+
+
+
+
+
+{ action: 'marketplace.allocationPriority.set', handler: 'handleSetMarketplaceAllocationPriority_', used_by: 'Site Priority — the bounded allocation_priority writer (canonical-collision refusal + marketplace_id identity guard + mandatory compare-and-set; owner = 03_)' },
+{ action: 'upsertMarketplace', handler: 'handleUpsertMarketplace_', used_by: 'Add Marketplace — the marketplace master upsert (owner = 03_)' }
+
+
+
+
+
+
+
 ];
 
-// The tables the Submit-to-Map vertical slice reads or writes. Reported as present/row-count only.
+
 var SYS_SLICE_TABLES_ = [
-  'shipping_allocation_drafts', 'shipping_allocation_draft_lines',
-  'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_line_allocations',
-  'shipment_routes', 'shipment_events', 'shipment_final_output_snapshots', 'shipment_final_output_lines',
-  'shipment_final_output_line_pos', 'generated_documents', 'document_templates', 'document_template_fields',
-  'warehouses', 'logistics_locations'
+'shipping_allocation_drafts', 'shipping_allocation_draft_lines',
+'shipping_plans', 'shipping_plan_lines', 'shipments', 'shipment_lines', 'shipment_line_allocations',
+'shipment_routes', 'shipment_events', 'shipment_final_output_snapshots', 'shipment_final_output_lines',
+'shipment_final_output_line_pos', 'generated_documents', 'document_templates', 'document_template_fields',
+'warehouses', 'logistics_locations'
 ];
 
 function sysStr_(v) { return String(v == null ? '' : v).trim(); }
-// Probe a handler symbol WITHOUT invoking it. A missing symbol is the signature of a partial file sync.
-function sysHandlerPresent_(name) {
-  try { return typeof this[name] === 'function'; } catch (e) { /* fall through */ }
-  try { return eval('typeof ' + name) === 'function'; } catch (e2) { return false; }
+
+// SECURITY-63 (R71 layer; the H1 approach + the review improvements): probe names reach this module from an anonymous caller
+// (system.health probe_symbols / probe_actions). A name is looked up ONLY after a strict identifier check, ONLY as an OWN property
+// of the global object, and ONLY through its property descriptor: no eval, no expression, no inherited name, and a getter is never
+// run (an accessor answers present). Top-level function / var declarations are own data properties of the Apps Script V8 global.
+var SYS_PROBE_NAME_MAX_ = 128;
+var SYS_PROBE_LIST_MAX_ = 256;   // per list (probe_actions, probe_symbols): names past it are not looked up
+var SYS_PROBE_NAME_RE_ = /^[A-Za-z_$][A-Za-z0-9_$]*$/;
+function sysProbeNameValid_(name) {
+return typeof name === 'string' && name.length > 0 && name.length <= SYS_PROBE_NAME_MAX_ && SYS_PROBE_NAME_RE_.test(name);
 }
-// -------------------------------------------------------------------------------------------------------------
-// F1-7N-FB-4A ADDENDUM §H — PER-MODULE BUILD STAMPS + CALLER-DRIVEN PROBES.
-//
-// THE PROBLEM WITH missing_actions=[] IS NOT ONLY THAT IT IS SELF-REFERENTIAL — IT IS THAT IT CANNOT SEE A
-// MIXED DEPLOYMENT. If 63_ is current but 66_ is a round behind (files are copied into the Apps Script editor
-// ONE AT A TIME, so a half-finished sync is the normal failure), every required action still resolves — the
-// symbols exist — and health reports a clean bill while the operator runs last round's code.
-//
-// Two additions fix that, and neither asks the deployment to grade its own homework:
-//
-//   1. MODULE BUILD STAMPS. Each owner file compiles in its OWN build constant recording the round in which
-//      THAT FILE last changed, and the manifest below records what each is EXPECTED to declare. This reads them
-//      through `typeof` (never invoking anything) and compares. A file that was not re-copied reports an OLDER
-//      build than its manifest entry, and `mixed_deployment` becomes true. The evidence comes from the OTHER
-//      files, so a stale 63_ cannot conceal a stale 66_.
-//
-//      The stamp is deliberately NOT required to equal SYS_BUILD_VERSION_: a file that did not change this round
-//      should not have to be edited to prove it is current. 67_ legitimately still declares F1-7N-FB-3C.
-//      A file with no stamp at all (16_, 31_, 57_) is proven instead by the caller's SYMBOL probe below, which
-//      names a global that only the current version of that file defines.
-//
-//      ORDERING NOTE, STATED RATHER THAN ASSUMED: the manifest itself lives in 63_, so a stale 63_ carries a
-//      stale manifest. That case is caught FIRST and by different evidence — a stale 63_ reports an older
-//      deployed_action_contract_version than the frontend pins, which is the check the client runs before it
-//      looks at uniformity at all.
-//
-//   2. CALLER-DRIVEN PROBES. The caller sends the exact action names and global symbols IT needs
-//      (probe_actions / probe_symbols). The answer is computed against the CALLER's list, not against the
-//      deployment's own SYS_REQUIRED_ACTIONS_, so a deployment that predates an action reports it ABSENT
-//      instead of reporting "nothing missing". This is the half that breaks the self-reference.
-//
-// Both are pure reads: `typeof` on a global, and a string lookup. Nothing is invoked and nothing is written.
-// -------------------------------------------------------------------------------------------------------------
-// file -> { symbol it compiles in, the build it is EXPECTED to declare (the round it last changed) }.
+function sysGlobalObject_() {
+return (typeof globalThis !== 'undefined') ? globalThis : (function () { return this; })();
+}
+function sysGlobalOwn_(name) {
+if (!sysProbeNameValid_(name)) return undefined;
+var d = Object.getOwnPropertyDescriptor(sysGlobalObject_(), name);
+if (!d) return undefined;
+return ('value' in d) ? d.value : true;
+}
+function sysHandlerPresent_(name) {
+try { return typeof sysGlobalOwn_(name) === 'function'; } catch (e) { return false; }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 var SYS_MODULE_BUILD_STAMPS_ = [
-  // R6-R6 §4 — SELF-REFERENTIAL BY CONSTRUCTION, AND SAID SO. Both sides of this comparison are declared in
-  // this file, so it can never fail and proves nothing about 63_. A stale 63_ is caught earlier and by other
-  // evidence (its deployed_action_contract_version is older than the frontend's pinned minimum). The entry is
-  // kept because the row is what publishes 63_'s own module build to a reader, not because it is a check.
-  { file: '63_api_v1_system_health.gs', symbol: 'SYS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55', owns: 'this module: deployment identity + health + transport contract + the effective feature-flag report (self-referential row — not a partial-sync check)' },
-  // PRICING-R2 — 73_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL, for the reason a
-  // WRITE owner is always the worst partial sync: 01_router.gs dispatches pricing.update to
-  // handlePricingUpdate_, so a deployment carrying the router without this file routes a live price write
-  // to an undefined handler. There is no flag axis to soften it — this action has no feature flag, because
-  // its real gate is physical: the three ownership columns are an operator migration, and until they exist
-  // the handler refuses with MISSING_REQUIRED_HEADER having written nothing. A missing COLUMN is recoverable
-  // by provisioning it; a missing FILE needs a sync, and only this manifest can tell the operator which.
-  // PRICING-R3 — R21 -> R22. The same file now owns TWO actions, and the second one is the reason the row
-  // matters more than it did: pricing.fxReconcile can write every row in pricing_list in one call. A project
-  // holding the R21 copy routes it (if 01_ was synced) into an undefined handler, and one holding R22
-  // without the R22 router has the reconciliation and no way to ask for it.
-  { file: '73_api_v1_pricing_write.gs', symbol: 'PRW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25', owns: 'the canonical pricing write AND the FX reconciliation: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, the frozen FX storage-precision table, and the auto_* rebuild that refreshes an effective price only where that field explicitly says AUTO' },
-  // FC-SUMMARY-R3-R1 §B — THE FC SUMMARY READ OWNER HAD NO ROW, AND ITS ABSENCE WAS SILENT.
-  //
-  // 58_ answers every primary render of the FC Summary page, and until now a project holding last round's
-  // copy of it reported a completely clean bill of health: the action resolved, the handler existed, and the
-  // page was answered by the wrong file. The R3-R1 measurement made that concrete — the slice vocabulary and
-  // the one-read-per-sheet IO are both invisible to an action list, because neither adds or removes an action.
-  // A declared build is the only thing that can tell a half-finished sync from a finished one, so it now has
-  // one. The stamp VALUE is the round in which the file last changed behaviourally, as everywhere else here.
-  { file: '58_api_v1_fc_summary_workspace.gs', symbol: 'FCSWS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page\'s non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list' },
-  // F1-7N-FC-1B-E3 §E.9 — the CONFIG is an owner file too. It holds
-  // INVENTORY_AI_PLAN_DB_GENERATION_ENABLED_, so a project still running the previous copy of it writes no
-  // allocation drafts while the repository says it should; without an entry here that difference had no name.
-  { file: '00_config.gs', symbol: 'CONFIG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'global constants + the feature flags of record (incl. Inventory AI Plan DB generation and, from R51, OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ — the staged-OFF gate the four Preview actions check before any database is opened)' },
-  // F1-7N-FC-1B-E3-R1 — 61_ owns the harvest, the canonical readiness decision and the K2 generation, and
-  // it carried no stamp at all: a deployment that answers HARVEST_NOT_READY with no issues and a deployment
-  // that predates the typed-readiness fix were the same observation from outside. Now they are not.
-  { file: '61_api_v1_weekly_ai_plan.gs', symbol: 'WAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R47', owns: 'weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate' },
-  { file: '60_api_v1_inventory_replenishment_workspace.gs', symbol: 'SIR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45', owns: 'the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured. R44 replaces the thirteen first-layer SpreadsheetApp reads with ONE Sheets.Spreadsheets.get and ONE Values.batchGet - measured 22,006 ms to 2,265 ms in Production. A pre-R44 copy is again merely SLOW, but this row carries a SECOND fact now: R44 is the first release whose read path depends on an ADVANCED SERVICE, so a project missing Sheets v4 does not run this file slowly, it cannot run its primary read at all - which is why runtime_authority.advanced_services attests the service by EXECUTION rather than by reading a manifest that may not be the one deployed. R45 repairs what the R44 acceptance itself caught: the declared date columns were converted with two Utilities calls per cell, which cost 74,621 ms of an 83,465 ms read while the Sheets call itself cost 3,110. The conversion is unchanged in output and now probes the spreadsheet timezone once per DISTINCT YEAR instead, falling back to the per-cell path for any year whose offset it cannot prove constant - so a pre-R45 copy is SLOW rather than wrong, and dateCellsConverted beside tzProbeCalls in the diagnostics is how an acceptance tells which one it measured, because the R44 ratio is exactly two calls per cell' },
-  // F1-7N-FB-4E-R3 §C — the Overseas Stock workspace owner. Registered here because its absence is the exact
-  // failure this manifest exists to name: a deployment carrying the R3 router but no 70_ would route the action
-  // to an undefined handler, and the page has no fan-out left to fall back to.
-  { file: '70_api_v1_overseas_stock_workspace.gs', symbol: 'OSW_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R3', owns: 'Overseas Stock scoped read workspace' },
-  // PRODUCT-STRATEGY-P1-B1-R1 - 72_ IS REQUIRED FROM ITS FIRST RELEASE, AND DELIBERATELY NOT OPTIONAL.
-  // 01_router.gs already dispatches productPricing.workspace.get to handleProductPricingWorkspaceGet_ on
-  // both GET and POST, so a deployment carrying the router but not 72_ routes a live action to an
-  // undefined handler - the exact partial sync this manifest exists to name. An `optional: true` row
-  // would forgive precisely that. The FEATURE FLAG is a separate axis and does not soften this one:
-  // PRODUCT_STRATEGY_ENABLED_ = false makes the action REFUSE, and a refusal from a handler that is
-  // present is a different fact from a handler that is not there. Only the first is recoverable by
-  // flipping a flag; the second needs a file copied.
-  // P1-B7E - R10 with the file. The correction is inside ppwEnvelope_, so no action was added and
-  // the action contract below stays at 14; what changed is which action a response says it served.
-  // PRICING-R4G — R10 -> R24, AND THIS IS THE FILE THE ROUND EXISTS FOR. It held R10 through five
-  // releases because the read owner genuinely had not changed; R4F found it publishing pricing_list's
-  // override cells under the names every business display reads, with no auto_* anywhere in the payload,
-  // so a row whose price comes from auto_* arrived as a null and left the price chart. A project holding
-  // the R10 copy beside 73_ at R24 shows the right-looking wrong number, which is the worst shape a
-  // partial sync can take.
-  { file: '72_api_v1_product_pricing_workspace.gs', symbol: 'PPW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R24', owns: 'the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows' },
-  { file: '66_api_v1_request_order_send.gs', symbol: 'ROS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R49', owns: 'Request Order Send orchestration + planning-cycle authority' },
-  // 71_ is the guard SEAM. Its absence is precisely the failure the manifest exists to name: 11_ and 61_ both
-  // refuse closed without it (FACTORY_STOCK_GUARD_SEAM_MISSING), so a partial sync stops the flow rather than
-  // running it unguarded — but only a deployment that can be ASKED which files it has can tell an operator why.
-  { file: '71_api_v1_factory_stock_guard.gs', symbol: 'FSG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1', owns: 'the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate, the REQUIRED (never lazily created) override audit ledger, and the journalled verified rollback the plan transition unwinds through' },
-  { file: '67_api_v1_allocation_draft_identity.gs', symbol: 'ADI_BUILD_VERSION_', expected: 'F1-7N-FB-3C', owns: 'allocation-draft identity diagnostic (unchanged since FB-3C)' },
-  // F1-7N-FB-4E-R2: 68_ changed because its duplicate diagnostic became REACHABLE for the first time and
-  // needed a scope guard on the routed path. A deployment carrying the R2 router but a FB-4D copy of 68_ would
-  // route to a handler with no guard, so this pairing must be provable rather than assumed.
-  { file: '68_api_v1_execution_plan_conflict_diagnostic.gs', symbol: 'EPC_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R2', owns: 'Execution Plan identity conflict diagnostic + routed read-only duplicate-line diagnostic' },
-  // 68_ did NOT change in R3, so its stamp deliberately stays at R2. A stamp bumped to look current would make
-  // this manifest useless for detecting the thing it exists to detect.
-  // F1-7N-FB-4D §E — the four owners the Site Inventory and SKU chains actually depend on. Each of these
-  // files answers every one of its actions even when it is a round behind, so a resolvable action list can
-  // never detect a partial sync of them. Only the declared build can.
-  // F1-7N-FB-4F-B3 — the allocation writer learned the two append-only columns BEFORE they exist, so its stamp
-  // moves and this expectation moves with it. The pair is the partial-sync detector for this deployment set:
-  // sync 16_ without 63_ and the stale manifest still expects F1-7N-FB-4D; sync 63_ without 16_ and the new
-  // manifest expects B3 while the file declares 4D. Either direction reports mixed_deployment.
-  { file: '16_shipping_allocation_handlers.gs', symbol: 'SAD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2', owns: 'Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys)' },
-  // F1-7N-FB-4F-B3 — REGISTERED HERE FOR THE REASON THIS MANIFEST EXISTS. B1 landed the route-identity contract
-  // deliberately unmanifested because it was inert. It is not inert any more: 16_ now calls into it for the
-  // typed schema refusals and for the K4 identity, so a deployment carrying the B3 writer WITHOUT this file
-  // would refuse a marketplace route it is supposed to accept, and would fall back to K2 for a route the
-  // writer believes is K4-resolved. That is exactly the half-finished sync this manifest is here to name.
-  { file: '69_api_v1_route_identity_contract.gs', symbol: 'RIC_BUILD_VERSION_', expected: 'F1-7N-FB-4F-B3', owns: 'frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)' },
-  // R6-R7-R5 §4 — 11_ now also owns the shared factory stock overage gate on submit/approve. A project running
-  // the previous copy of it routes the same action, accepts the same payload and applies NO guard, so this row
-  // is the only thing that can tell an operator why a plan that should have been challenged went through.
-  { file: '11_shipping_plan_handlers.gs', symbol: 'SP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', owns: 'canonical shipping_plans / shipping_plan_lines Submit owner + the typed approval-recovery answer + the shared factory stock overage gate on submit/approve, the approval recheck, and the one journalled transaction the status cells / note / override audit are committed and rolled back as' },
-  // F1-7N-FC-1A §J — THE FOUR OWNERS OF THE RESERVATION MODEL. Each answers every one of its actions
-  // when a round behind, so no resolvable action list and no handler probe can see a partial sync of them.
-  // What each one does differently is the point:
-  //   21_  no reservation primitives at all: 12_ and 22_ throw on an undefined function.
-  //   12_  creates Shipment Drafts that reserve NOTHING, while the site believes reservation is live.
-  //   22_  deducts through its OLD inline implementation and never RELEASES the reservation, so available
-  //        stock drifts permanently downward and shipments are refused for stock that is physically present.
-  // The 12_ and 22_ cases are the dangerous ones precisely because they return success.
-  { file: '21_factory_inventory_handlers.gs', symbol: 'FSTX_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation' },
-  { file: '05_overseas_inventory_handlers.gs', symbol: 'OVERSEAS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R35', owns: 'the overseas inventory snapshot import (GROSS semantic: stored available = source available - the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import), the inventory adjustment handler, and the OVERSEAS RESERVATION LIFECYCLE — acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, with ovsAllocatableTx_ as the single place the allocatable rule is written' },
-  { file: '12_shipment_handlers.gs', symbol: 'SHIPMENT_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34', owns: 'Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed' },
-  // F1-7N-FC-1A-R1 §K — the PO receipt owner gains a stamp, because an old 13_ ALSO returns success.
-  // It silently CLAMPS an over-receipt: an operator entering 900 against a remaining 500 is told the receipt
-  // succeeded and is never told the other 400 were discarded. Only a declared build separates that from a
-  // deployment that refuses properly.
-  // R12 - AND THE ROW NOW COVERS A SECOND, QUIETER OWNERSHIP. 13_ no longer carries a Target Rule matcher of
-  // its own; it reads the raw rows and delegates to KMPD.resolveTargetRule. An old 13_ still resolves, still
-  // succeeds, and answers with the retired matcher that ignored year, company, country and marketplace.
-  { file: '13_procurement_handlers.gs', symbol: 'PROC_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R12', owns: 'PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp) + the procurement forecast’s per-month Target Rule delegation to the shared KMPD resolver (no local matcher)' },
-  // R12 - THE FC WRITE OWNER, REGISTERED FOR THE REASON THIS MANIFEST EXISTS. 14_ owns the fc_target_rules
-  // upsert. An old copy answers the same action with the same payload and returns SUCCESS while APPENDING A
-  // DUPLICATE, because its whole business key was target_rule_id and the FC modal sends none. Two rules for
-  // one site then make the READ refuse (DUPLICATE_TARGET_RULE_IDENTITY) -- so a partial sync of this release
-  // breaks the forecast through a file nobody was looking at, with the write path reporting success.
-  // R13 - the row now also covers the version contract. An old 14_ IGNORES expected_row_version, so it
-  // accepts every stale write the new one refuses, and answers success either way.
-  // R15 - the row now also covers fc_special_events. An old 14_ accepts a versionless event update and
-  // rewrites updated_at on a save that changed nothing, so the two guarantees this round adds would be
-  // silently absent on a project that took 20_ and left this file behind.
-  // B1-PERF — 04_ enters the manifest. It had no build stamp and no row here, so a partial sync of
-  // the Regular Forecast writer could not be detected at all. `owns` is kept short deliberately: the
-  // load-surface analyzer reads a bounded tail of this file.
-  // PRICING-R4E — R19 -> R22. This file is the ONLY path that creates a pricing_list row, and what it
-  // writes into a new one changed: a cross-currency row no longer receives an invented fx_rate of 1 with
-  // the base prices copied into auto_* and the effective fields. A project holding the R19 copy keeps
-  // manufacturing rows whose site price is the base number in another currency's clothing, and no FX run
-  // can repair them because R19 also leaves the ownership flags blank. That is the partial sync this row
-  // exists to make visible.
-  { file: '04_marketplace_forecast_import.gs', symbol: 'FCREG_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55', owns: 'the Regular Forecast batch writer: validate-all-before-first-mutation, the script lock over the authoritative read and the writes, column-bounded range writes and the one append block — AND the canonical pricing_list creation contract: base_currency read from sku_details, rate 1 where the currencies are identical and the stored coefficient where they are not - read ONCE per import so a batch cannot mix versions - still fail-closed PENDING_FX when the book holds no rate, and the ownership flags written FALSE at creation so the first reconciliation can finish the row' },
-  { file: '14_fc_write_handlers.gs', symbol: 'FCW_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt' },
-  // R15 - THE CAMPAIGN WRITER'S FIRST REQUIRED ROW. The campaign business key IS the Special Event's
-  // identity: an old copy keys on campaign_name, so two BFCM windows in one year resolve to one row and
-  // the earlier event is overwritten by the later one with a success message. Nothing else in the
-  // deployment report would say so, which is exactly why the row is required rather than optional.
-  { file: '20_campaign_write_handlers.gs', symbol: 'CAMPAIGN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32', owns: 'the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit' },
-  // R12 - THE GENERATED BUNDLE, IDENTIFIED BY CONTENT RATHER THAN BY A STAMP. 90_ is the only manifest owner
-  // that is BUILT, not written, so a hand-typed build stamp would be the wrong instrument twice over: it
-  // would have to be edited in the builder every round, and it could be edited to look current without the
-  // bytes moving. KM_BUNDLE_CONTENT_HASH_ is derived from the module contents by the builder, so it cannot
-  // be advanced without a real change and cannot fail to advance when one happens.
-  //
-  // Its absence is NOT loud. 13_ guards on typeof KMPD.resolveTargetRule and returns null when it is missing,
-  // and a null target is a SKIPPED month, not an error: an old bundle makes the procurement forecast quietly
-  // drop months. An old-but-present bundle is worse still -- it resolves by the retired first-row-wins rule.
-  // S8-B3-R1A (R51) — the Overseas Allocation Preview job. A NEW file is the partial-sync case this manifest
-  // exists for: without a row here, a project that copied 01_router.gs but not 47_ would route four actions to
-  // handlers that do not exist, and the only symptom would be a runtime error per click.
-  { file: '75_api_v1_fx_rate_book.gs', symbol: 'FX_BOOK_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55', owns: 'the stored FX rate book: one Script Property holding rates and change history together so a half-written save cannot leave them disagreeing, a UTF-8 byte capacity guard measured BEFORE the write, strict typing of both the stored document and the request doc_version, a compare-and-swap on that version inside the script lock, a readback that refuses to report a save it cannot confirm, and a write authority that fails closed on an unidentifiable caller. It owns NO price formula and NO price: conversion and precision stay in 73_, and saving a rate moves nothing until a reconciliation runs' },
-  { file: '74_api_v1_overseas_allocation_preview_job.gs', symbol: 'OAP_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51', owns: 'the READ-ONLY async Overseas Allocation Preview job: lifecycle (start/status/result/cancel + continuation/self-heal), the short-lock discipline that keeps it from starving Gap Materialization on the shared script lock, and the generation-keyed chunked Script-Property result store. It owns NO allocation formula - eligibility comes from 43_, demand from allocatedForecastQty, distribution from KMMSA' },
-  // S8-B3-R3-CP2V (R53) - 42_ JOINS THIS MANIFEST, having owned the recommendation read path with no stamp.
-  // From R53 it calls the Sheets v4 advanced service, so a stale copy answers with the SAME numbers while
-  // spending twenty-one sheet reads instead of two remote calls - invisible to a contract comparison, and
-  // the whole cost of the page, because this is the only read the handler makes.
-  { file: '42_api_v1_recommendation_workspace.gs', symbol: 'RECO_WS_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54', owns: 'the recommendation workspace READ transport: two Sheets v4 calls for the twelve tables whose date columns 60_ has proven, the per-sheet reader for the rest, the named refusals for a malformed batch reply, the capped non-silent fallback, and the bounded canonicalRead diagnostic. It owns NO formula and NO line shape - RECO_WS_HANDLER_VERSION_ names that contract and did not move' },
-  { file: '90_generated_supply_planning_bundle.gs', symbol: 'KM_BUNDLE_CONTENT_HASH_', expected: '0e40bada359bccd27da12117a792ae167fe84db732bb0e2dd56b7e29315acaa8', owns: 'the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp' },
-  { file: '22_shipment_dispatch_handlers.gs', symbol: 'CSD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R37', owns: 'Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment\'s DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read \u2014 it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable' },
-  // F1-7N-FB-4E-R4B-R3 §1 - moved with the file. R4B-R2 changed the GET read dispatch; leaving the manifest at
-  // R4A1 would have made a CORRECTLY synced router report as stale, and an UNSYNCED one report as current.
-  { file: '01_router.gs', symbol: 'RTR_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55', owns: 'doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release. R52 ADDS ONE MORE - marketplace.allocationPriority.set - moving the action contract 19 -> 20; a project holding a pre-R52 router cannot route a priority write at all, and because upsertMarketplace simultaneously stops accepting the field, that is a total loss of the capability rather than a degraded one' },
-  // S8-B3-R3-CP2I (R52) - 03_ JOINS THIS MANIFEST, HAVING OWNED A MASTER-TABLE WRITE WITHOUT A STAMP. 73_'s
-  // entry above states the rule: a WRITE owner is the worst partial sync. 03_ met that description for every
-  // round it has existed and had no row here, so a stale copy was invisible to mixed_deployment and
-  // discoverable only by a save behaving wrongly. From R52 the router dispatches a NEW action here, so a
-  // project holding a pre-R52 03_ beside an R52 01_ routes it into an undefined handler. The handler SYMBOL
-  // probe below is the independent second gate; this row names the FILE to re-copy.
-  { file: '03_master_data_handlers.gs', symbol: 'MD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52', owns: 'the master-data write surface: the marketplace upsert (Add Marketplace) and, from R52, the bounded marketplace.allocationPriority.set writer - the ONLY writer of marketplaces.allocation_priority, with the canonical-collision refusal, the marketplace_id identity guard, the mandatory compare-and-set and the three-column write limit. R52 also makes upsertMarketplace REFUSE any payload carrying allocation_priority, and puts both writers on the shared script lock the sheet previously had no writer taking' },
-  // F1-7N-FB-4E-R4B-R3 §1 - THE TWO OWNERS THAT CHANGED IN R4B AND HAD NO STAMP AT ALL. Both answer every one of
-  // their actions when a round behind, so a resolvable action list can never see a partial sync of them; only a
-  // declared build can. The stamp VALUE names the round in which each last changed BEHAVIOURALLY; the SYMBOL was
-  // introduced in R4B-R3, so a copy older than R3 reports ABSENT rather than stale - a stronger signal, not a
-  // weaker one, and the reason the value is not bumped to R3 just to look current.
-  { file: '47_api_v1_recommendation_generation.gs', symbol: 'RECGEN_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R29', owns: 'recommendation generation + the bounded multi-scope order-draft readback' },
-  { file: '56_api_v1_ai_plan_first_layer.gs', symbol: 'APL_BUILD_VERSION_', expected: 'F1-7N-FB-4E-R4B-R1', owns: 'Order Planning AI Plan first layer + the KMFSA factory site-allocation share' },
-  // PRICING-R2 — 59_ moves because it gained the include.pricing table. A deployment holding the FB-4C-R1
-  // copy answers skuDetails.workspace.get perfectly and returns no prices, so the SKU Regional price panel
-  // renders empty with nothing anywhere saying why. An action list cannot see this: no action was added.
-  { file: '59_api_v1_sku_details_workspace.gs', symbol: 'SKD_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21', owns: 'SKU Details / SKU Regional scoped read workspace, incl. the include.pricing site-price table' },
-  // F1-7N-FB-4G-A2-R4 SS.J - the Request Order Send diagnostic STATUS ACTION is required in production, so its
-  // owner may not be a file whose whole contract is that it gets deleted. It moved into 66_, and the manifest
-  // follows it: a deployment is now complete WITHOUT the TEMP diagnostics file, which is what makes
-  // 'paste, run, remove' safe again. 66_ appears twice on purpose - two symbols, two independent lifecycles.
-  { file: '66_api_v1_request_order_send.gs', symbol: 'ROSEND_DIAG_BUILD_VERSION_', expected: 'F1-7N-FB-4G-A2-R4', owns: 'Request Order Send diagnostic status action + its configuration (single owner)' },
-  // F1-7N-FB-4C — the AI Plan draft lifecycle. Registered here because its ABSENCE is silent: the generator would
-  // still write its own rows and simply expire nothing, leaving last week's plan active and looking like advice.
-  { file: '69_api_v1_ai_plan_lifecycle.gs', symbol: 'AIPL_BUILD_VERSION_', expected: 'F1-7N-FC-1B-E3-R4-A2-R1-R1', owns: 'Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)' },
-  // F1-7N-FB-4C-ADDENDUM-MIGRATION — the USER-run lifecycle schema migration. Registered because its absence is
-  // ACTIONABLE: the AI Plan will refuse to run until the columns exist, and the only supported way to add them is
-  // this tool. Without the entry, "the run is blocked" and "the tool that unblocks it was never synced" look the same.
-  // F1-7N-FB-4G-A2-R4 §J.6 — OPTIONAL: a one-shot MIGRATION owner. It is MUST_KEEP_UNTIL_MIGRATION,
-  // and once the migration has run the operator is told to remove it. Treating its absence as a MIXED
-  // deployment made "remove the TEMP file" break the deployment contract — the same shape that took the
-  // Execution Plan down through the diagnostics file. Absent is fine; PRESENT-BUT-STALE is still a fault.
-  { file: 'TEMP_migrate_shipping_allocation_ai_lifecycle.gs', symbol: 'TEMP_AIMIG_BUILD_VERSION_', expected: 'F1-7N-FB-4C-ADDENDUM-MIGRATION', owns: 'AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)', optional: true },
-  // R6-R7-R5-R1 §A — THE OVERRIDE-AUDIT PROVISIONING TOOL IS DELIBERATELY *NOT* IN THIS MANIFEST.
-  //
-  // I put a row here first, reasoning from the row above. That analogy was wrong, and three suites said so
-  // in one step: every manifest reader resolves `assets/specs/active/apps-script/<file>` and only that,
-  // because this manifest lists the files SYNCED INTO THE PROJECT AS RUNTIME.
-  //
-  // S7-R4 — THE FOLDER IS NO LONGER WHAT DISTINGUISHES THEM, AND IT SHOULD NEVER HAVE BEEN. This note used
-  // to end 'the lifecycle migration above has a row because it lives in that folder'. S7-R4 moved every
-  // non-runtime TEMP tool out of the runtime folder, the lifecycle migration included, and its row stayed —
-  // so that sentence would now predict the opposite of the truth.
-  //
-  // The real distinction was already stated four lines above the row itself: ABSENCE IS ACTIONABLE. The AI
-  // Plan refuses until the columns exist and this tool is the only supported way to add them, so an operator
-  // who cannot tell 'the run is blocked' from 'the tool was never pasted' is stuck. system.health is where
-  // that question gets answered, which is what buys the row — and the row is OPTIONAL precisely because the
-  // file is NOT runtime: absent is the normal state, present-but-stale is the fault worth naming.
-  //
-  // The override-audit provisioning tool needs none of that: its own refusal, FACTORY_STOCK_OVERRIDE_AUDIT_
-  // SCHEMA_MISSING, carries the file name and both functions to run, so whoever hits the wall is told the way
-  // through it without asking this manifest. Discovery at the point of failure beats a registry entry.
-  //
-  // The override-audit provisioning tool lives in assets/tools/apps-script-migrations/, beside the allocation
-  // two-column append migration — which has no row either, and whose own suite asserts that its filename
-  // appears NOWHERE in this manifest. (That is why the sibling is described here and not named: the rule is
-  // tested as a substring, and it is right to be.) Discovery is handled where an operator actually meets the
-  // problem instead: the runtime's FACTORY_STOCK_OVERRIDE_AUDIT_SCHEMA_MISSING refusal carries the file name
-  // and both functions to run, so whoever hits the wall is told the way through it.
+  {
+    "file": "31_shipment_receipt_route_handlers.gs",
+    "symbol": "SHIP_RECEIPT_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-SO8-AFINAL4-A2ROUTE-AD1B-AD2-AD3",
+    "owns": "shipment receipt (31_ shipment.receipt.update): N1 r2 dispatch-evidence gate, edit-token version guard, zero-write REPLAYED, RECEIPT_SCOPE_UNBOUND; JR5 R4-m1 version claim before the first write"
+  },
+  {
+    "file": "32_shipment_line_allocation_handlers.gs",
+    "symbol": "SLA_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-AD3",
+    "owns": "shipment line PO allocation (32_ generate / Confirm execution): SCF1 F3 + legacy-orphan occupancy trace, J-m1/JR4 status decision table, J-m4 SHIPMENT_CANCEL_INCOMPLETE / R3-m3 SHIPMENT_ALLOCATION_STATE_INCONSISTENT; JR5 cancel trace bound to the 12_ F1 writer"
+  },
+  {
+    "file": "43_api_v1_gap_materialization.gs",
+    "symbol": "GAP_MAT_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-AD1B",
+    "owns": "gap materialization (43_): D5-V3 r5h (V3 gap lines, token flags); joint-r6 R72 pin (Owner pinsAll 2026-11-18)"
+  },
+  {
+    "file": "23_recommendation_persistence_repository.gs",
+    "symbol": "RPR_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72",
+    "owns": "recommendation persistence repository (23_): BV1; joint-r6 R72 pin (Owner pinsAll 2026-11-18)"
+  },
+  {
+    "file": "50_api_v1_warehouse_allocation_config.gs",
+    "symbol": "WAREHOUSE_ALLOCATION_CONFIG_BUILD_VERSION_",
+    "expected": "F1-7N-D-2k-R1-D5V3R5B-WA1",
+    "owns": "warehouse allocation config (50_ layer-50): D5-V3; declared stamp pinned so a half-synced 50_ is visible (Owner pinsAll 2026-11-18)"
+  },
+  {
+    "file": "39_document_runtime_service.gs",
+    "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
+    "expected": "PROD1-DGS-20261112-AD3",
+    "owns": "Production profile; Sandbox single-ticket recovery disabled"
+  },
+  {
+    "file": "17_carrier_handlers.gs",
+    "symbol": "CARRIER_LAYOUT_BUILD_VERSION_",
+    "expected": "SC2-CLT-20261111",
+    "owns": "exact known carrier lead time physical layout compatibility"
+  },
+  {
+    "file": "36_document_template_handlers.gs",
+    "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
+    "expected": "SC2-DTF-20261111",
+    "owns": "exact known document template field physical layout compatibility"
+  },
+  {
+    "file": "84_password_access.gs",
+    "symbol": "PA_BUILD_VERSION_",
+    "expected": "PA1-SBX-R1-20261111-PROD1",
+    "owns": "shared-password session authentication; configuration fails closed"
+  },
+  {
+    "file": "86_site_sku_planning.gs",
+    "symbol": "SSK_BUILD_VERSION_",
+    "expected": "SSK1-SBX-R2-20261111",
+    "owns": "scoped version-checked two-field Site SKU edit"
+  },
+  {
+    "file": "78_api_v1_import_batch.gs",
+    "symbol": "IMB_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5",
+    "owns": "shared import journal including Draft line removal undo and unknown-outcome marker"
+  },
+  {
+    "file": "82_api_v1_po_factory_import.gs",
+    "symbol": "PFI_BUILD_VERSION_",
+    "expected": "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4",
+    "owns": "local shared PO and factory stock import; activation pending"
+  },
+  {
+    "file": "83_api_v1_weekly_draft_lines.gs",
+    "symbol": "WDL_BUILD_VERSION_",
+    "expected": "WDL1-SBX-20261111-AF1",
+    "owns": "Draft-only quantity/add/remove SKU transaction; Pending Approval read-only"
+  },
+  {
+    "file": "79_api_v1_po_import.gs",
+    "symbol": "PMI_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-AF1",
+    "owns": "Purchase Order import: opening / historical Add New, id-based Update with row_version"
+  },
+  {
+    "file": "80_api_v1_shipment_import.gs",
+    "symbol": "SHI_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3",
+    "owns": "Shipment import: opening / historical Add New, id-based Update on a tracking / notes whitelist"
+  },
+  {
+    "file": "87_api_v1_shipment_route_init.gs",
+    "symbol": "RTI_BUILD_VERSION_",
+    "expected": "ROUTE-INIT-A2ROUTE-OD1-RV1-AD2-AD3",
+    "owns": "Imported-tracking route snapshot + one reported position (Add New position, ROUTE_INIT); audited COMMITTED proof read by 31_"
+  },
+  {
+    "file": "81_api_v1_inventory_import.gs",
+    "symbol": "IMI_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-IU2-IU3",
+    "owns": "Factory / Overseas inventory import: SET and ADD through the 21_ / 05_ authorities"
+  },
+  {
+    "file": "63_api_v1_system_health.gs",
+    "symbol": "SYS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4",
+    "owns": "this module: deployment identity, health and local PFI2/WDL1 dependency stamps"
+  },
+  {
+    "file": "73_api_v1_pricing_write.gs",
+    "symbol": "PRW_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25",
+    "owns": "the canonical pricing write AND the FX reconciliation: field-level manual ownership (three-state, blank = UNKNOWN), the per-field MANUAL / USE AUTO / NO_CHANGE contract, batch validation with zero writes until every line passes, the pricing_change_log audit writer with typed change_type, the frozen FX storage-precision table, and the auto_* rebuild that refreshes an effective price only where that field explicitly says AUTO"
+  },
+  {
+    "file": "57_api_v1_shipment_workspace.gs",
+    "symbol": "SHIP_WS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7",
+    "owns": "the Shipment READ workspace (shipment.workspace.get) incl. the SHIP-OPEN opening-record DTO fields recordOrigin / openingAsOf / openingSupplyMode"
+  },
+  {
+    "file": "58_api_v1_fc_summary_workspace.gs",
+    "symbol": "FCSWS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "owns": "the FC Summary READ workspace: the four primary-render tables, the bootstrap/regular/events/rules slices on one action, the server-derived filter facets that keep the page's non-cascading universes intact, one Sheets read per sheet per request, and the scoped pricing projection the Special Event group-card builder reads instead of the whole price list"
+  },
+  {
+    "file": "00_config.gs",
+    "symbol": "CONFIG_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51",
+    "owns": "global constants + the feature flags of record (incl. Inventory AI Plan DB generation and, from R51, OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ — the staged-OFF gate the four Preview actions check before any database is opened)"
+  },
+  {
+    "file": "61_api_v1_weekly_ai_plan.gs",
+    "symbol": "WAP_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64-V3B4-A2D14C-AD1B-AD3",
+    "owns": "weekly AI Plan harvest + canonical readiness refusal + K2 generation + the KMFCN forecast normalization gate"
+  },
+  {
+    "file": "60_api_v1_inventory_replenishment_workspace.gs",
+    "symbol": "SIR_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R56",
+    "owns": "the inventory workspace read + the recentWindow/only request contract + the per-table timing that names the expensive sheet + the R6-R5 router-entry/stage evidence that makes a timed-out read locatable in the execution log. R42 adds the SITE SCOPE: an exposure-only request may carry siteScope{company,country,marketplace} and is answered with a lineage reachability closure over the six exposure tables instead of every row of them. A pre-R42 copy ignores the field SILENTLY and returns every site - the same class of fault the recentWindow echo was added for, which is why this row exists rather than a comment. R43 makes ONE range read per table instead of two or three: the header validators now receive row 0 of the full-sheet read the handler already performs, so thirteen tables cost thirteen reads rather than thirty. Nothing in the request or the response moved, which is why a pre-R43 copy is SLOW rather than WRONG - and why this row is the only way an acceptance can tell which deployment it measured. R44 replaces the thirteen first-layer SpreadsheetApp reads with ONE Sheets.Spreadsheets.get and ONE Values.batchGet - measured 22,006 ms to 2,265 ms in Production. A pre-R44 copy is again merely SLOW, but this row carries a SECOND fact now: R44 is the first release whose read path depends on an ADVANCED SERVICE, so a project missing Sheets v4 does not run this file slowly, it cannot run its primary read at all - which is why runtime_authority.advanced_services attests the service by EXECUTION rather than by reading a manifest that may not be the one deployed. R45 repairs what the R44 acceptance itself caught: the declared date columns were converted with two Utilities calls per cell, which cost 74,621 ms of an 83,465 ms read while the Sheets call itself cost 3,110. The conversion is unchanged in output and now probes the spreadsheet timezone once per DISTINCT YEAR instead, falling back to the per-cell path for any year whose offset it cannot prove constant - so a pre-R45 copy is SLOW rather than wrong, and dateCellsConverted beside tzProbeCalls in the diagnostics is how an acceptance tells which one it measured, because the R44 ratio is exactly two calls per cell. R56 echoes the source revision the read started under (meta.sourceRevision)."
+  },
+  {
+    "file": "70_api_v1_overseas_stock_workspace.gs",
+    "symbol": "OSW_BUILD_VERSION_",
+    "expected": "F1-7N-FB-4E-R3",
+    "owns": "Overseas Stock scoped read workspace"
+  },
+  {
+    "file": "72_api_v1_product_pricing_workspace.gs",
+    "symbol": "PPW_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+    "owns": "the site-scoped Product Pricing workspace read: the marketplace_skus membership universe, the four-part regional join, the marketplace_sku_id pricing join, and the scoped category/series filter options derived from surviving rows"
+  },
+  {
+    "file": "66_api_v1_request_order_send.gs",
+    "symbol": "ROS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+    "owns": "Request Order Send orchestration + planning-cycle authority"
+  },
+  {
+    "file": "71_api_v1_factory_stock_guard.gs",
+    "symbol": "FSG_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B",
+    "owns": "the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate, the REQUIRED (never lazily created) override audit ledger, and the journalled verified rollback the plan transition unwinds through"
+  },
+  {
+    "file": "67_api_v1_allocation_draft_identity.gs",
+    "symbol": "ADI_BUILD_VERSION_",
+    "expected": "F1-7N-FB-3C",
+    "owns": "allocation-draft identity diagnostic (unchanged since FB-3C)"
+  },
+  {
+    "file": "68_api_v1_execution_plan_conflict_diagnostic.gs",
+    "symbol": "EPC_BUILD_VERSION_",
+    "expected": "F1-7N-FB-4E-R2",
+    "owns": "Execution Plan identity conflict diagnostic + routed read-only duplicate-line diagnostic"
+  },
+  {
+    "file": "34_shipment_final_output_handlers.gs",
+    "symbol": "SFO_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3",
+    "owns": "Shipment final output snapshot (frozen document data). SANDBOX-GATE-1l: an unknown measure is UNKNOWN, never 0."
+  },
+  {
+    "file": "35_shipment_document_renderer.gs",
+    "symbol": "SDR_BUILD_VERSION_",
+    "expected": "F1-AD3-SDR1",
+    "owns": "Shipment document renderer (35_): document models; AD3 B round 5 Shipment Details fallback model (carrier / freight pending when unknown)"
+  },
+  {
+    "file": "16_shipping_allocation_handlers.gs",
+    "symbol": "SAD_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3",
+    "owns": "Execution Plan allocation draft header/line writer (schema-compatible 30..35 header / 30..31 line, route group keys). R56: Submit Plan resolves a blank site_sku before it commits and verifies (DC2-D5)."
+  },
+  {
+    "file": "69_api_v1_route_identity_contract.gs",
+    "symbol": "RIC_BUILD_VERSION_",
+    "expected": "F1-7N-FB-4F-B3",
+    "owns": "frozen route identity contract (canonical service, destination XOR, K4 key, typed schema refusals)"
+  },
+  {
+    "file": "11_shipping_plan_handlers.gs",
+    "symbol": "SP_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4",
+    "owns": "Weekly status/quantity owner plus Draft SKU command delegation and unresolved transaction guard"
+  },
+  {
+    "file": "21_factory_inventory_handlers.gs",
+    "symbol": "FSTX_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71",
+    "owns": "THE single factory_stock mutation authority + the canonical seven-type movement vocabulary + reserved-balance reconciliation"
+  },
+  {
+    "file": "05_overseas_inventory_handlers.gs",
+    "symbol": "OVERSEAS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71",
+    "owns": "the overseas inventory snapshot import (GROSS semantic: stored available = source available - the reservation this system holds, the row refused IMPORT_RESERVATION_EXCEEDS_SOURCE_AVAILABLE when the source reports fewer units than are already committed, and wh_reserved_stock never written by an import), the inventory adjustment handler, and the OVERSEAS RESERVATION LIFECYCLE — acquire / release / dispatch-consume over wh_available_stock and wh_reserved_stock, with ovsAllocatableTx_ as the single place the allocatable rule is written"
+  },
+  {
+    "file": "12_shipment_handlers.gs",
+    "symbol": "SHIPMENT_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4",
+    "owns": "Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed"
+  },
+  {
+    "file": "13_procurement_handlers.gs",
+    "symbol": "PROC_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SC1R2-SC2-PG12R3-JR4-SO8-AD3",
+    "owns": "PO receipt factory-stock handoff + the typed PO_RECEIPT_EXCEEDS_REMAINING_QTY refusal (no silent clamp) + the procurement forecast’s per-month Target Rule delegation to the shared KMPD resolver (no local matcher). R56: the receipt dedupe is read in the lock and its content verified (D3), only an issued PO receives (D6), and a PO from Send carries its factory warehouse (D2)."
+  },
+  {
+    "file": "04_marketplace_forecast_import.gs",
+    "symbol": "FCREG_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55-FCA1",
+    "owns": "the Regular Forecast batch writer: validate-all-before-first-mutation, the script lock over the authoritative read and the writes, column-bounded range writes and the one append block — AND the canonical pricing_list creation contract: base_currency read from sku_details, rate 1 where the currencies are identical and the stored coefficient where they are not - read ONCE per import so a batch cannot mix versions - still fail-closed PENDING_FX when the book holds no rate, and the ownership flags written FALSE at creation so the first reconciliation can finish the row"
+  },
+  {
+    "file": "14_fc_write_handlers.gs",
+    "symbol": "FCW_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+    "owns": "the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt"
+  },
+  {
+    "file": "20_campaign_write_handlers.gs",
+    "symbol": "CAMPAIGN_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "owns": "the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit"
+  },
+  {
+    "file": "75_api_v1_fx_rate_book.gs",
+    "symbol": "FX_BOOK_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55",
+    "owns": "the stored FX rate book: one Script Property holding rates and change history together so a half-written save cannot leave them disagreeing, a UTF-8 byte capacity guard measured BEFORE the write, strict typing of both the stored document and the request doc_version, a compare-and-swap on that version inside the script lock, a readback that refuses to report a save it cannot confirm, and a write authority that fails closed on an unidentifiable caller. It owns NO price formula and NO price: conversion and precision stay in 73_, and saving a rate moves nothing until a reconciliation runs"
+  },
+  {
+    "file": "74_api_v1_overseas_allocation_preview_job.gs",
+    "symbol": "OAP_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51-AD1B",
+    "owns": "the READ-ONLY async Overseas Allocation Preview job: lifecycle (start/status/result/cancel + continuation/self-heal), the short-lock discipline that keeps it from starving Gap Materialization on the shared script lock, and the generation-keyed chunked Script-Property result store. It owns NO allocation formula - eligibility comes from 43_, demand from allocatedForecastQty, distribution from KMMSA"
+  },
+  {
+    "file": "42_api_v1_recommendation_workspace.gs",
+    "symbol": "RECO_WS_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R68-R15G-AV1-V3A10-A2B12-AD1B",
+    "owns": "the recommendation workspace READ transport: two Sheets v4 calls for the twelve tables whose date columns 60_ has proven, the per-sheet reader for the rest, the named refusals for a malformed batch reply, the capped non-silent fallback, and the bounded canonicalRead diagnostic. It owns NO formula and NO line shape - RECO_WS_HANDLER_VERSION_ names that contract and did not move. R56: the day horizons take incoming to their own cutoff (F7, answer dc2-r2-f7) and the read echoes its source revision."
+  },
+  {
+    "file": "90_generated_supply_planning_bundle.gs",
+    "symbol": "KM_BUNDLE_CONTENT_HASH_",
+    "expected": "9c604f38df99c3a3c399a3a49dd77ad40cdbc8242c9fac67bd281840ee1a2242",
+    "owns": "the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp"
+  },
+  {
+    "file": "22_shipment_dispatch_handlers.gs",
+    "symbol": "CSD_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3",
+    "owns": "Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment's DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read — it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable"
+  },
+  {
+    "file": "01_router.gs",
+    "symbol": "RTR_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4",
+    "owns": "doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release. R52 ADDS ONE MORE - marketplace.allocationPriority.set - moving the action contract 19 -> 20; a project holding a pre-R52 router cannot route a priority write at all, and because upsertMarketplace simultaneously stops accepting the field, that is a total loss of the capability rather than a degraded one. R56 adds system.sourceRevision (contract 21 -> 22) and moves KM_SOURCE_REVISION after every non-read POST."
+  },
+  {
+    "file": "03_master_data_handlers.gs",
+    "symbol": "MD_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52",
+    "owns": "the master-data write surface: the marketplace upsert (Add Marketplace) and, from R52, the bounded marketplace.allocationPriority.set writer - the ONLY writer of marketplaces.allocation_priority, with the canonical-collision refusal, the marketplace_id identity guard, the mandatory compare-and-set and the three-column write limit. R52 also makes upsertMarketplace REFUSE any payload carrying allocation_priority, and puts both writers on the shared script lock the sheet previously had no writer taking"
+  },
+  {
+    "file": "47_api_v1_recommendation_generation.gs",
+    "symbol": "RECGEN_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R57",
+    "owns": "recommendation generation + the bounded multi-scope order-draft readback. R56: both scheduled runs move the source revision after they run."
+  },
+  {
+    "file": "56_api_v1_ai_plan_first_layer.gs",
+    "symbol": "APL_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+    "owns": "Order Planning AI Plan first layer + the KMFSA factory site-allocation share"
+  },
+  {
+    "file": "59_api_v1_sku_details_workspace.gs",
+    "symbol": "SKD_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21",
+    "owns": "SKU Details / SKU Regional scoped read workspace, incl. the include.pricing site-price table"
+  },
+  {
+    "file": "66_api_v1_request_order_send.gs",
+    "symbol": "ROSEND_DIAG_BUILD_VERSION_",
+    "expected": "F1-7N-FB-4G-A2-R4",
+    "owns": "Request Order Send diagnostic status action + its configuration (single owner)"
+  },
+  {
+    "file": "69_api_v1_ai_plan_lifecycle.gs",
+    "symbol": "AIPL_BUILD_VERSION_",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R1-V3B3",
+    "owns": "Inventory AI Plan draft lifecycle (expiration of superseded AI drafts)"
+  },
+  {
+    "file": "TEMP_migrate_shipping_allocation_ai_lifecycle.gs",
+    "symbol": "TEMP_AIMIG_BUILD_VERSION_",
+    "expected": "F1-7N-FB-4C-ADDENDUM-MIGRATION",
+    "owns": "AI Plan lifecycle schema migration (append-only columns + source-proven lineage backfill)",
+    "optional": true
+  }
 ];
 
 function sysGlobalValue_(name) {
-  try { return eval('typeof ' + name + " !== 'undefined' ? " + name + ' : undefined'); }
-  catch (e) { return undefined; }
+try { return sysGlobalOwn_(name); }
+catch (e) { return undefined; }
 }
 
 function sysModuleBuildStamps_() {
-  var rows = SYS_MODULE_BUILD_STAMPS_.map(function (m) {
-    var v = sysGlobalValue_(m.symbol);
-    var present = (v !== undefined && v !== null && String(v) !== '');
-    return {
-      file: m.file, symbol: m.symbol, owns: m.owns, optional: m.optional === true,
-      expected_build: m.expected,
-      present: present,
-      declared_build: present ? String(v) : null,
-      matches_expected: present ? (String(v) === m.expected) : false
-    };
-  });
-  // §J.6 — an OPTIONAL owner (a one-shot migration file the operator is told to remove) may be absent
-  // without that being a partial sync. A stale one is still a fault: a wrong version is never expected.
-  var absent = rows.filter(function (r) { return !r.present && !r.optional; });
-  var absent_optional = rows.filter(function (r) { return !r.present && r.optional; });
-  var stale = rows.filter(function (r) { return r.present && !r.matches_expected; });
-  // §10 — the executed invariant, which a version string cannot fake in either direction.
-  var runtime = sysRuntimeAuthorityChecks_();
-  return {
-    deployment_build: SYS_DEPLOYMENT_RELEASE_,          // the RELEASE, not this module's stamp
-    modules: rows,
-    runtime_authority: runtime,
-    // S8-R4D-E2 - lifted to the top level so a consumer does not have to know it lives inside
-    // runtime_authority. From R44 a deployment without the service cannot serve the first-layer read at
-    // all, which is a louder fact than any stamp - and a different one from a partial sync.
-    advanced_services: runtime.advanced_services || null,
-    advanced_services_ok: !!(runtime.advanced_services
-      && runtime.advanced_services.advanced_sheets_runtime_mode === 'RESOLVED'),
-    absent_modules: absent.map(function (r) { return r.file; }),
-    absent_optional_modules: absent_optional.map(function (r) { return r.file; }),
-    stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
-    // A runtime divergence IS a mixed deployment, whatever the labels say. This is the half that would have
-    // caught the live R4 state, where every label matched and the two resolvers did not.
-    mixed_deployment: (absent.length + stale.length) > 0 || runtime.uniform !== true,
-    verdict: ((absent.length + stale.length) === 0 && runtime.uniform === true)
-      ? 'UNIFORM — every probed owner file declares the build its manifest entry expects, AND the writer and '
-        + 'lifecycle resolve identically at every known schema generation'
-      : (runtime.uniform !== true
-          ? 'MIXED_OR_PARTIAL_SYNC (RUNTIME) — ' + runtime.verdict
-          : 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this deployment expects. Re-copy the files listed and publish a NEW deployment version.')
-  };
+var rows = SYS_MODULE_BUILD_STAMPS_.map(function (m) {
+var v = sysGlobalValue_(m.symbol);
+var present = (v !== undefined && v !== null && String(v) !== '');
+return {
+file: m.file, symbol: m.symbol, owns: m.owns, optional: m.optional === true,
+expected_build: m.expected,
+present: present,
+declared_build: present ? String(v) : null,
+matches_expected: present ? (String(v) === m.expected) : false
+};
+});
+
+
+var absent = rows.filter(function (r) { return !r.present && !r.optional; });
+var absent_optional = rows.filter(function (r) { return !r.present && r.optional; });
+var stale = rows.filter(function (r) { return r.present && !r.matches_expected; });
+
+var runtime = sysRuntimeAuthorityChecks_();
+return {
+deployment_build: SYS_DEPLOYMENT_RELEASE_,
+modules: rows,
+runtime_authority: runtime,
+
+
+
+advanced_services: runtime.advanced_services || null,
+advanced_services_ok: !!(runtime.advanced_services
+&& runtime.advanced_services.advanced_sheets_runtime_mode === 'RESOLVED'),
+absent_modules: absent.map(function (r) { return r.file; }),
+absent_optional_modules: absent_optional.map(function (r) { return r.file; }),
+stale_modules: stale.map(function (r) { return r.file + ' declares ' + r.declared_build + ', expected ' + r.expected_build; }),
+
+
+mixed_deployment: (absent.length + stale.length) > 0 || runtime.uniform !== true,
+verdict: ((absent.length + stale.length) === 0 && runtime.uniform === true)
+? 'UNIFORM — every probed owner file declares the build its manifest entry expects, AND the writer and '
++ 'lifecycle resolve identically at every known schema generation'
+: (runtime.uniform !== true
+? 'MIXED_OR_PARTIAL_SYNC (RUNTIME) — ' + runtime.verdict
+: 'MIXED_OR_PARTIAL_SYNC — at least one owner file is absent from, or older than, what this deployment expects. Re-copy the files listed and publish a NEW deployment version.')
+};
 }
 
-// ================================================================================================================
-// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — A LABEL COMPARED WITH A LABEL CANNOT SEE A STALE BODY.
-//
-// The live R4 census reported writer FB4G, lifecycle null, shares_authority FALSE — and this contract, in the
-// same run, reported UNIFORM. Both were correct about what they measured. The contract compares the string a
-// file DECLARES with the string the manifest EXPECTS, and three owner files had labels that were never rotated
-// when their behaviour changed, so a stale deployed body and a stale expectation agreed with each other.
-// Rotating the three labels fixes those three instances; it does not fix the METHOD, and the next round that
-// edits a file and forgets its stamp reproduces this exactly.
-//
-// So the contract now also EXECUTES the invariant it cares about. This cannot be fooled by a label, does not
-// depend on Apps Script file ordering, and does not care which copy of a function won the global scope: it
-// hands the SAME header row to the writer's resolver and to the lifecycle's, and compares the answers. If a
-// project is running a lifecycle body that predates the delegation, the two disagree here and the deployment is
-// reported MIXED however tidy its version strings are.
-//
-// It probes EVERY known schema generation rather than one, because the pre-delegation body agrees with the
-// shared authority at exactly one shape (the 34-column canonical) and disagrees at the others — so a
-// single-shape probe would have passed on the very deployment that motivated this.
-//
-// Pure reads: resolver calls over synthetic header arrays. No sheet is opened and nothing is written.
-// ================================================================================================================
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function sysRuntimeAuthorityChecks_() {
-  // `checked` and `uniform` are DIFFERENT questions, and collapsing them makes the check dishonest in both
-  // directions. A project that does not compile 16_ or 69_ at all is already named by absent_modules, so
-  // reporting that a second time as a runtime DIVERGENCE would be one fault wearing two names. What this
-  // check asserts is narrower, and is the thing a label cannot see: where both authorities ARE present,
-  // they agree.
-  var out = { checked: false, checks: [], divergent: [], missing_authority: [], uniform: true,
-    contract: 'where both authorities are present they must resolve the SAME version from the SAME header, at every known generation' };
-  var haveSad = (typeof sadResolveHeaderSchema_ === 'function');
-  var haveAipl = (typeof aiplSchemaVersionOf_ === 'function');
-  if (!haveSad) out.missing_authority.push('sadResolveHeaderSchema_ (16_shipping_allocation_handlers.gs)');
-  if (!haveAipl) out.missing_authority.push('aiplSchemaVersionOf_ (69_api_v1_ai_plan_lifecycle.gs)');
-  if (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ === 'undefined'
-      || typeof SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ === 'undefined') {
-    out.missing_authority.push('SHIPPING_ALLOCATION_DRAFTS_HEADERS_ / SAD_HEADER_OPTIONAL_TAIL_COLUMNS_');
-  }
-  if (out.missing_authority.length) {
-    // NOT a divergence: nothing was compared, so nothing disagreed. `checked` says so plainly.
-    out.verdict = 'RUNTIME_AUTHORITY_NOT_CHECKED — ' + out.missing_authority.join('; ')
-      + ' (absent owners are reported by the module manifest, not duplicated here)';
-    return out;
-  }
-  out.checked = true;
-  var full = SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
-  var shapes = [];
-  for (var i = 0; i < (typeof SAD_SCHEMA_GENERATIONS_ !== 'undefined' ? SAD_SCHEMA_GENERATIONS_.length : 0); i++) {
-    var g = SAD_SCHEMA_GENERATIONS_[i];
-    shapes.push(SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(g.appended || []).length);
-  }
-  if (!shapes.length) shapes = [full.length];
-  shapes.forEach(function (n) {
-    var hdr = full.slice(0, n);
-    var w = null, l = null, err = null;
-    try { w = sadResolveHeaderSchema_(hdr); } catch (e1) { err = String(e1 && e1.message || e1); }
-    try { l = aiplSchemaVersionOf_(hdr) || null; } catch (e2) { err = (err || '') + ' ' + String(e2 && e2.message || e2); }
-    var writerVersion = (w && w.ok) ? w.version : null;
-    var lifecycleComplete = !!(w && w.lifecycle_complete);
-    // The lifecycle deliberately returns nothing for a generation that is not lifecycle-complete, so THAT is
-    // agreement, not divergence. Divergence is: the writer says this generation IS lifecycle-complete and the
-    // lifecycle either names nothing or names something else.
-    var expectLifecycle = (writerVersion && lifecycleComplete) ? writerVersion : null;
-    var agree = (l === expectLifecycle) && !err;
-    var row = { column_count: n, writer_version: writerVersion, writer_lifecycle_complete: lifecycleComplete,
-      lifecycle_version: l, expected_lifecycle_version: expectLifecycle, agree: agree, error: err };
-    out.checks.push(row);
-    if (!agree) {
-      out.uniform = false;
-      out.divergent.push('at ' + n + ' columns the writer resolves ' + (writerVersion || '(none)')
-        + ' and the lifecycle resolves ' + (l || '(none)'));
-    }
-  });
-  // ======================================================================================================
-  // S8-R4D-E2 §17 - THE ADVANCED SERVICE, ATTESTED BY EXECUTION.
-  //
-  // From R44 the first-layer read depends on Sheets v4. The repository guards appsscript.json BYTES, but the
-  // bytes in the repository are not necessarily the manifest in the deployed project - and a service removed
-  // in the editor leaves no trace a version string can carry. This asks the DEPLOYMENT, the same way the
-  // writer/lifecycle check above asks it rather than trusting a label.
-  //
-  // It costs ZERO API calls. `typeof Sheets` is a namespace check, not a request - so a project that has lost
-  // the service reports MIXED_OR_PARTIAL_SYNC here instead of failing at the first user read.
-  var sheetsResolves = false;
-  try {
-    sheetsResolves = (typeof Sheets !== 'undefined') && !!(Sheets && Sheets.Spreadsheets && Sheets.Spreadsheets.Values);
-  } catch (eAdv) { sheetsResolves = false; }
-  out.advanced_services = {
-    advanced_sheets_required: true,
-    advanced_sheets_manifest_expected: { userSymbol: 'Sheets', serviceId: 'sheets', version: 'v4' },
-    advanced_sheets_runtime_mode: sheetsResolves ? 'RESOLVED' : 'MISSING',
-    verdict: sheetsResolves
-      ? 'ADVANCED_SHEETS_RESOLVED — the deployment can serve the first-layer read'
-      : 'ADVANCED_SHEETS_MISSING — add the Sheets v4 advanced service (identifier Sheets) to this Apps Script '
-        + 'project; the first-layer read cannot run without it'
-  };
-  // DELIBERATELY NOT FOLDED INTO `uniform` / mixed_deployment, and the full sweep is what settled it. A
-  // missing advanced service is a different FAULT CLASS from a partial file sync, and the two have different
-  // remedies: mixed_deployment's own message tells the operator to re-copy the files and publish a new
-  // version, which would not fix this one. Reporting it there would raise the right alarm and send them to
-  // the wrong place. It carries its own verdict above, and system.health lifts it to the top level.
 
-  out.verdict = out.uniform
-    ? 'UNIFORM — the writer and the lifecycle resolve identically at every known schema generation'
-    : 'RUNTIME_AUTHORITY_DIVERGENCE — the deployed lifecycle body does not share the writer\'s schema authority. '
-      + 'Re-copy 69_api_v1_ai_plan_lifecycle.gs (and 16_shipping_allocation_handlers.gs) and publish a NEW '
-      + 'deployment version. Version strings may look correct and be stale.';
-  return out;
+
+
+
+
+var out = { checked: false, checks: [], divergent: [], missing_authority: [], uniform: true,
+contract: 'where both authorities are present they must resolve the SAME version from the SAME header, at every known generation' };
+var haveSad = (typeof sadResolveHeaderSchema_ === 'function');
+var haveAipl = (typeof aiplSchemaVersionOf_ === 'function');
+if (!haveSad) out.missing_authority.push('sadResolveHeaderSchema_ (16_shipping_allocation_handlers.gs)');
+if (!haveAipl) out.missing_authority.push('aiplSchemaVersionOf_ (69_api_v1_ai_plan_lifecycle.gs)');
+if (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ === 'undefined'
+|| typeof SAD_HEADER_OPTIONAL_TAIL_COLUMNS_ === 'undefined') {
+out.missing_authority.push('SHIPPING_ALLOCATION_DRAFTS_HEADERS_ / SAD_HEADER_OPTIONAL_TAIL_COLUMNS_');
+}
+if (out.missing_authority.length) {
+
+out.verdict = 'RUNTIME_AUTHORITY_NOT_CHECKED — ' + out.missing_authority.join('; ')
++ ' (absent owners are reported by the module manifest, not duplicated here)';
+return out;
+}
+out.checked = true;
+var full = SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(SAD_HEADER_OPTIONAL_TAIL_COLUMNS_);
+var shapes = [];
+for (var i = 0; i < (typeof SAD_SCHEMA_GENERATIONS_ !== 'undefined' ? SAD_SCHEMA_GENERATIONS_.length : 0); i++) {
+var g = SAD_SCHEMA_GENERATIONS_[i];
+shapes.push(SHIPPING_ALLOCATION_DRAFTS_HEADERS_.concat(g.appended || []).length);
+}
+if (!shapes.length) shapes = [full.length];
+shapes.forEach(function (n) {
+var hdr = full.slice(0, n);
+var w = null, l = null, err = null;
+try { w = sadResolveHeaderSchema_(hdr); } catch (e1) { err = String(e1 && e1.message || e1); }
+try { l = aiplSchemaVersionOf_(hdr) || null; } catch (e2) { err = (err || '') + ' ' + String(e2 && e2.message || e2); }
+var writerVersion = (w && w.ok) ? w.version : null;
+var lifecycleComplete = !!(w && w.lifecycle_complete);
+
+
+
+var expectLifecycle = (writerVersion && lifecycleComplete) ? writerVersion : null;
+var agree = (l === expectLifecycle) && !err;
+var row = { column_count: n, writer_version: writerVersion, writer_lifecycle_complete: lifecycleComplete,
+lifecycle_version: l, expected_lifecycle_version: expectLifecycle, agree: agree, error: err };
+out.checks.push(row);
+if (!agree) {
+out.uniform = false;
+out.divergent.push('at ' + n + ' columns the writer resolves ' + (writerVersion || '(none)')
++ ' and the lifecycle resolves ' + (l || '(none)'));
+}
+});
+
+
+
+
+
+
+
+
+
+
+var sheetsResolves = false;
+try {
+sheetsResolves = (typeof Sheets !== 'undefined') && !!(Sheets && Sheets.Spreadsheets && Sheets.Spreadsheets.Values);
+} catch (eAdv) { sheetsResolves = false; }
+out.advanced_services = {
+advanced_sheets_required: true,
+advanced_sheets_manifest_expected: { userSymbol: 'Sheets', serviceId: 'sheets', version: 'v4' },
+advanced_sheets_runtime_mode: sheetsResolves ? 'RESOLVED' : 'MISSING',
+verdict: sheetsResolves
+? 'ADVANCED_SHEETS_RESOLVED — the deployment can serve the first-layer read'
+: 'ADVANCED_SHEETS_MISSING — add the Sheets v4 advanced service (identifier Sheets) to this Apps Script '
++ 'project; the first-layer read cannot run without it'
+};
+
+
+
+
+
+
+out.verdict = out.uniform
+? 'UNIFORM — the writer and the lifecycle resolve identically at every known schema generation'
+: 'RUNTIME_AUTHORITY_DIVERGENCE — the deployed lifecycle body does not share the writer\'s schema authority. '
++ 'Re-copy 69_api_v1_ai_plan_lifecycle.gs (and 16_shipping_allocation_handlers.gs) and publish a NEW '
++ 'deployment version. Version strings may look correct and be stale.';
+return out;
 }
 
-// Answer the CALLER's list. `probe_actions` are checked against the router's action->handler map AND the actual
-// presence of the handler symbol; `probe_symbols` are checked by `typeof` alone. Absent entries are reported as
-// absent — that is the whole point, and it is what an empty self-referential missing_actions could never say.
+
+
+
 function sysProbeRequested_(body) {
-  function arr(v) { if (!v) return []; if (!Array.isArray(v)) v = [v]; return v.map(sysStr_).filter(function (x) { return !!x; }); }
-  var wantActions = arr(body && (body.probe_actions || body.probeActions));
-  var wantSymbols = arr(body && (body.probe_symbols || body.probeSymbols));
-  if (!wantActions.length && !wantSymbols.length) return null;
-  var byAction = {};
-  for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) byAction[SYS_REQUIRED_ACTIONS_[i].action] = SYS_REQUIRED_ACTIONS_[i].handler;
-  var actions = wantActions.map(function (a) {
-    var handler = byAction[a] || null;
-    // A caller-named action the deployment does not even LIST is reported unknown-to-this-build, which is
-    // exactly the "older than the frontend" signal. Where the handler name is known, its symbol is probed.
-    var present = handler ? (sysGlobalValue_(handler) !== undefined) : false;
-    return { action: a, known_to_this_build: !!handler, handler: handler, handler_present: present, available: !!handler && present };
-  });
-  var symbols = wantSymbols.map(function (n) { return { symbol: n, present: sysGlobalValue_(n) !== undefined }; });
-  var missingActions = actions.filter(function (a) { return !a.available; }).map(function (a) { return a.action; });
-  var missingSymbols = symbols.filter(function (sy) { return !sy.present; }).map(function (sy) { return sy.symbol; });
-  return {
-    requested_by_caller: true,
-    actions: actions, symbols: symbols,
-    missing_actions: missingActions, missing_symbols: missingSymbols,
-    all_present: missingActions.length === 0 && missingSymbols.length === 0,
-    note: 'Computed against the CALLER\'s list, not against this deployment\'s own required-action list, so it is NOT self-referential.'
-  };
+var dropped = { actions: 0, symbols: 0 };
+function arr(v, k) { if (!v) return []; if (!Array.isArray(v)) v = [v]; if (v.length > SYS_PROBE_LIST_MAX_) { dropped[k] = v.length - SYS_PROBE_LIST_MAX_; v = v.slice(0, SYS_PROBE_LIST_MAX_); } return v.map(sysStr_).filter(function (x) { return !!x; }); }
+var wantActions = arr(body && (body.probe_actions || body.probeActions), 'actions');
+var wantSymbols = arr(body && (body.probe_symbols || body.probeSymbols), 'symbols');
+if (!wantActions.length && !wantSymbols.length) return null;
+var byAction = {};
+for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) byAction[SYS_REQUIRED_ACTIONS_[i].action] = SYS_REQUIRED_ACTIONS_[i].handler;
+var actions = wantActions.map(function (a) {
+var handler = Object.prototype.hasOwnProperty.call(byAction, a) ? byAction[a] : null;
+
+
+var present = handler ? (sysGlobalValue_(handler) !== undefined) : false;
+return { action: a, known_to_this_build: !!handler, handler: handler, handler_present: present, available: !!handler && present };
+});
+var symbols = wantSymbols.map(function (n) { var r = { symbol: n, present: sysGlobalValue_(n) !== undefined }; if (!sysProbeNameValid_(n)) r.rejected = 'PROBE_NAME_INVALID'; return r; });
+var missingActions = actions.filter(function (a) { return !a.available; }).map(function (a) { return a.action; });
+var missingSymbols = symbols.filter(function (sy) { return !sy.present; }).map(function (sy) { return sy.symbol; });
+var sysProbeOut_ = {
+requested_by_caller: true,
+actions: actions, symbols: symbols,
+missing_actions: missingActions, missing_symbols: missingSymbols,
+all_present: missingActions.length === 0 && missingSymbols.length === 0 && !dropped.actions && !dropped.symbols,
+note: 'Computed against the CALLER\'s list, not against this deployment\'s own required-action list, so it is NOT self-referential.'
+};
+if (dropped.actions || dropped.symbols) sysProbeOut_.probe_limit = { max_names_per_list: SYS_PROBE_LIST_MAX_, dropped_actions: dropped.actions, dropped_symbols: dropped.symbols, note: 'names past the limit were not looked up; all_present is false' };
+return sysProbeOut_;
 }
 
 function sysRouterReadiness_() {
-  var rows = [], missing = [];
-  for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) {
-    var a = SYS_REQUIRED_ACTIONS_[i];
-    var present = sysHandlerPresent_(a.handler);
-    rows.push({ action: a.action, available: present, used_by: a.used_by });
-    if (!present) missing.push(a.action);
-  }
-  return { entrypoints: { doGet: sysHandlerPresent_('doGet'), doPost: sysHandlerPresent_('doPost') },
-    actions: rows, missing_actions: missing, all_available: missing.length === 0 };
+var rows = [], missing = [];
+for (var i = 0; i < SYS_REQUIRED_ACTIONS_.length; i++) {
+var a = SYS_REQUIRED_ACTIONS_[i];
+var present = sysHandlerPresent_(a.handler);
+rows.push({ action: a.action, available: present, used_by: a.used_by });
+if (!present) missing.push(a.action);
 }
-// Header/row readiness WITHOUT leaking the schema: a present flag, a header count and a row count only.
+return { entrypoints: { doGet: sysHandlerPresent_('doGet'), doPost: sysHandlerPresent_('doPost') },
+actions: rows, missing_actions: missing, all_available: missing.length === 0 };
+}
+
 function sysSchemaReadiness_(ss) {
-  var out = [], missing = 0;
-  for (var i = 0; i < SYS_SLICE_TABLES_.length; i++) {
-    var name = SYS_SLICE_TABLES_[i], sheet = null;
-    try { sheet = ss.getSheetByName(name); } catch (e) { sheet = null; }
-    if (!sheet) { out.push({ table: name, present: false, header_count: 0, row_count: 0 }); missing++; continue; }
-    var lastRow = 0, lastCol = 0;
-    try { lastRow = sheet.getLastRow(); lastCol = sheet.getLastColumn(); } catch (e2) {}
-    out.push({ table: name, present: true, header_count: lastCol, row_count: Math.max(0, lastRow - 1) });
-  }
-  return { tables: out, missing_table_count: missing, all_present: missing === 0 };
+var out = [], missing = 0;
+for (var i = 0; i < SYS_SLICE_TABLES_.length; i++) {
+var name = SYS_SLICE_TABLES_[i], sheet = null;
+try { sheet = ss.getSheetByName(name); } catch (e) { sheet = null; }
+if (!sheet) { out.push({ table: name, present: false, header_count: 0, row_count: 0 }); missing++; continue; }
+var lastRow = 0, lastCol = 0;
+try { lastRow = sheet.getLastRow(); lastCol = sheet.getLastColumn(); } catch (e2) {}
+out.push({ table: name, present: true, header_count: lastCol, row_count: Math.max(0, lastRow - 1) });
+}
+return { tables: out, missing_table_count: missing, all_present: missing === 0 };
 }
 
-// ---- the canonical health action ------------------------------------------------------------------------
-// Returns ONLY operational facts. Deliberately absent: spreadsheet id, Drive ids, tokens, user identity, any
-// business row. A caller that receives this JSON has proven the deployment is reachable AND that the deployed
-// code contains the actions it is about to use.
+
+
+
+
 function handleSystemHealth_(body) {
-  var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('HEALTH-' + Utilities.getUuid().substring(0, 8).toUpperCase());
-  var started = Date.now();
-  var router = sysRouterReadiness_();
-  var schema = { tables: [], missing_table_count: null, all_present: null, error: '' };
-  var dbReachable = false;
-  try {
-    var ss = SpreadsheetApp.openById(prodExpectedDbId_());
-    dbReachable = true;
-    schema = sysSchemaReadiness_(ss);
-  } catch (e) {
-    // Never echo the id or the raw message shape that could contain it.
-    schema.error = 'DB_NOT_REACHABLE';
-  }
-  var ok = router.all_available && dbReachable && schema.all_present === true;
-  var moduleStamps = sysModuleBuildStamps_();
-  var callerProbe = sysProbeRequested_(body);
-  if (moduleStamps.mixed_deployment) ok = false;   // a partial sync is NOT a healthy deployment
-  if (callerProbe && !callerProbe.all_present) ok = false;
-  return jsonResponse_({
-    success: true,
-    ok: ok,
-    // F1-7N-FB-3A §C — the IMMUTABLE deployment identity block. Every field here is a constant compiled into
-    // the answering code, so together they identify exactly which deployment replied.
-    // R6-R6 §4 — build_id is the DEPLOYMENT RELEASE. The frontend already reads it that way (it prints
-    // "deployment build" in the partial-sync error), so this makes the server agree with its only consumer
-    // rather than inventing a new field the consumer would ignore.
-    build_id: SYS_DEPLOYMENT_RELEASE_,
-    deployment_release: SYS_DEPLOYMENT_RELEASE_,
-    // The four module builds an operator compares against it, each named for the file it comes from, so
-    // "which of these is the deployment?" stops being a question. A null here is an ABSENT file, which is a
-    // different fault from a stale one and must not look like it.
-    system_health_module_build: SYS_BUILD_VERSION_,
-    workspace_module_build: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null,
-    contract_version: SYS_API_CONTRACT_VERSION_,
-    // F1-7N-FB-4E §H — the transport axis, plus the router's own build and the identity fields it can emit.
-    // A frontend compares all three: a mismatch on the ACTION contract means "publish a deployment with this
-    // action"; a mismatch here means "publish a deployment whose ROUTER can name its own handler"; and neither
-    // is the same fault as an endpoint that never reached Apps Script at all (which never gets this far).
-    transport_contract_version: SYS_TRANSPORT_CONTRACT_VERSION_,
-    router_build: (typeof RTR_BUILD_VERSION_ !== 'undefined') ? RTR_BUILD_VERSION_ : null,
-    router_response_identity: {
-      emits_handler: true, emits_received_method: true, emits_post_body_present: true,
-      emits_action_present_in_query: true, emits_router_build: true
-    },
-    // The handler that answered THIS probe. system.health is routed on both verbs, so a caller can prove which
-    // entry point served it instead of inferring it from a message.
-    handler: (body && body.__km_handler) ? String(body.__km_handler) : 'doPost',
-    received_method: (body && body.__km_handler === 'doGet') ? 'GET' : 'POST',
-    request_order_send_diagnostic_owner: (typeof ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? ROSEND_DIAG_OWNER_FILE_ : null,
-    deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
-    inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
-    // F1-7N-FC-1B-E3 §E.6/§E.7 — THE EFFECTIVE FEATURE-FLAG VALUE, read from the function that
-    // every gate reads, in the deployment that is actually answering. Not the repository's copy of the file and
-    // not the frontend's mirror: those can disagree with this, and when they do, THIS is the one that decides
-    // whether a Generate AI Plan click writes anything. `null` means the config file is not present in the
-    // deployment at all, which is a different fault from the flag being off.
-    inventory_ai_plan_db_generation_enabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function')
-      ? (inventoryAiPlanDbGenerationEnabled_() === true) : null,
-    // PRODUCT-STRATEGY-P1-B1 — the Product Strategy feature flag, read from the SAME resolver the handler's
-    // gate reads, in the deployment that is actually answering. `null` means 00_config.gs is not present in
-    // that deployment at all, which is a different fault from the flag being off.
-    product_strategy_enabled: (typeof productStrategyEnabled_ === 'function')
-      ? (productStrategyEnabled_() === true) : null,
-    config_build: (typeof CONFIG_BUILD_VERSION_ !== 'undefined') ? CONFIG_BUILD_VERSION_ : null,
-    required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
-    required_action_count: SYS_REQUIRED_ACTIONS_.length,
-    // An EMPTY missing_actions list proves nothing on its own — see the note at the constants above. This flag
-    // makes that explicit in the payload so a reader cannot mistake one for a completeness guarantee.
-    missing_actions_is_self_referential: true,
-    // FB-4A ADDENDUM §H — the two NON-self-referential proofs. module_build_stamps reports each owner file's own
-    // compiled build constant (so a half-finished file-by-file sync is a named fact), and caller_probe answers
-    // the CALLER's explicit action/symbol list (so a deployment that predates an action says so).
-    module_build_stamps: moduleStamps,
-    mixed_deployment: moduleStamps.mixed_deployment,
-    deployment_uniformity_verdict: moduleStamps.verdict,
-    caller_probe: callerProbe,
-    api_contract_version: SYS_API_CONTRACT_VERSION_,
-    // Legacy alias for build_id — the frontend falls back to it, so it must carry the RELEASE too.
-    build_version: SYS_DEPLOYMENT_RELEASE_,
-    environment_mode: 'production',
-    router_ready: router.all_available,
-    entrypoints: router.entrypoints,
-    required_actions: router.actions,
-    missing_actions: router.missing_actions,
-    db_reachable: dbReachable,
-    schema_ready: schema.all_present,
-    schema: { missing_table_count: schema.missing_table_count, tables: schema.tables, error: schema.error },
-    server_timestamp: (typeof shipmentTimestamp_ === 'function') ? shipmentTimestamp_() : new Date().toISOString(),
-    server_ms: Date.now() - started,
-    request_id: requestId,
-    read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0
-  });
+var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('HEALTH-' + Utilities.getUuid().substring(0, 8).toUpperCase());
+var started = Date.now();
+var router = sysRouterReadiness_();
+var schema = { tables: [], missing_table_count: null, all_present: null, error: '' };
+var dbReachable = false;
+try {
+var ss = SpreadsheetApp.openById(prodExpectedDbId_());
+dbReachable = true;
+schema = sysSchemaReadiness_(ss);
+} catch (e) {
+
+schema.error = 'DB_NOT_REACHABLE';
+}
+var ok = router.all_available && dbReachable && schema.all_present === true;
+var moduleStamps = sysModuleBuildStamps_();
+var callerProbe = sysProbeRequested_(body);
+if (moduleStamps.mixed_deployment) ok = false;
+if (callerProbe && !callerProbe.all_present) ok = false;
+return jsonResponse_({
+success: true,
+ok: ok,
+
+
+
+
+
+build_id: SYS_DEPLOYMENT_RELEASE_,
+deployment_release: SYS_DEPLOYMENT_RELEASE_,
+
+
+
+system_health_module_build: SYS_BUILD_VERSION_,
+workspace_module_build: (typeof SIR_BUILD_VERSION_ !== 'undefined') ? SIR_BUILD_VERSION_ : null,
+contract_version: SYS_API_CONTRACT_VERSION_,
+
+
+
+
+transport_contract_version: SYS_TRANSPORT_CONTRACT_VERSION_,
+router_build: (typeof RTR_BUILD_VERSION_ !== 'undefined') ? RTR_BUILD_VERSION_ : null,
+router_response_identity: {
+emits_handler: true, emits_received_method: true, emits_post_body_present: true,
+emits_action_present_in_query: true, emits_router_build: true
+},
+
+
+handler: (body && body.__km_handler) ? String(body.__km_handler) : 'doPost',
+received_method: (body && body.__km_handler === 'doGet') ? 'GET' : 'POST',
+request_order_send_diagnostic_owner: (typeof ROSEND_DIAG_OWNER_FILE_ !== 'undefined') ? ROSEND_DIAG_OWNER_FILE_ : null,
+deployed_action_contract_version: SYS_DEPLOYED_ACTION_CONTRACT_VERSION_,
+inventory_registry_projection_version: (typeof SCOPEREG_PROJECTION_VERSION_ !== 'undefined') ? SCOPEREG_PROJECTION_VERSION_ : null,
+
+
+
+
+
+inventory_ai_plan_db_generation_enabled: (typeof inventoryAiPlanDbGenerationEnabled_ === 'function')
+? (inventoryAiPlanDbGenerationEnabled_() === true) : null,
+
+
+
+product_strategy_enabled: (typeof productStrategyEnabled_ === 'function')
+? (productStrategyEnabled_() === true) : null,
+config_build: (typeof CONFIG_BUILD_VERSION_ !== 'undefined') ? CONFIG_BUILD_VERSION_ : null,
+required_action_list_version: SYS_REQUIRED_ACTION_LIST_VERSION_,
+required_action_count: SYS_REQUIRED_ACTIONS_.length,
+
+
+missing_actions_is_self_referential: true,
+
+
+
+module_build_stamps: moduleStamps,
+mixed_deployment: moduleStamps.mixed_deployment,
+deployment_uniformity_verdict: moduleStamps.verdict,
+caller_probe: callerProbe,
+api_contract_version: SYS_API_CONTRACT_VERSION_,
+
+build_version: SYS_DEPLOYMENT_RELEASE_,
+environment_mode: 'production',
+router_ready: router.all_available,
+entrypoints: router.entrypoints,
+required_actions: router.actions,
+missing_actions: router.missing_actions,
+db_reachable: dbReachable,
+schema_ready: schema.all_present,
+schema: { missing_table_count: schema.missing_table_count, tables: schema.tables, error: schema.error },
+server_timestamp: (typeof shipmentTimestamp_ === 'function') ? shipmentTimestamp_() : new Date().toISOString(),
+server_ms: Date.now() - started,
+request_id: requestId,
+read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0
+});
 }
 
-// ---- §K read-only Submit-to-Map flow readiness -----------------------------------------------------------
-// Answers "would Submit Plan actually persist, and can the resulting plan reach the map?" WITHOUT writing a
-// single cell. It validates the payload shape and the persisted allocation drafts the canonical Submit owner
-// re-reads; it never inserts, never transitions and never touches Drive.
+
+
+
+
 function handleSubmitFlowDiagnostic_(body) {
-  var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('FLOW-' + Utilities.getUuid().substring(0, 8).toUpperCase());
-  var draftIds = (body && body.allocation_draft_ids) || [];
-  if (!Array.isArray(draftIds)) draftIds = [draftIds];
-  draftIds = draftIds.map(sysStr_).filter(function (x) { return !!x; });
-  var out = {
-    success: true, request_id: requestId,
-    read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
-    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_
-  };
-  var router = sysRouterReadiness_();
-  out.router_ready = router.all_available;
-  out.missing_actions = router.missing_actions;
-  var ss;
-  try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
-  catch (e) { out.verdict = 'BLOCKED'; out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE' }]; return jsonResponse_(out); }
-  out.schema = sysSchemaReadiness_(ss);
+var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('FLOW-' + Utilities.getUuid().substring(0, 8).toUpperCase());
+var draftIds = (body && body.allocation_draft_ids) || [];
+if (!Array.isArray(draftIds)) draftIds = [draftIds];
+draftIds = draftIds.map(sysStr_).filter(function (x) { return !!x; });
+var out = {
+success: true, request_id: requestId,
+read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
+api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_
+};
+var router = sysRouterReadiness_();
+out.router_ready = router.all_available;
+out.missing_actions = router.missing_actions;
+var ss;
+try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
+catch (e) { out.verdict = 'BLOCKED'; out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE' }]; return jsonResponse_(out); }
+out.schema = sysSchemaReadiness_(ss);
 
-  // the canonical Submit owner re-reads persisted allocation drafts; report what it WOULD find
-  var drafts = [];
-  try {
-    var sh = ss.getSheetByName('shipping_allocation_drafts');
-    if (sh) {
-      var d = sh.getDataRange().getValues();
-      if (d.length > 1) {
-        var h = d[0].map(function (x) { return sysStr_(x).toLowerCase(); });
-        var cId = h.indexOf('allocation_draft_id'), cStatus = h.indexOf('status');
-        for (var r = 1; r < d.length; r++) {
-          var id = cId === -1 ? '' : sysStr_(d[r][cId]);
-          if (!id) continue;
-          if (draftIds.length && draftIds.indexOf(id) === -1) continue;
-          drafts.push({ allocation_draft_id: id, status: cStatus === -1 ? '' : sysStr_(d[r][cStatus]) });
-        }
-      }
-    }
-  } catch (e2) { /* absent table -> reported below as zero drafts */ }
-  out.requested_draft_ids = draftIds;
-  out.matched_drafts = drafts.length;
-  out.drafts = drafts.slice(0, 20);
 
-  // the exact rows a successful Submit is expected to create - a manifest, not a write
-  out.expected_write_manifest = [
-    { table: 'shipping_plans', operation: 'INSERT', rows: 'one per (country, marketplace, shipping_method) group' },
-    { table: 'shipping_plan_lines', operation: 'INSERT', rows: 'one per submitted SKU line, each referencing its persisted shipping_plan_id' }
-  ];
-  out.expected_visibility_after_submit = [
-    { page: 'Weekly Shipping Plan', shows: 'the new plan in the Draft group, read through weeklyShipping.workspace.get' },
-    { page: 'Shipment Draft', shows: 'nothing yet — a shipment exists only after the plan is approved and transferred' },
-    { page: 'On-the-Way Map', shows: 'nothing yet — the map needs a shipment with routes/events, created by Confirm Shipment' }
-  ];
-  var blockers = [];
-  if (!router.all_available) blockers.push({ reason: 'ROUTER_ACTION_MISSING', detail: router.missing_actions.join(',') });
-  if (!out.schema.all_present) blockers.push({ reason: 'SCHEMA_TABLE_MISSING', detail: String(out.schema.missing_table_count) + ' table(s) absent' });
-  if (draftIds.length && !drafts.length) blockers.push({ reason: 'ALLOCATION_DRAFT_NOT_FOUND', detail: 'none of the supplied allocation_draft_id values exist' });
-  if (!draftIds.length && !drafts.length) blockers.push({ reason: 'NO_PERSISTED_ALLOCATION_DRAFT', detail: 'Submit re-reads persisted drafts; adjust the Execution Plan first so one is saved.' });
-  out.blocking_reasons = blockers;
-  out.verdict = blockers.length ? 'BLOCKED' : 'READY';
-  return jsonResponse_(out);
+var drafts = [];
+try {
+var sh = ss.getSheetByName('shipping_allocation_drafts');
+if (sh) {
+var d = sh.getDataRange().getValues();
+if (d.length > 1) {
+var h = d[0].map(function (x) { return sysStr_(x).toLowerCase(); });
+var cId = h.indexOf('allocation_draft_id'), cStatus = h.indexOf('status');
+for (var r = 1; r < d.length; r++) {
+var id = cId === -1 ? '' : sysStr_(d[r][cId]);
+if (!id) continue;
+if (draftIds.length && draftIds.indexOf(id) === -1) continue;
+drafts.push({ allocation_draft_id: id, status: cStatus === -1 ? '' : sysStr_(d[r][cStatus]) });
+}
+}
+}
+} catch (e2) { }
+out.requested_draft_ids = draftIds;
+out.matched_drafts = drafts.length;
+out.drafts = drafts.slice(0, 20);
+
+
+out.expected_write_manifest = [
+{ table: 'shipping_plans', operation: 'INSERT', rows: 'one per (country, marketplace, shipping_method) group' },
+{ table: 'shipping_plan_lines', operation: 'INSERT', rows: 'one per submitted SKU line, each referencing its persisted shipping_plan_id' }
+];
+out.expected_visibility_after_submit = [
+{ page: 'Weekly Shipping Plan', shows: 'the new plan in the Draft group, read through weeklyShipping.workspace.get' },
+{ page: 'Shipment Draft', shows: 'nothing yet — a shipment exists only after the plan is approved and transferred' },
+{ page: 'On-the-Way Map', shows: 'nothing yet — the map needs a shipment with routes/events, created by Confirm Shipment' }
+];
+var blockers = [];
+if (!router.all_available) blockers.push({ reason: 'ROUTER_ACTION_MISSING', detail: router.missing_actions.join(',') });
+if (!out.schema.all_present) blockers.push({ reason: 'SCHEMA_TABLE_MISSING', detail: String(out.schema.missing_table_count) + ' table(s) absent' });
+if (draftIds.length && !drafts.length) blockers.push({ reason: 'ALLOCATION_DRAFT_NOT_FOUND', detail: 'none of the supplied allocation_draft_id values exist' });
+if (!draftIds.length && !drafts.length) blockers.push({ reason: 'NO_PERSISTED_ALLOCATION_DRAFT', detail: 'Submit re-reads persisted drafts; adjust the Execution Plan first so one is saved.' });
+out.blocking_reasons = blockers;
+out.verdict = blockers.length ? 'BLOCKED' : 'READY';
+return jsonResponse_(out);
 }
 
-// ---- editor-runnable wrapper (§K) -----------------------------------------------------------------------
-// Paste an allocation_draft_id to scope the flow check, or leave the placeholder to report unscoped readiness.
+
+
 var TEMP_FLOW_DIAGNOSTIC_ALLOCATION_DRAFT_ID_ = 'PASTE_ALLOCATION_DRAFT_ID_HERE_OR_LEAVE_BLANK';
 
 function TEMP_SYSTEM_HEALTH_CHECK() {
-  var h = {};
-  try { h = JSON.parse(handleSystemHealth_({}).getContent()); } catch (e) { Logger.log('[SYS-HEALTH] UNPARSEABLE'); return; }
-  Logger.log('[SYS-HEALTH][identity] build_id=' + h.build_id +
-    ' contract_version=' + h.contract_version +
-    ' deployed_action_contract_version=' + h.deployed_action_contract_version +
-    ' inventory_registry_projection_version=' + h.inventory_registry_projection_version +
-    ' required_action_list_version=' + h.required_action_list_version +
-    ' required_action_count=' + h.required_action_count);
-  Logger.log('[SYS-HEALTH][identity] NOTE: missing_actions is computed from the DEPLOYED code\'s own required-action ' +
-    'list, so an EMPTY list is NOT proof that this deployment is complete. Compare the version fields above.');
-  Logger.log('[SYS-HEALTH][identity] NOTE: running this wrapper in the EDITOR proves the code is SAVED. It does NOT ' +
-    'prove the /exec WEB APP serves it — that requires a new deployment version.');
-  Logger.log('[SYS-HEALTH] ok=' + h.ok +
-    ' contract=' + h.api_contract_version + ' build=' + h.build_version + ' env=' + h.environment_mode +
-    ' | router_ready=' + h.router_ready + ' doGet=' + (h.entrypoints && h.entrypoints.doGet) + ' doPost=' + (h.entrypoints && h.entrypoints.doPost) +
-    ' missing_actions=[' + (h.missing_actions || []).join(',') + ']' +
-    ' | db_reachable=' + h.db_reachable + ' schema_ready=' + h.schema_ready +
-    ' missing_tables=' + (h.schema && h.schema.missing_table_count) +
-    ' | server_ms=' + h.server_ms + ' request_id=' + h.request_id +
-    ' | READ_ONLY=' + h.read_only + ' DB_WRITES=' + h.db_writes + ' DRIVE_WRITES=' + h.drive_writes +
-    ' STATUS_TRANSITIONS=' + h.status_transitions + ' EMAILS=' + h.emails + ' DEMO_MUTATIONS=' + h.demo_mutations);
-  ((h.schema && h.schema.tables) || []).forEach(function (t) {
-    if (!t.present) Logger.log('[SYS-HEALTH][table] MISSING ' + t.table);
-  });
+var h = {};
+try { h = JSON.parse(handleSystemHealth_({}).getContent()); } catch (e) { Logger.log('[SYS-HEALTH] UNPARSEABLE'); return; }
+Logger.log('[SYS-HEALTH][identity] build_id=' + h.build_id +
+' contract_version=' + h.contract_version +
+' deployed_action_contract_version=' + h.deployed_action_contract_version +
+' inventory_registry_projection_version=' + h.inventory_registry_projection_version +
+' required_action_list_version=' + h.required_action_list_version +
+' required_action_count=' + h.required_action_count);
+Logger.log('[SYS-HEALTH][identity] NOTE: missing_actions is computed from the DEPLOYED code\'s own required-action ' +
+'list, so an EMPTY list is NOT proof that this deployment is complete. Compare the version fields above.');
+Logger.log('[SYS-HEALTH][identity] NOTE: running this wrapper in the EDITOR proves the code is SAVED. It does NOT ' +
+'prove the /exec WEB APP serves it — that requires a new deployment version.');
+Logger.log('[SYS-HEALTH] ok=' + h.ok +
+' contract=' + h.api_contract_version + ' build=' + h.build_version + ' env=' + h.environment_mode +
+' | router_ready=' + h.router_ready + ' doGet=' + (h.entrypoints && h.entrypoints.doGet) + ' doPost=' + (h.entrypoints && h.entrypoints.doPost) +
+' missing_actions=[' + (h.missing_actions || []).join(',') + ']' +
+' | db_reachable=' + h.db_reachable + ' schema_ready=' + h.schema_ready +
+' missing_tables=' + (h.schema && h.schema.missing_table_count) +
+' | server_ms=' + h.server_ms + ' request_id=' + h.request_id +
+' | READ_ONLY=' + h.read_only + ' DB_WRITES=' + h.db_writes + ' DRIVE_WRITES=' + h.drive_writes +
+' STATUS_TRANSITIONS=' + h.status_transitions + ' EMAILS=' + h.emails + ' DEMO_MUTATIONS=' + h.demo_mutations);
+((h.schema && h.schema.tables) || []).forEach(function (t) {
+if (!t.present) Logger.log('[SYS-HEALTH][table] MISSING ' + t.table);
+});
 }
 
 function TEMP_SUBMIT_FLOW_DIAGNOSE() {
-  var raw = sysStr_(TEMP_FLOW_DIAGNOSTIC_ALLOCATION_DRAFT_ID_);
-  var ids = (!raw || raw.indexOf('PASTE_') === 0) ? [] : [raw];
-  var d = {};
-  try { d = JSON.parse(handleSubmitFlowDiagnostic_({ allocation_draft_ids: ids }).getContent()); }
-  catch (e) { Logger.log('[SUBMIT-FLOW] UNPARSEABLE'); return; }
-  Logger.log('[SUBMIT-FLOW] verdict=' + d.verdict +
-    ' | router_ready=' + d.router_ready + ' missing_actions=[' + (d.missing_actions || []).join(',') + ']' +
-    ' | schema_ready=' + (d.schema && d.schema.all_present) + ' missing_tables=' + (d.schema && d.schema.missing_table_count) +
-    ' | requested_drafts=[' + (d.requested_draft_ids || []).join(',') + '] matched=' + d.matched_drafts +
-    ' | blocked_by=[' + (d.blocking_reasons || []).map(function (b) { return b.reason; }).join(',') + ']' +
-    ' | request_id=' + d.request_id +
-    ' | READ_ONLY=' + d.read_only + ' DB_WRITES=' + d.db_writes + ' DRIVE_WRITES=' + d.drive_writes +
-    ' STATUS_TRANSITIONS=' + d.status_transitions + ' EMAILS=' + d.emails + ' DEMO_MUTATIONS=' + d.demo_mutations);
-  (d.expected_write_manifest || []).forEach(function (m) {
-    Logger.log('[SUBMIT-FLOW][would-write] ' + m.table + ' ' + m.operation + ' — ' + m.rows);
-  });
-  (d.expected_visibility_after_submit || []).forEach(function (v) {
-    Logger.log('[SUBMIT-FLOW][visibility] ' + v.page + ' — ' + v.shows);
-  });
-  (d.blocking_reasons || []).forEach(function (b) { Logger.log('[SUBMIT-FLOW][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
+var raw = sysStr_(TEMP_FLOW_DIAGNOSTIC_ALLOCATION_DRAFT_ID_);
+var ids = (!raw || raw.indexOf('PASTE_') === 0) ? [] : [raw];
+var d = {};
+try { d = JSON.parse(handleSubmitFlowDiagnostic_({ allocation_draft_ids: ids }).getContent()); }
+catch (e) { Logger.log('[SUBMIT-FLOW] UNPARSEABLE'); return; }
+Logger.log('[SUBMIT-FLOW] verdict=' + d.verdict +
+' | router_ready=' + d.router_ready + ' missing_actions=[' + (d.missing_actions || []).join(',') + ']' +
+' | schema_ready=' + (d.schema && d.schema.all_present) + ' missing_tables=' + (d.schema && d.schema.missing_table_count) +
+' | requested_drafts=[' + (d.requested_draft_ids || []).join(',') + '] matched=' + d.matched_drafts +
+' | blocked_by=[' + (d.blocking_reasons || []).map(function (b) { return b.reason; }).join(',') + ']' +
+' | request_id=' + d.request_id +
+' | READ_ONLY=' + d.read_only + ' DB_WRITES=' + d.db_writes + ' DRIVE_WRITES=' + d.drive_writes +
+' STATUS_TRANSITIONS=' + d.status_transitions + ' EMAILS=' + d.emails + ' DEMO_MUTATIONS=' + d.demo_mutations);
+(d.expected_write_manifest || []).forEach(function (m) {
+Logger.log('[SUBMIT-FLOW][would-write] ' + m.table + ' ' + m.operation + ' — ' + m.rows);
+});
+(d.expected_visibility_after_submit || []).forEach(function (v) {
+Logger.log('[SUBMIT-FLOW][visibility] ' + v.page + ' — ' + v.shows);
+});
+(d.blocking_reasons || []).forEach(function (b) { Logger.log('[SUBMIT-FLOW][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
 }
 
 
-// ============================================================================================================
-// F1-7N-FB-2A §F — READ-ONLY Execution Plan (shipping allocation draft) SAVE READINESS.
-// ------------------------------------------------------------------------------------------------------------
-// WHY. The production failure was a bare `BUSINESS_COMMAND_ERROR` on `upsertShippingAllocationDraft`. That is
-// not a backend reason: it is the browser's fallback label for a handler error string it had no code for, and
-// the UI then rendered the message — the only field carrying the real reason — nowhere at all. This diagnostic
-// makes the system state the reason instead of anyone guessing it.
-//
-// HOW. It does NOT reimplement a single business rule. It runs the very gates the write runs, in the same
-// order, against the same live tables:
-//   1. prodRequireSheet_ / prodRequireColumns_ — the VALIDATE-ONLY schema gate that is the first thing
-//      sadUpsertDraftHeaderCore_ touches (via procurementEnsureSheet_). It mutates nothing and throws a
-//      deterministic PRODUCTION_SAFETY:<token>; that token is the highest-value answer this can return, because
-//      it fires before any payload logic and proves a zero-write refusal.
-//   2. sadHeaderRouteIsComplete_ — the real route-completeness predicate.
-//   3. sadResolveActiveDraftK2OrK3_ — the real identity/idempotency authority (CREATE / REUSE / CONFLICT /
-//      BLOCK), which is also what decides INSERT vs UPDATE and the deterministic primary key.
-//   4. sadLegacyReconcileReason_ — the real guard for editing an existing row.
-//   5. auditShippingAllocationSchemaReadOnly (41_) — the existing production header-drift evidence report.
-// Every call above is a READ. Nothing here creates a sheet, appends a column, writes a cell, takes a lock,
-// touches Drive, sends mail or alters Demo data. It NEVER calls procurementEnsureSheet_ on a missing tab path
-// that could provision, never calls a handler, and never claims a write/read round trip occurred.
-//
-// It returns no spreadsheet id, Drive id, token or credential. Row content is never echoed: identities are
-// reported as ids the caller already supplied or as deterministic hashes of the caller's own payload.
-// ============================================================================================================
 
-// Editor-run inputs. Leave a PASTE_ placeholder to skip that part of the evaluation.
-//
-// F1-7N-FB-3 §E — you NEVER need to invent a field name here. The objects below are PREFILLED with the exact
-// canonical keys the writer accepts; you only replace VALUES. The editable value fields are exactly these, and
-// nothing else in this file should be edited:
-//   TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_  — an existing allocation_draft_id, or leave blank
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.company                                  (e.g. 'KM')
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.country                                  (e.g. 'US')
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.marketplace                              (e.g. 'Amazon')
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_source_warehouse_id          the From warehouse_id
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_destination_warehouse_id     the To warehouse_id, OR leave blank and set
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.destination_marketplace                  …this instead for an Amazon logical To
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_shipping_method              the Method
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.recommended_last_mile_delivery           optional
-//   TEMP_SAD_DIAGNOSTIC_HEADER_.planning_cycle                           optional
-//   TEMP_SAD_DIAGNOSTIC_LINE_.sku / .planned_qty / .required_by_date     one representative line
-// Do NOT add, rename or remove keys — the key set IS the writer's contract.
-//
-// If you only need to know whether the TABLE/HEADER contract itself would refuse the write, run the
-// ZERO-CONFIGURATION diagnostic instead: TEMP_SHIPPING_ALLOCATION_SCHEMA_DIAGNOSE (65_) needs no input at all.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 var TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_ = 'PASTE_ALLOCATION_DRAFT_ID_HERE_OR_LEAVE_BLANK';
-// The header payload to evaluate — exactly the shape buildDraftHeaderPayload sends. Fill in the scope + route
-// you are trying to save; blanks are reported as missing rather than guessed.
+
+
 var TEMP_SAD_DIAGNOSTIC_HEADER_ = {
-  planning_cycle: '',
-  source_page: 'inventory_replenishment',
-  company: 'PASTE_COMPANY_OR_LEAVE_BLANK',
-  country: 'PASTE_COUNTRY_OR_LEAVE_BLANK',
-  marketplace: 'PASTE_MARKETPLACE_OR_LEAVE_BLANK',
-  recommended_source_warehouse_id: '',
-  recommended_destination_warehouse_id: '',
-  destination_marketplace: '',
-  recommended_shipping_method: '',
-  recommended_last_mile_delivery: ''
+planning_cycle: '',
+source_page: 'inventory_replenishment',
+company: 'PASTE_COMPANY_OR_LEAVE_BLANK',
+country: 'PASTE_COUNTRY_OR_LEAVE_BLANK',
+marketplace: 'PASTE_MARKETPLACE_OR_LEAVE_BLANK',
+recommended_source_warehouse_id: '',
+recommended_destination_warehouse_id: '',
+destination_marketplace: '',
+recommended_shipping_method: '',
+recommended_last_mile_delivery: ''
 };
-// One representative line, to exercise the real line-completeness + date canonicalization predicates.
+
 var TEMP_SAD_DIAGNOSTIC_LINE_ = { sku: '', planned_qty: 0, required_by_date: '' };
 
 function sadDiagPlaceholder_(v) {
-  var s = sysStr_(v);
-  return s === '' || s.indexOf('PASTE_') === 0;
+var s = sysStr_(v);
+return s === '' || s.indexOf('PASTE_') === 0;
 }
 function sadDiagClean_(obj) {
-  var out = {};
-  for (var k in obj) { if (!Object.prototype.hasOwnProperty.call(obj, k)) continue; out[k] = sadDiagPlaceholder_(obj[k]) ? '' : sysStr_(obj[k]); }
-  return out;
+var out = {};
+for (var k in obj) { if (!Object.prototype.hasOwnProperty.call(obj, k)) continue; out[k] = sadDiagPlaceholder_(obj[k]) ? '' : sysStr_(obj[k]); }
+return out;
 }
-// Run the write path's FIRST gate, read-only, and report the exact token it would raise.
+
 function sadDiagSchemaGate_(ss, table, headers) {
-  var res = { table: table, present: false, gate: 'UNKNOWN', safety_token: '', missing_headers: [], header_count: 0 };
-  var sheet = null;
-  try { sheet = ss.getSheetByName(table); } catch (e) { sheet = null; }
-  if (!sheet) { res.gate = 'BLOCKED'; res.safety_token = 'SCHEMA_NOT_PROVISIONED'; res.missing_headers = (headers || []).slice(); return res; }
-  res.present = true;
-  try { res.header_count = sheet.getLastColumn(); } catch (e2) {}
-  // The exact validate-only gate the handler hits first. It throws; it never mutates.
-  try {
-    prodRequireSheet_(ss, table, headers || []);
-    res.gate = 'PASS';
-  } catch (gateErr) {
-    res.gate = 'BLOCKED';
-    var m = sysStr_(gateErr && gateErr.message);
-    var tok = m.match(/PRODUCTION_SAFETY:([A-Z_]+)/);
-    res.safety_token = tok ? tok[1] : 'SCHEMA_REFUSED';
-  }
-  // Which canonical headers the live tab does not have (names only — no row content).
-  try {
-    var lastCol = sheet.getLastColumn();
-    var actual = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return sysStr_(h); }) : [];
-    var have = {}; actual.forEach(function (h) { have[h] = 1; });
-    res.missing_headers = (headers || []).filter(function (h) { return !have[h]; });
-  } catch (e3) {}
-  return res;
+var res = { table: table, present: false, gate: 'UNKNOWN', safety_token: '', missing_headers: [], header_count: 0 };
+var sheet = null;
+try { sheet = ss.getSheetByName(table); } catch (e) { sheet = null; }
+if (!sheet) { res.gate = 'BLOCKED'; res.safety_token = 'SCHEMA_NOT_PROVISIONED'; res.missing_headers = (headers || []).slice(); return res; }
+res.present = true;
+try { res.header_count = sheet.getLastColumn(); } catch (e2) {}
+
+try {
+prodRequireSheet_(ss, table, headers || []);
+res.gate = 'PASS';
+} catch (gateErr) {
+res.gate = 'BLOCKED';
+var m = sysStr_(gateErr && gateErr.message);
+var tok = m.match(/PRODUCTION_SAFETY:([A-Z_]+)/);
+res.safety_token = tok ? tok[1] : 'SCHEMA_REFUSED';
 }
-// FK readiness — does the id the payload carries exist in its master table? Presence only; no row echo.
+
+try {
+var lastCol = sheet.getLastColumn();
+var actual = lastCol > 0 ? sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return sysStr_(h); }) : [];
+var have = {}; actual.forEach(function (h) { have[h] = 1; });
+res.missing_headers = (headers || []).filter(function (h) { return !have[h]; });
+} catch (e3) {}
+return res;
+}
+
 function sadDiagIdExists_(ss, table, column, value) {
-  if (!sysStr_(value)) return null;   // nothing supplied -> not applicable
-  try {
-    var sh = ss.getSheetByName(table); if (!sh) return false;
-    var d = sh.getDataRange().getValues(); if (d.length < 2) return false;
-    var h = d[0].map(function (x) { return sysStr_(x).toLowerCase(); });
-    var c = h.indexOf(String(column).toLowerCase()); if (c === -1) return false;
-    for (var r = 1; r < d.length; r++) { if (sysStr_(d[r][c]) === sysStr_(value)) return true; }
-    return false;
-  } catch (e) { return false; }
+if (!sysStr_(value)) return null;
+try {
+var sh = ss.getSheetByName(table); if (!sh) return false;
+var d = sh.getDataRange().getValues(); if (d.length < 2) return false;
+var h = d[0].map(function (x) { return sysStr_(x).toLowerCase(); });
+var c = h.indexOf(String(column).toLowerCase()); if (c === -1) return false;
+for (var r = 1; r < d.length; r++) { if (sysStr_(d[r][c]) === sysStr_(value)) return true; }
+return false;
+} catch (e) { return false; }
 }
 
 function handleShippingAllocationDraftDiagnostic_(body) {
-  var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('SADDIAG-' + Utilities.getUuid().substring(0, 8).toUpperCase());
-  var header = sadDiagClean_((body && body.header) || {});
-  var line = (body && body.line) ? body.line : null;
-  var draftId = sysStr_(body && (body.allocation_draft_id || body.allocationDraftId));
-  var out = {
-    success: true, request_id: requestId,
-    read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
-    api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_,
-    evaluator: 'production (prodRequireSheet_ + sadHeaderRouteIsComplete_ + sadResolveActiveDraftK2OrK3_ + sadLegacyReconcileReason_)'
-  };
-  var blockers = [];
+var requestId = sysStr_(body && (body.requestId || body.request_id)) || ('SADDIAG-' + Utilities.getUuid().substring(0, 8).toUpperCase());
+var header = sadDiagClean_((body && body.header) || {});
+var line = (body && body.line) ? body.line : null;
+var draftId = sysStr_(body && (body.allocation_draft_id || body.allocationDraftId));
+var out = {
+success: true, request_id: requestId,
+read_only: true, db_writes: 0, drive_writes: 0, status_transitions: 0, emails: 0, demo_mutations: 0,
+api_contract_version: SYS_API_CONTRACT_VERSION_, build_version: SYS_DEPLOYMENT_RELEASE_,
+evaluator: 'production (prodRequireSheet_ + sadHeaderRouteIsComplete_ + sadResolveActiveDraftK2OrK3_ + sadLegacyReconcileReason_)'
+};
+var blockers = [];
 
-  // 1. action + handler availability (probed by symbol, never invoked)
-  var router = sysRouterReadiness_();
-  // F1-7N-FB-4G-A2-R3 §E.5 — the contract probe must be able to PROVE the atomic writer is reachable, because
-  // it is now the only path that creates or edits a route ticket and the client will not fall back.
-  var wanted = ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'upsertShippingAllocationDraftAtomic', 'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'];
-  out.actions = router.actions.filter(function (a) { return wanted.indexOf(a.action) !== -1; });
-  out.actions_all_available = out.actions.length === wanted.length && out.actions.every(function (a) { return a.available; });
-  if (!out.actions_all_available) blockers.push({ reason: 'ROUTER_ACTION_OR_HANDLER_MISSING', detail: 'a required allocation-draft action is not present in the DEPLOYED code (partial Apps Script sync)' });
 
-  var ss;
-  try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
-  catch (e) {
-    out.verdict = 'BLOCKED';
-    out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE', detail: 'the configured production database could not be opened' }];
-    return jsonResponse_(out);
-  }
+var router = sysRouterReadiness_();
 
-  // 2. the write path's first gate, run read-only on BOTH tables
-  out.schema_gate = [
-    sadDiagSchemaGate_(ss, 'shipping_allocation_drafts', (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : []),
-    sadDiagSchemaGate_(ss, 'shipping_allocation_draft_lines', (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : [])
-  ];
-  out.schema_mode = 'EXACT_LIVE_30_COL_AUTHORITY (C2-D1R; order-sensitive, no additive tolerance in normal runtime)';
-  for (var i = 0; i < out.schema_gate.length; i++) {
-    var g = out.schema_gate[i];
-    if (g.gate !== 'PASS') blockers.push({ reason: 'PRODUCTION_SAFETY:' + (g.safety_token || 'SCHEMA_REFUSED'), detail: g.table + (g.missing_headers.length ? (' — missing header(s): ' + g.missing_headers.join(', ')) : ' — header row does not match the canonical authority in the expected order') });
-  }
 
-  // 3. the existing production header-drift evidence report (41_), summarized — never the row content
-  if (typeof auditShippingAllocationSchemaReadOnly === 'function') {
-    try {
-      var audit = auditShippingAllocationSchemaReadOnly();
-      out.schema_audit = ((audit && audit.tables) || []).map(function (t) {
-        return { table: t.table, exists: t.exists, column_count: t.columnCount, exact_match: t.exactMatch,
-          first_mismatch_index: t.firstMismatchIndex, missing_headers: t.missingHeaders || [],
-          extra_headers: t.extraHeaders || [], reordered_headers: t.reorderedHeaders || [],
-          migration_classification: t.migrationClassification };
-      });
-      if (audit && audit.error) out.schema_audit_error = sysStr_(audit.error);
-    } catch (auditErr) { out.schema_audit_error = 'AUDIT_UNAVAILABLE'; }
-  }
+var wanted = ['upsertShippingAllocationDraft', 'upsertShippingAllocationDraftLines', 'upsertShippingAllocationDraftAtomic', 'getShippingAllocationDraftWorkspace', 'submitAllocationDraftsToShippingPlans'];
+out.actions = router.actions.filter(function (a) { return wanted.indexOf(a.action) !== -1; });
+out.actions_all_available = out.actions.length === wanted.length && out.actions.every(function (a) { return a.available; });
+if (!out.actions_all_available) blockers.push({ reason: 'ROUTER_ACTION_OR_HANDLER_MISSING', detail: 'a required allocation-draft action is not present in the DEPLOYED code (partial Apps Script sync)' });
 
-  // 4. payload field contract — report what is present/absent; never invent a value
-  var routeFields = ['company', 'country', 'marketplace', 'recommended_source_warehouse_id',
-    'recommended_destination_warehouse_id', 'destination_marketplace', 'recommended_shipping_method'];
-  var present = {}, absent = [];
-  routeFields.forEach(function (f) { var v = sysStr_(header[f]); present[f] = v !== ''; if (v === '') absent.push(f); });
-  out.payload_field_contract = { supplied: present, absent: absent,
-    note: 'destination_marketplace is an ACCEPTED payload field but is NOT a stored column — it makes an Amazon logical destination a valid To.' };
+var ss;
+try { ss = SpreadsheetApp.openById(prodExpectedDbId_()); }
+catch (e) {
+out.verdict = 'BLOCKED';
+out.blocking_reasons = [{ reason: 'DB_NOT_REACHABLE', detail: 'the configured production database could not be opened' }];
+return jsonResponse_(out);
+}
 
-  // 5. route completeness — the REAL predicate
-  var routeComplete = (typeof sadHeaderRouteIsComplete_ === 'function') ? sadHeaderRouteIsComplete_(header) : null;
-  out.route_complete = routeComplete;
-  out.source_destination_readiness = {
-    source_warehouse_id: sysStr_(header.recommended_source_warehouse_id) || null,
-    source_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_source_warehouse_id),
-    destination_warehouse_id: sysStr_(header.recommended_destination_warehouse_id) || null,
-    destination_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_destination_warehouse_id),
-    destination_is_logical_marketplace: sysStr_(header.destination_marketplace) !== '',
-    shipping_method: sysStr_(header.recommended_shipping_method) || null
-  };
-  if (routeComplete === false) blockers.push({ reason: 'PLAN_HEADER_INCOMPLETE', detail: 'a Draft route requires From + To + Method (an Amazon logical destination counts as To); a partial route is refused with zero rows written' });
-  if (out.source_destination_readiness.source_exists_in_warehouses === false) blockers.push({ reason: 'FK_SOURCE_WAREHOUSE_NOT_FOUND', detail: 'the supplied source warehouse_id is not present in warehouses' });
-  if (out.source_destination_readiness.destination_exists_in_warehouses === false) blockers.push({ reason: 'FK_DESTINATION_WAREHOUSE_NOT_FOUND', detail: 'the supplied destination warehouse_id is not present in warehouses' });
 
-  // 6. identity / idempotency / INSERT-vs-UPDATE — the REAL resolution authority
-  out.pk_readiness = { deterministic: false, expected_allocation_draft_id: null, basis: null };
-  out.idempotency = { keyed_by: 'the deterministic K2 shipment-group hash of the header route dims (sadK2DeterministicHeaderId_), so a retry UPDATES the same row instead of inserting a duplicate', resolution: null };
-  var dsh = null;
-  try { dsh = ss.getSheetByName('shipping_allocation_drafts'); } catch (e4) { dsh = null; }
-  if (dsh && typeof sadResolveActiveDraftK2OrK3_ === 'function') {
-    try {
-      if (draftId && !sadDiagPlaceholder_(draftId)) {
-        // explicit id path — the same guard the handler applies before editing an existing row
-        var found = (typeof procurementFindRow_ === 'function') ? procurementFindRow_(dsh, 'allocation_draft_id', draftId) : null;
-        out.pk_readiness = { deterministic: true, expected_allocation_draft_id: draftId, basis: 'explicit allocation_draft_id supplied by the caller' };
-        out.expected_classification = found ? 'UPDATE' : 'INSERT';
-        out.idempotency.resolution = found ? 'EXISTING_ROW' : 'ID_NOT_FOUND';
-        if (found && typeof sadLegacyReconcileReason_ === 'function') {
-          // FB-4A §D — pass the REQUEST header so this reports the same semantic-group verdict production takes.
-          var legR = sadLegacyReconcileReason_(dsh, found, false, header);
-          out.reconcile_guard = legR || 'PASS';
-          if (legR) blockers.push({ reason: legR, detail: (typeof sadReconcileMessage_ === 'function') ? sadReconcileMessage_(legR) : 'requires an explicit user migration' });
-        }
-      } else {
-        var res = sadResolveActiveDraftK2OrK3_(dsh, header, { allowLegacyReconcile: false });
-        out.idempotency.resolution = res.status + (res.k2 ? ' (K2 shipment group)' : ' (K3 scope)');
-        if (res.status === 'CREATE' || res.status === 'REUSE') {
-          out.pk_readiness = { deterministic: true, expected_allocation_draft_id: sysStr_(res.id) || null,
-            basis: res.k2 ? 'deterministic K2 shipment-group hash of the header route dims' : 'existing active draft for this scope' };
-          out.expected_classification = (res.status === 'CREATE') ? 'INSERT' : 'UPDATE';
-        } else if (res.status === 'CONFLICT') {
-          out.expected_classification = 'BLOCKED';
-          blockers.push({ reason: 'BLOCKED_CONFLICT', detail: 'more than one active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + '; resolve manually (zero rows written)' });
-        } else {
-          out.expected_classification = 'BLOCKED';
-          blockers.push({ reason: sysStr_(res.reason) || 'BLOCK', detail: 'the real draft-resolution authority refuses this payload with zero rows written' });
-        }
-      }
-    } catch (resErr) {
-      out.idempotency.resolution = 'EVALUATION_FAILED';
-      blockers.push({ reason: 'DRAFT_RESOLUTION_EVALUATION_FAILED', detail: 'the resolver could not be evaluated against the live table' });
-    }
-  }
+out.schema_gate = [
+sadDiagSchemaGate_(ss, 'shipping_allocation_drafts', (typeof SHIPPING_ALLOCATION_DRAFTS_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFTS_HEADERS_ : []),
+sadDiagSchemaGate_(ss, 'shipping_allocation_draft_lines', (typeof SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ !== 'undefined') ? SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_ : [])
+];
+out.schema_mode = 'EXACT_LIVE_30_COL_AUTHORITY (C2-D1R; order-sensitive, no additive tolerance in normal runtime)';
+for (var i = 0; i < out.schema_gate.length; i++) {
+var g = out.schema_gate[i];
+if (g.gate !== 'PASS') blockers.push({ reason: 'PRODUCTION_SAFETY:' + (g.safety_token || 'SCHEMA_REFUSED'), detail: g.table + (g.missing_headers.length ? (' — missing header(s): ' + g.missing_headers.join(', ')) : ' — header row does not match the canonical authority in the expected order') });
+}
 
-  // 7. line quantity / date validity — the REAL predicates
-  if (line && (sysStr_(line.sku) || Number(line.planned_qty) > 0)) {
-    var lineOk = (typeof sadLineIsComplete_ === 'function') ? sadLineIsComplete_(line) : null;
-    var canonDate = (typeof sadCanonDate_ === 'function' && sysStr_(line.required_by_date)) ? sadCanonDate_(line.required_by_date) : '';
-    out.line_readiness = { sku_present: sysStr_(line.sku) !== '', planned_qty: Number(line.planned_qty) || 0,
-      complete: lineOk, required_by_date_canonical: canonDate || null,
-      // sadCanonDate_ echoes an unparseable value back unchanged, so validity is the canonical SHAPE, not
-      // merely a non-empty return.
-      date_valid: sysStr_(line.required_by_date) === '' ? null : /^\d{4}-\d{2}-\d{2}$/.test(canonDate) };
-    if (lineOk === false) blockers.push({ reason: 'PLAN_LINE_INCOMPLETE', detail: 'a persistable line needs a SKU and a quantity greater than zero' });
-    if (out.line_readiness.date_valid === false) blockers.push({ reason: 'LINE_DATE_NOT_CANONICAL', detail: 'required_by_date is not canonicalizable to YYYY-MM-DD' });
-  }
 
-  // 8. the exact rows a successful save WOULD write — a manifest, not a write
-  out.expected_write_manifest = (blockers.length)
-    ? [{ table: '(none)', operation: 'ZERO_WRITE', rows: 'every reason above is a pre-write refusal — no cell would be touched' }]
-    : [
-      { table: 'shipping_allocation_drafts', operation: out.expected_classification || 'INSERT_OR_UPDATE', rows: 'exactly one header row, keyed by the deterministic allocation_draft_id above' },
-      { table: 'shipping_allocation_draft_lines', operation: 'UPSERT_BY_LINE_ID', rows: 'one row per COMPLETE Execution Plan line; recommendation-snapshot columns are preserved when the payload omits them' }
-    ];
-  out.blocking_reasons = blockers;
-  out.verdict = blockers.length ? 'BLOCKED' : 'READY';
-  out.exact_blocking_reason = blockers.length ? (blockers[0].reason + ' — ' + (blockers[0].detail || '')) : '';
-  return jsonResponse_(out);
+if (typeof auditShippingAllocationSchemaReadOnly === 'function') {
+try {
+var audit = auditShippingAllocationSchemaReadOnly();
+out.schema_audit = ((audit && audit.tables) || []).map(function (t) {
+return { table: t.table, exists: t.exists, column_count: t.columnCount, exact_match: t.exactMatch,
+first_mismatch_index: t.firstMismatchIndex, missing_headers: t.missingHeaders || [],
+extra_headers: t.extraHeaders || [], reordered_headers: t.reorderedHeaders || [],
+migration_classification: t.migrationClassification };
+});
+if (audit && audit.error) out.schema_audit_error = sysStr_(audit.error);
+} catch (auditErr) { out.schema_audit_error = 'AUDIT_UNAVAILABLE'; }
+}
+
+
+var routeFields = ['company', 'country', 'marketplace', 'recommended_source_warehouse_id',
+'recommended_destination_warehouse_id', 'destination_marketplace', 'recommended_shipping_method'];
+var present = {}, absent = [];
+routeFields.forEach(function (f) { var v = sysStr_(header[f]); present[f] = v !== ''; if (v === '') absent.push(f); });
+out.payload_field_contract = { supplied: present, absent: absent,
+note: 'destination_marketplace is an ACCEPTED payload field but is NOT a stored column — it makes an Amazon logical destination a valid To.' };
+
+
+var routeComplete = (typeof sadHeaderRouteIsComplete_ === 'function') ? sadHeaderRouteIsComplete_(header) : null;
+out.route_complete = routeComplete;
+out.source_destination_readiness = {
+source_warehouse_id: sysStr_(header.recommended_source_warehouse_id) || null,
+source_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_source_warehouse_id),
+destination_warehouse_id: sysStr_(header.recommended_destination_warehouse_id) || null,
+destination_exists_in_warehouses: sadDiagIdExists_(ss, 'warehouses', 'warehouse_id', header.recommended_destination_warehouse_id),
+destination_is_logical_marketplace: sysStr_(header.destination_marketplace) !== '',
+shipping_method: sysStr_(header.recommended_shipping_method) || null
+};
+if (routeComplete === false) blockers.push({ reason: 'PLAN_HEADER_INCOMPLETE', detail: 'a Draft route requires From + To + Method (an Amazon logical destination counts as To); a partial route is refused with zero rows written' });
+if (out.source_destination_readiness.source_exists_in_warehouses === false) blockers.push({ reason: 'FK_SOURCE_WAREHOUSE_NOT_FOUND', detail: 'the supplied source warehouse_id is not present in warehouses' });
+if (out.source_destination_readiness.destination_exists_in_warehouses === false) blockers.push({ reason: 'FK_DESTINATION_WAREHOUSE_NOT_FOUND', detail: 'the supplied destination warehouse_id is not present in warehouses' });
+
+
+out.pk_readiness = { deterministic: false, expected_allocation_draft_id: null, basis: null };
+out.idempotency = { keyed_by: 'the deterministic K2 shipment-group hash of the header route dims (sadK2DeterministicHeaderId_), so a retry UPDATES the same row instead of inserting a duplicate', resolution: null };
+var dsh = null;
+try { dsh = ss.getSheetByName('shipping_allocation_drafts'); } catch (e4) { dsh = null; }
+if (dsh && typeof sadResolveActiveDraftK2OrK3_ === 'function') {
+try {
+if (draftId && !sadDiagPlaceholder_(draftId)) {
+
+var found = (typeof procurementFindRow_ === 'function') ? procurementFindRow_(dsh, 'allocation_draft_id', draftId) : null;
+out.pk_readiness = { deterministic: true, expected_allocation_draft_id: draftId, basis: 'explicit allocation_draft_id supplied by the caller' };
+out.expected_classification = found ? 'UPDATE' : 'INSERT';
+out.idempotency.resolution = found ? 'EXISTING_ROW' : 'ID_NOT_FOUND';
+if (found && typeof sadLegacyReconcileReason_ === 'function') {
+
+var legR = sadLegacyReconcileReason_(dsh, found, false, header);
+out.reconcile_guard = legR || 'PASS';
+if (legR) blockers.push({ reason: legR, detail: (typeof sadReconcileMessage_ === 'function') ? sadReconcileMessage_(legR) : 'requires an explicit user migration' });
+}
+} else {
+var res = sadResolveActiveDraftK2OrK3_(dsh, header, { allowLegacyReconcile: false });
+out.idempotency.resolution = res.status + (res.k2 ? ' (K2 shipment group)' : ' (K3 scope)');
+if (res.status === 'CREATE' || res.status === 'REUSE') {
+out.pk_readiness = { deterministic: true, expected_allocation_draft_id: sysStr_(res.id) || null,
+basis: res.k2 ? 'deterministic K2 shipment-group hash of the header route dims' : 'existing active draft for this scope' };
+out.expected_classification = (res.status === 'CREATE') ? 'INSERT' : 'UPDATE';
+} else if (res.status === 'CONFLICT') {
+out.expected_classification = 'BLOCKED';
+blockers.push({ reason: 'BLOCKED_CONFLICT', detail: 'more than one active Draft for this ' + (res.k2 ? 'shipment group (K2)' : 'scope (K3)') + '; resolve manually (zero rows written)' });
+} else {
+out.expected_classification = 'BLOCKED';
+blockers.push({ reason: sysStr_(res.reason) || 'BLOCK', detail: 'the real draft-resolution authority refuses this payload with zero rows written' });
+}
+}
+} catch (resErr) {
+out.idempotency.resolution = 'EVALUATION_FAILED';
+blockers.push({ reason: 'DRAFT_RESOLUTION_EVALUATION_FAILED', detail: 'the resolver could not be evaluated against the live table' });
+}
+}
+
+
+if (line && (sysStr_(line.sku) || Number(line.planned_qty) > 0)) {
+var lineOk = (typeof sadLineIsComplete_ === 'function') ? sadLineIsComplete_(line) : null;
+var canonDate = (typeof sadCanonDate_ === 'function' && sysStr_(line.required_by_date)) ? sadCanonDate_(line.required_by_date) : '';
+out.line_readiness = { sku_present: sysStr_(line.sku) !== '', planned_qty: Number(line.planned_qty) || 0,
+complete: lineOk, required_by_date_canonical: canonDate || null,
+
+
+date_valid: sysStr_(line.required_by_date) === '' ? null : /^\d{4}-\d{2}-\d{2}$/.test(canonDate) };
+if (lineOk === false) blockers.push({ reason: 'PLAN_LINE_INCOMPLETE', detail: 'a persistable line needs a SKU and a quantity greater than zero' });
+if (out.line_readiness.date_valid === false) blockers.push({ reason: 'LINE_DATE_NOT_CANONICAL', detail: 'required_by_date is not canonicalizable to YYYY-MM-DD' });
+}
+
+
+out.expected_write_manifest = (blockers.length)
+? [{ table: '(none)', operation: 'ZERO_WRITE', rows: 'every reason above is a pre-write refusal — no cell would be touched' }]
+: [
+{ table: 'shipping_allocation_drafts', operation: out.expected_classification || 'INSERT_OR_UPDATE', rows: 'exactly one header row, keyed by the deterministic allocation_draft_id above' },
+{ table: 'shipping_allocation_draft_lines', operation: 'UPSERT_BY_LINE_ID', rows: 'one row per COMPLETE Execution Plan line; recommendation-snapshot columns are preserved when the payload omits them' }
+];
+out.blocking_reasons = blockers;
+out.verdict = blockers.length ? 'BLOCKED' : 'READY';
+out.exact_blocking_reason = blockers.length ? (blockers[0].reason + ' — ' + (blockers[0].detail || '')) : '';
+return jsonResponse_(out);
 }
 
 function TEMP_SHIPPING_ALLOCATION_DRAFT_DIAGNOSE() {
-  var hdr = sadDiagClean_(TEMP_SAD_DIAGNOSTIC_HEADER_);
-  var did = sadDiagPlaceholder_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_) ? '' : sysStr_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_);
-  var d = {};
-  try {
-    d = JSON.parse(handleShippingAllocationDraftDiagnostic_({
-      header: hdr, line: TEMP_SAD_DIAGNOSTIC_LINE_, allocation_draft_id: did
-    }).getContent());
-  } catch (e) { Logger.log('[SAD-DIAG] UNPARSEABLE'); return; }
+var hdr = sadDiagClean_(TEMP_SAD_DIAGNOSTIC_HEADER_);
+var did = sadDiagPlaceholder_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_) ? '' : sysStr_(TEMP_SAD_DIAGNOSTIC_ALLOCATION_DRAFT_ID_);
+var d = {};
+try {
+d = JSON.parse(handleShippingAllocationDraftDiagnostic_({
+header: hdr, line: TEMP_SAD_DIAGNOSTIC_LINE_, allocation_draft_id: did
+}).getContent());
+} catch (e) { Logger.log('[SAD-DIAG] UNPARSEABLE'); return; }
 
-  Logger.log('[SAD-DIAG] verdict=' + d.verdict + ' | exact_blocking_reason=' + (d.exact_blocking_reason || '(none)'));
-  Logger.log('[SAD-DIAG] evaluator=' + d.evaluator);
-  Logger.log('[SAD-DIAG] actions_all_available=' + d.actions_all_available);
-  (d.actions || []).forEach(function (a) { Logger.log('[SAD-DIAG][action] ' + a.action + ' available=' + a.available); });
-  (d.schema_gate || []).forEach(function (g) {
-    Logger.log('[SAD-DIAG][schema-gate] ' + g.table + ' present=' + g.present + ' gate=' + g.gate +
-      ' token=' + (g.safety_token || '-') + ' header_count=' + g.header_count +
-      ' missing=[' + (g.missing_headers || []).join(',') + ']');
-  });
-  Logger.log('[SAD-DIAG] schema_mode=' + d.schema_mode);
-  (d.schema_audit || []).forEach(function (t) {
-    Logger.log('[SAD-DIAG][header-drift] ' + t.table + ' exists=' + t.exists + ' cols=' + t.column_count +
-      ' exact=' + t.exact_match + ' first_mismatch_index=' + t.first_mismatch_index +
-      ' missing=[' + (t.missing_headers || []).join(',') + '] extra=[' + (t.extra_headers || []).join(',') +
-      '] reordered=[' + (t.reordered_headers || []).join(',') + '] classification=' + t.migration_classification);
-  });
-  if (d.schema_audit_error) Logger.log('[SAD-DIAG][header-drift] error=' + d.schema_audit_error);
-  Logger.log('[SAD-DIAG] payload absent_fields=[' + ((d.payload_field_contract && d.payload_field_contract.absent) || []).join(',') + ']');
-  Logger.log('[SAD-DIAG] route_complete=' + d.route_complete);
-  var sd = d.source_destination_readiness || {};
-  Logger.log('[SAD-DIAG] from=' + sd.source_warehouse_id + ' fk_ok=' + sd.source_exists_in_warehouses +
-    ' | to=' + sd.destination_warehouse_id + ' fk_ok=' + sd.destination_exists_in_warehouses +
-    ' logical_marketplace_to=' + sd.destination_is_logical_marketplace + ' | method=' + sd.shipping_method);
-  var pk = d.pk_readiness || {};
-  Logger.log('[SAD-DIAG] pk_deterministic=' + pk.deterministic + ' expected_id=' + pk.expected_allocation_draft_id + ' basis=' + pk.basis);
-  Logger.log('[SAD-DIAG] idempotency=' + ((d.idempotency && d.idempotency.resolution) || '-') + ' expected_classification=' + d.expected_classification);
-  if (d.reconcile_guard) Logger.log('[SAD-DIAG] reconcile_guard=' + d.reconcile_guard);
-  if (d.line_readiness) Logger.log('[SAD-DIAG] line complete=' + d.line_readiness.complete + ' qty=' + d.line_readiness.planned_qty +
-    ' date_canonical=' + d.line_readiness.required_by_date_canonical + ' date_valid=' + d.line_readiness.date_valid);
-  (d.expected_write_manifest || []).forEach(function (m) { Logger.log('[SAD-DIAG][would-write] ' + m.table + ' ' + m.operation + ' — ' + m.rows); });
-  (d.blocking_reasons || []).forEach(function (b) { Logger.log('[SAD-DIAG][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
-  Logger.log('[SAD-DIAG] request_id=' + d.request_id);
-  Logger.log('READ_ONLY = ' + d.read_only);
-  Logger.log('DB_WRITES = ' + d.db_writes);
-  Logger.log('DRIVE_WRITES = ' + d.drive_writes);
-  Logger.log('STATUS_TRANSITIONS = ' + d.status_transitions);
-  Logger.log('EMAILS = ' + d.emails);
-  Logger.log('DEMO_MUTATIONS = ' + d.demo_mutations);
+Logger.log('[SAD-DIAG] verdict=' + d.verdict + ' | exact_blocking_reason=' + (d.exact_blocking_reason || '(none)'));
+Logger.log('[SAD-DIAG] evaluator=' + d.evaluator);
+Logger.log('[SAD-DIAG] actions_all_available=' + d.actions_all_available);
+(d.actions || []).forEach(function (a) { Logger.log('[SAD-DIAG][action] ' + a.action + ' available=' + a.available); });
+(d.schema_gate || []).forEach(function (g) {
+Logger.log('[SAD-DIAG][schema-gate] ' + g.table + ' present=' + g.present + ' gate=' + g.gate +
+' token=' + (g.safety_token || '-') + ' header_count=' + g.header_count +
+' missing=[' + (g.missing_headers || []).join(',') + ']');
+});
+Logger.log('[SAD-DIAG] schema_mode=' + d.schema_mode);
+(d.schema_audit || []).forEach(function (t) {
+Logger.log('[SAD-DIAG][header-drift] ' + t.table + ' exists=' + t.exists + ' cols=' + t.column_count +
+' exact=' + t.exact_match + ' first_mismatch_index=' + t.first_mismatch_index +
+' missing=[' + (t.missing_headers || []).join(',') + '] extra=[' + (t.extra_headers || []).join(',') +
+'] reordered=[' + (t.reordered_headers || []).join(',') + '] classification=' + t.migration_classification);
+});
+if (d.schema_audit_error) Logger.log('[SAD-DIAG][header-drift] error=' + d.schema_audit_error);
+Logger.log('[SAD-DIAG] payload absent_fields=[' + ((d.payload_field_contract && d.payload_field_contract.absent) || []).join(',') + ']');
+Logger.log('[SAD-DIAG] route_complete=' + d.route_complete);
+var sd = d.source_destination_readiness || {};
+Logger.log('[SAD-DIAG] from=' + sd.source_warehouse_id + ' fk_ok=' + sd.source_exists_in_warehouses +
+' | to=' + sd.destination_warehouse_id + ' fk_ok=' + sd.destination_exists_in_warehouses +
+' logical_marketplace_to=' + sd.destination_is_logical_marketplace + ' | method=' + sd.shipping_method);
+var pk = d.pk_readiness || {};
+Logger.log('[SAD-DIAG] pk_deterministic=' + pk.deterministic + ' expected_id=' + pk.expected_allocation_draft_id + ' basis=' + pk.basis);
+Logger.log('[SAD-DIAG] idempotency=' + ((d.idempotency && d.idempotency.resolution) || '-') + ' expected_classification=' + d.expected_classification);
+if (d.reconcile_guard) Logger.log('[SAD-DIAG] reconcile_guard=' + d.reconcile_guard);
+if (d.line_readiness) Logger.log('[SAD-DIAG] line complete=' + d.line_readiness.complete + ' qty=' + d.line_readiness.planned_qty +
+' date_canonical=' + d.line_readiness.required_by_date_canonical + ' date_valid=' + d.line_readiness.date_valid);
+(d.expected_write_manifest || []).forEach(function (m) { Logger.log('[SAD-DIAG][would-write] ' + m.table + ' ' + m.operation + ' — ' + m.rows); });
+(d.blocking_reasons || []).forEach(function (b) { Logger.log('[SAD-DIAG][blocker] ' + b.reason + ' — ' + (b.detail || '')); });
+Logger.log('[SAD-DIAG] request_id=' + d.request_id);
+Logger.log('READ_ONLY = ' + d.read_only);
+Logger.log('DB_WRITES = ' + d.db_writes);
+Logger.log('DRIVE_WRITES = ' + d.drive_writes);
+Logger.log('STATUS_TRANSITIONS = ' + d.status_transitions);
+Logger.log('EMAILS = ' + d.emails);
+Logger.log('DEMO_MUTATIONS = ' + d.demo_mutations);
 }
+// R15F2-STAMPS (sbx-r15f2 step 23): patched
+// R15G-STAMPS (final candidate): patched

@@ -58,7 +58,7 @@ var OAP_VERSION_ = 'oap-s8-b3-r1a-1';
 // Module build stamp — the release in which THIS FILE last changed (not the deployment release id). It is
 // declared here and expected by SYS_MODULE_BUILD_STAMPS_ in 63_, so a project that was copied a file at a
 // time and missed this NEW file reports itself unsynced instead of silently routing four dead actions.
-var OAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51';
+var OAP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51-AD1B';
 
 var OAP_LOCK_MS_ = 10000;                               // bounded wait for the SHARED script lock
 // D-S8-B3-15 — sized to OUTLAST a Gap worker's hold. A Gap worker exits cleanly at 240000 ms and, if hard-killed,
@@ -266,7 +266,8 @@ function oapReadGroup_(env, state) {
   var receivers = (harvested.receivers || []).filter(function (r) { return oapStr_(r.sku) === sku; });
   var pools = poolFacts.overseasPoolsByKey[company + '||' + country + '||' + sku] || [];
   var contextKey = oapCalcContextKey_(calcContext, harvested.calculationMonth);
-  return { receivers: receivers, pools: pools, scopeCount: scopes.length,
+  var heldPools = (poolFacts.heldOverseasPools || []).filter(function (h) { return h && (h.key === company + '||' + country + '||' + sku || (h.reason === 'WAREHOUSE_COMPANY_UNKNOWN' && h.key === '||' + country + '||' + sku)); });   // b4: listed, not offered
+  return { receivers: receivers, pools: pools, heldPools: heldPools, scopeCount: scopes.length,
     calculationMonth: oapStr_(harvested.calculationMonth),
     calculationDate: oapStr_(calcContext && calcContext.calculationDate),
     planningCycle: oapStr_(calcContext && calcContext.planningCycle),
@@ -305,6 +306,7 @@ function oapBuildResult_(env, state, read, res) {
     ready: res ? res.ready === true : false,
     blocked: res ? res.blocked === true : true,
     issues: (res && res.issues) ? res.issues : [],
+    heldPools: (read.heldPools || []).map(function (h) { return { warehouseId: h.warehouseId, sku: h.sku, physicalQty: h.physicalQty, reason: h.reason, sites: h.sites || [] }; }),   // b4: never hidden, never offered
     allocationMode: ov ? ov.allocationMode : null,            // VERBATIM §40 mode; absent for the singleReceiver case
     singleReceiver: res ? res.singleReceiver === true : false,
     receiverCount: res ? (res.receiverCount || 0) : 0,

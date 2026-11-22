@@ -26,9 +26,22 @@ button:hover {
 }
 
 .btn {
-    height: var(--btn-height);
+    /* A-DELTA1 P1: one centring contract for every .btn (label, icon and busy text sit on the box's centre line) */
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-xs);
+    box-sizing: border-box;
+    line-height: 1.2;
+    /* A-DELTA1 C2 item 5: a .btn may GROW. min-height keeps every single-line button at exactly --btn-height (36px: 8+16.8+8 fits), and a
+       label that does not fit (narrow screen, 125% zoom, long Chinese) wraps onto a second line inside the box instead of overflowing it. */
+    min-height: var(--btn-height);
+    height: auto;
     border-radius: var(--btn-radius);
-    padding: 0 var(--btn-padding-inline);
+    padding: var(--btn-padding-block) var(--btn-padding-inline);
+    white-space: normal;
+    overflow-wrap: break-word;
+    text-align: center;
     font-size: var(--btn-font-size);
     border: 1px solid transparent;
     cursor: pointer;
@@ -56,6 +69,27 @@ button:hover {
     cursor: pointer;
     box-shadow: var(--shadow-soft);
     transition: all 0.2s ease;
+}
+
+/* A-DELTA1 P1: with .btn the fixed --btn-height governs; the 0.8rem block padding above left a 10.4px content box for a ~17px line.
+   A standalone .btn-secondary (no .btn) keeps its 0.8rem padding. */
+.btn.btn-secondary {
+    padding-top: var(--btn-padding-block);   /* C2 item 5: the same block padding as .btn (was 0 under the P1 fixed height) */
+    padding-bottom: var(--btn-padding-block);
+}
+
+.btn > svg {
+    flex: none;
+}
+
+/* an icon placeholder that was never replaced (index.html loads no lucide) must not take a gap and push the label off centre */
+.btn > i:empty {
+    display: none;
+}
+
+/* the display above must not override the hidden attribute (e.g. factory-stock.js:1660 btn.hidden = true) */
+.btn[hidden] {
+    display: none;
 }
 
 .btn-secondary:hover {

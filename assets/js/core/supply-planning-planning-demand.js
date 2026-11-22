@@ -15,6 +15,10 @@
 //   D · Current-month remaining demand — adjusted Regular FC of the calculation month distributed per calendar
 //       day (÷ real days-in-month) × the days AFTER the calculation date through month end, PLUS special-event FC
 //       whose prep date falls in that remaining-current-month window. Full precision; caller rounds at emission.
+//   D5F1-R2 (Owner decisions D5-1 / D5-3, 2026-11-13, corrected): an event whose last selling day is BEFORE the
+//       calculation date D is never demand (ending ON D still counts); an event whose prep date has already passed but
+//       which still counts joins D (current-month remaining demand) once, at full quantity. Invalid event dates or an
+//       unusable calculation date are typed errors, never "no filter" and never 0. Matching rules unchanged (O-1/O-3/O-4).
 (function (root, factory) {
   'use strict';
   var api = factory();
@@ -26,7 +30,8 @@
 
   var MONTH_ABBR = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
   var DEAD_EVENT = { inactive: 1, deleted: 1, archived: 1, cancelled: 1, void: 1 };
-  var SPECIAL_EVENT_PREP_OFFSET_DAYS = 30;   // canonical prep rule (SUPPLY_PLANNING_CALCULATION_RULES §canonical)
+  // D5-V3 (Owner OD-1 = B, 2026-11-13): replenishment prep date = event start - 45 calendar days (was 30).
+  var SPECIAL_EVENT_PREP_OFFSET_DAYS = 45;
   function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
   function s(v) { return String(v === undefined || v === null ? '' : v).trim(); }
   function U(v) { return s(v).toUpperCase(); }
@@ -238,14 +243,91 @@
     var prep = addDaysYmd(start, -SPECIAL_EVENT_PREP_OFFSET_DAYS);
     return { ym: prep.y + '-' + pad2(prep.mo), prepDate: prep.y + '-' + pad2(prep.mo) + '-' + pad2(prep.d), y: prep.y, mo: prep.mo, d: prep.d };
   }
+  // D5F1-R2 (Owner decision D5-1 as corrected 2026-11-13) - an event is EXCLUDED only when its last selling day
+  // (event_end_date, else event_start_date) is BEFORE the calculation date D. An event ending ON D, in progress on D, or
+  // in the future counts at its FULL quantity (no pro-rating). Integer calendar comparison only (no Date, no TZ).
+  // Invalid dates never pass silently (reviewer m1/m2): an in-scope live event whose start date is missing or not a real
+  // calendar date, whose end date is present but not a real date, or whose end date is before its start date is an
+  // EVENT ROW ERROR; an unusable calculation date while in-scope events exist is a CALCULATION DATE ERROR. Callers get
+  // a typed code (validateScopedEvents / a thrown typed error / ready:false) - never "no filter", never 0.
+  function ymdOrd(o) { return o.y * 10000 + o.mo * 100 + o.d; }
+  function realYmd(v) {
+    var p = parseIsoDate(v); if (!p) return null;
+    if (p.mo < 1 || p.mo > 12 || p.d < 1 || p.d > daysInMonth(p.y, p.mo)) return null;
+    return p;
+  }
+  function blank(v) { return v === undefined || v === null || s(v) === ''; }
+  function eventStartRaw(r) { r = r || {}; return blank(r.event_start_date) ? r.eventStartDate : r.event_start_date; }
+  function eventEndRaw(r) { r = r || {}; return blank(r.event_end_date) ? r.eventEndDate : r.event_end_date; }
+  // D5-V3 (Owner V3-5): event quantity. Blank (fc_qty and qty both blank) = 0; an explicit 0 is valid; a finite number
+  // >= 0 (number or plain numeric text) is the quantity; anything else (non-numeric text, a negative number, a sheet error
+  // value such as #N/A, a Date, a boolean) is INVALID -> the SKU's calculation is incomplete (typed code), never 0.
+  function eventQtyOf(r) {
+    r = r || {};
+    var raw = !blank(r.fc_qty) ? r.fc_qty : r.qty;
+    if (blank(raw)) return { ok: true, qty: 0 };
+    if (typeof raw === 'number') return (isFinite(raw) && raw >= 0) ? { ok: true, qty: raw } : { ok: false, qty: null };
+    if (typeof raw !== 'string') return { ok: false, qty: null };
+    var t = raw.trim();
+    if (!/^\d+(\.\d+)?$/.test(t)) return { ok: false, qty: null };
+    return { ok: true, qty: Number(t) };
+  }
+  // null = a usable row; otherwise the typed code of the first defect found.
+  function eventRowIssue(r) {
+    var st = realYmd(eventStartRaw(r));
+    if (!st) return 'EVENT_START_DATE_INVALID';
+    var endRaw = eventEndRaw(r);
+    if (!blank(endRaw)) {
+      var en = realYmd(endRaw);
+      if (!en) return 'EVENT_END_DATE_INVALID';
+      if (ymdOrd(en) < ymdOrd(st)) return 'EVENT_DATE_RANGE_INVALID';
+    }
+    if (!eventQtyOf(r).ok) return 'EVENT_QTY_INVALID';
+    return null;
+  }
+  // D5-V3 (Owner OD-1): the three recorded dates of an event - start, replenishment prep (start - 45) and the FIRST
+  // SUGGESTION date = the Monday on or before the prep date (never the next Monday). Integer calendar arithmetic only.
+  function weekdayMon0(y, mo, d) {   // 0 = Monday .. 6 = Sunday (Sakamoto)
+    var t = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4], yy = mo < 3 ? y - 1 : y;
+    var dow = (yy + Math.floor(yy / 4) - Math.floor(yy / 100) + Math.floor(yy / 400) + t[mo - 1] + d) % 7;   // 0 = Sunday
+    return (dow + 6) % 7;
+  }
+  function ymdIso(o) { return o.y + '-' + pad2(o.mo) + '-' + pad2(o.d); }
+  function eventDates(r) {
+    var st = realYmd(eventStartRaw(r)); if (!st) return null;
+    var prep = addDaysYmd(st, -SPECIAL_EVENT_PREP_OFFSET_DAYS);
+    var mon = addDaysYmd(prep, -weekdayMon0(prep.y, prep.mo, prep.d));
+    return { startDate: ymdIso(st), prepDate: ymdIso(prep), firstSuggestionMonday: ymdIso(mon), planningMonth: st.y + '-' + pad2(st.mo) };
+  }
+  function eventLastDay(r) { return realYmd(eventEndRaw(r)) || realYmd(eventStartRaw(r)); }
+  function eventCountsOn(r, calcYmd) {          // last selling day >= D  (an event ending ON D still counts)
+    var last = eventLastDay(r);
+    return !!(last && calcYmd && ymdOrd(last) >= ymdOrd(calcYmd));
+  }
+  function eventIdOf(r) { r = r || {}; return s(r.event_fc_id || r.event_id || r.event_name) || null; }
+  // Typed validation of the in-scope live events of ONE (scope, sku). calculationDate is required only when such events
+  // exist (no event -> nothing to filter). Returns { ok, issues:[{ code, eventId }] }. Source rows are never modified.
+  function validateScopedEvents(eventRows, scope, sku, calculationDate) {
+    var issues = [], any = false;
+    (eventRows || []).forEach(function (r) {
+      if (!eventScopeMatch(r, scope || {}, s(sku))) return;
+      any = true;
+      var code = eventRowIssue(r); if (code) issues.push({ code: code, eventId: eventIdOf(r) });
+    });
+    if (any && !realYmd(calculationDate)) issues.unshift({ code: 'EVENT_CALCULATION_DATE_INVALID', eventId: null, got: (calculationDate == null ? null : s(calculationDate)) });
+    return { ok: issues.length === 0, issues: issues };
+  }
+  function eventError(code, detail) { var e = new Error(code + (detail ? ': ' + detail : '')); e.code = code; e.kmpdEventError = true; return e; }
   function specialEventFcForMonth(eventRows, scope, sku, ym) {
-    var total = 0, any = false;
+    var total = 0, any = false, bad = false;
     (eventRows || []).forEach(function (r) {
       if (!eventScopeMatch(r, scope, sku)) return;
-      var pm = eventPrepMonth(r); if (!pm || pm.ym !== s(ym)) return;
-      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
+      if (eventRowIssue(r)) { bad = true; return; }   // D5F1-R2: an invalid in-scope event makes the month UNKNOWN (null), never 0
+      var ed = eventDates(r); if (!ed || ed.planningMonth !== s(ym)) return;   // D5-V3 (C-2): month = event START month
+      var q = eventQtyOf(r).qty; if (!(q > 0)) return;
       total += q; any = true;
     });
+    if (bad) return null;
     return any ? total : 0;   // 0 = no event in this month (a real zero, distinct from a missing regular FC)
   }
 
@@ -262,6 +344,7 @@
       var adj = adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym);
       if (!adj) return;   // missing regular FC for a needed month → omit (caller surfaces truthfully)
       var special = specialEventFcForMonth(evtRows, scope, sku, ym);
+      if (special === null) return;   // D5F1-R2: an invalid in-scope event row -> month omitted (caller blocks), never 0
       out[ym] = { regularBase: adj.base, targetPct: adj.targetPct, adjustedRegular: adj.adjusted, special: special, demand: adj.adjusted + special };
     });
     return out;
@@ -283,34 +366,48 @@
     if (!adj) return { ready: false, ym: ym, remainingDays: remainingDays, daysInMonth: dim, issues: [{ code: 'CURRENT_MONTH_FORECAST_MISSING', message: 'no regular FC for the calculation month ' + ym }] };
     var dailyRate = adj.adjusted / dim;                       // adjusted monthly ÷ real days-in-month
     var regularRemaining = dailyRate * remainingDays;         // full precision
-    // special events whose PREP date falls in (calcDate, month end]
-    var special = 0;
+    // D5-V3 (C-2 + D5-3): every event whose START month is the calculation month N or earlier and which still counts
+    // on D (last selling day >= D, D5-1) joins the current-month remaining demand ONCE, at full quantity. An event whose
+    // start month is after N belongs to that month's tier (planningDemandByMonth) - the two sets never overlap.
+    var special = 0, specialPastPrep = 0, badEvents = [];
     (input.fcSpecialEventRows || []).forEach(function (r) {
       if (!eventScopeMatch(r, input.scope || {}, s(input.sku))) return;
-      var pm = eventPrepMonth(r); if (!pm || pm.ym !== ym) return;
-      if (pm.d <= cd.d) return;   // prep already elapsed on/before the calculation date
-      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
-      special += q;
+      var code = eventRowIssue(r); if (code) { badEvents.push({ code: code, eventId: eventIdOf(r) }); return; }
+      var ed = eventDates(r); if (!ed) return;
+      if (ed.planningMonth > ym) return;                     // start month after N -> its own tier month
+      if (!eventCountsOn(r, cd)) return;                     // ended before D -> not counted (D5-1)
+      var q = eventQtyOf(r).qty; if (!(q > 0)) return;
+      special += q; if (ed.planningMonth < ym) specialPastPrep += q;   // diagnostic: carried in from an earlier start month
     });
+    if (badEvents.length) return { ready: false, ym: ym, remainingDays: remainingDays, daysInMonth: dim, issues: badEvents.map(function (b) { return { code: b.code, eventId: b.eventId, message: 'special event row invalid - current-month remaining demand not computed' }; }) };
     return { ready: true, requiredByDate: ym + '-' + pad2(dim), ym: ym, remainingDays: remainingDays, daysInMonth: dim,
-      dailyRate: dailyRate, regularRemaining: regularRemaining, special: special, demand: regularRemaining + special, targetPct: adj.targetPct, issues: [] };
+      dailyRate: dailyRate, regularRemaining: regularRemaining, special: special, specialPastPrep: specialPastPrep, demand: regularRemaining + special, targetPct: adj.targetPct, issues: [] };
   }
 
   // Scoped active special-event PREP events (for the day-horizon owner, which places demand on the exact prep date).
   // Returns [{ incomingId?, prepDate:'YYYY-MM-DD', qty }] — 100% (never target-adjusted); one entry per event.
-  function scopedSpecialEventPreps(eventRows, scope, sku) {
-    var out = [];
+  // D5F1-R2 (Owner decision D5-1, corrected): an event whose last selling day is BEFORE calculationDate is dropped; an
+  // event ending on D, in progress or in the future is kept at full quantity. There is NO unfiltered fallback: when an
+  // in-scope live event exists, calculationDate must be a real YYYY-MM-DD date and every such row must have valid dates,
+  // otherwise a typed error is THROWN (code EVENT_CALCULATION_DATE_INVALID / EVENT_*_INVALID) for the caller to block on.
+  function scopedSpecialEventPreps(eventRows, scope, sku, calculationDate) {
+    var out = [], cd = realYmd(calculationDate);
     (eventRows || []).forEach(function (r) {
       if (!eventScopeMatch(r, scope || {}, s(sku))) return;
-      var pm = eventPrepMonth(r); if (!pm) return;
-      var q = num(r.fc_qty != null && r.fc_qty !== '' ? r.fc_qty : r.qty); if (q === null || q <= 0) return;
-      out.push({ prepDate: pm.prepDate, qty: q });
+      if (!cd) throw eventError('EVENT_CALCULATION_DATE_INVALID', calculationDate == null ? 'missing' : s(calculationDate));
+      var code = eventRowIssue(r); if (code) throw eventError(code, eventIdOf(r) || '');
+      if (!eventCountsOn(r, cd)) return;
+      var ed = eventDates(r); if (!ed) return;
+      var q = eventQtyOf(r).qty; if (!(q > 0)) return;
+      // D5-V3 (OD-1 = B): the horizon demand date IS the prep date (start - 45); the first-suggestion Monday is carried
+      // for the Shipping Plan / AI Plan timing. KMHP reads prepDate + qty only.
+      out.push({ prepDate: ed.prepDate, qty: q, startDate: ed.startDate, firstSuggestionMonday: ed.firstSuggestionMonday });
     });
     return out;
   }
 
   return {
-    VERSION: 'kmpd-fm3f1-1',
+    VERSION: 'kmpd-v3-1',
     SPECIAL_EVENT_PREP_OFFSET_DAYS: SPECIAL_EVENT_PREP_OFFSET_DAYS,
     resolveTargetRule: resolveTargetRule,          // canonical: structured provenance
     resolveTargetPct: resolveTargetPct,            // legacy numeric surface (null = refusal)
@@ -319,6 +416,9 @@
     TR_SCOPE_TYPES: TR_SCOPE_TYPES_,
     TR_PRECEDENCE: TR_PRECEDENCE_,
     scopedSpecialEventPreps: scopedSpecialEventPreps,
+    validateScopedEvents: validateScopedEvents,
+    eventDates: eventDates,
+    eventQtyOf: eventQtyOf,
     baseRegularFc: baseRegularFc,
     adjustedRegularFc: adjustedRegularFc,
     eventPrepMonth: eventPrepMonth,

@@ -285,7 +285,9 @@
       // marketplace.
       var parts = value.split(':');
       var mkt = String(parts[1] == null ? '' : parts[1]).trim();
-      return { marketplace: mkt || 'Amazon', country: up(parts[2] || (scope && scope.country)), selected_destination_warehouse_id: null };
+      var res = { marketplace: mkt || 'Amazon', country: up(parts[2] || (scope && scope.country)), selected_destination_warehouse_id: null };
+      if (scope && trimS(scope.company)) res.company = trimS(scope.company);   // AD3 D: the site's company travels with the logical To
+      return res;
     }
     return { selected_destination_warehouse_id: (value == null || value === '') ? null : String(value) };
   }
@@ -318,7 +320,71 @@
     });
     var toList = dedup(to);
     if (isAmazon) toList.push(amazonLogicalDestination(scope));   // exactly one Amazon logical destination
-    return { from: dedup(from), to: toList, isAmazon: isAmazon };
+    // AD3 D (Owner decision 12) - a NON-Amazon platform destination (Walmart / KM Walmart WFS, or any other site whose platform warehouse
+    // is in the master) is offered only for a SKU this site fulfils through the platform, judged company x country x site x SKU.
+    // Callers that do not pass the SKU (scope.sku absent) get exactly the c2 answer.
+    var platform = isAmazon ? null : platformDestinationFor(warehouses, scope);
+    if (platform && platform.offered) toList.push(platform.destination);
+    return { from: dedup(from), to: toList, isAmazon: isAmazon, platformDestination: platform };
+  }
+
+  // AD3 D (Owner decision 12) - IS THIS SKU PLATFORM-FULFILLED AT THIS SITE? company x country x site x SKU, the same keys as poolLinkIndex.
+  //   site model (marketplaces, key company || canonical country || marketplace, trimmed exact):
+  //     platform_fulfilled -> platform for every SKU; hybrid -> per SKU (marketplace_skus for site || sku: exactly one distinct mode
+  //     'platform_fulfilled' -> platform; 'self_fulfilled' -> self; missing / blank / unknown / conflicting / not readable -> UNRESOLVED,
+  //     never guessed as platform); anything else (self_fulfilled, blank, no marketplaces row) -> not platform.
+  function platformSkuMode(scope) {
+    scope = scope || {};
+    var company = trimS(scope.company), country = canonCountry(scope.country), mkt = trimS(scope.marketplace), sku = trimS(scope.sku);
+    if (!company || !country || !mkt) return { platform: false, reason: 'SITE_IDENTITY_MISSING' };
+    if (!sku) return { platform: false, reason: 'SKU_NOT_GIVEN' };
+    var site = null;
+    (scope.marketplaces || []).forEach(function (m) {
+      if (m && trimS(m.company) === company && canonCountry(m.country) === country && trimS(m.marketplace) === mkt) site = site || m;
+    });
+    if (!site) return { platform: false, reason: 'SITE_NOT_IN_MARKETPLACES' };
+    var model = trimS(site.fulfillmentModel != null ? site.fulfillmentModel : site.fulfillment_model).toLowerCase();
+    if (model === 'platform_fulfilled') return { platform: true, reason: 'SITE_PLATFORM_FULFILLED', siteModel: model };
+    if (model !== 'hybrid') return { platform: false, reason: 'SITE_NOT_PLATFORM', siteModel: model };
+    if (!Array.isArray(scope.marketplaceSkus)) return { platform: false, reason: 'HYBRID_SKU_MODE_UNRESOLVED', siteModel: model, skuMode: 'unreadable' };
+    var modes = [];
+    scope.marketplaceSkus.forEach(function (r) {
+      if (!r || trimS(r.sku) !== sku || trimS(r.company) !== company || canonCountry(r.country) !== country || trimS(r.marketplace) !== mkt) return;
+      var v = trimS(r.fulfillmentModel != null ? r.fulfillmentModel : r.fulfillment_model).toLowerCase();
+      if (modes.indexOf(v) === -1) modes.push(v);
+    });
+    var m = !modes.length ? 'missing' : modes.length > 1 ? 'conflict' : (modes[0] || 'blank');
+    if (m === 'platform_fulfilled') return { platform: true, reason: 'HYBRID_SKU_PLATFORM', siteModel: model, skuMode: m };
+    if (m === 'self_fulfilled') return { platform: false, reason: 'HYBRID_SKU_SELF', siteModel: model, skuMode: m };
+    return { platform: false, reason: 'HYBRID_SKU_MODE_UNRESOLVED', siteModel: model, skuMode: m };
+  }
+  // The logical To for a non-Amazon platform site. Requires the site's own platform warehouse in the master: Active, type FBA, the SAME
+  // company (exact, never blank), a compatible country, and marketplace = this site's marketplace. The option is NOT that warehouse: it is a
+  // marketplace destination (token MARKETPLACE_DESTINATION:<marketplace>:<COUNTRY>, persisted as destination_marketplace on a header that
+  // carries company / country / marketplace), named after the site's marketplace ("Walmart", "KM Walmart"). The actual ship-to is chosen in
+  // the Shipment Draft. No address, no coordinate, never Amazon.
+  function platformDestinationFor(warehouses, scope) {
+    scope = scope || {};
+    var mode = platformSkuMode(scope);
+    var out = { offered: false, reason: mode.reason, skuMode: mode, platformWarehouseIds: [], destination: null };
+    if (!mode.platform) return out;
+    var mkt = trimS(scope.marketplace);
+    (warehouses || []).forEach(function (w) {
+      if (!isActive(w) || !isFBA(w)) return;
+      if (!trimS(w.company) || !eqv(w.company, scope.company)) return;
+      if (!warehouseCountryMatches(w.country, scope.country)) return;
+      if (trimS(w.marketplace) !== mkt) return;
+      out.platformWarehouseIds.push(String(w.warehouseId));
+    });
+    if (!out.platformWarehouseIds.length) { out.reason = 'PLATFORM_WAREHOUSE_MISSING'; return out; }
+    out.offered = true;
+    out.destination = {
+      logicalDestination: true, destinationType: 'MARKETPLACE_DESTINATION',
+      warehouseId: null, marketplace: mkt, country: up(scope.country), company: trimS(scope.company),
+      warehouseName: mkt, token: marketplaceDestinationToken(mkt, scope.country),
+      platformWarehouseIds: out.platformWarehouseIds.slice()
+    };
+    return out;
   }
 
   // ===========================================================================================================
@@ -367,6 +433,209 @@
     matches: serviceMatches
   };
 
+  // ===========================================================================================================
+  // A-delta1 C5 (Owner 2026-11-21) — OVERSEAS FROM AVAILABILITY (planning UI). PURE, read-only, DOM-free.
+  // -----------------------------------------------------------------------------------------------------------
+  // For each From warehouse of one SKU card: the PROVEN available quantity, or the reason it cannot be used. The quantities are the ones the
+  // server binds on: 12_ shipmentDomainAvailable_ (the Shipment Draft reservation, and the 16_ Submit pre-check D-B2) reads the overseas
+  // snapshot row's wh_available_stock, already net of reservations. The held reasons mirror b4's 43_ pool facts (gapOpReadSupplyPoolFacts_):
+  // a 3PL of unknown company / type, several stock rows that do not resolve to one binding row, an unreadable stock value, or (interim rule)
+  // a 3PL that an allocation rule links to a site that is not platform_fulfilled. needByFrom sums the planned quantity of every route of
+  // this SKU that uses that From (D-B2 sums per warehouse x SKU too). Factory sources are not judged here (the Draft checks factory stock).
+  // Reason classes: NO_STOCK · MISSING_DATA · NOT_CALLABLE · INCOMPATIBLE · HELD · SHORT (usable, but planned > available).
+  // A-delta2 F (Owner rule 5, 2026-11-21): these texts are REASONS for the note shown OUTSIDE the From / To fields (a saved selection that is
+  // no longer legal, or a planned quantity above the proven stock). They never appear inside a select: the pickers list legal choices only.
+  var FROM_REASON_TEXT = {
+    NO_STOCK: '此倉沒有這個 SKU 的庫存',
+    OVERSEAS_STOCK_NOT_FOUND: '此倉沒有這個 SKU 的庫存列',
+    WAREHOUSE_COMPANY_UNKNOWN: '倉庫公司未填',
+    WAREHOUSE_TYPE_UNKNOWN: '倉庫類型未填',
+    WAREHOUSE_INACTIVE: '倉庫未啟用',
+    WAREHOUSE_TYPE_NOT_SOURCE: '此類型倉庫不能當出貨來源',
+    COMPANY_INCOMPATIBLE: '倉庫屬於其他公司',
+    COUNTRY_INCOMPATIBLE: '倉庫國家與站點不同',
+    SAME_AS_DESTINATION: '與 To 是同一個倉庫',
+    DESTINATION_COUNTRY_INCOMPATIBLE: '與 To 的國家不同',
+    MULTIPLE_STOCK_ROWS: '此倉這個 SKU 有多筆庫存列，無法確定一筆',
+    POOL_STOCK_UNREADABLE: '庫存數值無法讀取',
+    SHARED_WITH_SELF_FULFILLED: '此倉是自履約站點的履約庫存',
+    HYBRID_SKU_MODE_UNRESOLVED: '混合履約站點：這個 SKU 未明確設定為平台履約',
+    NOT_A_CANDIDATE: '不在此站點可選的倉庫內',
+    AVAILABLE_SHORT: '計畫量超過可用庫存',
+    FACTORY_STOCK_NOT_FOUND: '此工廠沒有這個 SKU 的可出貨庫存',   // AD3 D r5
+    FACTORY_AVAILABILITY_UNKNOWN: '工廠可出貨量尚未讀取'
+  };
+  var FROM_REASON_CLASS = {
+    NO_STOCK: 'NO_STOCK', OVERSEAS_STOCK_NOT_FOUND: 'MISSING_DATA', WAREHOUSE_COMPANY_UNKNOWN: 'MISSING_DATA', WAREHOUSE_TYPE_UNKNOWN: 'MISSING_DATA',
+    WAREHOUSE_INACTIVE: 'NOT_CALLABLE', WAREHOUSE_TYPE_NOT_SOURCE: 'NOT_CALLABLE', COMPANY_INCOMPATIBLE: 'INCOMPATIBLE', COUNTRY_INCOMPATIBLE: 'INCOMPATIBLE',
+    SAME_AS_DESTINATION: 'INCOMPATIBLE', DESTINATION_COUNTRY_INCOMPATIBLE: 'INCOMPATIBLE', MULTIPLE_STOCK_ROWS: 'HELD', POOL_STOCK_UNREADABLE: 'HELD',
+    SHARED_WITH_SELF_FULFILLED: 'HELD', HYBRID_SKU_MODE_UNRESOLVED: 'HELD', NOT_A_CANDIDATE: 'INCOMPATIBLE', AVAILABLE_SHORT: 'SHORT', FACTORY_STOCK_NOT_FOUND: 'NO_STOCK', FACTORY_AVAILABILITY_UNKNOWN: 'MISSING_DATA'
+  };
+  // A-delta2 F: the server's canonical country for the site / SKU-mode keys (43_ gapCanonCountry_ -> KMCID; UK and GB are one market).
+  function canonCountry(v) { var c = up(v); return c === 'GB' ? 'UK' : c; }
+  function trimS(v) { return String(v == null ? '' : v).trim(); }
+  // A-delta2 F — the 43_ pool hold, PER SKU (b6 gapOpSelfLinkedWarehouses_ + gapOpSelfLinkFor_, mirrored rule for rule):
+  //   site key      = company (trimmed, exact) || canonical country || marketplace (trimmed, exact)   (a site with no marketplace row = 'unknown')
+  //   rule -> site  : platform_fulfilled -> no link; hybrid -> a hybrid link, resolved per SKU; anything else -> a self link (site-wide)
+  //   hybrid x SKU  : marketplace_skus modes for site || sku: exactly 'platform_fulfilled' -> no link; 'self_fulfilled' -> self link;
+  //                   missing / blank / unknown / conflicting (several distinct modes) / marketplace_skus not readable -> UNRESOLVED
+  //   reason        : any self link -> SHARED_WITH_SELF_FULFILLED; else any unresolved -> HYBRID_SKU_MODE_UNRESOLVED; else none.
+  // b3 judged a hybrid site per SITE (always a self link), so a 3PL linked to a hybrid site was held even for a SKU the site explicitly
+  // fulfils through the platform - the SKU the server lets use the overseas 3PL -> FBA path (22_ csdOverseasTransferEligibility_ c6 r2).
+  function poolLinkIndex(marketplaces, rules, marketplaceSkus) {
+    var fm = {}, byWh = {}, hybridByWh = {}, mskModes = {}, mskUnreadable = !Array.isArray(marketplaceSkus);
+    (marketplaces || []).forEach(function (m) { if (!m) return; fm[trimS(m.company) + '||' + canonCountry(m.country) + '||' + trimS(m.marketplace)] = trimS(m.fulfillmentModel != null ? m.fulfillmentModel : m.fulfillment_model).toLowerCase(); });
+    (rules || []).forEach(function (r) {
+      var w = trimS(r && (r.destinationWarehouseId || r.destination_warehouse_id)); if (!w) return;
+      var k = trimS(r.company) + '||' + canonCountry(r.country) + '||' + trimS(r.marketplace), f = fm[k];
+      if (f === 'platform_fulfilled') return;
+      if (f === 'hybrid') { (hybridByWh[w] = hybridByWh[w] || []); if (hybridByWh[w].indexOf(k) === -1) hybridByWh[w].push(k); return; }
+      var t = trimS(r.marketplace) + '=' + (f || 'unknown'); (byWh[w] = byWh[w] || []); if (byWh[w].indexOf(t) === -1) byWh[w].push(t);
+    });
+    if (!mskUnreadable) marketplaceSkus.forEach(function (r) {
+      if (!r) return; var sk = trimS(r.sku); if (!sk) return;
+      var mk = trimS(r.company) + '||' + canonCountry(r.country) + '||' + trimS(r.marketplace) + '||' + sk, v = trimS(r.fulfillmentModel != null ? r.fulfillmentModel : r.fulfillment_model).toLowerCase();
+      (mskModes[mk] = mskModes[mk] || []); if (mskModes[mk].indexOf(v) === -1) mskModes[mk].push(v);
+    });
+    return {
+      linkFor: function (wh, sku) {
+        var sites = (byWh[wh] || []).slice(), self = sites.length > 0, unresolved = false;
+        (hybridByWh[wh] || []).forEach(function (k) {
+          var modes = mskUnreadable ? null : (mskModes[k + '||' + trimS(sku)] || []);
+          var m = modes === null ? 'unreadable' : !modes.length ? 'missing' : modes.length > 1 ? 'conflict' : (modes[0] || 'blank');
+          if (m === 'platform_fulfilled') return;
+          if (m === 'self_fulfilled') self = true; else unresolved = true;
+          sites.push(k.split('||')[2] + '=hybrid:' + trimS(sku) + '=' + m);
+        });
+        return { sites: sites, reason: self ? 'SHARED_WITH_SELF_FULFILLED' : unresolved ? 'HYBRID_SKU_MODE_UNRESOLVED' : null };
+      }
+    };
+  }
+  // Inputs: scope, sku, warehouses, candidates, overseasRows, marketplaces, allocationRules (null = not loaded: the pool hold is not judged,
+  // as b3), marketplaceSkus (A-delta2 F; null / absent = not readable: every hybrid link is UNRESOLVED, as 43_ mskUnreadable), toId, needByFrom.
+  function fromAvailability(input) {
+    input = input || {};
+    var scope = input.scope || {}, sku = String(input.sku == null ? '' : input.sku).trim();
+    var whs = input.warehouses || [], rows = input.overseasRows || [], need = input.needByFrom || {};
+    var toId = String(input.toId == null ? '' : input.toId).trim(), toWh = null;
+    whs.forEach(function (w) { if (w && String(w.warehouseId) === toId) toWh = w; });
+    var rulesKnown = Array.isArray(input.allocationRules);
+    var factoryJudged = Object.prototype.hasOwnProperty.call(input, 'factoryPools');   // AD3 D r5
+    var links = rulesKnown ? poolLinkIndex(input.marketplaces || [], input.allocationRules, input.marketplaceSkus) : null;
+    function rowsOf(id) { return rows.filter(function (r) { return r && String(r.warehouseId == null ? '' : r.warehouseId).trim() === id && String(r.sku == null ? '' : r.sku).trim() === sku; }); }
+    function readQty(r) { var raw = (r && r.availableStockRaw !== undefined) ? r.availableStockRaw : (r ? r.availableStock : null); if (raw === '' || raw === null || raw === undefined) return null; var q = Number(raw); return isFinite(q) ? q : null; }
+    function judge(w) {
+      var id = String(w.warehouseId == null ? '' : w.warehouseId).trim();
+      var res = { warehouseId: id, warehouseName: w.warehouseName || id, domain: isFactory(w) ? 'FACTORY' : 'OVERSEAS', usable: false, availableQty: null, need: Math.max(0, Number(need[id]) || 0), reason: null, reasonClass: null, text: '', detail: '' };
+      function no(code, detail) { res.reason = code; res.reasonClass = FROM_REASON_CLASS[code]; res.text = FROM_REASON_TEXT[code]; res.detail = detail || ''; res.usable = false; return res; }
+      if (res.domain === 'FACTORY') {
+        if (!factoryJudged) { res.usable = true; res.detail = 'factory stock is checked at Shipment Draft'; return res; }   // c2 callers
+        if (!Array.isArray(input.factoryPools)) return no('FACTORY_AVAILABILITY_UNKNOWN');
+        // AD3 D r5: the KMFSG pool of this factory x SKU. available_to_allocate already deducts reservations, active drafts and plans; the
+        // card's own SAVED draft qty at this factory is inside that deduction, so it is added back once (never deducted twice).
+        var pools = input.factoryPools.filter(function (p) { return p && String(p.warehouse_id == null ? '' : p.warehouse_id).trim() === id && String(p.sku == null ? '' : p.sku).trim().toUpperCase() === sku.toUpperCase(); });
+        if (pools.length !== 1) return no('FACTORY_STOCK_NOT_FOUND', pools.length ? pools.length + ' pools' : '');
+        var fa = Number(pools[0].available_to_allocate); if (!isFinite(fa)) return no('FACTORY_AVAILABILITY_UNKNOWN');
+        var own = Math.max(0, Number((input.factoryOwnCounted || {})[id]) || 0);
+        res.availableQty = Math.max(0, Math.round(fa + own));
+        if (res.availableQty <= 0) return no('NO_STOCK');
+        res.usable = true; res.detail = 'factory pool available_to_allocate ' + fa + (own ? ' + own saved ' + own : '');
+        if (res.need > res.availableQty) { res.reason = 'AVAILABLE_SHORT'; res.reasonClass = 'SHORT'; res.text = FROM_REASON_TEXT.AVAILABLE_SHORT; res.detail += '; short ' + (res.need - res.availableQty); }
+        return res;
+      }
+      if (!isActive(w)) return no('WAREHOUSE_INACTIVE');
+      var t = whType(w);
+      if (!t) return no('WAREHOUSE_TYPE_UNKNOWN');
+      if (t !== '3PL') return no('WAREHOUSE_TYPE_NOT_SOURCE', t);
+      if (!String(w.company == null ? '' : w.company).trim()) return no('WAREHOUSE_COMPANY_UNKNOWN');
+      if (scope.company && !eqv(w.company, scope.company)) return no('COMPANY_INCOMPATIBLE', String(w.company));
+      if (scope.country && !warehouseCountryMatches(w.country, scope.country)) return no('COUNTRY_INCOMPATIBLE', String(w.country || ''));
+      if (toId && toId === id) return no('SAME_AS_DESTINATION');
+      if (toWh && !toWh.logicalDestination && toWh.country && !warehouseCountryMatches(w.country, toWh.country)) return no('DESTINATION_COUNTRY_INCOMPATIBLE', String(toWh.country));
+      var rs = rowsOf(id), pick = null;
+      if (!rs.length) { res.availableQty = 0; return no('OVERSEAS_STOCK_NOT_FOUND'); }
+      if (rs.length === 1) pick = rs[0];
+      else return no('MULTIPLE_STOCK_ROWS', rs.length + ' rows');   // c7fix L-A: any duplicate row is held, as b5 43_ (the binding 12_ read takes the first row)
+      var q = readQty(pick);
+      if (q === null || q < 0) return no('POOL_STOCK_UNREADABLE');
+      res.availableQty = Math.round(q);
+      if (links) { var lk = links.linkFor(id, sku); if (lk.reason) return no(lk.reason, lk.sites.join(', ')); }   // A-delta2 F: per SKU, as 43_ b6
+      if (res.availableQty <= 0) return no('NO_STOCK');
+      res.usable = true;
+      if (res.need > res.availableQty) { res.reason = 'AVAILABLE_SHORT'; res.reasonClass = 'SHORT'; res.text = FROM_REASON_TEXT.AVAILABLE_SHORT; res.detail = 'short ' + (res.need - res.availableQty); }
+      return res;
+    }
+    var by = {}, list = [];
+    (input.candidates || whs).forEach(function (w) { if (!w || !w.warehouseId || by[String(w.warehouseId)]) return; var r = judge(w); by[r.warehouseId] = r; list.push(r); });
+    return { sku: sku, toId: toId, rulesKnown: rulesKnown, mskKnown: Array.isArray(input.marketplaceSkus), factoryJudged: factoryJudged, byWarehouseId: by, list: list };
+  }
+  // b3 listed the overseas warehouses buildCandidates leaves out under a disabled group. A-delta2 F (Owner rule 5): no longer rendered; kept
+  // only as a pure helper for diagnostics / older callers.
+  function fromExcluded(warehouses, scope, fromList) {
+    var inFrom = {}; (fromList || []).forEach(function (w) { inFrom[String(w.warehouseId)] = 1; });
+    return (warehouses || []).filter(function (w) {
+      if (!w || !w.warehouseId || inFrom[String(w.warehouseId)] || isFactory(w)) return false;
+      var t = whType(w); if (t && t !== '3PL') return false;
+      return !scope || !scope.country || !String(w.country || '').trim() || warehouseCountryMatches(w.country, scope.country);
+    });
+  }
+  // A-delta2 F (Owner rule 5): an option label is the warehouse NAME only - no quantity, no availability or reason text.
+  function fromOptionLabel(r, name) { return String(name == null ? '' : name); }
+
+  // A-delta2 F (Owner rule 5) — THE ROUTE PICKER OPTIONS. PURE, DOM-free. One answer for the From and To selects of one route row.
+  //   From = the candidate contract (buildCandidates) narrowed to what is PROVEN usable for this SKU: every factory (factory stock is checked
+  //          at Shipment Draft, unchanged) + every overseas 3PL whose fromAvailability verdict is usable (company / country / To / one readable
+  //          stock row / pool hold per SKU / stock > 0). An overseas warehouse with no verdict (availability not computed) is NOT offered.
+  //   To   = the candidate contract minus the warehouse chosen as this row's From (a route never ships to itself).
+  //   Label = warehouse name; when two LISTED options share a name, ' (' + warehouse code + ')' - the code only, nothing else. Value = warehouse
+  //          id (the Amazon logical destination keeps its token). No disabled option, no group, no quantity, no reason text.
+  //   A saved selection that is not in its list is NOT inserted: the select stays blank and the reason is returned as a note for the field.
+  //   A usable From whose planned quantity is above the proven available quantity stays selected with a SHORT note (server binds at Draft).
+  function buildRoutePickerOptions(input) {
+    input = input || {};
+    var cand = input.candidates || { from: [], to: [] }, avail = input.availability || null;
+    var selFrom = trimS(input.selectedFromId), selTo = trimS(input.selectedToId);
+    function nameOf(w) { return trimS(w.warehouseName) || trimS(w.warehouseId); }
+    function label(list) {
+      var counts = {};
+      list.forEach(function (w) { if (w.logicalDestination) return; var k = nameOf(w).toLowerCase(); counts[k] = (counts[k] || 0) + 1; });
+      return list.map(function (w) {
+        if (w.logicalDestination) return { value: String(w.token), label: w.warehouseName || 'Amazon', name: w.warehouseName || 'Amazon', code: '', type: 'MARKETPLACE_DESTINATION', country: w.country || '', logical: true, marketplace: trimS(w.marketplace) || 'Amazon', company: trimS(w.company) };
+        var n = nameOf(w), code = trimS(w.warehouseCode), dup = counts[n.toLowerCase()] > 1;
+        return { value: String(w.warehouseId), label: (dup && code) ? n + ' (' + code + ')' : n, name: n, code: code, type: trimS(w.warehouseType), country: trimS(w.country), logical: false, duplicateNameWithoutCode: dup && !code };
+      });
+    }
+    var fromRaw = (cand.from || []).filter(function (w) {
+      if (!w || !w.warehouseId) return false;
+      var r = avail && avail.byWarehouseId ? avail.byWarehouseId[String(w.warehouseId)] : null;
+      if (isFactory(w)) return !(selTo && String(w.warehouseId) === selTo) && (!(avail && avail.factoryJudged) || !!(r && r.usable));   // AD3 D r5: proven factories only
+      return !!(r && r.usable);
+    });
+    var from = label(fromRaw);
+    var fromOk = from.some(function (o) { return o.value === selFrom; });
+    var toRaw = (cand.to || []).filter(function (w) { return w && (w.logicalDestination || (w.warehouseId && !(fromOk && String(w.warehouseId) === selFrom))); });
+    var to = label(toRaw);
+    var toOk = to.some(function (o) { return o.value === selTo; });
+    from.forEach(function (o) { o.selected = fromOk && o.value === selFrom; });
+    to.forEach(function (o) { o.selected = toOk && o.value === selTo; });
+    var fromNote = null, toNote = null;
+    if (selFrom && !fromOk) {
+      var r0 = avail && avail.byWarehouseId ? avail.byWarehouseId[selFrom] : null;
+      var inCand = (cand.from || []).some(function (w) { return w && String(w.warehouseId) === selFrom; });
+      var code0 = (r0 && r0.reason) ? r0.reason : (inCand && selTo === selFrom ? 'SAME_AS_DESTINATION' : 'NOT_A_CANDIDATE');
+      fromNote = { state: 'STALE', warehouseId: selFrom, reason: code0, text: FROM_REASON_TEXT[code0] || code0 };
+    } else if (fromOk) {
+      var r1 = avail && avail.byWarehouseId ? avail.byWarehouseId[selFrom] : null;
+      if (r1 && r1.usable && r1.reason === 'AVAILABLE_SHORT') fromNote = { state: 'SHORT', warehouseId: selFrom, reason: 'AVAILABLE_SHORT', text: FROM_REASON_TEXT.AVAILABLE_SHORT, need: r1.need, availableQty: r1.availableQty };
+    }
+    if (selTo && !toOk) {
+      var code1 = (fromOk && selTo === selFrom) ? 'SAME_AS_DESTINATION' : 'NOT_A_CANDIDATE';
+      toNote = { state: 'STALE', warehouseId: selTo, reason: code1, text: FROM_REASON_TEXT[code1] };
+    }
+    return { from: from, to: to, fromEmpty: !from.length, toEmpty: !to.length, fromNote: fromNote, toNote: toNote,
+      selectedFromId: fromOk ? selFrom : '', selectedToId: toOk ? selTo : '' };
+  }
+
   var IRWarehouse = {
     whType: whType, isFactory: isFactory, isOverseas3PL: isOverseas3PL, isFBA: isFBA, isActive: isActive,
     warehouseCountryMembers: warehouseCountryMembers, warehouseCountryMatches: warehouseCountryMatches,
@@ -378,7 +647,10 @@
     DESTINATION_AMBIGUOUS: DESTINATION_AMBIGUOUS,
     resolveDestinationPayload: resolveDestinationPayload,
     buildPhysicalThirdPartyBreakdown: buildPhysicalThirdPartyBreakdown,
-    buildCandidates: buildCandidates, dedup: dedup
+    buildCandidates: buildCandidates, dedup: dedup,
+    fromAvailability: fromAvailability, fromExcluded: fromExcluded, fromOptionLabel: fromOptionLabel, FROM_REASON_TEXT: FROM_REASON_TEXT,   // C5
+    buildRoutePickerOptions: buildRoutePickerOptions, poolLinkIndex: poolLinkIndex,   // A-delta2 F (Owner rule 5)
+    platformSkuMode: platformSkuMode, platformDestinationFor: platformDestinationFor   // AD3 D (Owner decision 12)
   };
 
   // ===== Part C (Round 4): pure Draft-persistence payload builders (deterministically testable) =====

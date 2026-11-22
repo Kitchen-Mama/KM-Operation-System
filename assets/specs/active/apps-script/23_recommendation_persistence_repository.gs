@@ -78,7 +78,14 @@ function rprBuildSheetSet_(ss, tableNames) {
 }
 // Write mutated tables back (full-table setValues — a source-mirror simplification; a keyed delta write is a
 // future optimization). Terminal rows are never removed because the pure module only supersedes (never deletes).
-function rprWriteBack_(meta, set, tableNames) {
+// BV1 (P4) - A WHOLE-TABLE WRITE-BACK IS ONLY SAFE INSIDE THE SCRIPT LOCK THAT TOOK ITS SNAPSHOT. Outside it, every write
+// committed after the snapshot (a CANCEL_ROUTE_LINES advancing draft_version, a line cancelled) is overwritten with the
+// old values - measured by the reviewer (N8 / K3): v4 back to 3, a cancelled line back to active, and a late v3 request
+// then landed. The caller passes the lock object it acquired; without a held lock this throws before writing anything.
+function rprWriteBack_(meta, set, tableNames, heldLock) {
+  if (!(heldLock && typeof heldLock.hasLock === 'function' && heldLock.hasLock() === true)) {
+    throw new Error('RPR_WRITEBACK_REQUIRES_LOCK: rprWriteBack_ writes whole tables and may only run inside the ScriptLock that took its snapshot (zero rows written)');
+  }
   for (var i = 0; i < tableNames.length; i++) {
     var name = tableNames[i], sh = meta[name], t = set[name];
     var out = [t.headers].concat(t.rows);
@@ -105,15 +112,14 @@ function loadIncompleteRun(draftId) {
   return jsonResponse_({ success: true, data: K.loadIncompleteRun(built.set, draftId) });
 }
 function applyPersistencePlan(plan, expectedToken, opts) {
-  var K = rprPureModule_(), ss = SpreadsheetApp.getActiveSpreadsheet();
-  var cfg = K.TABLES[plan && plan.recommendationType]; if (!cfg) return jsonResponse_({ success: false, error: 'unknown recommendationType' });
-  var tables = [cfg.header, cfg.lines, K.RUN_JOURNAL_TABLE];
-  var built = rprBuildSheetSet_(ss, tables);
-  // NOTE: UNLOCKED path — this read→apply→write is NOT race-safe. Production callers MUST use
-  // applyPersistencePlanWithLock (below). Kept for tests / single-writer contexts only.
-  var result = K.applyPersistencePlan(built.set, plan, expectedToken, opts || {});
-  if (!result.conflict && result.runStatus !== 'FAILED') { rprWriteBack_(built.meta, built.set, tables); }
-  return jsonResponse_({ success: !result.conflict && result.runStatus !== 'FAILED', data: result });
+  // BV1 (P4) - THE UNLOCKED PATH IS REMOVED. It read both tables, applied the plan and wrote both tables back WHOLE with
+  // no lock, so any write committed in between was silently reverted (VERSION_WRITERS_INVENTORY W9, N8, K3). No .gs file
+  // calls it (the 24_ / 61_ paths call KMPR.applyPersistencePlan, the bundled pure module, and write their own keyed
+  // delta); the NAME is kept only so an editor run or a stale reference gets a typed refusal - it reads and writes
+  // nothing. The race-safe path is applyPersistencePlanWithLock below.
+  return jsonResponse_({ success: false, error: 'UNLOCKED_PERSISTENCE_PATH_REMOVED', code: 'UNLOCKED_PERSISTENCE_PATH_REMOVED',
+    stage: 'input', zero_write: true,
+    data: { use: 'applyPersistencePlanWithLock', recommendationType: (plan && plan.recommendationType) || null } });
 }
 
 // ---- Round 1E: LockService + optimistic-concurrency write boundary (PA-9/PA-10) ---------------------------
@@ -161,7 +167,7 @@ function applyPersistencePlanWithLock(plan, expectedToken, opts) {
     },
     applyPlan: function (tok, o) {
       var res = K.applyPersistencePlan(built.set, plan, tok, o || opts || {});
-      if (!res.conflict && res.runStatus !== 'FAILED') { rprWriteBack_(built.meta, built.set, tables); }
+      if (!res.conflict && res.runStatus !== 'FAILED') { rprWriteBack_(built.meta, built.set, tables, lock); }   // BV1 (P4): the held lock is the write's licence
       return res;
     }
   };
@@ -171,3 +177,5 @@ function applyPersistencePlanWithLock(plan, expectedToken, opts) {
   });
   return jsonResponse_({ success: result.success, data: result });
 }
+
+var RPR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72';   // PGSC1N1: new module stamp (registration per build-production-profile.cjs:37,42,43)

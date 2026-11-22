@@ -1,1234 +1,1818 @@
-// ============================================================
-// Kitchen Mama Operation System — Apps Script (modularized source mirror)
-// 01_router.gs — doGet / doPost action routing
-// NOTE: All .gs files in this folder share ONE global scope in the Apps
-//       Script project. Copy them into the project TOGETHER. No imports.
-//       Structure-only split — no behavior change vs apps-script-web-app.gs.
-// ============================================================
 
-// ========================================
-// Kitchen Mama Operation System - Google Apps Script Web App
-// Read + Write API for Google Sheet DB
-// ========================================
 
-/**
- * Main entry point for GET requests.
- * Supports actions: getOperationDb, getTable
- */
-// F1-7N-FB-4D §E — deployment build stamp for the ROUTER. FB-4D changed nothing here; the stamp records the
-// round that last changed it (F1-7N-FB-4C-R1, the POST_ONLY_ACTION_ON_GET terminal answer). The router is the
-// one file whose staleness is invisible from the client: a stale router still answers every request, it just
-// answers an older contract.
-// F1-7N-FB-4E-R2 §3 — R2 CHANGED THIS FILE, so the stamp moves and the action contract moves with it.
-// system.executionPlanDuplicateLineDiagnostic had a handler in 68_ and a docstring declaring it an action, and
-// NO dispatch branch in any commit ever — so the handler was unreachable while the frontend required it.
-// F1-7N-FB-4E-R4B-R3 §1 - THE STAMP FOLLOWS THE BEHAVIOUR. R4B-R2 changed this file's GET read dispatch (it
-// double-wrapped a handler that already returned a TextOutput, so three read actions answered "{}"), and the
-// stamp stayed at R4A1. checkDeploymentContract() therefore reported a build that no longer described the code
-// it was running - the deployment was truthful about its ACTION CONTRACT and untruthful about its IDENTITY, and
-// only the identity tells an operator whether the fix they are looking for is actually deployed.
-// F1-7N-FC-1A-R1: moved with the file. R1 adds the cancelShipmentDraft dispatch, so a router one round behind
-// answers every OTHER action normally and simply cannot route the one that releases a reservation. Leaving the
-// stamp behind would make a CORRECTLY synced router report as current while being unable to give units back.
-// F1-7N-FC-1B-E3-R4-A2-R1-R5 §10 — found by the standing stamp-rotation check added this round: this file
-// last changed in F1-7N-FC-1B-E3-R4-A2-R1-R2 and its label was still at FC-1A-R1.
-// PRODUCT-STRATEGY-P1-B1-R1 - moved because P1-B1 added the productPricing.workspace.get dispatch (one GET
-// registry entry and one POST branch) and did not move it. A router one round behind answers every other
-// action normally and simply cannot route this one, which is exactly the state a stamp must make visible.
-// PRICING-R2 - R9 -> R21. This file gained the pricing.update dispatch, and a router that does not route
-// an action is indistinguishable from a deployment that never had the handler.
-// PRICING-R3 - R21 -> R22. Gained the pricing.fxReconcile dispatch, whose handler lives in the same owner
-// (73_) as pricing.update, so a project synced for R21 has the FILE but not the ROUTE.
-// S5-R6 — ROLLED BACK FROM R27 TO R25, WHICH IS THE ROUND THIS FILE LAST ACTUALLY CHANGED.
-// `git log e583057..HEAD` on this path names three commits: the R25 pricing-receipt work, and then two
-// releases that touched nothing here but this line. A stamp records the round a file last changed; marching
-// it to keep a gate green is the exact fault the manifest exists to report, and it had made this stamp say
-// R27 about a file whose bytes have not moved since R25. The gate that forced the march has been repaired
-// to ask whether the file changed rather than to require that it always carries the release.
-// S8-R4B-1 - R41. The GET read table gains factoryStockGuard.get, so this file's routing table changed and
-// its stamp moves with it. R40 was already CUT against a tree in which 01_ did not change - its owner set
-// is 63_ alone, and the ledger deliberately carries 01_ at R39 there - so joining R40 would make one id
-// name two trees. A new release is the only honest way to record a runtime change that arrives after a cut.
-var RTR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55';
 
-// =============================================================================================================
-// F1-7N-FB-4E-R4A1 §3 — READ ACTIONS ARE SERVED ON GET, AND THIS IS WHY.
-//
-// MEASURED, NOT ASSUMED. An Apps Script /exec request is never answered at /exec: it is answered with a 302 to
-// script.googleusercontent.com/macros/echo?user_content_key=..., and the browser follows that itself. The R4A1
-// matrix executed every shape through this router behind that hop:
-//
-//   browser navigation GET          302 -> echo 200   handler ran    JSON success=true
-//   fetch GET (getTable)            302 -> echo 200   handler ran    JSON success=true
-//   repeated fetch GET from /exec   302 -> echo 200   5/5 success
-//   fetch POST                      302 -> echo 404   NO handler     body LOST      -> HTTP_TRANSPORT_ERROR
-//   fetch POST (echo resolves back) 302 -> doGet 200  handler ran    body LOST      -> REQUEST_METHOD_DOWNGRADED
-//   direct GET to an echo target    no redirect, 404 — a googleusercontent URL is not a re-usable endpoint
-//
-// Both live failures are properties of a POST crossing that hop, and per the Fetch spec they are UNAVOIDABLE
-// for a POST: a 302 following a POST is re-issued as a GET with the body dropped. A GET has nothing to lose --
-// everything the router needs is already in the URL — which is exactly why the only reads this app has always
-// sent as GET (getTable, getOperationDb) have never shown either failure, and why pasting the /exec URL into a
-// browser has always worked.
-//
-// So reads are served on GET. This is NOT a workaround and NOT a second contract: the GET carries the SAME body
-// it would have POSTed, in `km_body`, and dispatches to the SAME handler the POST entry point dispatches to — the
-// table below holds function REFERENCES, so a handler cannot be renamed for one verb and not the other.
-//
-// WRITES ARE NOT IN THIS TABLE AND CANNOT BE. Every entry is a read whose zero-write behaviour is asserted
-// BEHAVIOURALLY by the R4A1 suite: each action is executed against an instrumented spreadsheet whose write
-// primitives record every call, and membership requires that count to be zero. A write reaching a GET would
-// otherwise be replayable by a browser prefetch, a crawler or a history revisit, which is the one thing that
-// must never become possible.
-// =============================================================================================================
 
-// The GET body cap. Google's practical URL ceiling is several kilobytes; this is set well below it so an
-// oversized read FAILS CLOSED with a named reason instead of being silently truncated into a different request.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4";
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 var RTR_GET_BODY_MAX_ = 4000;
 
 function rtrGetReadHandlers_() {
-  return {
-    // Scoped page workspaces (read-only owners; the client's primary render reads)
-    'skuDetails.workspace.get':                    handleSkuDetailsWorkspaceGet_,
-    'weeklyShipping.workspace.get':                handleWeeklyShippingWorkspaceGet_,
-    'fcSummary.workspace.get':                     handleFcSummaryWorkspaceGet_,
-    'purchaseOrder.workspace.get':                 handlePurchaseOrderWorkspaceGet_,
-    'requestOrder.workspace.get':                  handleRequestOrderWorkspaceGet_,
-    'inventoryReplenishment.workspace.get':        handleInventoryReplenishmentWorkspaceGet_,
-    'overseasStock.workspace.get':                 handleOverseasStockWorkspaceGet_,
-    'productPricing.workspace.get':                handleProductPricingWorkspaceGet_,
-    // P1-B6 — the SAME owner publishes the site universe. It is routed next to the workspace read
-    // on purpose: a separate owner for marketplace_skus membership would be a second authority for
-    // the one rule that decides which SKU is listed where, and two owners of one resource disagree.
-    'productPricing.siteUniverse.get':             handleProductPricingSiteUniverseGet_,
-    'shipment.workspace.get':                      handleShipmentWorkspaceGet_,
-    'recommendation.workspace.get':                handleRecommendationWorkspaceGet_,
-    // Scoped gap / composer reads
-    'inventoryReplenishmentGap.get':               handleGetInventoryReplenishmentGap_,
-    'orderPlanningGap.get':                        handleGetOrderPlanningGap_,
-    'aiPlanFirstLayer.get':                        handleAiPlanFirstLayerGet_,
-    'gapJob.status.get':                           handleGetGapJobStatus_,
-    // Request Order read-backs and send-state reads (NO send, NO draft creation, NO conversion)
-    'requestOrder.sendWorkset.get':                handleRequestOrderSendWorksetGet_,
-    'requestOrder.send.status':                    handleRequestOrderSendStatus_,
-    'requestOrderDraft.job.status':                handleGetRequestOrderDraftJobStatus_,
-    'requestOrderDraft.getActive':                 handleGetActiveRequestOrderDraftReadback_,
-    // S3-R10 §6 — pricing write outcome lookup. STRICTLY READ-ONLY, and on the GET table because that is
-    // what makes it usable after a lost response: the client asks whether its write committed instead of
-    // resending it. The pricing.update twin stays POST-only and is deliberately absent from this table.
-    'pricing.write.status':                        handlePricingWriteStatus_,
-    // FX1-R3 — the stored FX coefficients (owner = 75_). READ-ONLY and on the GET table because seeing
-    // the rates that price the catalogue is not the same permission as changing them: the answer carries
-    // may_edit so the page can tell the operator before they start, and the SAVE twin stays POST-only.
-    'fxRateBook.get':                              handleFxRateBookGet_,
-    // Read-only diagnostics the pages consume
-    'system.requestOrderSendDiagnosticStatus':     handleRequestOrderSendDiagnosticStatus_,
-    'system.requestOrderSendReconcile':            handleRequestOrderSendReconcile_,
-    'system.allocationDraftIdentityDiagnostic':    handleAllocationDraftIdentityDiagnostic_,
-    // Config read (Script Properties; the UPDATE twin stays POST-only and is deliberately absent here)
-    'automationSchedule.get':                      handleAutomationScheduleGet_,
-    // S8-R4B-1 — the Weekly Shipping Plan factory-availability indicator. It was the one approved read in
-    // the system that travelled on POST, and a POST cannot survive the /exec 302: the redirect is re-issued
-    // as a GET with the body dropped, which is the failure R3B reproduced twice in nine attempts. The
-    // handler was never the problem and does not change — its reachable graph holds no write primitive at
-    // any depth. Only the way it is reached does.
-    'factoryStockGuard.get':                       handleFactoryStockGuardGet_
-  };
+return {
+'siteSku.planning.list': handleSiteSkuPlanningList_,
+
+'skuDetails.workspace.get': handleSkuDetailsWorkspaceGet_,
+'weeklyShipping.workspace.get': handleWeeklyShippingWorkspaceGet_,
+'fcSummary.workspace.get': handleFcSummaryWorkspaceGet_,
+'purchaseOrder.workspace.get': handlePurchaseOrderWorkspaceGet_,
+'requestOrder.workspace.get': handleRequestOrderWorkspaceGet_,
+'inventoryReplenishment.workspace.get': handleInventoryReplenishmentWorkspaceGet_,
+'overseasStock.workspace.get': handleOverseasStockWorkspaceGet_,
+'productPricing.workspace.get': handleProductPricingWorkspaceGet_,
+
+
+
+'productPricing.siteUniverse.get': handleProductPricingSiteUniverseGet_,
+'shipment.workspace.get': handleShipmentWorkspaceGet_,
+'recommendation.workspace.get': handleRecommendationWorkspaceGet_,
+
+'inventoryReplenishmentGap.get': handleGetInventoryReplenishmentGap_,
+'orderPlanningGap.get': handleGetOrderPlanningGap_,
+'aiPlanFirstLayer.get': handleAiPlanFirstLayerGet_,
+'gapJob.status.get': handleGetGapJobStatus_,
+
+'requestOrder.sendWorkset.get': handleRequestOrderSendWorksetGet_,
+'requestOrder.send.status': handleRequestOrderSendStatus_,
+'requestOrderDraft.job.status': handleGetRequestOrderDraftJobStatus_,
+'requestOrderDraft.getActive': handleGetActiveRequestOrderDraftReadback_,
+
+
+
+'pricing.write.status': handlePricingWriteStatus_,
+
+
+
+'fxRateBook.get': handleFxRateBookGet_,
+
+'system.requestOrderSendDiagnosticStatus': handleRequestOrderSendDiagnosticStatus_,
+'system.requestOrderSendReconcile': handleRequestOrderSendReconcile_,
+'system.allocationDraftIdentityDiagnostic': handleAllocationDraftIdentityDiagnostic_,
+
+'automationSchedule.get': handleAutomationScheduleGet_,
+
+
+
+
+
+'factoryStockGuard.get': handleFactoryStockGuardGet_,
+
+'shipment.consolidationPolicy.get': handleShipmentConsolidationPolicyGet_,
+'system.sourceRevision': handleSourceRevisionGet_
+};
+}
+
+
+
+
+
+var KM_SRC_REV_KEY_ = 'KM_SOURCE_REVISION', KM_SRC_PEND_ = 'KM_SRC_PEND_', KM_SRC_PEND_MS_ = 1800000;
+function kmSrcRevGet_() {
+try {
+var p = PropertiesService.getScriptProperties().getProperties(), old = [];
+for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0) { if (Date.now() - Number(p[k]) < KM_SRC_PEND_MS_) return false; old.push(k); }
+return (p[KM_SRC_REV_KEY_] || 'R0') + (old.length ? '+' + old.sort().join('+') : '');
+} catch (e) { return null; }
+}
+function kmSrcRevMark_() {
+var id = KM_SRC_PEND_ + Utilities.getUuid().slice(0, 8);
+try { PropertiesService.getScriptProperties().setProperty(id, String(Date.now())); } catch (e) { throw new Error('SOURCE_REVISION_UNAVAILABLE: the write was not started.'); }
+return id;
+}
+function kmSrcRevBump_(id) {
+try {
+var P = PropertiesService.getScriptProperties(), p;
+P.setProperty(KM_SRC_REV_KEY_, Date.now().toString(36) + '-' + Utilities.getUuid().slice(0, 8));
+P.deleteProperty(id); p = P.getProperties();
+for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0 && Date.now() - Number(p[k]) >= KM_SRC_PEND_MS_) P.deleteProperty(k);
+} catch (e) {}
+}
+
+var RTR_POST_READS_ = ' shipment.receipt.diagnose shippingPlan.rateCardOptions getOperationDb getTable getClientCapabilities system.health inventoryScope.registry.get system.submitFlowDiagnostic system.shippingAllocationDraftDiagnostic system.executionPlanConflictDiagnostic system.executionPlanDuplicateLineDiagnostic system.shippingAllocationSchemaDiagnostic system.requestOrderSendDiagnostic system.twoVerticalFlowsDiagnostic openPoRemaining.raw.get fcSummary.raw.get rawInventory.get leadTime.raw.get overseasAllocationPreview.job.status overseasAllocationPreview.result.get getShippingMethodCandidates getShipmentFinalOutput shipmentDocument.get document.get document.export document.exportNonce shipment.rateCardOptions getShippingAllocationDraftWorkspace getRecommendationDraftToken warehouseAllocation.get factoryOperationConfig.get import.template.get import.validate import.receipt.get import.history.list factoryInventory.import.validate shipment.documentValues.check ';
+
+// Production profile: shared-password sessions and a closed, build-bound action policy.
+var RTR_PFI_SCOPE_ = "po_factory_stock|NEW_RECEIPT|OPENING_PO_FOR_EXISTING_STOCK|UPDATE_REMAINING;overseas_inventory|SET|ADD|POST_ONLY;shipment|ADD_NEW|UPDATE|ROUTE_INIT";   // SHIP-OPEN (Owner Q1)
+function rtrPoFactoryScope_(action, body) {
+if (!body || Array.isArray(body) || !Object.prototype.hasOwnProperty.call(RTR_PRODUCTION_PROFILE_.import_scopes, body.domain)) return false;
+if (['import.template.get','import.validate','import.commit'].indexOf(action) >= 0) return RTR_PRODUCTION_PROFILE_.import_scopes[body.domain].indexOf(body.mode) >= 0;
+return ['import.receipt.get','import.history.list'].indexOf(action) >= 0;
+}
+var RTR_CALLER_PROP_ = 'KM_CALLER_TOKEN_SHA256';
+function rtrHex_(bytes) { var s = ''; for (var i = 0; i < bytes.length; i++) { var b = bytes[i] < 0 ? bytes[i] + 256 : bytes[i]; s += (b < 16 ? '0' : '') + b.toString(16); } return s; }
+function rtrSha256Hex_(text) { return rtrHex_(Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, String(text), Utilities.Charset.UTF_8)); }
+
+
+
+
+
+
+function rtrIsRead_(a) { return !!rtrGetReadHandlers_()[a] || RTR_POST_READS_.indexOf(' ' + a + ' ') !== -1; }
+function handleSourceRevisionGet_() {
+var r = kmSrcRevGet_();
+return r ? { success: true, data: { source_revision: r } } : r === false ? { success: false, code: 'SOURCE_REVISION_PENDING', error: 'A write is in flight.' }
+: { success: false, code: 'SOURCE_REVISION_UNAVAILABLE', error: 'The source revision could not be read.' };
 }
 
 function rtrGetReadActionList_() {
-  var t = rtrGetReadHandlers_(), out = [];
-  for (var k in t) { if (Object.prototype.hasOwnProperty.call(t, k)) out.push(k); }
-  return out.sort();
+var t = rtrGetReadHandlers_(), out = [];
+for (var k in t) { if (Object.prototype.hasOwnProperty.call(t, k)) out.push(k); }
+return out.sort();
 }
 
-// F1-7N-FB-4E-R4B-R2 §1 - THE READ TABLE'S HANDLERS DO NOT ALL RETURN THE SAME THING, AND THE DISPATCH
-// ASSUMED THEY DID.
-//
-// R4A1 added the GET read table and dispatched it as `return jsonResponse_(handler(body))`. That is correct for
-// the eighteen handlers that return a PLAIN ENVELOPE OBJECT - and wrong for the three that already return a
-// ContentService TextOutput:
-//
-//     requestOrderDraft.getActive              (47_)  <- the Order Planning draft readback
-//     system.requestOrderSendReconcile         (65_)
-//     system.allocationDraftIdentityDiagnostic (67_)
-//
-// JSON.stringify(TextOutput) is "{}" - a TextOutput has no enumerable own properties - so those three answered
-// every GET with the literal two-byte body {}. On the POST path the same handlers are returned DIRECTLY and are
-// unaffected, which is exactly why this looked like a hydration defect rather than a transport one: every page
-// still loaded (its workspace handler returns an object), and only the draft read came back empty. Measured
-// end to end: 45 rows / 92 positive / 43 zero survive the readback filter and become 0 / 0 / 0 here.
-//
-// The dispatch now EMITS whatever the handler produced. A TextOutput is already a complete answer and is passed
-// through untouched; a plain object is serialized. Nothing is double-wrapped, and a handler is free to return
-// either - which is the property that was silently assumed and is now enforced at the one place it matters.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function rtrIsTextOutput_(v) {
-  return !!(v && typeof v === 'object' && typeof v.getContent === 'function' && typeof v.setMimeType === 'function');
+return !!(v && typeof v === 'object' && typeof v.getContent === 'function' && typeof v.setMimeType === 'function');
 }
 function rtrEmitHandlerResult_(v) {
-  return rtrIsTextOutput_(v) ? v : jsonResponse_(v);
+return rtrIsTextOutput_(v) ? v : jsonResponse_(v);
 }
 
-// Reconstruct the request body from the query string. Every failure here is TYPED and answers with zero reads:
-// a malformed or oversized read must be a named refusal, never a partially-parsed request that runs anyway.
+
+
 function rtrParseGetBody_(e, action) {
-  var p = (e && e.parameter) ? e.parameter : {};
-  var raw = (p.km_body === undefined || p.km_body === null) ? '' : String(p.km_body);
-  function refuse(code, message, extra) {
-    var out = { success: false, error: message, code: code, handler: 'doGet', received_method: 'GET',
-      router_build: RTR_BUILD_VERSION_, attempted_action: action, zero_write: true, rows_read: 0,
-      request_id: p.km_rid ? String(p.km_rid) : null,
-      next_action: 'This is a client-side request-construction fault. Nothing was read. Retrying the same request cannot change it.' };
-    if (extra) { for (var k in extra) out[k] = extra[k]; }
-    return { error: out };
-  }
-  if (raw.length > RTR_GET_BODY_MAX_) {
-    return refuse('READ_BODY_TOO_LARGE',
-      'The read parameters exceed the GET body limit, so the request was refused without reading anything.',
-      { body_bytes: raw.length, body_bytes_max: RTR_GET_BODY_MAX_ });
+var p = (e && e.parameter) ? e.parameter : {};
+var raw = (p.km_body === undefined || p.km_body === null) ? '' : String(p.km_body);
+function refuse(code, message, extra) {
+var out = { success: false, error: message, code: code, handler: 'doGet', received_method: 'GET',
+router_build: RTR_BUILD_VERSION_, attempted_action: action, zero_write: true, rows_read: 0,
+request_id: p.km_rid ? String(p.km_rid) : null,
+next_action: 'This is a client-side request-construction fault. Nothing was read. Retrying the same request cannot change it.' };
+if (extra) { for (var k in extra) out[k] = extra[k]; }
+return { error: out };
+}
+if (raw.length > RTR_GET_BODY_MAX_) {
+return refuse('READ_BODY_TOO_LARGE',
+'The read parameters exceed the GET body limit, so the request was refused without reading anything.',
+{ body_bytes: raw.length, body_bytes_max: RTR_GET_BODY_MAX_ });
+}
+var body;
+if (raw === '') { body = {}; }
+else {
+try { body = JSON.parse(raw); }
+catch (err) { return refuse('READ_BODY_MALFORMED', 'The read parameters were not valid JSON, so nothing was read.'); }
+}
+if (!body || typeof body !== 'object' || Object.prototype.toString.call(body) === '[object Array]') {
+return refuse('READ_BODY_MALFORMED', 'The read parameters were not a JSON object, so nothing was read.');
+}
+
+
+var bodyAction = (body.action === undefined || body.action === null) ? '' : String(body.action).trim();
+if (bodyAction !== '' && bodyAction !== action) {
+return refuse('READ_BODY_ACTION_MISMATCH',
+'The action in the URL and the action in the read parameters disagree, so nothing was read.',
+{ body_action: bodyAction });
+}
+body.action = action;
+
+
+if (!body.requestId && p.km_rid) body.requestId = String(p.km_rid);
+return { body: body };
+}
+
+
+
+
+
+
+
+
+
+
+
+var RTR_ENTRY_AT_ = null;
+var RTR_ENTRY_T0_ = null;
+var RTR_ENTRY_METHOD_ = null;
+var RTR_ENTRY_RID_ = null;
+function rtrMarkEntry_(e, method) {
+RTR_ENTRY_AT_ = Date.now();
+RTR_ENTRY_T0_ = RTR_ENTRY_AT_;
+RTR_ENTRY_METHOD_ = method;
+RTR_ENTRY_RID_ = (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null;
+return RTR_ENTRY_AT_;
+}
+
+
+function rtrEntryEvidence_() {
+return {
+routerEntryAt: RTR_ENTRY_AT_,
+routerEntryMethod: RTR_ENTRY_METHOD_,
+routerRequestId: RTR_ENTRY_RID_,
+routerBuild: RTR_BUILD_VERSION_,
+
+
+
+routerToHandlerMs: (RTR_ENTRY_T0_ === null) ? null : (Date.now() - RTR_ENTRY_T0_)
+};
+}
+
+function doGet(e) { return jsonResponse_({ success: false, code: 'AUTH_REQUIRED', zero_write: true, business_writes: 0 }); }
+
+
+
+
+
+function doPost(e) {
+var _rtrAct = null, _rtrMark = null;
+var _rtrOut = (function () {
+try {
+rtrMarkEntry_(e, 'POST');
+var _prodBody = rtrProductionRequestBody_(e); if (_prodBody.error) return jsonResponse_(_prodBody.error);
+var body = _prodBody.body;
+var action = body.action || '';
+_rtrAct = action;
+if (typeof paControl_ !== 'function' || typeof paSessionCheck_ !== 'function') return jsonResponse_({ success: false, code: 'AUTH_MODULE_MISSING', zero_write: true });
+var _paControl = paControl_(body); if (_paControl) return jsonResponse_(_paControl);
+var _paDenied = paSessionCheck_(body); if (_paDenied) return jsonResponse_(_paDenied);
+delete body.access_session; // Never expose credentials to business validation, audits or receipts.
+
+var _prodAction = rtrActionGate_(action, body); if (_prodAction) return rtrGateRefusal_(_prodAction, 'doPost', action);
+var _prodTarget = rtrProductionTargetCheck_(); if (_prodTarget) return rtrGateRefusal_(_prodTarget, 'doPost', action);
+if (action === 'getOperationDb') return handleGetOperationDb_();
+if (action === 'getTable') return handleGetTable_(String(body.table || '').trim());
+var _paReads = rtrGetReadHandlers_();
+if (Object.prototype.hasOwnProperty.call(_paReads, action)) { body.__km_handler = 'doPost'; return rtrEmitHandlerResult_(_paReads[action](body)); }
+if (!rtrIsRead_(action)) { try { _rtrMark = kmSrcRevMark_(); } catch (eM) { return jsonResponse_({ success: false, code: 'SOURCE_REVISION_UNAVAILABLE', error: eM.message, zero_write: true }); } }
+if (action === 'siteSku.planning.list') return jsonResponse_(handleSiteSkuPlanningList_(body));
+if (action === 'siteSku.planning.update') return jsonResponse_(handleSiteSkuPlanningUpdate_(body));
+
+
+
+if (action === 'getClientCapabilities') {
+return rtrWithProductionGate_(handleGetClientCapabilities_());
+}
+
+
+if (action === 'system.health') {
+body.__km_handler = 'doPost';
+return handleSystemHealth_(body);
+}
+if (action === 'system.submitFlowDiagnostic') {
+return handleSubmitFlowDiagnostic_(body);
+}
+
+
+
+if (action === 'system.shippingAllocationDraftDiagnostic') {
+return handleShippingAllocationDraftDiagnostic_(body);
+}
+
+
+
+
+if (action === 'system.executionPlanConflictDiagnostic') {
+return jsonResponse_(handleExecutionPlanConflictDiagnostic_(body));
+}
+
+
+
+if (action === 'system.requestOrderSendDiagnosticStatus') {
+return jsonResponse_(handleRequestOrderSendDiagnosticStatus_(body));
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (action === 'system.executionPlanDuplicateLineDiagnostic') {
+body.__km_handler = 'doPost';
+return jsonResponse_(handleExecutionPlanDuplicateLineDiagnostic_(body));
+}
+if (action === 'inventoryScope.registry.get') {
+return handleInventoryScopeRegistryGet_(body);
+}
+
+
+if (action === 'system.shippingAllocationSchemaDiagnostic') {
+return handleShippingAllocationSchemaDiagnostic_(body);
+}
+if (action === 'system.requestOrderSendDiagnostic') {
+return handleRequestOrderSendDiagnostic_(body);
+}
+if (action === 'system.twoVerticalFlowsDiagnostic') {
+return handleTwoVerticalFlowsDiagnostic_(body);
+}
+
+
+if (action === 'system.requestOrderSendReconcile') {
+return handleRequestOrderSendReconcile_(body);
+}
+
+
+
+
+
+
+
+
+
+if (action === 'requestOrder.sendWorkset.get') {
+return jsonResponse_(handleRequestOrderSendWorksetGet_(body));
+}
+if (action === 'requestOrder.send.orchestrate') {
+return jsonResponse_(handleRequestOrderSendOrchestrate_(body));
+}
+
+
+if (action === 'requestOrder.send.status') {
+return jsonResponse_(handleRequestOrderSendStatus_(body));
+}
+
+
+if (action === 'pricing.write.status') {
+return jsonResponse_(handlePricingWriteStatus_(body));
+}
+
+
+
+
+if (action === 'requestOrder.allocationDraft.ensureAndEdit') {
+return handleRequestOrderAllocationDraftEnsureAndEdit_(body);
+}
+
+
+if (action === 'system.allocationDraftIdentityDiagnostic') {
+return handleAllocationDraftIdentityDiagnostic_(body);
+}
+
+if (action === 'updateSkuLifecycle') {
+return handleUpdateSkuLifecycle_(body);
+}
+
+if (action === 'upsertSkuDetail') {
+return handleUpsertSkuDetail_(body);
+}
+
+if (action === 'upsertMarketplaceSku') {
+return handleUpsertMarketplaceSku_(body);
+}
+
+if (action === 'updateMarketplaceSkuModel') {
+return handleUpdateMarketplaceSkuModel_(body);
+}
+
+if (action === 'importMarketplaceSkusBatch') {
+return handleImportMarketplaceSkusBatch_(body);
+}
+
+if (action === 'upsertMarketplace') {
+return handleUpsertMarketplace_(body);
+}
+
+
+
+
+
+
+
+
+if (action === 'marketplace.allocationPriority.set') {
+return handleSetMarketplaceAllocationPriority_(body);
+}
+
+if (action === 'importFcRegularForecastBatch') {
+return handleImportFcRegularForecastBatch_(body);
+}
+
+if (action === 'importOverseasInventorySnapshotBatch') {
+return handleImportOverseasInventorySnapshotBatch_(body);
+}
+
+if (action === 'adjustOverseasInventory') {
+return handleAdjustOverseasInventory_(body);
+}
+
+if (action === 'runAmazonSnapshotImports') {
+return handleRunAmazonSnapshotImports_(body);
+}
+
+if (action === 'createShippingPlansBatch') {
+return handleCreateShippingPlansBatch_(body);
+}
+
+if (action === 'updateShippingPlanStatus') {
+return handleUpdateShippingPlanStatus_(body);
+}
+
+if (action === 'updateShippingPlanLineQty') {
+return handleUpdateShippingPlanLineQty_(body);
+}
+if (action === 'shippingPlan.rateCardOptions') {   // SANDBOX-GATE-1f (read)
+return handleShippingPlanRateCardOptions_(body);
+}
+if (action === 'shippingPlan.selectRateCard') {   // SANDBOX-GATE-1f (write; allow-listed in the Sandbox gate)
+return handleShippingPlanSelectRateCard_(body);
+}
+
+if (action === 'shipment.consolidationPolicy.get') return handleShipmentConsolidationPolicyGet_();
+if (action === 'shipment.consolidationPolicy.save') return handleShipmentConsolidationPolicySave_(body);
+if (action === 'appendShippingPlanNote') {
+return handleAppendShippingPlanNote_(body);
+}
+
+if (action === 'completeShippingPlan') {
+return handleCompleteShippingPlan_(body);
+}
+
+
+
+if (action === 'weeklyShipping.workspace.get') {
+return jsonResponse_(handleWeeklyShippingWorkspaceGet_(body));
+}
+
+
+
+
+if (action === 'purchaseOrder.workspace.get') {
+return jsonResponse_(handlePurchaseOrderWorkspaceGet_(body));
+}
+
+
+
+
+
+if (action === 'requestOrder.workspace.get') {
+return jsonResponse_(handleRequestOrderWorkspaceGet_(body));
+}
+
+
+
+
+
+
+if (action === 'shipment.workspace.get') {
+return jsonResponse_(handleShipmentWorkspaceGet_(body));
+}
+if (action === 'shipment.receipt.diagnose') {   // A final4 P0: read-only, company-scoped
+return jsonResponse_(handleShipmentReceiptDiagnose_(body));
+}
+
+
+
+
+
+
+
+if (action === 'fcSummary.workspace.get') {
+return jsonResponse_(handleFcSummaryWorkspaceGet_(body));
+}
+
+
+
+
+
+
+
+
+
+
+
+if (action === 'overseasStock.workspace.get') {
+return jsonResponse_(handleOverseasStockWorkspaceGet_(body));
+}
+if (action === 'skuDetails.workspace.get') {
+return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
+}
+
+
+
+
+
+
+
+
+if (action === 'productPricing.workspace.get') {
+return jsonResponse_(handleProductPricingWorkspaceGet_(body));
+}
+
+
+
+
+
+
+
+
+if (action === 'productPricing.siteUniverse.get') {
+return jsonResponse_(handleProductPricingSiteUniverseGet_(body));
+}
+
+
+
+
+
+
+
+
+if (action === 'inventoryReplenishment.workspace.get') {
+return jsonResponse_(handleInventoryReplenishmentWorkspaceGet_(body));
+}
+
+
+
+
+
+
+if (action === 'openPoRemaining.raw.get') {
+return jsonResponse_(handleOpenPoRemainingRawGet_(body));
+}
+
+
+
+
+
+
+
+if (action === 'fcSummary.raw.get') {
+return jsonResponse_(handleFcSummaryRawGet_(body));
+}
+
+
+
+
+
+
+if (action === 'rawInventory.get') {
+return jsonResponse_(handleRawInventoryGet_(body));
+}
+
+
+
+
+
+if (action === 'leadTime.raw.get') {
+return jsonResponse_(handleLeadTimeRawGet_(body));
+}
+
+
+
+
+
+if (action === 'aiPlanFirstLayer.get') {
+return jsonResponse_(handleAiPlanFirstLayerGet_(body));
+}
+
+
+
+
+if (action === 'recommendation.workspace.get') {
+return jsonResponse_(handleRecommendationWorkspaceGet_(body));
+}
+
+
+
+
+
+if (action === 'inventoryReplenishmentGap.recalculate.all') {
+return jsonResponse_(handleRecalculateInventoryReplenishmentGapBatch_(body));
+}
+if (action === 'orderPlanningGap.recalculate.all') {
+return jsonResponse_(handleRecalculateOrderPlanningGapBatch_(body));
+}
+
+
+
+if (action === 'inventoryReplenishmentGap.get') {
+return jsonResponse_(handleGetInventoryReplenishmentGap_(body));
+}
+if (action === 'orderPlanningGap.get') {
+return jsonResponse_(handleGetOrderPlanningGap_(body));
+}
+
+
+
+
+
+
+if (action === 'inventoryReplenishmentGap.job.start') {
+return jsonResponse_(handleStartInventoryReplenishmentGapJob_(body));
+}
+if (action === 'orderPlanningGap.job.start') {
+return jsonResponse_(handleStartOrderPlanningGapJob_(body));
+}
+if (action === 'gapJob.status.get') {
+return jsonResponse_(handleGetGapJobStatus_(body));
+}
+
+if (action === 'inventoryReplenishmentGap.job.cancel') {
+return jsonResponse_(handleCancelInventoryReplenishmentGapJob_(body));
+}
+if (action === 'orderPlanningGap.job.cancel') {
+return jsonResponse_(handleCancelOrderPlanningGapJob_(body));
+}
+
+
+
+
+
+
+
+
+
+if (action === 'overseasAllocationPreview.job.start') {
+return jsonResponse_(handleStartOverseasAllocationPreviewJob_(body));
+}
+if (action === 'overseasAllocationPreview.job.status') {
+return jsonResponse_(handleGetOverseasAllocationPreviewJobStatus_(body));
+}
+if (action === 'overseasAllocationPreview.result.get') {
+return jsonResponse_(handleGetOverseasAllocationPreviewResult_(body));
+}
+if (action === 'overseasAllocationPreview.job.cancel') {
+return jsonResponse_(handleCancelOverseasAllocationPreviewJob_(body));
+}
+
+
+if (action === 'getShippingMethodCandidates') {
+return handleGetShippingMethodCandidates_(body);
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+if (action === 'shipment.removePlanFromConsolidated') return handleShipmentRemovePlanFromConsolidated_(body);   // XCO-R15G H2
+if (action === 'cancelShipmentDraft') {
+return handleCancelShipmentDraft_(body);
+}
+if (action === 'createShipmentFromPlan') {
+return handleCreateShipmentFromPlan_(body);
+}
+
+
+if (action === 'generateShipmentLineAllocations') {
+return handleGenerateShipmentLineAllocations_(body);
+}
+
+if (action === 'updateShipment') {
+return handleUpdateShipment_(body);
+}
+
+
+
+
+if (action === 'confirmShipmentAndDispatch') {
+return handleConfirmShipmentAndDispatch_(body);
+}
+
+
+
+
+if (action === 'finalizeShipmentFinalOutput') {
+return handleFinalizeShipmentFinalOutput_(body);
+}
+if (action === 'getShipmentFinalOutput') {
+return handleGetShipmentFinalOutput_(body);
+}
+if (action === 'shipment.documentValues.check') {   // R15d: READ ONLY - the pre-dispatch document value gate for one shipment (39_)
+return handleShipmentDocumentValuesCheck_(body);
+}
+
+
+
+if (action === 'renderShipmentDocument') {
+return handleRenderShipmentDocument_(body);
+}
+
+
+
+
+if (action === 'documentTemplate.list') {
+return handleDocumentTemplateList_(body);
+}
+if (action === 'documentTemplate.getFields') {
+return handleDocumentTemplateGetFields_(body);
+}
+if (action === 'shipmentDocument.generate') {
+return handleShipmentDocumentGenerate_(body);
+}
+if (action === 'shipmentDocument.get') {
+return handleShipmentDocumentGet_(body);
+}
+if (action === 'shipmentDocument.list') {
+return handleShipmentDocumentList_(body);
+}
+
+
+
+
+
+if (action === 'document.list') {
+return handleEntityDocumentList_(body);
+}
+if (action === 'document.exportNonce') {
+return handleDocumentExportNonce_();
+}
+if (action === 'shipment.rateCardOptions') {
+return handleShipmentRateCardOptions_(body);
+}
+if (action === 'shipment.selectRateCard') {
+return handleShipmentSelectRateCard_(body);
+}
+if (action === 'shipment.assignCarrier') {   // AD3 (Author B CONTRACT sec.12; write): fill a BLANK carrier later (owner = 12_)
+return handleShipmentAssignCarrier_(body);
+}
+if (action === 'document.export') {
+return handleDocumentExport_(body);
+}
+if (action === 'document.get') {
+return handleGeneratedDocumentGet_(body);
+}
+if (action === 'document.retry') {
+return handleDocumentRetry_(body);
+}
+if (action === 'document.diagnostic.purchaseOrder') {
+return handlePoDocumentDiagnostic_(body);
+}
+if (action === 'document.diagnostic.shipment') {
+return handleShipmentDocumentDiagnostic_(body);
+}
+
+
+
+
+if (action === 'shipment.receipt.update') {
+return handleUpdateShipmentReceipt_(body);
+}
+if (action === 'shipment.route.advance') {
+return handleAdvanceShipmentRoutePoint_(body);
+}
+
+if (action === 'shipment.eta.update') {
+return handleUpdateShipmentEta_(body);
+}
+
+
+if (action === 'createRequestOrderDraft') {
+return handleCreateRequestOrderDraft_(body);
+}
+
+if (action === 'updateRequestOrderStatus') {
+return handleUpdateRequestOrderStatus_(body);
+}
+
+if (action === 'updateRequestOrderLineQty') {
+return handleUpdateRequestOrderLineQty_(body);
+}
+
+if (action === 'cancelRequestOrderTier') {
+return handleCancelRequestOrderTier_(body);
+}
+
+if (action === 'createPurchaseOrderFromRequest') {
+return handleCreatePurchaseOrderFromRequest_(body);
+}
+
+if (action === 'updatePurchaseOrderStatus') {
+return handleUpdatePurchaseOrderStatus_(body);
+}
+
+if (action === 'updatePurchaseOrderLine') {
+return handleUpdatePurchaseOrderLine_(body);
+}
+
+if (action === 'updatePurchaseOrderHeader') {
+return handleUpdatePurchaseOrderHeader_(body);
+}
+
+if (action === 'receivePurchaseOrderLines') {
+return handleReceivePurchaseOrderLines_(body);
+}
+
+
+if (action === 'upsertFcSpecialEvent') {
+return handleUpsertFcSpecialEvent_(body);
+}
+
+if (action === 'importFcSpecialEventsBatch') {
+return handleImportFcSpecialEventsBatch_(body);
+}
+
+if (action === 'deleteFcSpecialEvent') {
+return handleDeleteFcSpecialEvent_(body);
+}
+
+
+if (action === 'auditFcSpecialEventIds') {
+return handleAuditFcSpecialEventIds_(body);
+}
+
+if (action === 'backfillFcSpecialEventIds') {
+return handleBackfillFcSpecialEventIds_(body);
+}
+
+if (action === 'upsertFcTargetRule') {
+return handleUpsertFcTargetRule_(body);
+}
+
+if (action === 'deleteFcTargetRule') {
+return handleDeleteFcTargetRule_(body);
+}
+
+
+if (action === 'upsertCampaign') {
+return handleUpsertCampaign_(body);
+}
+
+if (action === 'upsertCampaignSkuLines') {
+return handleUpsertCampaignSkuLines_(body);
+}
+
+if (action === 'upsertRequestOrderAllocationDraft') {
+return handleUpsertRequestOrderAllocationDraft_(body);
+}
+
+if (action === 'upsertRequestOrderAllocationDraftLines') {
+return handleUpsertRequestOrderAllocationDraftLines_(body);
+}
+
+if (action === 'submitRequestOrderAllocationDrafts') {
+return handleSubmitRequestOrderAllocationDrafts_(body);
+}
+
+
+if (action === 'upsertShippingAllocationDraft') {
+return handleUpsertShippingAllocationDraft_(body);
+}
+
+if (action === 'upsertShippingAllocationDraftLines') {
+return handleUpsertShippingAllocationDraftLines_(body);
+}
+
+
+
+if (action === 'upsertShippingAllocationDraftAtomic') {
+
+
+
+
+
+
+
+var _rIntent = String((body && (body.intent || (body.header && body.header.intent))) || '').trim();
+if (_rIntent && typeof SAD_CLIENT_GRANTABLE_INTENTS_ !== 'undefined' && !SAD_CLIENT_GRANTABLE_INTENTS_[_rIntent]) {
+return jsonResponse_({ success: false, error: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE',
+code: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE', stage: 'intent', zero_write: true,
+data: { received_intent: _rIntent,
+client_grantable: Object.keys(SAD_CLIENT_GRANTABLE_INTENTS_),
+message: 'this route intent is server-owned and cannot be declared by a request (zero rows written)' } });
+}
+return handleUpsertShippingAllocationDraftAtomic_(body);
+}
+
+if (action === 'submitShippingAllocationDrafts') {
+return handleSubmitShippingAllocationDrafts_(body);
+}
+
+
+if (action === 'submitAllocationDraftsToShippingPlans') {
+return handleSubmitAllocationDraftsToShippingPlans_(body);
+}
+
+
+if (action === 'flowASchemaLineagePreflight') {
+return handleFlowASchemaLineagePreflight_(body);
+}
+
+if (action === 'getShippingAllocationDraftWorkspace') {
+return handleGetShippingAllocationDraftWorkspace_(body);
+}
+
+if (action === 'cancelShippingAllocationDraft') {
+return handleCancelShippingAllocationDraft_(body);
+}
+
+if (action === 'upsertRequestOrderSiteConfirmations') {
+return handleUpsertRequestOrderSiteConfirmations_(body);
+}
+
+
+
+
+
+
+if (action === 'generateRecommendationDraftLocked') {
+return handleGenerateRecommendationDraftLocked_(body);
+}
+
+
+
+
+
+if (action === 'requestOrderDraft.generateFromGap') {
+return handleGenerateRequestOrderDraftFromGap_(body);
+}
+if (action === 'requestOrderDraft.getActive') {
+return handleGetActiveRequestOrderDraftReadback_(body);
+}
+
+
+
+
+
+if (action === 'weeklyAiPlan.generate') {
+return handleGenerateWeeklyAiPlanDraft_(body);
+}
+
+
+
+
+
+
+
+
+
+
+if (action === 'requestOrderDraft.job.start') {
+return jsonResponse_(handleStartRequestOrderDraftJob_(body));
+}
+if (action === 'requestOrderDraft.job.continue') {
+return jsonResponse_(handleContinueRequestOrderDraftJob_(body));
+}
+if (action === 'requestOrderDraft.job.status') {
+return jsonResponse_(handleGetRequestOrderDraftJobStatus_(body));
+}
+if (action === 'requestOrderDraft.job.cancel') {
+return jsonResponse_(handleCancelRequestOrderDraftJob_(body));
+}
+
+
+
+if (action === 'updateRecommendationDecisionLocked') {
+return handleUpdateRecommendationDecisionLocked_(body);
+}
+
+
+
+if (action === 'getRecommendationDraftToken') {
+return handleGetRecommendationDraftToken_(body);
+}
+
+
+
+
+if (action === 'retireShipmentLabelColumns') {
+return handleRetireShipmentLabelColumns_(body);
+}
+
+if (action === 'importCarrierRateCards') {
+return handleImportCarrierRateCards_(body);
+}
+
+
+
+
+
+
+
+if (action === 'carrierLeadTime.upsert') {
+return handleUpsertCarrierLeadTime_(body);
+}
+if (action === 'carrierLeadTime.duplicateCensus') {
+return handleCarrierLeadTimeDuplicateCensus_(body);
+}
+if (action === 'seedSinotransCarrier') {
+return handleSeedSinotransCarrier_(body);
+}
+
+if (action === 'upsertSkuRegionalDetail') {
+return handleUpsertSkuRegionalDetail_(body);
+}
+
+
+
+
+
+
+
+if (action === 'pricing.update') {
+return jsonResponse_(handlePricingUpdate_(body));
+}
+
+
+
+
+
+
+if (action === 'pricing.fxReconcile') {
+return jsonResponse_(handlePricingFxReconcile_(body));
+}
+
+
+
+
+
+if (action === 'fxRateBook.save') {
+return jsonResponse_(handleFxRateBookSave_(body));
+}
+
+
+
+if (action === 'fxRateBook.get') {
+return jsonResponse_(handleFxRateBookGet_(body));
+}
+
+if (action === 'syncMarketplaceSkusToSkuRegionalDetails') {
+return handleSyncMarketplaceSkusToSkuRegionalDetails_(body);
+}
+
+if (action === 'upsertTaxReferralRate') {
+return handleUpsertTaxReferralRate_(body);
+}
+
+if (action === 'upsertTaxRateComponent') {
+return handleUpsertTaxRateComponent_(body);
+}
+
+if (action === 'adjustFactoryInventory') {
+return handleAdjustFactoryInventory_(body);
+}
+
+
+if (action === 'import.template.get') return handleImportTemplateGet_(body);
+if (action === 'import.validate') return handleImportValidate_(body);
+if (action === 'import.commit') return handleImportCommit_(body);
+if (action === 'import.receipt.get') return handleImportReceiptGet_(body);
+if (action === 'import.history.list') return handleImportHistoryList_(body);
+
+
+if (action === 'factoryInventory.import.validate') {
+return handleFactoryInventoryImportValidate_(body);
+}
+if (action === 'factoryInventory.import.commit') {
+return handleFactoryInventoryImportCommit_(body);
+}
+
+
+
+
+if (action === 'automationSchedule.get') {
+return jsonResponse_(handleAutomationScheduleGet_(body));
+}
+if (action === 'automationSchedule.update') {
+return jsonResponse_(handleAutomationScheduleUpdate_(body));
+}
+
+
+
+
+
+
+
+if (action === 'warehouseAllocation.get') {
+return handleWarehouseAllocationConfigGet_(body);
+}
+if (action === 'replenishmentDemandAllocation.save') {
+return handleReplenishmentDemandAllocationSave_(body);
+}
+
+
+
+
+
+if (action === 'factoryOperationConfig.get') {
+return handleFactoryOperationConfigGet_(body);
+}
+if (action === 'factoryOperationConfig.save') {
+return handleFactoryOperationConfigSave_(body);
+}
+
+
+
+
+
+
+
+
+if (action === 'factoryStockGuard.get') {
+return handleFactoryStockGuardGet_(body);
+}
+if (action === 'system.sourceRevision') return jsonResponse_(handleSourceRevisionGet_(body));
+
+return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, fxRateBook.get, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
+
+
+handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,
+post_body_present: true, action_present_in_query: !!(e && e.parameter && e.parameter.action), zero_write: true });
+
+} catch (err) {
+Logger.log(err.stack);
+return jsonResponse_({ success: false, error: err.message, handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_ });
+}
+})();
+
+if (_rtrMark) kmSrcRevBump_(_rtrMark);
+return _rtrOut;
+}
+// R15F2-STAMPS (sbx-r15f2 step 23): patched
+
+// XCO-R15G H2: shipment.removePlanFromConsolidated (12_). Not added to RTR_SANDBOX_GATE_.allow (the Sandbox gate list is Owner-controlled).
+// XCO-R15G-01 (xco-r15g-impl): patched
+
+// XCO-R15G xco-01-allow: four Sandbox actions opened (Owner option A, local Sandbox candidate only).
+// XCO-R15G-01-ALLOW (xco-r15g-impl): patched
+// R15G-STAMPS (final candidate): patched
+
+var RTR_PRODUCTION_PROFILE_ = {
+  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1-IU3-IU4N1-PGSC1N1",
+  "environment": "KM_PRODUCTION",
+  "endpoint": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec",
+  "endpoint_sha256": "11ba59bcde9a7cc2fe5ddb5934b0780dfa3a518ab1e220368ae9b319cd42f290",
+  "db_fp": "8fa2c42600619bf8",
+  "allowed": [
+    "adjustOverseasInventory",
+    "aiPlanFirstLayer.get",
+    "appendShippingPlanNote",
+    "auditFcSpecialEventIds",
+    "automationSchedule.get",
+    "cancelRequestOrderTier",
+    "cancelShipmentDraft",
+    "cancelShippingAllocationDraft",
+    "carrierLeadTime.upsert",
+    "completeShippingPlan",
+    "confirmShipmentAndDispatch",
+    "createPurchaseOrderFromRequest",
+    "createRequestOrderDraft",
+    "createShipmentFromPlan",
+    "createShippingPlansBatch",
+    "deleteFcSpecialEvent",
+    "deleteFcTargetRule",
+    "document.export",
+    "document.exportNonce",
+    "document.get",
+    "document.list",
+    "documentTemplate.getFields",
+    "documentTemplate.list",
+    "factoryStockGuard.get",
+    "fcSummary.raw.get",
+    "fcSummary.workspace.get",
+    "finalizeShipmentFinalOutput",
+    "fxRateBook.get",
+    "generateShipmentLineAllocations",
+    "getClientCapabilities",
+    "getOperationDb",
+    "getRecommendationDraftToken",
+    "getShipmentFinalOutput",
+    "getShippingAllocationDraftWorkspace",
+    "getShippingMethodCandidates",
+    "getTable",
+    "import.commit",
+    "import.history.list",
+    "import.receipt.get",
+    "import.template.get",
+    "import.validate",
+    "importCarrierRateCards",
+    "importFcRegularForecastBatch",
+    "importFcSpecialEventsBatch",
+    "importMarketplaceSkusBatch",
+    "importOverseasInventorySnapshotBatch",
+    "inventoryReplenishment.workspace.get",
+    "inventoryReplenishmentGap.get",
+    "inventoryReplenishmentGap.job.cancel",
+    "inventoryReplenishmentGap.job.start",
+    "inventoryReplenishmentGap.recalculate.all",
+    "inventoryScope.registry.get",
+    "leadTime.raw.get",
+    "openPoRemaining.raw.get",
+    "orderPlanningGap.get",
+    "orderPlanningGap.job.cancel",
+    "orderPlanningGap.job.start",
+    "orderPlanningGap.recalculate.all",
+    "overseasStock.workspace.get",
+    "pricing.update",
+    "pricing.write.status",
+    "productPricing.siteUniverse.get",
+    "productPricing.workspace.get",
+    "purchaseOrder.workspace.get",
+    "rawInventory.get",
+    "receivePurchaseOrderLines",
+    "recommendation.workspace.get",
+    "renderShipmentDocument",
+    "replenishmentDemandAllocation.save",
+    "requestOrder.allocationDraft.ensureAndEdit",
+    "requestOrder.send.orchestrate",
+    "requestOrder.send.status",
+    "requestOrder.sendWorkset.get",
+    "requestOrder.workspace.get",
+    "requestOrderDraft.getActive",
+    "shipment.assignCarrier",
+    "shipment.consolidationPolicy.get",
+    "shipment.eta.update",
+    "shipment.rateCardOptions",
+    "shipment.receipt.diagnose",
+    "shipment.receipt.update",
+    "shipment.removePlanFromConsolidated",
+    "shipment.route.advance",
+    "shipment.selectRateCard",
+    "shipment.workspace.get",
+    "shipmentDocument.generate",
+    "shipmentDocument.get",
+    "shipmentDocument.list",
+    "shippingPlan.rateCardOptions",
+    "shippingPlan.selectRateCard",
+    "siteSku.planning.list",
+    "siteSku.planning.update",
+    "skuDetails.workspace.get",
+    "submitAllocationDraftsToShippingPlans",
+    "submitRequestOrderAllocationDrafts",
+    "submitShippingAllocationDrafts",
+    "syncMarketplaceSkusToSkuRegionalDetails",
+    "system.health",
+    "system.sourceRevision",
+    "updateMarketplaceSkuModel",
+    "updatePurchaseOrderHeader",
+    "updatePurchaseOrderLine",
+    "updatePurchaseOrderStatus",
+    "updateRequestOrderLineQty",
+    "updateRequestOrderStatus",
+    "updateShipment",
+    "updateShippingPlanLineQty",
+    "updateShippingPlanStatus",
+    "updateSkuLifecycle",
+    "upsertCampaign",
+    "upsertCampaignSkuLines",
+    "upsertFcSpecialEvent",
+    "upsertFcTargetRule",
+    "upsertMarketplace",
+    "upsertMarketplaceSku",
+    "upsertRequestOrderAllocationDraft",
+    "upsertRequestOrderAllocationDraftLines",
+    "upsertRequestOrderSiteConfirmations",
+    "upsertShippingAllocationDraft",
+    "upsertShippingAllocationDraftAtomic",
+    "upsertShippingAllocationDraftLines",
+    "upsertSkuDetail",
+    "upsertSkuRegionalDetail",
+    "upsertTaxRateComponent",
+    "upsertTaxReferralRate",
+    "warehouseAllocation.get",
+    "weeklyShipping.workspace.get"
+  ],
+  "reads": [
+    "aiPlanFirstLayer.get",
+    "automationSchedule.get",
+    "document.export",
+    "document.exportNonce",
+    "document.get",
+    "factoryStockGuard.get",
+    "fcSummary.raw.get",
+    "fcSummary.workspace.get",
+    "fxRateBook.get",
+    "getClientCapabilities",
+    "getOperationDb",
+    "getRecommendationDraftToken",
+    "getShipmentFinalOutput",
+    "getShippingAllocationDraftWorkspace",
+    "getShippingMethodCandidates",
+    "getTable",
+    "import.history.list",
+    "import.receipt.get",
+    "import.template.get",
+    "import.validate",
+    "inventoryReplenishment.workspace.get",
+    "inventoryReplenishmentGap.get",
+    "inventoryScope.registry.get",
+    "leadTime.raw.get",
+    "openPoRemaining.raw.get",
+    "orderPlanningGap.get",
+    "overseasStock.workspace.get",
+    "pricing.write.status",
+    "productPricing.siteUniverse.get",
+    "productPricing.workspace.get",
+    "purchaseOrder.workspace.get",
+    "rawInventory.get",
+    "recommendation.workspace.get",
+    "requestOrder.send.status",
+    "requestOrder.sendWorkset.get",
+    "requestOrder.workspace.get",
+    "requestOrderDraft.getActive",
+    "shipment.consolidationPolicy.get",
+    "shipment.rateCardOptions",
+    "shipment.receipt.diagnose",
+    "shipment.workspace.get",
+    "shipmentDocument.get",
+    "shippingPlan.rateCardOptions",
+    "siteSku.planning.list",
+    "skuDetails.workspace.get",
+    "system.health",
+    "system.sourceRevision",
+    "warehouseAllocation.get",
+    "weeklyShipping.workspace.get"
+  ],
+  "blocked": [
+    "adjustFactoryInventory",
+    "automationSchedule.update",
+    "backfillFcSpecialEventIds",
+    "carrierLeadTime.duplicateCensus",
+    "document.diagnostic.purchaseOrder",
+    "document.diagnostic.shipment",
+    "document.retry",
+    "factoryInventory.import.commit",
+    "factoryInventory.import.validate",
+    "factoryOperationConfig.get",
+    "factoryOperationConfig.save",
+    "flowASchemaLineagePreflight",
+    "fxRateBook.save",
+    "gapJob.status.get",
+    "generateRecommendationDraftLocked",
+    "marketplace.allocationPriority.set",
+    "overseasAllocationPreview.job.cancel",
+    "overseasAllocationPreview.job.start",
+    "overseasAllocationPreview.job.status",
+    "overseasAllocationPreview.result.get",
+    "pricing.fxReconcile",
+    "requestOrderDraft.generateFromGap",
+    "requestOrderDraft.job.cancel",
+    "requestOrderDraft.job.continue",
+    "requestOrderDraft.job.start",
+    "requestOrderDraft.job.status",
+    "retireShipmentLabelColumns",
+    "runAmazonSnapshotImports",
+    "seedSinotransCarrier",
+    "shipment.consolidationPolicy.save",
+    "shipment.documentValues.check",
+    "system.allocationDraftIdentityDiagnostic",
+    "system.executionPlanConflictDiagnostic",
+    "system.executionPlanDuplicateLineDiagnostic",
+    "system.requestOrderSendDiagnostic",
+    "system.requestOrderSendDiagnosticStatus",
+    "system.requestOrderSendReconcile",
+    "system.shippingAllocationDraftDiagnostic",
+    "system.shippingAllocationSchemaDiagnostic",
+    "system.submitFlowDiagnostic",
+    "system.twoVerticalFlowsDiagnostic",
+    "updateRecommendationDecisionLocked",
+    "weeklyAiPlan.generate"
+  ],
+  "import_domain": "po_factory_stock",
+  "import_modes": [
+    "NEW_RECEIPT",
+    "OPENING_PO_FOR_EXISTING_STOCK",
+    "UPDATE_REMAINING"
+  ],
+  "administration_enabled": false,
+  "ai_plan_enabled": false,
+  "module_stamps": [
+    {
+      "symbol": "SHIP_WS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7",
+      "optional": false
+    },
+    {
+      "symbol": "SHIP_RECEIPT_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-SO8-AFINAL4-A2ROUTE-AD1B-AD2-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "SLA_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "GAP_MAT_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-AD1B",
+      "optional": false
+    },
+    {
+      "symbol": "RPR_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72",
+      "optional": false
+    },
+    {
+      "symbol": "WAREHOUSE_ALLOCATION_CONFIG_BUILD_VERSION_",
+      "expected": "F1-7N-D-2k-R1-D5V3R5B-WA1",
+      "optional": false
+    },
+    {
+      "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
+      "expected": "PROD1-DGS-20261112-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "CARRIER_LAYOUT_BUILD_VERSION_",
+      "expected": "SC2-CLT-20261111",
+      "optional": false
+    },
+    {
+      "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
+      "expected": "SC2-DTF-20261111",
+      "optional": false
+    },
+    {
+      "symbol": "PA_BUILD_VERSION_",
+      "expected": "PA1-SBX-R1-20261111-PROD1",
+      "optional": false
+    },
+    {
+      "symbol": "SSK_BUILD_VERSION_",
+      "expected": "SSK1-SBX-R2-20261111",
+      "optional": false
+    },
+    {
+      "symbol": "IMB_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5",
+      "optional": false
+    },
+    {
+      "symbol": "PFI_BUILD_VERSION_",
+      "expected": "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4",
+      "optional": false
+    },
+    {
+      "symbol": "WDL_BUILD_VERSION_",
+      "expected": "WDL1-SBX-20261111-AF1",
+      "optional": false
+    },
+    {
+      "symbol": "PMI_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-AF1",
+      "optional": false
+    },
+    {
+      "symbol": "SHI_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "RTI_BUILD_VERSION_",
+      "expected": "ROUTE-INIT-A2ROUTE-OD1-RV1-AD2-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "IMI_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-IU2-IU3",
+      "optional": false
+    },
+    {
+      "symbol": "SYS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4",
+      "optional": false
+    },
+    {
+      "symbol": "PRW_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R25",
+      "optional": false
+    },
+    {
+      "symbol": "FCSWS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+      "optional": false
+    },
+    {
+      "symbol": "CONFIG_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51",
+      "optional": false
+    },
+    {
+      "symbol": "WAP_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64-V3B4-A2D14C-AD1B-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "SIR_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R56",
+      "optional": false
+    },
+    {
+      "symbol": "OSW_BUILD_VERSION_",
+      "expected": "F1-7N-FB-4E-R3",
+      "optional": false
+    },
+    {
+      "symbol": "PPW_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+      "optional": false
+    },
+    {
+      "symbol": "ROS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+      "optional": false
+    },
+    {
+      "symbol": "FSG_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B",
+      "optional": false
+    },
+    {
+      "symbol": "ADI_BUILD_VERSION_",
+      "expected": "F1-7N-FB-3C",
+      "optional": false
+    },
+    {
+      "symbol": "EPC_BUILD_VERSION_",
+      "expected": "F1-7N-FB-4E-R2",
+      "optional": false
+    },
+    {
+      "symbol": "SFO_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "SDR_BUILD_VERSION_",
+      "expected": "F1-AD3-SDR1",
+      "optional": false
+    },
+    {
+      "symbol": "SAD_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "RIC_BUILD_VERSION_",
+      "expected": "F1-7N-FB-4F-B3",
+      "optional": false
+    },
+    {
+      "symbol": "SP_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4",
+      "optional": false
+    },
+    {
+      "symbol": "FSTX_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71",
+      "optional": false
+    },
+    {
+      "symbol": "OVERSEAS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71",
+      "optional": false
+    },
+    {
+      "symbol": "SHIPMENT_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4",
+      "optional": false
+    },
+    {
+      "symbol": "PROC_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SC1R2-SC2-PG12R3-JR4-SO8-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "FCREG_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55-FCA1",
+      "optional": false
+    },
+    {
+      "symbol": "FCW_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+      "optional": false
+    },
+    {
+      "symbol": "CAMPAIGN_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+      "optional": false
+    },
+    {
+      "symbol": "FX_BOOK_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R55",
+      "optional": false
+    },
+    {
+      "symbol": "OAP_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R51-AD1B",
+      "optional": false
+    },
+    {
+      "symbol": "RECO_WS_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R68-R15G-AV1-V3A10-A2B12-AD1B",
+      "optional": false
+    },
+    {
+      "symbol": "KM_BUNDLE_CONTENT_HASH_",
+      "expected": "9c604f38df99c3a3c399a3a49dd77ad40cdbc8242c9fac67bd281840ee1a2242",
+      "optional": false
+    },
+    {
+      "symbol": "CSD_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3",
+      "optional": false
+    },
+    {
+      "symbol": "RTR_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4",
+      "optional": false
+    },
+    {
+      "symbol": "MD_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R52",
+      "optional": false
+    },
+    {
+      "symbol": "RECGEN_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R57",
+      "optional": false
+    },
+    {
+      "symbol": "APL_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+      "optional": false
+    },
+    {
+      "symbol": "SKD_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R21",
+      "optional": false
+    },
+    {
+      "symbol": "ROSEND_DIAG_BUILD_VERSION_",
+      "expected": "F1-7N-FB-4G-A2-R4",
+      "optional": false
+    },
+    {
+      "symbol": "AIPL_BUILD_VERSION_",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R1-V3B3",
+      "optional": false
+    },
+    {
+      "symbol": "TEMP_AIMIG_BUILD_VERSION_",
+      "expected": "F1-7N-FB-4C-ADDENDUM-MIGRATION",
+      "optional": true
+    }
+  ],
+  "import_scopes": {
+    "po_factory_stock": [
+      "NEW_RECEIPT",
+      "OPENING_PO_FOR_EXISTING_STOCK",
+      "UPDATE_REMAINING"
+    ],
+    "overseas_inventory": [
+      "SET",
+      "ADD"
+    ],
+    "shipment": [
+      "ADD_NEW",
+      "UPDATE",
+      "ROUTE_INIT"
+    ]
+  },
+  "policy_sha256": "be7f980f52db4f44e919b1ae7663648e2ff00702c4cce1dd11c1a634173cf057"
+};
+function rtrProductionRequestBody_(e) {
+  var p = e && e.parameter || {};
+  if (['access_session', 'password', 'password_key', 'km_ct'].some(function (k) { return Object.prototype.hasOwnProperty.call(p, k); })) {
+    return { error: { success: false, code: 'PRODUCTION_CREDENTIAL_IN_URL', zero_write: true } };
   }
   var body;
-  if (raw === '') { body = {}; }
-  else {
-    try { body = JSON.parse(raw); }
-    catch (err) { return refuse('READ_BODY_MALFORMED', 'The read parameters were not valid JSON, so nothing was read.'); }
+  try { body = JSON.parse(e && e.postData && e.postData.contents || ''); } catch (ignore) {
+    return { error: { success: false, code: 'INVALID_REQUEST_BODY', zero_write: true } };
   }
-  if (!body || typeof body !== 'object' || Object.prototype.toString.call(body) === '[object Array]') {
-    return refuse('READ_BODY_MALFORMED', 'The read parameters were not a JSON object, so nothing was read.');
-  }
-  // The action in the URL and the action in the body must agree. They are built from one value by the client, so
-  // a disagreement is a construction fault — and answering it would mean serving an action nobody asked for.
-  var bodyAction = (body.action === undefined || body.action === null) ? '' : String(body.action).trim();
-  if (bodyAction !== '' && bodyAction !== action) {
-    return refuse('READ_BODY_ACTION_MISMATCH',
-      'The action in the URL and the action in the read parameters disagree, so nothing was read.',
-      { body_action: bodyAction });
-  }
-  body.action = action;
-  // The correlation id survives the URL exactly. It is the ONE identity field a GET read carries, and the
-  // handlers echo it so the client can prove the answer belongs to the request it sent.
-  if (!body.requestId && p.km_rid) body.requestId = String(p.km_rid);
+  if (!body || typeof body !== 'object' || Array.isArray(body) || typeof body.action !== 'string' || !body.action ||
+      (p.action && p.action !== body.action)) return { error: { success: false, code: 'REQUEST_ACTION_MISMATCH', zero_write: true } };
   return { body: body };
 }
-
-// F1-7N-FC-1B-E3-R4-A2-R1-R6-R5 §3 — WHEN THIS EXECUTION STARTED, AND WHICH REQUEST IT IS.
-//
-// Per-execution state only. Apps Script runs each invocation in its own script instance, so these globals are
-// never shared between requests, never persist, and need no eviction — the property a CacheService or
-// PropertiesService approach would have had to argue for and could not, since both are mutable shared state
-// that would have to be written on every read.
-//
-// `RTR_ENTRY_AT_` is a WALL CLOCK. It is the field that lets an operator open the Apps Script execution list
-// and find the execution belonging to a client request that timed out — the correlation §3 asks for, without
-// writing a diagnostic row anywhere.
-var RTR_ENTRY_AT_ = null;          // ms since epoch, at router entry
-var RTR_ENTRY_T0_ = null;          // the same instant, as the base for stage offsets
-var RTR_ENTRY_METHOD_ = null;      // 'GET' or 'POST'
-var RTR_ENTRY_RID_ = null;         // the client's correlation id, as it arrived
-function rtrMarkEntry_(e, method) {
-  RTR_ENTRY_AT_ = Date.now();
-  RTR_ENTRY_T0_ = RTR_ENTRY_AT_;
-  RTR_ENTRY_METHOD_ = method;
-  RTR_ENTRY_RID_ = (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null;
-  return RTR_ENTRY_AT_;
-}
-// The entry evidence, in the shape a handler embeds in its own meta. Null-safe: a handler invoked directly by a
-// test has no router entry, and reports that rather than inventing one.
-function rtrEntryEvidence_() {
-  return {
-    routerEntryAt: RTR_ENTRY_AT_,
-    routerEntryMethod: RTR_ENTRY_METHOD_,
-    routerRequestId: RTR_ENTRY_RID_,
-    routerBuild: RTR_BUILD_VERSION_,
-    // How long the request sat between the router accepting it and the handler starting. On a warm, uncontended
-    // execution this is a couple of milliseconds; a large value here is the queueing evidence that
-    // `serverDurationMs` alone can never show.
-    routerToHandlerMs: (RTR_ENTRY_T0_ === null) ? null : (Date.now() - RTR_ENTRY_T0_)
-  };
-}
-
-function doGet(e) {
+function rtrProductionTargetCheck_() {
   try {
-    rtrMarkEntry_(e, 'GET');
-    var action = (e && e.parameter && e.parameter.action) || '';
-
-    // F1-7N-FB-4E-R4A1 §3 — ONE body for every GET read, parsed once and refused once if malformed.
-    //
-    // A GET read carries the body it would have POSTed in `km_body`. That is not only the new read table's
-    // concern: system.health reads its probe list from the BODY, and while its branch looked only at the query
-    // map, sending that read as a GET silently dropped the list and produced a confident "this deployment
-    // predates the frontend" verdict about a deployment that was correct. So the parse happens HERE, above every
-    // branch, and the merged form (query first, body last, so real arrays win over query strings) is what the
-    // pre-existing GET branches receive — their previous `e.parameter` behaviour is preserved as the base.
-    var _rtrGet = rtrParseGetBody_(e, action);
-    if (_rtrGet.error) return jsonResponse_(_rtrGet.error);
-    var _rtrGetBody = {};
-    if (e && e.parameter) { for (var _pk in e.parameter) { if (Object.prototype.hasOwnProperty.call(e.parameter, _pk)) _rtrGetBody[_pk] = e.parameter[_pk]; } }
-    for (var _bk in _rtrGet.body) { if (Object.prototype.hasOwnProperty.call(_rtrGet.body, _bk)) _rtrGetBody[_bk] = _rtrGet.body[_bk]; }
-
-    if (action === 'getOperationDb') {
-      return handleGetOperationDb_();
-    }
-
-    if (action === 'getTable') {
-      var table = (e.parameter.table || '').trim();
-      return handleGetTable_(table);
-    }
-
-    // F1-7N-FA-3C-R6E1-R1 — read-only client capability transport (single flag authority; see 03_).
-    if (action === 'getClientCapabilities') {
-      return handleGetClientCapabilities_();
-    }
-
-    // F1-7N-FB-2 §D — read-only production health. Routed on doGet AND doPost so the browser can probe the
-    // deployment with either verb: a JSON answer here proves the deployment is reachable and that the DEPLOYED
-    // code contains the actions the pages are about to call (a partial Apps Script sync is otherwise
-    // indistinguishable from a transport fault). Returns no spreadsheet id, Drive id, token or row data.
-    if (action === 'system.health') {
-      // F1-7N-FB-4E §H — stamp the entry point so the answer can state WHICH handler served it as a fact
-      // rather than the caller inferring it. system.health is routed on both verbs deliberately.
-      // F1-7N-FB-4E-R4A1 — the MERGED body, so a GET read keeps its probe list (see the note above).
-      var _hg = _rtrGetBody;
-      _hg.__km_handler = 'doGet';
-      return handleSystemHealth_(_hg);
-    }
-
-    // F1-7N-FB-3 §C — SLIM SCOPE REGISTRY (owner = 64_). One table, a six-column bounded projection: the only
-    // thing Site Inventory needs to render its Country / Marketplace selectors. It exists so that populating a
-    // dropdown no longer costs the 20-table inventoryReplenishment workspace read — which was also the read
-    // that drove the inventory table's own load state, printing "Loading Inventory Replenishment…" while the
-    // selectors were still unselected. Pure read: routed on BOTH verbs.
-    if (action === 'inventoryScope.registry.get') {
-      // F1-7N-FB-4E-R4A1 — the merged body, for the same reason: a scoped read must not lose its scope to the
-      // verb it was sent with.
-      return handleInventoryScopeRegistryGet_(_rtrGetBody);
-    }
-
-    // F1-7N-FB-4C-R1 §B/§D — NAME THE METHOD DOWNGRADE INSTEAD OF REPORTING AN ANONYMOUS MISSING PARAMETER.
-    //
-    // Every workspace read is sent as a POST, but an Apps Script /exec POST is answered with a 302 to
-    // script.googleusercontent.com, and per the Fetch spec a 302 following a POST is re-issued as a GET WITH THE
-    // BODY DROPPED. When that chain resolves back to /exec the request lands HERE, and this function used to
-    // answer with a bare "Missing or invalid action parameter" — which the client could only report as a generic
-    // backend error. That is the SKU Details / SKU Regional Details first-load failure.
-    //
-    // The client now also puts the action in the query string (transport.post), where a method downgrade cannot
-    // remove it, so this branch can say exactly what happened and stay useful for an older client that does not.
-    // Both answers keep the ORIGINAL message text as `error` — the client's unknown-action classifier and the
-    // existing regression suites both key on it — and add the typed facts beside it.
-    // F1-7N-FB-4E-R4A1 §3 — THE READ TABLE. Same handler, same body, one verb that survives the hop.
-    var _rtrRead = rtrGetReadHandlers_();
-    var _viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
-    if (Object.prototype.hasOwnProperty.call(_rtrRead, action) && !_viaPost) {
-      var _parsed = _rtrGet;
-      // Stamp the entry point, as the other GET-routed reads already do, so an answer can state WHICH handler
-      // served it as a fact rather than the caller inferring it from the verb.
-      _parsed.body.__km_handler = 'doGet';
-      // R4B-R2 §1 - EMIT, never re-wrap. See rtrEmitHandlerResult_ above for what re-wrapping cost.
-      return rtrEmitHandlerResult_(_rtrRead[action](_parsed.body));
-    }
-
-    var attempted = (e && e.parameter && e.parameter.action) ? String(e.parameter.action) : '';
-    var viaPost = !!(e && e.parameter && e.parameter.km_via === 'post');
-    if (attempted || viaPost) {
-      // F1-7N-FB-4E §L — THE CLIENT MUST NOT HAVE TO READ THIS PROSE TO KNOW WHAT HAPPENED.
-      //
-      // The client previously concluded "a POST was answered by doGet" by REGEX-MATCHING the sentence below,
-      // which is unsound: any doGet answer carrying that sentence was labelled a method downgrade, and the
-      // resulting message then asserted the action had been dropped even though the query string carried it.
-      // §L allows the downgrade claim only on proof, so the three facts it still lacked are now stated
-      // EXPLICITLY and machine-readably, beside the two that were already here:
-      //   handler                 WHO answered (doGet), so a doPost answer can never be mistaken for one
-      //   post_body_present       whether a body arrived at all — the fact that makes "the body was lost" true
-      //   action_present_in_query whether the action survived the hop, so the client cannot claim it was lost
-      // The `error` string is unchanged: existing classifiers and regression suites key on it.
-      var _bodyPresent = !!(e && e.postData && typeof e.postData.contents === 'string' && e.postData.contents !== '');
-      return jsonResponse_({
-        success: false,
-        error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get',
-        code: 'POST_ONLY_ACTION_ON_GET',
-        received_method: 'GET',
-        handler: 'doGet',
-        router_build: RTR_BUILD_VERSION_,
-        post_body_present: _bodyPresent,
-        action_present_in_query: attempted !== '',
-        attempted_action: attempted || null,
-        request_id: (e && e.parameter && e.parameter.km_rid) ? String(e.parameter.km_rid) : null,
-        client_transport_contract: (e && e.parameter && e.parameter.km_tc) ? String(e.parameter.km_tc) : null,
-        sent_as_post: viaPost,
-        zero_write: true,
-        message: 'The action "' + (attempted || '(none)') + '" is served by doPost, but this request arrived as a GET. ' +
-          'A POST answered by the GET handler means a redirect follow dropped the request body. Nothing was read or written.',
-        next_action: 'Retry the read; if it repeats on every first load, hard-reload the page so the Apps Script session redirect is re-established.'
-      });
-    }
-    // F1-7N-FB-4E §A/§L — even the ANONYMOUS answer names its handler and method. Without that the browser
-    // cannot tell a doGet answer from a doPost answer, and "who answered" was the one thing it could not prove.
-    return jsonResponse_({ success: false, error: 'Missing or invalid action parameter. Use: getOperationDb, getTable, system.health or inventoryScope.registry.get',
-      handler: 'doGet', received_method: 'GET', router_build: RTR_BUILD_VERSION_, zero_write: true });
-
-  } catch (err) {
-    Logger.log(err.stack);
-    return jsonResponse_({ success: false, error: err.message, handler: 'doGet', received_method: 'GET', router_build: RTR_BUILD_VERSION_ });
-  }
+    var active = SpreadsheetApp.getActiveSpreadsheet();
+    if (!active || rtrSha256Hex_(active.getId()).slice(0, 16) !== RTR_PRODUCTION_PROFILE_.db_fp ||
+        active.getId() !== prodExpectedDbId_()) return { code: 'PRODUCTION_TARGET_MISMATCH' };
+  } catch (ignore) { return { code: 'PRODUCTION_TARGET_UNAVAILABLE' }; }
+  if (typeof sysGlobalValue_ !== 'function') return { code: 'PRODUCTION_MODULE_MISMATCH' };
+  var wrong = RTR_PRODUCTION_PROFILE_.module_stamps.filter(function (m) {
+    var value = sysGlobalValue_(m.symbol);
+    return value == null ? !m.optional : String(value) !== m.expected;
+  });
+  if (wrong.length) return { code: 'PRODUCTION_MODULE_MISMATCH', modules: wrong.map(function (m) { return m.symbol; }) };
+  if (typeof requestOrderDraftV2FlatCutoverEnabled_ !== 'function' || requestOrderDraftV2FlatCutoverEnabled_() !== true) return { code: 'PRODUCTION_FLAT_V2_REQUIRED' };
+  return null;
 }
-
-/**
- * Main entry point for POST requests.
- * Supports actions: updateSkuLifecycle
- */
-function doPost(e) {
-  try {
-    rtrMarkEntry_(e, 'POST');
-    var body = JSON.parse(e.postData.contents);
-    var action = body.action || '';
-
-    // F1-7N-FA-3C-R6E1-R1 — read-only client capability transport (single flag authority; see 03_). The frontend
-    // reads it via the canonical POST read runner (_kmGapRead_), so it is routed here as well as in doGet.
-    if (action === 'getClientCapabilities') {
-      return handleGetClientCapabilities_();
-    }
-
-    // F1-7N-FB-2 §D/§K — read-only health + Submit-to-Map flow readiness (zero writes, no Drive, no lock).
-    if (action === 'system.health') {
-      body.__km_handler = 'doPost';
-      return handleSystemHealth_(body);
-    }
-    if (action === 'system.submitFlowDiagnostic') {
-      return handleSubmitFlowDiagnostic_(body);
-    }
-    // F1-7N-FB-2A §F — read-only Execution Plan (shipping allocation draft) save readiness. It runs the SAME
-    // production gates the write runs — the validate-only schema gate and the real draft-resolution authority —
-    // and reports the exact token that would block the write, without writing a cell.
-    if (action === 'system.shippingAllocationDraftDiagnostic') {
-      return handleShippingAllocationDraftDiagnostic_(body);
-    }
-    // F1-7N-FB-4A §C — READ-ONLY Execution Plan identity CONFLICT diagnostic (owner = 68_). Answers, for one
-    // exact route/business scope, which persisted row is in the way, which identity family it belongs to, which
-    // business dimension makes it disagree, whether it already produced a Shipping Plan, and the safe idempotent
-    // dispositions. It runs the REAL production authorities from 16_ and writes nothing.
-    if (action === 'system.executionPlanConflictDiagnostic') {
-      return jsonResponse_(handleExecutionPlanConflictDiagnostic_(body));
-    }
-    // F1-7N-FB-4A addendum §G — READ-ONLY Request Order Send diagnostic ownership + planning-cycle resolution
-    // (owner = TEMP_request_order_send_diagnostics.gs). Routed so the WEBSITE can prove which file owns the TEMP
-    // entrypoints and which cycle resolves, without anyone opening the Apps Script editor. Writes nothing.
-    if (action === 'system.requestOrderSendDiagnosticStatus') {
-      return jsonResponse_(handleRequestOrderSendDiagnosticStatus_(body));
-    }
-    // F1-7N-FB-3 §C — slim scope registry (see the doGet registration above for why it exists).
-    // F1-7N-FB-4E-R2 §3 — READ-ONLY Execution Plan DUPLICATE-LINE diagnostic (owner = 68_).
-    //
-    // WHY THIS BRANCH DID NOT EXIST UNTIL NOW, STATED PLAINLY. handleExecutionPlanDuplicateLineDiagnostic_ has
-    // been defined in 68_ since 83fc33f, that file documents it as the action
-    // `system.executionPlanDuplicateLineDiagnostic`, and the frontend has required it in
-    // KM_REQUIRED_DEPLOYED_ACTIONS_ since 88306ce — but it was never routed. Three artifacts asserted the
-    // action existed and only the router disagreed, so the handler sat unreachable and the deployment-contract
-    // probe reported a missing action that no publish could ever supply.
-    //
-    // It reports duplicate primary keys and PROPOSES a repair. It deletes nothing and writes nothing: the only
-    // thing that can delete is TEMP_EXECUTION_PLAN_DUPLICATE_CLEANUP, which is editor-only, is NOT routed here,
-    // and additionally requires TEMP_DUPFIX_MODE_ === 'COMMIT' plus a confirmation checksum covering the exact
-    // rows. Exposing the REPORT does not expose the REPAIR.
-    //
-    // __km_handler is set for the same reason system.health sets it: so the answer states WHICH entry point
-    // served it as a fact rather than the caller inferring it. 68_ also reads it as the "arrived over the
-    // network" signal that makes an explicit scope mandatory, so an unscoped whole-table scan is refused here
-    // while the editor path keeps its behaviour. Read-only, and it never writes, so it is routed on POST only
-    // like its sibling diagnostic above.
-    if (action === 'system.executionPlanDuplicateLineDiagnostic') {
-      body.__km_handler = 'doPost';
-      return jsonResponse_(handleExecutionPlanDuplicateLineDiagnostic_(body));
-    }
-    if (action === 'inventoryScope.registry.get') {
-      return handleInventoryScopeRegistryGet_(body);
-    }
-    // F1-7N-FB-3 §E/§F/§K — read-only flow diagnostics (owner = 65_). Zero-configuration schema readiness for
-    // the Execution Plan writer, Send Request readiness, and the composed two-vertical verdict. All read-only.
-    if (action === 'system.shippingAllocationSchemaDiagnostic') {
-      return handleShippingAllocationSchemaDiagnostic_(body);
-    }
-    if (action === 'system.requestOrderSendDiagnostic') {
-      return handleRequestOrderSendDiagnostic_(body);
-    }
-    if (action === 'system.twoVerticalFlowsDiagnostic') {
-      return handleTwoVerticalFlowsDiagnostic_(body);
-    }
-    // F1-7N-FB-3A §F — read-only reconciliation of an INTERRUPTED Send Request. A stopped saga is never
-    // assumed to be a zero-write; this reports what actually landed and whether a retry is safe.
-    if (action === 'system.requestOrderSendReconcile') {
-      return handleRequestOrderSendReconcile_(body);
-    }
-    // F1-7N-FB-3B §E/§F — SEND REQUEST server orchestration + slim workset (owner = 66_).
-    //   requestOrder.sendWorkset.get   READ-ONLY. Two tables, an include-gated slim projection. It exists so Send
-    //     Request never depends on refreshing the 495-row AI-Plan payload (aiPlanFirstLayer.get reads ELEVEN tables).
-    //   requestOrder.send.orchestrate  ONE client click -> ONE request -> ONE journaled, resumable saga. The workset
-    //     is built SERVER-SIDE from the persisted allocation drafts, so the page's Country / Marketplace / Category /
-    //     Risk / Show mode / SKU search / pagination controls cannot truncate a comprehensive business command: the
-    //     handler accepts NO such parameter. The only business scope input is tier_scope (ALL / T1 / T2 / T3).
-    //     Every mutation is delegated to an existing canonical writer (13_ create, 15_ submit) — no second writer.
-    //     dry_run=true returns the frozen plan with zero writes; that is what the confirmation dialog is built from.
-    if (action === 'requestOrder.sendWorkset.get') {
-      return jsonResponse_(handleRequestOrderSendWorksetGet_(body));
-    }
-    if (action === 'requestOrder.send.orchestrate') {
-      return jsonResponse_(handleRequestOrderSendOrchestrate_(body));
-    }
-    // F1-7N-FB-3C §D/§E — READ-ONLY journal status, so a page that RELOADS mid-Send can resume instead of
-    // starting a second execution. Answers "what does the server think is happening, and may I continue?".
-    if (action === 'requestOrder.send.status') {
-      return jsonResponse_(handleRequestOrderSendStatus_(body));
-    }
-    // S3-R10 §6 — "did my pricing write commit?" A lost response is not authorization for a second
-    // mutation, so this answers the question the client would otherwise answer by resending.
-    if (action === 'pricing.write.status') {
-      return jsonResponse_(handlePricingWriteStatus_(body));
-    }
-    // F1-7N-FB-3C §B — THE USER-AUTHORIZED DRAFT-CREATION BOUNDARY (owner = 15_). A deliberate user quantity
-    // edit is now an authorized canonical draft-creation/update boundary, not only AI Plan. Find-or-create the
-    // canonical Flat-V2 draft, persist the user quantity through the canonical locked writer, read it back and
-    // return the persisted internal id. It NEVER mints a 'RAD-M-…' identity and never waits for Send.
-    if (action === 'requestOrder.allocationDraft.ensureAndEdit') {
-      return handleRequestOrderAllocationDraftEnsureAndEdit_(body);
-    }
-    // F1-7N-FB-3C §C — STRICTLY READ-ONLY reconciliation of non-canonical allocation-draft identities (the
-    // retired 'RAD-M-…' rows). Reports, masks and PROPOSES an idempotent plan; it migrates nothing.
-    if (action === 'system.allocationDraftIdentityDiagnostic') {
-      return handleAllocationDraftIdentityDiagnostic_(body);
-    }
-
-    if (action === 'updateSkuLifecycle') {
-      return handleUpdateSkuLifecycle_(body);
-    }
-
-    if (action === 'upsertSkuDetail') {
-      return handleUpsertSkuDetail_(body);
-    }
-
-    if (action === 'upsertMarketplaceSku') {
-      return handleUpsertMarketplaceSku_(body);
-    }
-
-    if (action === 'updateMarketplaceSkuModel') {
-      return handleUpdateMarketplaceSkuModel_(body);
-    }
-
-    if (action === 'importMarketplaceSkusBatch') {
-      return handleImportMarketplaceSkusBatch_(body);
-    }
-
-    if (action === 'upsertMarketplace') {
-      return handleUpsertMarketplace_(body);
-    }
-
-    // S8-B3-R3-CP2I (R52) - THE BOUNDED allocation_priority WRITER (owner = 03_master_data_handlers.gs).
-    // A SEPARATE ACTION rather than a guarded field, for a reason this router demonstrates: an old deployment
-    // IGNORES an unknown field but CANNOT ignore an unknown action. A guard field would be silently dropped by
-    // a pre-R52 project and the write would proceed down the unguarded path - the exact failure the guard
-    // exists to prevent. An unknown ACTION falls through to the terminal response below and refuses before any
-    // sheet is opened. From R52 upsertMarketplace REFUSES any request carrying allocation_priority, so the two
-    // actions cannot do each other's job.
-    if (action === 'marketplace.allocationPriority.set') {
-      return handleSetMarketplaceAllocationPriority_(body);
-    }
-
-    if (action === 'importFcRegularForecastBatch') {
-      return handleImportFcRegularForecastBatch_(body);
-    }
-
-    if (action === 'importOverseasInventorySnapshotBatch') {
-      return handleImportOverseasInventorySnapshotBatch_(body);
-    }
-
-    if (action === 'adjustOverseasInventory') {
-      return handleAdjustOverseasInventory_(body);
-    }
-
-    if (action === 'runAmazonSnapshotImports') {
-      return handleRunAmazonSnapshotImports_(body);
-    }
-
-    if (action === 'createShippingPlansBatch') {
-      return handleCreateShippingPlansBatch_(body);
-    }
-
-    if (action === 'updateShippingPlanStatus') {
-      return handleUpdateShippingPlanStatus_(body);
-    }
-
-    if (action === 'updateShippingPlanLineQty') {
-      return handleUpdateShippingPlanLineQty_(body);
-    }
-
-    if (action === 'appendShippingPlanNote') {
-      return handleAppendShippingPlanNote_(body);
-    }
-
-    if (action === 'completeShippingPlan') {
-      return handleCompleteShippingPlan_(body);
-    }
-
-    // API v1 · Weekly Shipping Plan READ-ONLY Workspace (Phase API-2). A body-carrying READ (no write); owner =
-    // 40_api_v1_weekly_workspace.gs. Reads only the Weekly tables (never getOperationDb). No business logic here.
-    if (action === 'weeklyShipping.workspace.get') {
-      return jsonResponse_(handleWeeklyShippingWorkspaceGet_(body));
-    }
-
-    // API v1 · Purchase Order READ-ONLY Workspace (Phase F1-7C). A body-carrying READ (no write); owner =
-    // 50_api_v1_purchase_order_workspace.gs. Reads only the PO tables (never getOperationDb). The only projection is
-    // the canonical read-model remaining_qty = max(0, completed - shipped); no FIFO / shipment / business write here.
-    if (action === 'purchaseOrder.workspace.get') {
-      return jsonResponse_(handlePurchaseOrderWorkspaceGet_(body));
-    }
-
-    // API v1 · Request Order READ-ONLY Workspace (Phase F1-7D). A body-carrying READ (no write); owner =
-    // 51_api_v1_request_order_workspace.gs. Reads only the RO tables + the masters the Draft page consumes (never
-    // getOperationDb). Composes persisted request_orders/request_order_lines ONLY — no Gap/Forecast/Recommendation,
-    // no draft generation/persistence, no RO->PO conversion. No business logic here.
-    if (action === 'requestOrder.workspace.get') {
-      return jsonResponse_(handleRequestOrderWorkspaceGet_(body));
-    }
-
-    // API v1 · Shipment READ-ONLY Workspace (Phase F1-7F). A body-carrying READ (no write); owner =
-    // 57_api_v1_shipment_workspace.gs. Reads only the Shipment table set (never getOperationDb); the On-the-Way MAP
-    // tables (routes/events/locations/templates) are returned only when the include flag is set. Composes persisted
-    // shipment facts ONLY — no FIFO, no allocation reconstruction, no PO shipped/receipt/factory-stock authority. No
-    // business logic here.
-    if (action === 'shipment.workspace.get') {
-      return jsonResponse_(handleShipmentWorkspaceGet_(body));
-    }
-
-    // API v1 · FC Summary READ-ONLY Workspace (Phase F1-7G). A body-carrying READ (no write); owner =
-    // 58_api_v1_fc_summary_workspace.gs. Reads only the FC Summary primary-render table set — fc_regular_forecast,
-    // fc_special_events, fc_target_rules, marketplaces (never getOperationDb). Returns raw passthrough of the FULL FC
-    // tables (the page's Year dropdown + non-cascading filter universes need the complete set; client keeps all
-    // filtering/pagination). Emits ONLY raw persisted forecast rows — no Target% adjustment, no blending, no Gap/
-    // Recommendation, and NOT the bounded 53_ raw-fact owner. No business logic here.
-    if (action === 'fcSummary.workspace.get') {
-      return jsonResponse_(handleFcSummaryWorkspaceGet_(body));
-    }
-
-    // API v1 · SKU Details READ-ONLY Workspace (Phase F1-7H). A body-carrying READ (no write); owner =
-    // 59_api_v1_sku_details_workspace.gs. Reads only the SKU Details master/reference table set — sku_details,
-    // tax_referral_rates, tax_rate_components (BASE); marketplace_skus, sku_regional_details (include.regional) — never
-    // getOperationDb. Returns raw passthrough of the FULL tables (the pages' filter/lifecycle/country universes need the
-    // complete set; client keeps all filtering/pagination). Authors NO write side effects — does NOT create sku_details/
-    // marketplace_skus and does NOT initialize Factory Stock (that stays with master-SKU creation). No business logic here.
-    // F1-7N-FB-4E-R3 §C — OVERSEAS STOCK scoped READ workspace (owner = 70_). Replaces the four-request
-    // getTable fan-out the page mounted on: R3 §A measured that mount at FOUR requests, and on Apps Script each
-    // request is a separate Web App execution, so four is four cold starts for one page. Read-only, no lock, no
-    // write; routed on POST only, like the other body-carrying workspace reads.
-    if (action === 'overseasStock.workspace.get') {
-      return jsonResponse_(handleOverseasStockWorkspaceGet_(body));
-    }
-    if (action === 'skuDetails.workspace.get') {
-      return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
-    }
-
-    // PRODUCT-STRATEGY-P1-B1 — API v1 · PRODUCT PRICING SITE-SCOPED READ workspace (owner = 72_). The ONE
-    // bounded read owner for pricing_list / campaigns / campaign_sku_lines, and the SITE-MEMBERSHIP authority:
-    // it resolves which marketplace_sku_ids exist for company + country + marketplace SERVER-SIDE and only
-    // those may become rows. An unscoped request is REFUSED, never answered with everything. Read-only, no
-    // lock, no writer, never getOperationDb; gated on PRODUCT_STRATEGY_ENABLED_ (00_config.gs, default false),
-    // which refuses before the spreadsheet is opened. `skuDetails.workspace.get` is UNCHANGED by this round —
-    // the site scope lives here precisely so the shared SKU-page owner did not have to grow one.
-    if (action === 'productPricing.workspace.get') {
-      return jsonResponse_(handleProductPricingWorkspaceGet_(body));
-    }
-
-    // API v1 · Product Pricing SITE UNIVERSE (PRODUCT-STRATEGY-P1-B6). The companion read to the scoped
-    // workspace above, and deliberately the same owner: 72_ already holds the site-membership authority,
-    // and publishing the list of sites from a second file would be a second place where "listed on this
-    // site" is decided. It takes NO scope — the universe is the universe — reads exactly ONE table
-    // (marketplace_skus), and returns identities and counts only: no price, no currency, no image, no
-    // URL, no spreadsheet id, no SKU rows. Read-only, no lock, no writer, never getOperationDb; gated on
-    // PRODUCT_STRATEGY_ENABLED_ before the spreadsheet is opened, exactly as the workspace read is.
-    if (action === 'productPricing.siteUniverse.get') {
-      return jsonResponse_(handleProductPricingSiteUniverseGet_(body));
-    }
-
-    // API v1 · Inventory Replenishment READ-ONLY Workspace (Phase F1-7I). A body-carrying READ (no write); owner =
-    // 60_api_v1_inventory_replenishment_workspace.gs. Reads only the Inventory Replenishment primary-render table set
-    // (the 19 tables the page's main-table assembly consumes) — never getOperationDb. Returns raw passthrough of the
-    // FULL tables (the page derives scope + assembles per-SKU rows client-side; server-side narrowing would risk drift).
-    // Authors NO Gap/Recommendation/allocation/FIFO/PO and creates NO Request Order (FLOW-A: Gap → Recommendation →
-    // Shipping Plan → Shipment). Gap/Recommendation/allocation-draft stay on their existing separate scoped owners. No
-    // business logic here.
-    if (action === 'inventoryReplenishment.workspace.get') {
-      return jsonResponse_(handleInventoryReplenishmentWorkspaceGet_(body));
-    }
-
-    // API v1 · AI-Plan Layer-1 RAW read owner (Phase F1-7E-PREREQ-1). A body-carrying READ (no write); owner =
-    // 52_api_v1_open_po_remaining_owner.gs. Reads only purchase_orders + purchase_order_lines (never getOperationDb).
-    // Exposes the RAW informational fact open_po_remaining_raw_qty per SKU (OPEN-PO statuses; persisted remaining_qty
-    // preferred, else the current browser fallback). NOT the canonical PO remaining (50_) and NOT consumed by the AI
-    // Plan yet (composed later in PREREQ-5). No business logic here.
-    if (action === 'openPoRemaining.raw.get') {
-      return jsonResponse_(handleOpenPoRemainingRawGet_(body));
-    }
-
-    // API v1 · AI-Plan Layer-1 RAW forecast read owner (Phase F1-7E-PREREQ-2). A body-carrying READ (no write); owner =
-    // 53_api_v1_fc_summary_raw_owner.gs. Reads only fc_regular_forecast + fc_special_events (never getOperationDb).
-    // Exposes basicFcRawT3Qty (raw fc_regular_forecast N+1..N+3 sum) + specialEventFcRawQty (raw fc_special_events
-    // prep-month sum) per SKU, anchored on planning_cycle (NOT the clock). NO Target%, NO blending, NO Recommendation/
-    // Gap; NOT the fcSummary workspace and NOT consumed by the AI Plan yet (composed later in PREREQ-5). No business
-    // logic here.
-    if (action === 'fcSummary.raw.get') {
-      return jsonResponse_(handleFcSummaryRawGet_(body));
-    }
-
-    // API v1 · AI-Plan Layer-1 RAW inventory read owner (Phase F1-7E-PREREQ-3). A body-carrying READ (no write); owner =
-    // 54_api_v1_raw_inventory_owner.gs. Reads only amazon_inventory_snapshot + overseas_inventory_snapshot +
-    // factory_stock + warehouses (never getOperationDb). Exposes siteStockRawQty (latest snapshot) + overseasStockRawQty
-    // (pooled) + factoryStockRawQty (shared per-SKU pool) — RAW pools, NO allocation, NOT the recommendation supply, and
-    // NOT consumed by the AI Plan yet (composed later in PREREQ-5). No business logic here.
-    if (action === 'rawInventory.get') {
-      return jsonResponse_(handleRawInventoryGet_(body));
-    }
-
-    // API v1 · AI-Plan Layer-1 lead-time read owner (Phase F1-7E-PREREQ-4). A body-carrying READ (no write); owner =
-    // 55_api_v1_lead_time_owner.gs. Reads only supplier_price_list (never getOperationDb). Exposes leadTimeDays per SKU
-    // (active + latest effective_from; null when none/blank — EMPTY != ZERO). NOT a planning engine and NOT consumed by
-    // the AI Plan yet (composed later in PREREQ-5). No business logic here.
-    if (action === 'leadTime.raw.get') {
-      return jsonResponse_(handleLeadTimeRawGet_(body));
-    }
-
-    // API v1 · AI-Plan first-layer COMPOSER (Phase F1-7E-PREREQ-5). A body-carrying READ (no write); owner =
-    // 56_api_v1_ai_plan_first_layer.gs. Reads a TARGETED table set (never getOperationDb) and REUSES the 52_/53_/54_/55_
-    // pure Layer-1 fact functions to return the SAME rows the browser _buildRequestOrderRowsFromDb() builds. NO new
-    // formula, NO second engine; Layer-2 Gap/Recommendation stay on their existing scoped paths. No business logic here.
-    if (action === 'aiPlanFirstLayer.get') {
-      return jsonResponse_(handleAiPlanFirstLayerGet_(body));
-    }
-
-    // API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A). A body-carrying READ (no write); owner =
-    // 42_api_v1_recommendation_workspace.gs. Targeted canonical tables → KMPA → KMPS → resolver (never getOperationDb,
-    // never writes/persists/creates a draft). No business logic here.
-    if (action === 'recommendation.workspace.get') {
-      return jsonResponse_(handleRecommendationWorkspaceGet_(body));
-    }
-
-    // F1-4B-FM5 · Materialized Gap batch recalculation (owner = 43_api_v1_gap_materialization.gs). ONE bounded
-    // server batch per manual button: enumerate scopes → reuse the canonical recommendation calc per scope →
-    // UPSERT the latest result into inventory_replenishment_gap / order_planning_gap. Writes ONLY those two
-    // tables; no new formula; fails closed if the table/header is missing. No business logic here.
-    if (action === 'inventoryReplenishmentGap.recalculate.all') {
-      return jsonResponse_(handleRecalculateInventoryReplenishmentGapBatch_(body));
-    }
-    if (action === 'orderPlanningGap.recalculate.all') {
-      return jsonResponse_(handleRecalculateOrderPlanningGapBatch_(body));
-    }
-
-    // F1-4B-FM5-R1 · Materialized Gap READ (page reads STORED result; NO calculation on expand). Bounded read of
-    // inventory_replenishment_gap / order_planning_gap by company/country/marketplace(/sku). No business logic here.
-    if (action === 'inventoryReplenishmentGap.get') {
-      return jsonResponse_(handleGetInventoryReplenishmentGap_(body));
-    }
-    if (action === 'orderPlanningGap.get') {
-      return jsonResponse_(handleGetOrderPlanningGap_(body));
-    }
-
-    // F1-4B-FM5-R4J · Backend-owned RESUMABLE gap materialization job (owner = 46_api_v1_gap_materialization_job.gs).
-    // START = a quick write that acquires the script lock, freezes the calc context, enumerates scopes, records
-    // Script-Property job state (cursor=0), schedules the first one-off continuation trigger, and returns
-    // IMMEDIATELY (no calculation in the request). The backend then owns the job across self-re-arming triggers,
-    // independent of the browser tab. STATUS is strictly READ-ONLY. No new formula, no DB schema. No business logic here.
-    if (action === 'inventoryReplenishmentGap.job.start') {
-      return jsonResponse_(handleStartInventoryReplenishmentGapJob_(body));
-    }
-    if (action === 'orderPlanningGap.job.start') {
-      return jsonResponse_(handleStartOrderPlanningGapJob_(body));
-    }
-    if (action === 'gapJob.status.get') {
-      return jsonResponse_(handleGetGapJobStatus_(body));
-    }
-    // F1-4B-FM5-R4J-LIVE4 — manual CANCEL (WRITE): terminal CANCELLED for the active product job; per-product isolated.
-    if (action === 'inventoryReplenishmentGap.job.cancel') {
-      return jsonResponse_(handleCancelInventoryReplenishmentGapJob_(body));
-    }
-    if (action === 'orderPlanningGap.job.cancel') {
-      return jsonResponse_(handleCancelOrderPlanningGapJob_(body));
-    }
-
-    // S8-B3-R1A (R51) — API v1 · OVERSEAS ALLOCATION PREVIEW (owner = 74_). A READ-ONLY async preview of the
-    // frozen §20/§24 overseas shared-pool allocation for ONE allocation group (company + canonical country +
-    // master SKU). It owns NO formula: eligibility from 43_, demand from allocatedForecastQty, distribution from
-    // KMMSA. There is no Apply and no business write — its ONLY writes are its own Script Properties and its own
-    // continuation triggers. Four actions rather than one because the proven async pattern separates the job from
-    // its output (START is a quick write that returns immediately; the RESULT has its own read).
-    // STAGED OFF: each handler checks OVERSEAS_ALLOCATION_PREVIEW_ENABLED_ before the spreadsheet is opened,
-    // before any job state is created and before any trigger is armed.
-    if (action === 'overseasAllocationPreview.job.start') {
-      return jsonResponse_(handleStartOverseasAllocationPreviewJob_(body));
-    }
-    if (action === 'overseasAllocationPreview.job.status') {
-      return jsonResponse_(handleGetOverseasAllocationPreviewJobStatus_(body));
-    }
-    if (action === 'overseasAllocationPreview.result.get') {
-      return jsonResponse_(handleGetOverseasAllocationPreviewResult_(body));
-    }
-    if (action === 'overseasAllocationPreview.job.cancel') {
-      return jsonResponse_(handleCancelOverseasAllocationPreviewJob_(body));
-    }
-
-    // Weekly Plan Layer-1 (Rationale) + Layer-2 (Carrier & Cost) + Combined Plan + Method Recommendation (2026-07-28).
-    if (action === 'getShippingMethodCandidates') {   // Execution Plan recommendation + Weekly L1 cascade (read-only)
-      return handleGetShippingMethodCandidates_(body);
-    }
-    // F1-7K-HOTFIX-ROUTER-CLOSURE-R1: the Weekly Plan Layer-1 (Rationale) / Layer-2 (Carrier & Cost) / Combined-Plan
-    // actions — getWeeklyPlanRateCandidates, updateShippingPlanRationale, selectShippingPlanCarrier,
-    // combineShippingPlans, uncombineShippingPlans — were dispatched here but their handlers were NEVER implemented in
-    // the backend (ROUTER_HANDLER_CLOSURE failure: dispatch → undefined function → ReferenceError if ever called).
-    // Audited: ZERO live frontend callers (the db-api _kmShippingPost_ stubs exist but are unwired). An action must not
-    // be advertised/dispatched before its handler contract exists, so these five dispatches are REMOVED to make the
-    // Apps Script source a clean deployable unit. NO business functionality was implemented or changed. If a caller is
-    // ever wired, its POST now falls through to the unknown-action default and returns a clean fail-closed envelope
-    // (surfaced as BACKEND_ERROR by the hardened foundation) instead of a runtime ReferenceError.
-
-    // F1-7N-FC-1A-R1 §D/§L — THE CANCELLATION ROUTE. Adding a router ACTION is the condition that bumps
-    // SYS_DEPLOYED_ACTION_CONTRACT_VERSION_, and 63_ moves with it in this same commit: a deployment that
-    // acquires reservations but cannot route their release must be rejected BY VERSION, not discovered when
-    // an operator finds the Cancel button does nothing.
-    if (action === 'cancelShipmentDraft') {
-      return handleCancelShipmentDraft_(body);
-    }
-    if (action === 'createShipmentFromPlan') {
-      return handleCreateShipmentFromPlan_(body);
-    }
-
-    // F1-5B-SHIP-R3A — generate/reconcile DRAFT PO→FIFO→shipment_line allocations (no shipped_qty mutation).
-    if (action === 'generateShipmentLineAllocations') {
-      return handleGenerateShipmentLineAllocations_(body);
-    }
-
-    if (action === 'updateShipment') {
-      return handleUpdateShipment_(body);
-    }
-
-    // Confirm Shipment & Dispatch — single orchestration command (2026-07-24): finalize Formal Shipment
-    // (in_transit) + snapshot shipment_routes + create initial shipment_event + deduct factory_stock,
-    // atomically (lock + staged-write + rollback) and idempotently. See 22_shipment_dispatch_handlers.gs.
-    if (action === 'confirmShipmentAndDispatch') {
-      return handleConfirmShipmentAndDispatch_(body);
-    }
-
-    // F1-5C-EXPORT-R2B — canonical immutable final-output snapshot. finalize = idempotent post-dispatch
-    // materialization (eligible from shipments.status=shipped onward — F1-7N-FB-1B §E; NOT inside the dispatch
-    // transaction); get = the ONE frozen read owner (no re-resolve of masters). 34_shipment_final_output_handlers.gs.
-    if (action === 'finalizeShipmentFinalOutput') {
-      return handleFinalizeShipmentFinalOutput_(body);
-    }
-    if (action === 'getShipmentFinalOutput') {
-      return handleGetShipmentFinalOutput_(body);
-    }
-
-    // F1-5C-EXPORT-R3A — render Shipping Detail / Packing List from the frozen R2B snapshot (presentation only;
-    // no live-master read, no persisted generated document). See 35_shipment_document_renderer.gs.
-    if (action === 'renderShipmentDocument') {
-      return handleRenderShipmentDocument_(body);
-    }
-
-    // F1-5C-EXPORT-R3B — persisted document template / field-mapping / generated-document runtime. Renders via the
-    // R3A renderer (snapshot only), resolves ONE active document_templates row, maps document_template_fields, and
-    // idempotently upserts a generated_documents lifecycle record. See 36_document_template_handlers.gs.
-    if (action === 'documentTemplate.list') {
-      return handleDocumentTemplateList_(body);
-    }
-    if (action === 'documentTemplate.getFields') {
-      return handleDocumentTemplateGetFields_(body);
-    }
-    if (action === 'shipmentDocument.generate') {
-      return handleShipmentDocumentGenerate_(body);
-    }
-    if (action === 'shipmentDocument.get') {
-      return handleShipmentDocumentGet_(body);
-    }
-    if (action === 'shipmentDocument.list') {
-      return handleShipmentDocumentList_(body);
-    }
-
-    // F1-7N-FB-1B — the system-computed document runtime (39_document_runtime_service.gs). One canonical service
-    // for the UI action, retry and any future API caller. `document.list` is the read path the Shipment and
-    // Purchase Order workspaces project into their Document Panels; the two diagnostics are STRICTLY read-only
-    // (zero writes, no Drive folder or file created) and exist to be run BEFORE a controlled live test.
-    if (action === 'document.list') {
-      return handleEntityDocumentList_(body);
-    }
-    if (action === 'document.get') {
-      return handleGeneratedDocumentGet_(body);
-    }
-    if (action === 'document.retry') {
-      return handleDocumentRetry_(body);
-    }
-    if (action === 'document.diagnostic.purchaseOrder') {
-      return handlePoDocumentDiagnostic_(body);
-    }
-    if (action === 'document.diagnostic.shipment') {
-      return handleShipmentDocumentDiagnostic_(body);
-    }
-
-    // Shipment Receipt + Route Progress (F1-SHIPMENT-RECEIPT-R1B). Receipt = cumulative write to the LIVE
-    // shipment_lines.shipment_received_qty + backend-derived shipments.status; route advance = forward-only
-    // current-point set on shipment_routes node statuses. See 31_shipment_receipt_route_handlers.gs.
-    if (action === 'shipment.receipt.update') {
-      return handleUpdateShipmentReceipt_(body);
-    }
-    if (action === 'shipment.route.advance') {
-      return handleAdvanceShipmentRoutePoint_(body);
-    }
-    // F1-SHIPMENT-MAP-R10: bounded ETA-only writer (shipments.eta; never status/route/receipt).
-    if (action === 'shipment.eta.update') {
-      return handleUpdateShipmentEta_(body);
-    }
-
-    // Procurement Layer (Phase 1) — Request Order / Purchase Order.
-    if (action === 'createRequestOrderDraft') {
-      return handleCreateRequestOrderDraft_(body);
-    }
-
-    if (action === 'updateRequestOrderStatus') {
-      return handleUpdateRequestOrderStatus_(body);
-    }
-
-    if (action === 'updateRequestOrderLineQty') {
-      return handleUpdateRequestOrderLineQty_(body);
-    }
-
-    if (action === 'cancelRequestOrderTier') {
-      return handleCancelRequestOrderTier_(body);
-    }
-
-    if (action === 'createPurchaseOrderFromRequest') {
-      return handleCreatePurchaseOrderFromRequest_(body);
-    }
-
-    if (action === 'updatePurchaseOrderStatus') {
-      return handleUpdatePurchaseOrderStatus_(body);
-    }
-
-    if (action === 'updatePurchaseOrderLine') {
-      return handleUpdatePurchaseOrderLine_(body);
-    }
-
-    if (action === 'updatePurchaseOrderHeader') {
-      return handleUpdatePurchaseOrderHeader_(body);
-    }
-
-    if (action === 'receivePurchaseOrderLines') {
-      return handleReceivePurchaseOrderLines_(body);
-    }
-
-    // FC Summary write path (Phase 1) — Special Events + Target % Rules.
-    if (action === 'upsertFcSpecialEvent') {
-      return handleUpsertFcSpecialEvent_(body);
-    }
-
-    if (action === 'importFcSpecialEventsBatch') {
-      return handleImportFcSpecialEventsBatch_(body);
-    }
-
-    if (action === 'deleteFcSpecialEvent') {
-      return handleDeleteFcSpecialEvent_(body);
-    }
-
-    // event_fc_id maintenance — read-only audit + one-time manual backfill (never auto-run).
-    if (action === 'auditFcSpecialEventIds') {
-      return handleAuditFcSpecialEventIds_(body);
-    }
-
-    if (action === 'backfillFcSpecialEventIds') {
-      return handleBackfillFcSpecialEventIds_(body);
-    }
-
-    if (action === 'upsertFcTargetRule') {
-      return handleUpsertFcTargetRule_(body);
-    }
-
-    if (action === 'deleteFcTargetRule') {
-      return handleDeleteFcTargetRule_(body);
-    }
-
-    // Campaign write path (Special Event Builder: campaigns → campaign_sku_lines → fc_special_events).
-    if (action === 'upsertCampaign') {
-      return handleUpsertCampaign_(body);
-    }
-
-    if (action === 'upsertCampaignSkuLines') {
-      return handleUpsertCampaignSkuLines_(body);
-    }
-
-    if (action === 'upsertRequestOrderAllocationDraft') {
-      return handleUpsertRequestOrderAllocationDraft_(body);
-    }
-
-    if (action === 'upsertRequestOrderAllocationDraftLines') {
-      return handleUpsertRequestOrderAllocationDraftLines_(body);
-    }
-
-    if (action === 'submitRequestOrderAllocationDrafts') {
-      return handleSubmitRequestOrderAllocationDrafts_(body);
-    }
-
-    // Inventory Replenishment second-layer Recommendation / Execution Plan drafts (16_).
-    if (action === 'upsertShippingAllocationDraft') {
-      return handleUpsertShippingAllocationDraft_(body);
-    }
-
-    if (action === 'upsertShippingAllocationDraftLines') {
-      return handleUpsertShippingAllocationDraftLines_(body);
-    }
-
-    // F1-7N-FA-3C-R6F1 — ATOMIC Header + Lines write (one lock; validate-all-before-write; compensation/COMMITTED_
-    // UNVERIFIED/fail-closed). Additive; the legacy two-call path above stays available.
-    if (action === 'upsertShippingAllocationDraftAtomic') {
-      // F1-7N-FC-1B-E3-R4-A2-R1-R2 §3 — THE SERVER-OWNED INTENT IS NOT REACHABLE FROM A REQUEST.
-      //
-      // UPSERT_AI_GENERATED_K2_ROUTE resolves a DETERMINISTIC K2 identity and creates or reconciles it. That is
-      // the weekly AI Plan orchestration's operation, and 61_ performs it by calling the handler DIRECTLY, in
-      // process — it never travels this path. So the one place an external caller could ask for it is here,
-      // and here it is refused outright rather than quietly downgraded: a request asking for a server-owned
-      // intent is either a mistake or an attempt, and both deserve to be told so by name.
-      var _rIntent = String((body && (body.intent || (body.header && body.header.intent))) || '').trim();
-      if (_rIntent && typeof SAD_CLIENT_GRANTABLE_INTENTS_ !== 'undefined' && !SAD_CLIENT_GRANTABLE_INTENTS_[_rIntent]) {
-        return jsonResponse_({ success: false, error: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE',
-          code: 'ROUTE_INTENT_NOT_CLIENT_GRANTABLE', stage: 'intent', zero_write: true,
-          data: { received_intent: _rIntent,
-            client_grantable: Object.keys(SAD_CLIENT_GRANTABLE_INTENTS_),
-            message: 'this route intent is server-owned and cannot be declared by a request (zero rows written)' } });
-      }
-      return handleUpsertShippingAllocationDraftAtomic_(body);
-    }
-
-    if (action === 'submitShippingAllocationDrafts') {
-      return handleSubmitShippingAllocationDrafts_(body);   // F1-7N-FA-4B DEPRECATED alias → canonical Submit authority
-    }
-
-    // F1-7N-FA-4B — the ONE canonical Inventory AI Plan Submit authority (allocation drafts → Weekly Shipping Plan).
-    if (action === 'submitAllocationDraftsToShippingPlans') {
-      return handleSubmitAllocationDraftsToShippingPlans_(body);
-    }
-
-    // F1-7N-FA-4B1(I) — strictly read-only Flow A schema/lineage preflight (marketplace physical/logical + lineage tables).
-    if (action === 'flowASchemaLineagePreflight') {
-      return handleFlowASchemaLineagePreflight_(body);
-    }
-
-    if (action === 'getShippingAllocationDraftWorkspace') {
-      return handleGetShippingAllocationDraftWorkspace_(body);
-    }
-
-    if (action === 'cancelShippingAllocationDraft') {
-      return handleCancelShippingAllocationDraft_(body);
-    }
-
-    if (action === 'upsertRequestOrderSiteConfirmations') {
-      return handleUpsertRequestOrderSiteConfirmations_(body);
-    }
-
-    // Phase 2C Round 1G — LOCKED recommendation generation bridge: Plan Builder → Persistence Core → Persistence
-    // Plan Builder → LockService keyed-delta repository apply. The ONLY recommendation persistence write that is
-    // lock-enforced; delegates entirely to the generated bundle (90_generated_supply_planning_bundle.gs) via
-    // 24_recommendation_orchestrator.gs. Source mirror / NOT deployed; guarded (fails closed if the bundle is
-    // absent). Legacy 15_/16_ unlocked writers remain for compatibility (enforcement is a later round).
-    if (action === 'generateRecommendationDraftLocked') {
-      return handleGenerateRecommendationDraftLocked_(body);
-    }
-
-    // F1-4B-FM6-R4E2 — BACKEND-ONLY gap-backed MONTHLY_ORDER draft generation + active-draft read-back (47_). The
-    // generation persists via the SAME locked writer (generateRecommendationDraftLocked) with recommended_qty sourced
-    // VERBATIM from order_planning_gap.tN_suggested_qty (never KMSF/calculateGap). No frontend wiring / no Order
-    // Allocation reroute / no Send Request change this round — these are the backend contract the next UI round calls.
-    if (action === 'requestOrderDraft.generateFromGap') {
-      return handleGenerateRequestOrderDraftFromGap_(body);
-    }
-    if (action === 'requestOrderDraft.getActive') {
-      return handleGetActiveRequestOrderDraftReadback_(body);
-    }
-
-    // F1-7N-D-2b — WEEKLY AI PLAN live generation owner (61_). Harvests canonical facts → KMWHA → KMWRB
-    // (company,country) batch → per-marketplace K3 shipping_allocation_drafts via the frozen orchestrator + C1
-    // semantics. Generation universe = company+country (marketplace is readback context only). Persists ONLY the
-    // shipping-allocation draft tables; no Request Order / PO / shipment; no inventory reservation.
-    if (action === 'weeklyAiPlan.generate') {
-      return handleGenerateWeeklyAiPlanDraft_(body);
-    }
-
-    // F1-4B-FM6-R4E2-B2 — REQUEST-DRIVEN resumable scope draft job (48_). ONE logical job for a scope-wide AI Plan:
-    // START snapshots eligible READY-gap SKUs; the client polls CONTINUE (bounded slice each) until DONE; STATUS is
-    // read-only; CANCEL is terminal (created drafts preserved). No time trigger / scheduler / browser fan-out. The
-    // per-SKU authority is the SAME R4E2 locked persister (recommended_qty verbatim from order_planning_gap).
-    // F1-7N-FA-3C-PRE2-R2 — the 48_ job handlers return a RAW gapBatchEnvelope_ object (same convention as the 46_
-    // gap-job family); the router MUST serialize it through jsonResponse_ (ContentService.JSON) so the Web App emits
-    // a CORS-readable response via the googleusercontent redirect. Returning the raw object made doPost emit a
-    // non-ContentService HTML page with no Access-Control-Allow-Origin → the browser fetch CORS-rejected it and the
-    // client surfaced HTTP_TRANSPORT_ERROR. Mirror the known-good orderPlanningGap.job.start dispatch above.
-    if (action === 'requestOrderDraft.job.start') {
-      return jsonResponse_(handleStartRequestOrderDraftJob_(body));
-    }
-    if (action === 'requestOrderDraft.job.continue') {
-      return jsonResponse_(handleContinueRequestOrderDraftJob_(body));
-    }
-    if (action === 'requestOrderDraft.job.status') {
-      return jsonResponse_(handleGetRequestOrderDraftJobStatus_(body));
-    }
-    if (action === 'requestOrderDraft.job.cancel') {
-      return jsonResponse_(handleCancelRequestOrderDraftJob_(body));
-    }
-
-    // Phase 2C Round 1H — LOCKED user-decision-edit boundary (25_): edit planned_qty/order_qty/etc under
-    // ScriptLock + terminal guard + optimistic token, separate from engine generation and from Submit.
-    if (action === 'updateRecommendationDecisionLocked') {
-      return handleUpdateRecommendationDecisionLocked_(body);
-    }
-
-    // Read-only concurrency-token getter for a Recommendation Draft (client obtains {draft_version,
-    // userEditFingerprint} to send back on an edit write).
-    if (action === 'getRecommendationDraftToken') {
-      return handleGetRecommendationDraftToken_(body);
-    }
-
-    // One-time migration (2026-07-28): retire the display-label snapshot columns from shipping_plans /
-    // shipments (shipping_method_label / customs_type_label / shipments_customs_type_label). Backfill-safe:
-    // dry_run reports; live deletes only when every code cell is populated (else blocked_needs_review).
-    if (action === 'retireShipmentLabelColumns') {
-      return handleRetireShipmentLabelColumns_(body);
-    }
-
-    if (action === 'importCarrierRateCards') {
-      return handleImportCarrierRateCards_(body);
-    }
-
-    // One-time manual carrier provisioning — 中外運 Sinotrans (CAR_SINOTRANS) CN→JP Air+Parcel. Idempotent.
-    // S7-R3 — carrier_lead_times maintenance. carrier_rate_cards has been application-maintainable since
-    // the Rate Card round and lead times never were, so a lane could be priced in the app and then not be
-    // made routable in it. The upsert is the ONE application write owner; the census is strictly read-only
-    // (zero writes, no row touched) and reports pre-existing ambiguity for operator reconciliation.
-    // See 17_carrier_handlers.gs.
-    if (action === 'carrierLeadTime.upsert') {
-      return handleUpsertCarrierLeadTime_(body);
-    }
-    if (action === 'carrierLeadTime.duplicateCensus') {
-      return handleCarrierLeadTimeDuplicateCensus_(body);
-    }
-    if (action === 'seedSinotransCarrier') {
-      return handleSeedSinotransCarrier_(body);
-    }
-
-    if (action === 'upsertSkuRegionalDetail') {
-      return handleUpsertSkuRegionalDetail_(body);
-    }
-
-    // PRICING-R2 — THE CANONICAL PRICING WRITE (owner = 73_). The only write path into pricing_list and the
-    // only writer of pricing_change_log. POST only, like every other write. It creates no pricing row,
-    // duplicates no marketplace_sku row, and addresses a row ONLY by marketplace_sku_id — a master SKU is
-    // not an identity here, because one master SKU is priced on many sites and a master-keyed write would
-    // hit whichever of them the sheet happened to list first. dry_run: true is the PREVIEW half of the
-    // import contract: the same validation and the same plan, with zero writes.
-    if (action === 'pricing.update') {
-      return jsonResponse_(handlePricingUpdate_(body));
-    }
-
-    // PRICING-R3 — THE FX RECONCILIATION (owner = 73_, same file, same lock). It rebuilds auto_* from the
-    // canonical base prices at rates SUPPLIED WITH THE REQUEST, and it refreshes an effective price only
-    // where that field's own flag explicitly says AUTO. It is POST only and DRY RUN BY DEFAULT: anything
-    // other than an explicit dry_run:false plans the whole table and writes nothing, because this is the
-    // one action here that can touch every row and a forgotten parameter must count rather than reprice.
-    if (action === 'pricing.fxReconcile') {
-      return jsonResponse_(handlePricingFxReconcile_(body));
-    }
-
-    // FX1-R3 — THE RATE BOOK WRITE (owner = 75_). It stores coefficients and NOTHING ELSE: no price
-    // moves here, and the only action that can move one is pricing.fxReconcile above, which is dry-run
-    // by default. POST only, authority fails closed, and the operator on the change record is the
-    // caller this deployment identified rather than a name the request supplied.
-    if (action === 'fxRateBook.save') {
-      return jsonResponse_(handleFxRateBookSave_(body));
-    }
-    // FX1-R4 — AND THE READ KEEPS ITS POST ROUTE, as every GET-routed read does. The GET table is an
-    // addition for callers that can use it, not a move: the shared client transport posts, so a read
-    // that lived only on the GET table could not be reached by the page that needs it.
-    if (action === 'fxRateBook.get') {
-      return jsonResponse_(handleFxRateBookGet_(body));
-    }
-
-    if (action === 'syncMarketplaceSkusToSkuRegionalDetails') {
-      return handleSyncMarketplaceSkusToSkuRegionalDetails_(body);
-    }
-
-    if (action === 'upsertTaxReferralRate') {
-      return handleUpsertTaxReferralRate_(body);
-    }
-
-    if (action === 'upsertTaxRateComponent') {
-      return handleUpsertTaxRateComponent_(body);
-    }
-
-    if (action === 'adjustFactoryInventory') {
-      return handleAdjustFactoryInventory_(body);
-    }
-
-    // F0-HOTFIX-FI1 — Factory Inventory Initial Stock Import (two thin actions; business logic in 21_).
-    if (action === 'factoryInventory.import.validate') {
-      return handleFactoryInventoryImportValidate_(body);
-    }
-    if (action === 'factoryInventory.import.commit') {
-      return handleFactoryInventoryImportCommit_(body);
-    }
-
-    // ADMIN-AUTOMATION-R1 — Automation Schedule Settings (owner = 45_api_v1_automation_schedule.gs). Schedule config
-    // lives in Script Properties (NOT the spreadsheet DB); UPDATE reconciles ONLY the owned time trigger via a strict
-    // handler allowlist. No formula, no DB table, no calc. GET is read-only (opening the page mutates nothing).
-    if (action === 'automationSchedule.get') {
-      return jsonResponse_(handleAutomationScheduleGet_(body));
-    }
-    if (action === 'automationSchedule.update') {
-      return jsonResponse_(handleAutomationScheduleUpdate_(body));
-    }
-
-    // F1-7N-D-2j / F1-7N-D-2k-R1 — Site Inventory Warehouse Allocation config (owner = 50_api_v1_warehouse_allocation_
-    // config.gs). Scope-safe reconciliation of the SELF_FULFILLED demand-allocation for ONE (company,country,
-    // marketplace); the RULE MODEL is the sole planning-membership authority. Persistence = the
-    // KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob (NOT a Sheet tab), so it survives without user-managed
-    // sheet rows yet stays backend/scheduler-readable. Rejects FBA/execution warehouses; ratios each sum to 100%.
-    // GET is read-only (opening the modal mutates nothing).
-    if (action === 'warehouseAllocation.get') {
-      return handleWarehouseAllocationConfigGet_(body);
-    }
-    if (action === 'replenishmentDemandAllocation.save') {
-      return handleReplenishmentDemandAllocationSave_(body);
-    }
-
-    // F1-7N-TW-FACTORY-OPERATIONAL-CONFIG-R1 — TW factory OPERATIONAL POLICY booleans (owner = 62_api_v1_factory_
-    // operation_config.gs). Two Phase-1 policies (TW New SKU Participation / TW General Allocation) persisted in the
-    // KM_FACTORY_OPERATION_CONFIG Script-Property blob (NOT a Sheet tab), read headlessly by the monthly runtime /
-    // scheduler / future SKU-init runtime. GET is read-only; SAVE writes ONLY the config blob (no inventory mutation).
-    if (action === 'factoryOperationConfig.get') {
-      return handleFactoryOperationConfigGet_(body);
-    }
-    if (action === 'factoryOperationConfig.save') {
-      return handleFactoryOperationConfigSave_(body);
-    }
-
-    // F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5 §4/§7 — the shared factory stock guard, READ ONLY.
-    //
-    // There is deliberately NO confirm action here. An overage is confirmed by sending the confirmation WITH
-    // the transition it authorises (updateShippingPlanStatus), so the recheck and the write are one locked
-    // operation and a caller cannot reach the write without passing the gate. A standalone confirm endpoint
-    // would be a second door into the same room. This action only READS: it answers the non-blocking
-    // Draft-editing indicator (§7) and the operator preflight, and it authorises nothing.
-    if (action === 'factoryStockGuard.get') {
-      return handleFactoryStockGuardGet_(body);
-    }
-
-    return jsonResponse_({ success: false, error: 'Invalid POST action. Supported: updateSkuLifecycle, upsertSkuDetail, upsertMarketplaceSku, updateMarketplaceSkuModel, importMarketplaceSkusBatch, upsertMarketplace, marketplace.allocationPriority.set, importFcRegularForecastBatch, importOverseasInventorySnapshotBatch, adjustOverseasInventory, adjustFactoryInventory, factoryInventory.import.validate, factoryInventory.import.commit, runAmazonSnapshotImports, createShippingPlansBatch, updateShippingPlanStatus, updateShippingPlanLineQty, appendShippingPlanNote, completeShippingPlan, createShipmentFromPlan, cancelShipmentDraft, updateShipment, confirmShipmentAndDispatch, createRequestOrderDraft, updateRequestOrderStatus, updateRequestOrderLineQty, cancelRequestOrderTier, createPurchaseOrderFromRequest, updatePurchaseOrderStatus, updatePurchaseOrderLine, updatePurchaseOrderHeader, receivePurchaseOrderLines, upsertFcSpecialEvent, deleteFcSpecialEvent, upsertFcTargetRule, deleteFcTargetRule, upsertRequestOrderAllocationDraft, upsertRequestOrderAllocationDraftLines, submitRequestOrderAllocationDrafts, upsertRequestOrderSiteConfirmations, importCarrierRateCards, carrierLeadTime.upsert, carrierLeadTime.duplicateCensus, upsertSkuRegionalDetail, syncMarketplaceSkusToSkuRegionalDetails, pricing.update, pricing.fxReconcile, fxRateBook.save, fxRateBook.get, upsertTaxReferralRate, upsertTaxRateComponent, getShippingAllocationDraftWorkspace, cancelShippingAllocationDraft, warehouseAllocation.get, replenishmentDemandAllocation.save, factoryOperationConfig.get, factoryOperationConfig.save, factoryStockGuard.get',
-      // F1-7N-FB-4E §L — stamped with the handler and method, so a doPost answer can NEVER be classified
-      // as a method downgrade. This is the negative half of the proof and it was previously absent.
-      handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_,
-      post_body_present: true, action_present_in_query: !!(e && e.parameter && e.parameter.action), zero_write: true });
-
-  } catch (err) {
-    Logger.log(err.stack);
-    return jsonResponse_({ success: false, error: err.message, handler: 'doPost', received_method: 'POST', router_build: RTR_BUILD_VERSION_ });
-  }
+function rtrProductionGateInfo_() {
+  var ready = !rtrProductionTargetCheck_();
+  return { environment: 'KM_PRODUCTION', profile_id: RTR_PRODUCTION_PROFILE_.profile_id,
+    policy_sha256: RTR_PRODUCTION_PROFILE_.policy_sha256, db_fp: RTR_PRODUCTION_PROFILE_.db_fp,
+    bound_equals_constant: ready, module_stamps_ok: ready, flat_v2: ready, administration_enabled: false, ai_plan_enabled: false };
+}
+function rtrWithProductionGate_(out) {
+  var j;
+  try { j = JSON.parse(out.getContent()); } catch (ignore) { return out; }
+  j.production_gate = rtrProductionGateInfo_();
+  if (j.data) { j.data.inventoryAiPlanDbGenerationEnabled = false; j.data.productionProfile = RTR_PRODUCTION_PROFILE_.profile_id; }
+  return jsonResponse_(j);
+}
+function rtrActionGate_(action, body) {
+  if (RTR_PRODUCTION_PROFILE_.allowed.indexOf(String(action || '')) < 0) return { code: 'PRODUCTION_ACTION_NOT_ENABLED' };
+  if (/^import\./.test(String(action || '')) && !rtrPoFactoryScope_(action, body)) return { code: 'PRODUCTION_IMPORT_SCOPE_REFUSED' };
+  return null;
+}
+function rtrGateRefusal_(r, handler, action) {
+  return jsonResponse_({ success: false, code: r.code, zero_write: true, business_writes: 0,
+    handler: handler, action: String(action || ''), modules: r.modules || [], error: 'This action is not available in this release. Nothing was written.' });
 }

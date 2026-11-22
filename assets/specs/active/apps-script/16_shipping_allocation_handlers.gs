@@ -336,7 +336,7 @@ var SAD_ROUTE_INTENTS_ = {
 };
 // The two a request may legitimately declare. The third is not in this set and never becomes reachable by
 // adding a field to a payload.
-var SAD_CLIENT_GRANTABLE_INTENTS_ = { CREATE_NEW_ROUTE: 1, UPDATE_EXISTING_ROUTE: 1 };
+var SAD_CLIENT_GRANTABLE_INTENTS_ = { CREATE_NEW_ROUTE: 1, UPDATE_EXISTING_ROUTE: 1, CANCEL_ROUTE_LINES: 1 };   // SANDBOX-GATE-1f
 
 /**
  * §3 — THE EVIDENCE THAT EARNS THE AI INTENT. A declaration is not authority.
@@ -501,7 +501,7 @@ function sadUpsertDraftHeaderCore_(body) {
   if (!SAD_STATUSES_[status]) status = 'draft';
   var genType = String((body && body.generation_type) || 'user_created').trim();
   if (!SAD_GENERATION_TYPES_[genType]) genType = 'user_created';
-  var draftVersion = String((body && body.draft_version) || '1').trim();
+  // BV1 (P2): body.draft_version is no longer read. A row this writer creates starts at '1' (see the INSERT below).
 
   // C2-D1R header-route completeness gate (§8): when the header carries route intent, From + To + Method must
   // all be present (unless this is a soft-cancel). A partial route rejects with PLAN_HEADER_INCOMPLETE and
@@ -591,11 +591,20 @@ function sadUpsertDraftHeaderCore_(body) {
         zero_write: true, data: { allocation_draft_id: id, stored_scope: uScopeKey, applied_scope: wantScopeKey } };
     }
     var uPriorVersion = sadFpVal_(uObj.draft_version);
-    if (body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '' &&
-        sadFpVal_(body.expected_draft_version) !== uPriorVersion) {
+    // BV1 (P1) - THE TOKEN IS MANDATORY HERE, AS IT IS ON THE ATOMIC WRITER. An UPDATE that does not say which version it
+    // read could land on any later state of the ticket, so it is refused with zero writes; the current version is
+    // published so the caller can re-read and re-offer the edit.
+    if (!(body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '')) {
+      return { success: false, error: 'MISSING_OPTIMISTIC_TOKEN', code: 'MISSING_OPTIMISTIC_TOKEN', stage: 'conflict',
+        zero_write: true, data: { allocation_draft_id: id, intent: 'UPDATE_EXISTING_ROUTE', current: uPriorVersion,
+          current_draft_version: uPriorVersion, expected: null } };
+    }
+    if (sadFpVal_(body.expected_draft_version) !== uPriorVersion) {
       return { success: false, error: 'STALE_OPTIMISTIC_TOKEN', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict',
         zero_write: true, data: { allocation_draft_id: id, expected: sadFpVal_(body.expected_draft_version), current: uPriorVersion } };
     }
+    var uNextVersion = sadDraftVersionCheck_(uPriorVersion);   // BV1 (P1): validated BEFORE the first uSet below
+    if (!uNextVersion.ok) return sadDraftVersionRefusal_(id, uNextVersion, 'version');
     // The destination is exactly one of the two axes, on the POST-UPDATE row. A payload supplying both or
     // neither is refused rather than resolved by precedence - which is the whole lesson of A0-R2/A2.
     var uAfter = sadRowToObject_(sh, found.row);
@@ -644,6 +653,9 @@ function sadUpsertDraftHeaderCore_(body) {
     // that guard to an explicit UPDATE would classify every legal edit as data corruption - which is exactly
     // what it did. The mismatch is still REPORTED below so a diagnostic can see it; it is no longer a refusal.
     function uSet(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
+    // BV1-R2 (partial failure) - the version is the FIRST cell this writer changes, so an execution that dies part-way has
+    // already moved it: a request carrying the earlier token can never land on a half-written row.
+    uSet('draft_version', uNextVersion.next);   // BV1 (P1): was String(sadFpVal_(prior) + 1) - string concatenation, '3' + 1 = '31'
     uSet('status', status);
     ['recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
       'recommended_source_warehouse_code_snapshot', 'recommended_destination_warehouse_code_snapshot',
@@ -652,7 +664,6 @@ function sadUpsertDraftHeaderCore_(body) {
       if (body && body[f] != null) uSet(f, String(body[f]));
     });
     if (body && body.note != null) uSet('note', String(body.note));
-    uSet('draft_version', String(sadFpVal_(uPriorVersion) + 1));
     uSet('updated_by', actor);
     uSet('updated_at', now);
     var uFinal = sadRowToObject_(sh, found.row);
@@ -722,7 +733,25 @@ function sadUpsertDraftHeaderCore_(body) {
       return jsonResponse_({ success: false, error: res.reason + ' — ' + (res.reason === 'ROUTE_INCOMPLETE_NEW_DRAFT' ? 'a new Draft requires a COMPLETE route (From+To+Method); no K3 header is created for a missing route' : 'this scope has an existing route-incomplete/legacy Draft — reconcile via an explicit USER migration') + ' (zero rows written)', data: { status: res.reason, existing_id: res.id || null } });
     }
     if (res.status === 'REUSE') { id = res.id; found = procurementFindRow_(sh, 'allocation_draft_id', id); }
-    else if (res.status === 'CREATE' && res.id) { id = res.id; }   // K2 deterministic id (found stays null → INSERT with it)
+    else if (res.status === 'CREATE' && res.id) {
+      // BV1 (P2) - THE ATOMIC WRITER'S DETERMINISTIC-ID GUARD, APPLIED HERE TOO. The resolver considers ACTIVE rows only,
+      // but the id it hands back is DETERMINISTIC, so a cancelled / submitted / expired ticket for this exact route may
+      // already hold it. Inserting anyway wrote a SECOND row under one allocation_draft_id with a client-chosen version
+      // (reviewer N3: cancelled@9 then cancelled@1), and every later lookup by id found whichever came first. Refused with
+      // zero writes; nothing is revived and no second identity is minted.
+      var _bv1Held = procurementFindRow_(sh, 'allocation_draft_id', res.id);
+      if (_bv1Held) {
+        var _bv1Hs = _bv1Held.col('status');
+        var _bv1Hst = _bv1Hs !== -1 ? String(sh.getRange(_bv1Held.row, _bv1Hs + 1).getValue()).trim().toLowerCase() : '';
+        return jsonResponse_({ success: false, error: 'ROUTE_IDENTITY_HELD_BY_TERMINAL_DRAFT',
+          code: 'ROUTE_IDENTITY_HELD_BY_TERMINAL_DRAFT', stage: 'header', zero_write: true,
+          data: { allocation_draft_id: res.id, held_status: _bv1Hst,
+            message: 'the deterministic identity for this route is already held by a ' + (_bv1Hst || 'non-active')
+              + ' draft. It is not revived and nothing was written; a new plan for this route needs an explicit '
+              + 'decision about the existing one.' } });
+      }
+      id = res.id;   // K2 deterministic id (found stays null → INSERT with it)
+    }
   }
   // A: editing an existing route-INCOMPLETE (legacy) row by explicit id is fail-closed unless an explicit USER migration.
   if (found) {
@@ -733,7 +762,18 @@ function sadUpsertDraftHeaderCore_(body) {
   }
 
   if (found) {
+    // BV1 (P3) - THIS BRANCH CHANGES status AND THE ROUTE FIELDS, SO IT ADVANCES draft_version (inside the handler's
+    // lock) and honours a declared token. Both are checked BEFORE the first setCol: a refusal writes nothing.
+    var fPriorVersion = sadFpVal_(sadRowToObject_(sh, found.row).draft_version);
+    if (body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '' &&
+        sadFpVal_(body.expected_draft_version) !== fPriorVersion) {
+      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict',
+        zero_write: true, data: { allocation_draft_id: id, expected: sadFpVal_(body.expected_draft_version), current: fPriorVersion } });
+    }
+    var fNextVersion = sadDraftVersionCheck_(fPriorVersion);
+    if (!fNextVersion.ok) return jsonResponse_(sadDraftVersionRefusal_(id, fNextVersion, 'version'));
     function setCol(name, val) { var c = found.col(name); if (c !== -1) sh.getRange(found.row, c + 1).setValue(val); }
+    setCol('draft_version', fNextVersion.next);   // BV1 (P3) / BV1-R2: the first cell written (partial failure)
     setCol('status', status);
     // header-level route context (recommended_*) — update only when explicitly provided (C2-D1R).
     //
@@ -766,6 +806,7 @@ function sadUpsertDraftHeaderCore_(body) {
     // response to the ROUTE it asked about instead of to whichever save finished last.
     var updObj = sadRowToObject_(sh, found.row);
     return jsonResponse_({ success: true, data: { allocation_draft_id: id, updated: true,
+      draft_version: sadFpVal_(updObj.draft_version),   // BV1 (P3)
       route_group_key: sadK2GroupKey_(updObj),
       persisted_headers: [{ allocation_draft_id: id, route_group_key: sadK2GroupKey_(updObj),
         resolution: 'UPDATED', status: String(updObj.status || ''),
@@ -799,7 +840,7 @@ function sadUpsertDraftHeaderCore_(body) {
     formula_version: String((body && body.formula_version) || '').trim(),
     calculated_at: String((body && body.calculated_at) || '').trim(),
     source_data_as_of: String((body && body.source_data_as_of) || '').trim(),
-    draft_version: draftVersion,
+    draft_version: '1',   // BV1 (P2): a created row always starts at 1; the client's draft_version is never adopted
     created_by: actor, created_at: now, updated_by: actor, updated_at: now,
     submitted_by: '', submitted_at: '', cancelled_by: '', cancelled_at: '', cancel_reason: '',
     note: String((body && body.note) || '').trim()
@@ -912,7 +953,9 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // R6-R6-R4-R2 — moved because THIS FILE changed: an UPDATE_EXISTING_ROUTE that declares no
 // expected_draft_version is now MISSING_OPTIMISTIC_TOKEN with zero rows written, and the documented
 // top-level field is finally read. A stamp records the round a module last changed; it is not the release.
-var SAD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R6-R4-R2';
+// A2-SUB16 — moved because THIS FILE changed: Submit refuses an AI-origin draft whose key is on commitment-date HOLD
+// (61_ weeklyAiPlanCommitmentHold_) or whose site is A0-BLOCKED (42_), and refuses a draft whose origin is unknown.
+var SAD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3';   // SANDBOX-GATE-1f: CANCEL_ROUTE_LINES + Submit site snapshot; A2-SUB16 Submit AI gate (v3: in-lock A0 re-read; undetermined A0 refuses)
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -1050,6 +1093,43 @@ var SAD_K2_LINE_FP_ = ['sku', 'site_sku', 'window_code', 'window_start_date', 'w
   // F1-7N-FB-4F-B3 - the ETA must make a difference, or an ETA-only edit is read as "no change" and dropped.
   'expected_arrival'];
 function sadFpVal_(v) { return String(v == null ? '' : v).trim(); }
+
+// ============================================================================================================
+// BV1 (P1) - THE ONE draft_version INCREMENT.
+//
+// Every writer that moves a ticket's draft_version goes through ONE rule: the header writer (UPDATE_EXISTING_ROUTE and
+// the existing-row branch), the lines writer, the atomic REGENERATE, CANCEL_ROUTE_LINES, Submit and the draft cancel
+// (via sadDraftVersionCheck_, which also names WHY it refused), and the 69_ expiration (via sadNextDraftVersion_, the
+// P5 contract shape). It accepts ONLY a stored version that is a plain non-negative integer of 1..15 decimal digits
+// (so always below Number.MAX_SAFE_INTEGER) whose successor also has at most 15 digits. Anything else - blank, a
+// decimal, an exponent form, a sign, a 16+ digit value - is refused and the CALLER writes nothing. It never coerces,
+// truncates or resets a stored value: '3' + 1 is '4' (the old header writer wrote '31'), and a damaged value is
+// reported, never repaired here (the P0 census and an Owner-approved repair own that). Neither function writes or locks.
+// ============================================================================================================
+// P5 CONTRACT (d5-v3-r3 docs/P5_VERSION_CONTRACT.md): sadNextDraftVersion_(currentDraftVersion) -> nextDraftVersion.
+// Returns the next version as a decimal STRING (a positive integer, exactly current + 1), or null when the stored value
+// is not one this rule may advance. 69_ writes the answer back as-is and treats null as DRAFT_VERSION_NEXT_INVALID.
+function sadNextDraftVersion_(currentDraftVersion) {
+  var v = sadDraftVersionCheck_(currentDraftVersion);
+  return v.ok ? v.next : null;
+}
+// The same rule with the reason: { ok:true, prior, next } or { ok:false, code, stored }.
+function sadDraftVersionCheck_(prior) {
+  var s = sadFpVal_(prior);
+  if (!/^[0-9]+$/.test(s)) return { ok: false, code: 'DRAFT_VERSION_NOT_INTEGER', stored: s };
+  if (s.length > 15) return { ok: false, code: 'DRAFT_VERSION_OUT_OF_RANGE', stored: s };
+  var n = Number(s);
+  if (!(n >= 0) || n + 1 > 999999999999999 || n + 1 > Number.MAX_SAFE_INTEGER) return { ok: false, code: 'DRAFT_VERSION_OUT_OF_RANGE', stored: s };
+  return { ok: true, prior: s, next: String(n + 1) };
+}
+// The typed zero-write refusal every BV1 caller returns when the helper says no.
+function sadDraftVersionRefusal_(id, v, stage) {
+  return { success: false,
+    error: String(v.code) + ' - the stored draft_version of ' + id + ' is ' + JSON.stringify(v.stored) + ', which is not an integer this writer may advance (zero rows written)',
+    code: v.code, stage: stage || 'version', zero_write: true,
+    data: { allocation_draft_id: id, stored_draft_version: v.stored, refused_because: v.code,
+      next_action: 'Nothing was written. A non-integer or out-of-range draft_version is a data defect: it is reported, never coerced, truncated or reset.' } };
+}
 function sadK2PayloadFingerprint_(headerObj, linesArr) {
   headerObj = headerObj || {};
   var h = SAD_K2_HEADER_FP_.map(function (f) { return f + '=' + sadFpVal_(headerObj[f]); }).join('|');
@@ -1410,6 +1490,65 @@ function sadUpsertLinesKeyedCore_(body) {
         next_action: 'Run the read-only duplicate diagnostic for this header, remove the surplus physical rows, then re-save. This refusal wrote nothing.' } });
   }
 
+  // BV1 (P3) - THE LINES WRITER ADVANCES ITS TICKET'S draft_version, AND IT MAY ONLY TOUCH ITS OWN TICKET'S LINES.
+  //  (a) a supplied (or canonical) allocation_draft_line_id that names a row of ANOTHER allocation_draft_id is refused
+  //      before any write. The handler checks the terminal status of the ticket NAMED in the request only, so without
+  //      this a request naming an active ticket could edit a line of a submitted / cancelled / expired one;
+  //  (b) the ticket's stored draft_version is validated (and a declared expected_draft_version compared) before the
+  //      first write, and advanced exactly once after the lines are written - on the partial-failure exit too.
+  for (var bq = 0; bq < lines.length; bq++) {
+    var bl = lines[bq], bId = String(bl.allocation_draft_line_id || '').trim(), bHit = null;
+    if (bId) bHit = procurementFindRow_(sh, 'allocation_draft_line_id', bId);
+    if (!bHit) bHit = procurementFindRow_(sh, 'allocation_draft_line_id', sadCanonicalLineId_(isK2Draft, draftId, bl));
+    if (bHit) {
+      var bRow = sadRowToObject_(sh, bHit.row), bOwner = String(bRow.allocation_draft_id == null ? '' : bRow.allocation_draft_id).trim();
+      if (bOwner !== draftId) {
+        return jsonResponse_({ success: false, error: 'LINE_BELONGS_TO_OTHER_DRAFT - the line named belongs to ' + bOwner + ', not to ' + draftId + ' (zero rows written)',
+          code: 'LINE_BELONGS_TO_OTHER_DRAFT', stage: 'lines', zero_write: true,
+          data: { allocation_draft_id: draftId, allocation_draft_line_id: String(bRow.allocation_draft_line_id || ''), owning_draft_id: bOwner } });
+      }
+      // BV1-R2 - an explicit id naming a row of a DIFFERENT logical line is refused HERE, before any write. The same check
+      // inside the write loop answered zero_write:true even when earlier lines of the batch were already written; it
+      // stays there as defence in depth and is now unreachable for a batch that passed this pass.
+      if (bId && String(bRow.allocation_draft_line_id == null ? '' : bRow.allocation_draft_line_id).trim() === bId && !sadSameLineIdentity_(bRow, bl)) {
+        return jsonResponse_({ success: false, error: 'LINE_IDENTITY_CONFLICT - the supplied allocation_draft_line_id names a stored row whose (sku, site_sku, window_code) differs from the incoming line (zero rows written)',
+          stage: 'lines', zero_write: true,
+          data: { status: 'LINE_IDENTITY_CONFLICT', allocation_draft_id: draftId, supplied_line_id: bId,
+            stored: { sku: String(bRow.sku || ''), site_sku: String(bRow.site_sku || ''), window_code: String(bRow.window_code || '') },
+            incoming: { sku: String(bl.sku || ''), site_sku: String(bl.site_sku || ''), window_code: String(bl.window_code || '') } } });
+      }
+    }
+  }
+  var bvHSh = ss.getSheetByName('shipping_allocation_drafts');
+  var bvHRow = bvHSh ? procurementFindRow_(bvHSh, 'allocation_draft_id', draftId) : null;
+  var bvNext = null, bvBumped = false;
+  if (bvHRow) {
+    var bvPrior = sadFpVal_(sadRowToObject_(bvHSh, bvHRow.row).draft_version);
+    if (body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '' &&
+        sadFpVal_(body.expected_draft_version) !== bvPrior) {
+      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict', zero_write: true,
+        data: { allocation_draft_id: draftId, expected: sadFpVal_(body.expected_draft_version), current: bvPrior } });
+    }
+    bvNext = sadDraftVersionCheck_(bvPrior);
+    if (!bvNext.ok) return jsonResponse_(sadDraftVersionRefusal_(draftId, bvNext, 'version'));
+  }
+  // BV1-R2 (partial failure) - bvBefore() moves the version BEFORE the first cell this call writes, so an execution that
+  // dies inside the line loop has already moved it. bvAdvance() below is kept and is now a no-op after bvBefore().
+  function bvBefore() {
+    if (!bvHRow || bvBumped) return;
+    var cV = bvHRow.col('draft_version'), cUa = bvHRow.col('updated_at');
+    if (cV !== -1) bvHSh.getRange(bvHRow.row, cV + 1).setValue(bvNext.next);
+    if (cUa !== -1) bvHSh.getRange(bvHRow.row, cUa + 1).setValue(now);
+    bvBumped = true;
+  }
+  function bvAdvance() {
+    if (!bvHRow || bvBumped || (created + updated) === 0) return;
+    var cV = bvHRow.col('draft_version'), cUa = bvHRow.col('updated_at');
+    if (cV !== -1) bvHSh.getRange(bvHRow.row, cV + 1).setValue(bvNext.next);
+    if (cUa !== -1) bvHSh.getRange(bvHRow.row, cUa + 1).setValue(now);
+    bvBumped = true;
+  }
+
   var EXEC_FIELDS = ['planned_qty', 'override_reason', 'line_status', 'route_no', 'units_per_carton', 'note', 'expected_arrival'];
 
   for (var i = 0; i < lines.length; i++) {
@@ -1454,6 +1593,7 @@ function sadUpsertLinesKeyedCore_(body) {
       var cLS = found.col('line_status');
       var curLS = cLS !== -1 ? String(sh.getRange(found.row, cLS + 1).getValue()).trim().toLowerCase() : '';
       if (SAD_TERMINAL_LINE_STATUSES_[curLS]) { skipped++; continue; }   // FB-4C: `expired` is terminal too
+      bvBefore();   // BV1-R2: the version moves before this line's first cell
       // R6F: heal a blank generated-line id with the deterministic SADL id so future edits/readback carry a stable id
       // (idempotent — a nonblank id is never overwritten).
       var cId0 = found.col('allocation_draft_line_id');
@@ -1473,6 +1613,7 @@ function sadUpsertLinesKeyedCore_(body) {
       // Defence in depth: nothing may ever append onto an id that already exists. The three duplicate live rows
       // are exactly what the absence of this assertion produced.
       if (procurementFindRow_(sh, 'allocation_draft_line_id', lineId)) {
+        bvAdvance();   // BV1 (P3): the lines this call already wrote are covered by an advance
         return jsonResponse_({ success: false, error: 'LINE_PRIMARY_KEY_ALREADY_EXISTS — refusing to append a second physical row under an existing allocation_draft_line_id. Nothing further was written.',
           stage: 'lines', data: { status: 'LINE_PRIMARY_KEY_ALREADY_EXISTS', allocation_draft_id: draftId, allocation_draft_line_id: lineId, lines_committed: created + updated } });
       }
@@ -1488,6 +1629,7 @@ function sadUpsertLinesKeyedCore_(body) {
         if (h in rowObj) return;
         if (l[h] != null) rowObj[h] = String(l[h]);
       });
+      bvBefore();   // BV1-R2: the version moves before the append
       procurementAppendByHeader_(sh, rowObj);
       created++;
     }
@@ -1495,6 +1637,7 @@ function sadUpsertLinesKeyedCore_(body) {
   // FB-4B §B.7 — EXACT READ-AFTER-WRITE VERIFICATION. A writer reporting created/updated counts is not proof:
   // the live corruption produced a perfectly happy "created: 1" three times over. Re-read the draft's lines and
   // check identity, exact quantity, PK uniqueness and the absence of any unauthorised line.
+  bvAdvance();   // BV1 (P3): exactly once, after the line writes and before the read-back
   var storedRows = sadReadLinesForDraft_(sh, draftId);
   var verify = sadVerifyDraftLines_(draftId, lines, storedRows, isK2Draft);
   // FB-4B §B — the response now carries the ids ACTUALLY PERSISTED, so the caller can adopt them and stop
@@ -1534,6 +1677,7 @@ function sadUpsertLinesKeyedCore_(body) {
         persisted_headers: persistedHeaders, persisted_lines: persisted } });
   }
   return jsonResponse_({ success: true, data: { allocation_draft_id: draftId, line_count: created + updated,
+    draft_version: hdrObj ? sadFpVal_(hdrObj.draft_version) : '', draft_version_advanced: bvBumped,   // BV1 (P3)
     created: created, updated: updated, skipped: skipped,
     verification: verify, persisted_headers: persistedHeaders, persisted_lines: persisted } });
 }
@@ -1564,6 +1708,31 @@ function sadLineIsComplete_(l) {
 // This is that one function, and every gate now goes through it. It delegates to the 69_ contract when that
 // file is deployed and applies the IDENTICAL rule inline when it is not — a fallback that must never disagree,
 // which the regression suite proves across all four states rather than asserting in a comment.
+// A-DELTA1 c2 item 4: Submit's use of the ONE destination-type rule (owner 12_). null = allowed. Codes ROUTE_DESTINATION_IS_FACTORY /
+// ROUTE_DESTINATION_TYPE_NOT_ALLOWED (RETURN) / ROUTE_DESTINATION_TYPE_UNKNOWN (blank, other, no unique warehouses row) /
+// ROUTE_DESTINATION_TYPE_RULE_UNAVAILABLE (12_ half-synced). The caller fails the WHOLE batch with zero writes (destErrors).
+function sadDestTypeRefusal16_(ss, warehouseId) {
+  if (typeof shipDestinationTypeRule_ !== 'function' || typeof shipDestinationWarehouseFacts_ !== 'function') return { code: 'ROUTE_DESTINATION_TYPE_RULE_UNAVAILABLE', type: '' };
+  var f = shipDestinationWarehouseFacts_(ss, warehouseId);
+  if (!f.readable || !f.hasTypeColumn) return { code: 'ROUTE_DESTINATION_TYPE_UNKNOWN', type: '' };
+  if (!f.unique) return { code: 'ROUTE_DESTINATION_TYPE_UNKNOWN', type: '' };
+  var v = shipDestinationTypeRule_(f.type, f.isFactory);
+  return v.ok ? null : { code: 'ROUTE_' + v.code, type: v.type };
+}
+// AD3 C (Owner decision 12, 2026-11-21): a plan's platform destination keeps the SITE's identity. A MARKETPLACE destination (the logical
+// To: 'Amazon', 'Walmart', 'KM Walmart') must be the same platform family as the draft header's site marketplace - a KM Walmart route is
+// never committed as 'Amazon' (or the reverse). A WAREHOUSE destination may not be one of the Owner-confirmed LOGICAL platform rows (22_
+// CSD_LOGICAL_PLATFORM_WAREHOUSES_): the logical To is sent as destination_marketplace, and the Shipment Draft picks the actual
+// fulfilment-center row. null = allowed. Families: 22_ csdPlatformFamily_ (amazon / walmart; any other name compares as itself).
+function sadPlatformDestinationRefusal16_(dst, h) {
+  if (!dst || !dst.ok) return null;
+  if (dst.type === 'WAREHOUSE') return (typeof csdLogicalPlatformWarehouse_ === 'function' && csdLogicalPlatformWarehouse_(dst.id)) ? 'ROUTE_DESTINATION_LOGICAL_PLATFORM' : null;
+  if (dst.type !== 'MARKETPLACE') return null;
+  var fam = (typeof csdPlatformFamily_ === 'function') ? csdPlatformFamily_ : function (n) { return String(n == null ? '' : n).trim().toLowerCase(); };
+  var want = fam(h && h.marketplace), got = fam(h && h.destination_marketplace);
+  if (!want) return null;   // a header without a site marketplace is refused by the existing scope gates, not here
+  return got === want ? null : 'ROUTE_DESTINATION_PLATFORM_MISMATCH';
+}
 function sadDestinationIdentity_(h) {
   if (typeof ricDestinationIdentity_ === 'function') return ricDestinationIdentity_(h);
   h = h || {};
@@ -1623,8 +1792,8 @@ function sadHeaderRouteIsComplete_(b) {
 // EXISTING draft: never delete existing data; a line-write failure fails closed with RECONCILIATION_REQUIRED evidence.
 function handleUpsertShippingAllocationDraftAtomic_(body) {
   var lock = LockService.getScriptLock();
-  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock' }); }
-  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock' }); }
+  try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock', zero_write: true }); }
+  catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock', zero_write: true }); }
   try { return sadAtomicUpsertCore_(body); }
   finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }
@@ -1847,6 +2016,53 @@ function sadAtomicUpsertCore_(body) {
   // ensure both sheets, then validate BOTH schemas EXACT (rule 9 — no order-agnostic tolerance).
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
+  function sadMemoOpen16f_() { return { open: true }; }
+  function sadMemoClose16f_(memo) { if (memo) memo.open = false; }
+  function sadMemoSheet16f_(real, memo) {
+    if (!real || !memo || typeof Proxy !== 'function') return real;
+    var snap = null;
+    function live() { return memo.open === true; }
+    function all() { if (snap === null) snap = real.getDataRange().getValues(); return snap; }
+    function cp(v) { return (Object.prototype.toString.call(v) === '[object Date]') ? new Date(v.getTime()) : v; }
+    function close() { sadMemoClose16f_(memo); snap = null; }
+    function box(a) {
+      var r = a[0], c = a[1], nr = a.length >= 3 ? a[2] : 1, nc = a.length >= 4 ? a[3] : 1;
+      if (a.length < 2 || a.length > 4) return null;
+      if ([r, c, nr, nc].some(function (x) { return typeof x !== 'number' || x !== Math.floor(x) || x < 1; })) return null;
+      var d = all(); if (!d.length || r + nr - 1 > d.length || c + nc - 1 > d[0].length) return null;
+      return { r: r, c: c, nr: nr, nc: nc };
+    }
+    function rangeOf(args) {
+      var rr = null;
+      function realRange() { if (rr === null) rr = args ? real.getRange.apply(real, args) : real.getDataRange(); return rr; }
+      return new Proxy({}, { get: function (t, p) {
+        if (typeof p !== 'string') return undefined;
+        if (p === 'getValues') return function () {
+          if (live()) {
+            if (!args) return all().map(function (row) { return row.map(cp); });
+            var b = box(args); if (b) { var out = [], d = all(); for (var i = b.r - 1; i < b.r - 1 + b.nr; i++) out.push(d[i].slice(b.c - 1, b.c - 1 + b.nc).map(cp)); return out; }
+          }
+          return realRange().getValues();
+        };
+        if (p === 'getValue') return function () {
+          if (live()) { var b = args ? box(args) : box([1, 1]); if (b) return cp(all()[b.r - 1][b.c - 1]); }
+          return realRange().getValue();
+        };
+        // anything else may write: close the memo FIRST (a throw half-way still leaves it closed), then delegate
+        return function () { close(); var x = realRange(); return x[p].apply(x, arguments); };
+      } });
+    }
+    var META = { getLastRow: 1, getLastColumn: 1, getName: 1, getSheetId: 1, getMaxRows: 1, getMaxColumns: 1 };
+    return new Proxy({}, { get: function (t, p) {
+      if (typeof p !== 'string') return undefined;
+      if (p === 'getDataRange') return function () { return rangeOf(null); };
+      if (p === 'getRange') return function () { return rangeOf(Array.prototype.slice.call(arguments)); };
+      if (META[p] === 1) return function () { return real[p].apply(real, arguments); };
+      return function () { close(); return real[p].apply(real, arguments); };
+    } });
+  }
+  var hShReal16f = hSh, lShReal16f = lSh, memo16f = sadMemoOpen16f_();   // [PERF-R15F-S1-16] in-lock pre-write read memo W1 open (inside the lock)
+  hSh = sadMemoSheet16f_(hShReal16f, memo16f); lSh = sadMemoSheet16f_(lShReal16f, memo16f);
   // §5 — the SHARED authority, the same one the AI Plan lifecycle gate reads. Before this the two
   // asked different questions of the same header row and answered differently.
   var hR = sadDraftsSchemaReason_(hSh);
@@ -1857,6 +2073,8 @@ function sadAtomicUpsertCore_(body) {
   // F1-7N-FB-4F-B3 - the LIVE shape, read once, and the typed refusal for anything it cannot hold. This runs
   // BEFORE any validation that could write, so a value with nowhere to go fails the request with zero mutation
   // instead of being dropped on the way through the writer.
+  // SANDBOX-GATE-1f: the declared lifecycle intent - soft-cancel lines of ONE active header (never a route write, never another header)
+  if (String((body && body.intent) || (header && header.intent) || '').trim() === 'CANCEL_ROUTE_LINES') { sadMemoClose16f_(memo16f); return sadAtomicCancelRouteLines_(hShReal16f, lShReal16f, body); }   // [PERF-R15F-S1-16] in-lock pre-write read memo W1 the cancel writer gets the REAL sheets
   var hNames = sadLiveHeaderNames_(hSh), lNames = sadLiveHeaderNames_(lSh);
   var schemaRefusal = sadSchemaRefusal_(header, body.lines || [], hNames, lNames);
   if (schemaRefusal) {
@@ -2124,13 +2342,37 @@ function sadAtomicUpsertCore_(body) {
       return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'REUSED', draft_version: priorVersion, line_count: priorLines.length, zero_write: true, reuse_basis: (priorFp === incFp ? 'FINGERPRINT_EQUAL' : 'SEMANTIC_EQUIVALENT@' + SAD_K2_SEM_CONTRACT_) } });
     }
     outcome = 'REGENERATE';
-    nextVersion = String((parseInt(priorVersion, 10) || 1) + 1);   // increment EXACTLY once
+    // BV1 (P1) - the shared helper; was (parseInt(prior, 10) || 1) + 1, which read '5e+21' as 5 and a blank as 1.
+    var _bv1Next = sadDraftVersionCheck_(priorVersion);
+    if (!_bv1Next.ok) return jsonResponse_(sadDraftVersionRefusal_(id, _bv1Next, 'version'));
+    nextVersion = _bv1Next.next;   // increment EXACTLY once
   }
 
+  sadMemoClose16f_(memo16f); hSh = hShReal16f; lSh = lShReal16f;   // [PERF-R15F-S1-16] in-lock pre-write read memo W1 closed BEFORE the first write
+  // BV1-R3 - THE ATOMIC WRITER MAY ONLY TOUCH ITS OWN TICKET'S LINES (the same rule as the lines writer's BV1 (P3) (a)).
+  // The write loop below resolves a line by its supplied allocation_draft_line_id, then by the canonical id, across the WHOLE
+  // lines sheet. Without this pass an UPDATE / REGENERATE / CREATE of ticket X that names a line id of ticket Y rewrote Y's
+  // line while only X's draft_version moved, so Y's late original request still landed (BV1-R3 repro X1-X3, C1). Checked
+  // here - inside the handler's lock, after the read memo is closed and BEFORE the header or any line is written - so a
+  // refusal writes nothing. The natural-key lookup is already scoped to this ticket and is not repeated.
+  for (var r3q = 0; r3q < lines.length; r3q++) {
+    var r3l = lines[r3q], r3Id = String(r3l.allocation_draft_line_id || '').trim(), r3Hit = null;
+    if (r3Id) r3Hit = procurementFindRow_(lSh, 'allocation_draft_line_id', r3Id);
+    if (!r3Hit) r3Hit = procurementFindRow_(lSh, 'allocation_draft_line_id', sadCanonicalLineId_(isK2Group, id, r3l));
+    if (r3Hit) {
+      var r3Row = sadRowToObject_(lSh, r3Hit.row), r3Owner = String(r3Row.allocation_draft_id == null ? '' : r3Row.allocation_draft_id).trim();
+      if (r3Owner !== String(id).trim()) {
+        return jsonResponse_({ success: false, error: 'LINE_BELONGS_TO_OTHER_DRAFT - the line named belongs to ' + r3Owner + ', not to ' + id + ' (zero rows written)',
+          code: 'LINE_BELONGS_TO_OTHER_DRAFT', stage: 'lines', zero_write: true,
+          data: { allocation_draft_id: id, allocation_draft_line_id: String(r3Row.allocation_draft_line_id || ''), owning_draft_id: r3Owner, intent: sadIntent || '' } });
+      }
+    }
+  }
   // ---- WRITE PHASE (header first, then all lines) — one lock is already held by the public handler ------------
   if (found) {
     (function () {
       function setCol(name, val) { var c = found.col(name); if (c !== -1) hSh.getRange(found.row, c + 1).setValue(val); }
+      if (nextVersion) setCol('draft_version', nextVersion);   // BV1-R2: the first cell written (partial failure)
       setCol('status', status);
       // B3 - destination_marketplace joins the route fields an edit may change. setCol is a no-op when the
       // column is absent, and that silence is exactly what sadSchemaRefusal_ has already made impossible to
@@ -2144,7 +2386,6 @@ function sadAtomicUpsertCore_(body) {
       // SAD_K2_HEADER_FP_, so stamping it never turns an otherwise-identical payload into a false content change
       // (a REUSE returns before the write phase and correctly keeps the run that created the row).
       if (header.generation_run_id != null && String(header.generation_run_id).trim() !== '') setCol('generation_run_id', String(header.generation_run_id).trim());
-      if (nextVersion) setCol('draft_version', nextVersion);
       setCol('updated_by', actor); setCol('updated_at', now);
     })();
   } else {
@@ -2171,7 +2412,7 @@ function sadAtomicUpsertCore_(body) {
       formula_version: String(header.formula_version || '').trim(),
       calculated_at: String(header.calculated_at || '').trim(),
       source_data_as_of: String(header.source_data_as_of || '').trim(),
-      draft_version: String(header.draft_version || '1').trim(),
+      draft_version: '1',   // BV1 (P2): a created ticket always starts at 1; the client's value is never adopted
       // ADDENDUM — WRITE the lifecycle provenance. FB-4C stamped generation_run_id onto the header OBJECT in 61_
       // but this insert never carried it into the row, so no persisted row could ever have one and the lifecycle
       // could not have told one run from another even with the columns present. Written by header NAME
@@ -2278,7 +2519,7 @@ function sadAtomicUpsertCore_(body) {
   // fact committed — which is exactly what made every route save report OUTCOME UNKNOWN in production. The
   // counts keep their names for the callers that already read them; the HEADER classification is stated
   // separately and unambiguously, and the line counts are also republished under names that cannot be misread.
-  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : String(header.draft_version || '1').trim())), line_count: created + updated, created: created, updated: updated, skipped: skipped,
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: (newHeaderCreated ? 'CREATED' : 'REGENERATED'), created_header: newHeaderCreated, draft_version: (nextVersion || (found ? priorVersion : '1')), line_count: created + updated   /* BV1 (P2): the answer reports the stored '1' */, created: created, updated: updated, skipped: skipped,
     header_created: newHeaderCreated === true, header_updated: newHeaderCreated !== true,
     lines_created: created, lines_updated: updated, lines_skipped: skipped,
     intent: sadIntent || '', create_idempotency_key: createKey || '',
@@ -2308,15 +2549,49 @@ function handleSubmitShippingAllocationDrafts_(body) {
 // create shipments (Shipping Plan → Shipment remains a later approval boundary). Body:
 //   { allocation_draft_ids:[], expected_versions?:{id:draft_version}, execution_key?, submitted_by?, source? }
 // ============================================================
+// A-delta1 C4 D-B2 (Owner default 2026-11-21; ONE switch): an ADVISORY overseas-availability pre-check at Submit. For every line whose From is an
+// OVERSEAS warehouse (12_ shipmentSourceDomain_), the need per warehouse x SKU is compared with the allocatable overseas stock (12_
+// shipmentDomainAvailable_: the same reader the Shipment Draft reservation uses). Read-only: no reservation state. 'WARN' (default) = the plan is
+// committed and the answer carries overseas_precheck warnings; 'REFUSE' = SUBMIT_VALIDATION_FAILED, zero writes; 'OFF' = not run.
+// The BINDING check stays at Shipment Draft creation (12_ handleCreateShipmentFromPlan_: in-lock re-read + reservation).
+var SAD_OVERSEAS_PRECHECK_MODE_ = 'WARN';
+function sadOverseasPrecheck16_(ss, lines) {
+  if (SAD_OVERSEAS_PRECHECK_MODE_ === 'OFF') return [];
+  if (typeof shipmentSourceDomain_ !== 'function' || typeof shipmentDomainAvailable_ !== 'function' || typeof shipmentStockView_ !== 'function') return [{ code: 'OVERSEAS_PRECHECK_UNAVAILABLE', reason: '12_ stock readers absent (half-synced deployment)' }];
+  var need = {}, order = [], dom = {}, out = [], snap = null, view = null;
+  (lines || []).forEach(function (l) { var wh = String(l.source_warehouse_id || '').trim(), sku = String(l.sku || '').trim(); if (!wh || !sku) return; var k = wh + '|' + sku; if (need[k] === undefined) { need[k] = 0; order.push(k); } need[k] += Number(l.requested_qty) || 0; });
+  order.forEach(function (k) { var i = k.indexOf('|'), wh = k.slice(0, i), sku = k.slice(i + 1);
+    if (dom[wh] === undefined) dom[wh] = shipmentSourceDomain_(ss, wh); if (dom[wh] !== 'OVERSEAS') return;
+    if (snap === null) snap = ss.getSheetByName('overseas_inventory_snapshot') || false;
+    if (!snap) { out.push({ code: 'OVERSEAS_STOCK_UNREADABLE', warehouse_id: wh, sku: sku, need: need[k] }); return; }
+    if (!view) view = shipmentStockView_({ domain: 'OVERSEAS', stockSheet: snap, movSheet: null }, snap.getDataRange().getValues());
+    var b = shipmentDomainAvailable_('OVERSEAS', view, wh, sku);
+    if (!b || !b.found) out.push({ code: 'OVERSEAS_STOCK_NOT_FOUND', warehouse_id: wh, sku: sku, need: need[k], available: 0 });
+    else if (!(Number(b.available) >= need[k])) out.push({ code: 'OVERSEAS_AVAILABLE_SHORT', warehouse_id: wh, sku: sku, need: need[k], available: Number(b.available) || 0, reserved: Number(b.reserved) || 0 }); });
+  // A-delta1 C5 (Owner D-B2, 2026-11-21): WARN-only, and the text says so - no stock is reserved at Submit; the Shipment Draft reservation
+  // (12_, in-lock re-read) is the binding check and Confirm re-reads in-lock before it deducts.
+  // c7fix M-B consistency: an overseas source whose country is not the shipment's (or in its planning set) cannot use the no-PO Confirm (22_)
+  try { var whS = ss.getSheetByName('warehouses'), whD = whS ? whS.getDataRange().getValues() : [], wH = (whD[0] || []).map(function (x) { return String(x).trim(); }), wI = wH.indexOf('warehouse_id'), wC = wH.indexOf('country');
+    var Cc = function (v) { return (typeof gapCanonCountry_ === 'function') ? gapCanonCountry_(v) : String(v == null ? '' : v).trim().toUpperCase(); }, seenC = {};
+    (lines || []).forEach(function (l) { var wh = String(l.source_warehouse_id || '').trim(), sku = String(l.sku || '').trim(), sc0 = String(l.country || '').trim(); if (!wh || seenC[wh + '|' + sku] || dom[wh] !== 'OVERSEAS' || wI === -1 || wC === -1) return; seenC[wh + '|' + sku] = 1;
+      var wc = ''; for (var r = 1; r < whD.length; r++) if (String(whD[r][wI]).trim() === wh) { wc = String(whD[r][wC] || '').trim(); break; }
+      var same = (Cc(wc) && Cc(wc) === Cc(sc0)) || (typeof shipSetMember15e_ === 'function' && !!Cc(sc0) && shipSetMember15e_(Cc(sc0), Cc(wc)));
+      if (!same) out.push({ code: 'OVERSEAS_SOURCE_COUNTRY_MISMATCH', warehouse_id: wh, sku: sku, source_country: wc, shipment_country: sc0, country_message: true }); }); } catch (eCm) { }
+  return out.map(function (w) { if (w.country_message) { delete w.country_message; w.reserved = false; w.message = '海外庫存預檢（僅提示）：' + String(w.warehouse_id || '') + ' / ' + String(w.sku || '') + ' 來源 3PL 國家 ' + (w.source_country || '未填') + ' 與站點國家 ' + (w.shipment_country || '未填') + ' 不同；Confirm 時不適用海外調撥免 PO 規則（需要 PO 配置）。目前尚未保留任何庫存。'; return w; }
+    w.reserved = false; w.message = '海外庫存預檢（僅提示）：' + String(w.warehouse_id || '') + ' / ' + String(w.sku || '') + ' 需要 ' + (w.need == null ? '?' : w.need) + '，可用 ' + (w.available == null ? '未知' : w.available) +
+    '。目前尚未保留任何庫存；建立 Shipment Draft 時才會在鎖內重新讀取並保留，不足會被拒絕。'; return w; });
+}
 function handleSubmitAllocationDraftsToShippingPlans_(body) {
   body = body || {};
   var ids = (body.allocation_draft_ids || body.draft_ids || []).map(function (x) { return String(x || '').trim(); }).filter(String);
   if (!ids.length) return jsonResponse_({ success: false, error: 'allocation_draft_ids required', code: 'INPUT_MISSING_DRAFT_IDS', stage: 'input', zero_write: true });
+  try { SAD_SNAPSHOT_PREFETCH_1G_ = sadPrefetchSiteSnapshot1g_(SpreadsheetApp.getActiveSpreadsheet(), ids); } catch (ePf) { SAD_SNAPSHOT_PREFETCH_1G_ = null; }   // SANDBOX-GATE-1g (review MAJOR-1)
   var lock = LockService.getScriptLock(), locked = false;
-  try { locked = lock.tryLock(30000); } catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock', zero_write: true }); }
+  try { locked = lock.tryLock(30000); } catch (e) { SAD_SNAPSHOT_PREFETCH_1G_ = null; return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock', zero_write: true }); }
+  if (!locked) SAD_SNAPSHOT_PREFETCH_1G_ = null;   // [PERF-R15F-S1-16] in-lock pre-write read memo v3: the pre-lock prefetch never outlives a refused lock
   if (!locked) return jsonResponse_({ success: false, error: 'IN_PROGRESS_SAME_EXECUTION_KEY — another Submit is in progress for this scope; read back by execution key rather than retrying.', code: 'IN_PROGRESS_SAME_EXECUTION_KEY', stage: 'lock', zero_write: true, data: { allocation_draft_ids: ids } });
   try { return jsonResponse_(sadSubmitToShippingPlansCore_(SpreadsheetApp.getActiveSpreadsheet(), body, ids)); }
-  finally { try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
+  finally { SAD_SNAPSHOT_PREFETCH_1G_ = null; try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
 }
 
 // ============================================================================================================
@@ -2453,6 +2728,53 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   if (!execKey) execKey = 'SADSUB-' + sadFnv1a_(ids.slice().sort().join('|') + '::' + ids.slice().sort().map(function (id) { return String((expectedVersions || {})[id] == null ? '' : expectedVersions[id]); }).join('|')).toUpperCase();
 
   // ---- READ + VALIDATE every requested draft server-side (13-point gate; NEVER trust the frontend) ------
+  function sadMemoOpen16f_() { return { open: true }; }
+  function sadMemoClose16f_(memo) { if (memo) memo.open = false; }
+  function sadMemoSheet16f_(real, memo) {
+    if (!real || !memo || typeof Proxy !== 'function') return real;
+    var snap = null;
+    function live() { return memo.open === true; }
+    function all() { if (snap === null) snap = real.getDataRange().getValues(); return snap; }
+    function cp(v) { return (Object.prototype.toString.call(v) === '[object Date]') ? new Date(v.getTime()) : v; }
+    function close() { sadMemoClose16f_(memo); snap = null; }
+    function box(a) {
+      var r = a[0], c = a[1], nr = a.length >= 3 ? a[2] : 1, nc = a.length >= 4 ? a[3] : 1;
+      if (a.length < 2 || a.length > 4) return null;
+      if ([r, c, nr, nc].some(function (x) { return typeof x !== 'number' || x !== Math.floor(x) || x < 1; })) return null;
+      var d = all(); if (!d.length || r + nr - 1 > d.length || c + nc - 1 > d[0].length) return null;
+      return { r: r, c: c, nr: nr, nc: nc };
+    }
+    function rangeOf(args) {
+      var rr = null;
+      function realRange() { if (rr === null) rr = args ? real.getRange.apply(real, args) : real.getDataRange(); return rr; }
+      return new Proxy({}, { get: function (t, p) {
+        if (typeof p !== 'string') return undefined;
+        if (p === 'getValues') return function () {
+          if (live()) {
+            if (!args) return all().map(function (row) { return row.map(cp); });
+            var b = box(args); if (b) { var out = [], d = all(); for (var i = b.r - 1; i < b.r - 1 + b.nr; i++) out.push(d[i].slice(b.c - 1, b.c - 1 + b.nc).map(cp)); return out; }
+          }
+          return realRange().getValues();
+        };
+        if (p === 'getValue') return function () {
+          if (live()) { var b = args ? box(args) : box([1, 1]); if (b) return cp(all()[b.r - 1][b.c - 1]); }
+          return realRange().getValue();
+        };
+        // anything else may write: close the memo FIRST (a throw half-way still leaves it closed), then delegate
+        return function () { close(); var x = realRange(); return x[p].apply(x, arguments); };
+      } });
+    }
+    var META = { getLastRow: 1, getLastColumn: 1, getName: 1, getSheetId: 1, getMaxRows: 1, getMaxColumns: 1 };
+    return new Proxy({}, { get: function (t, p) {
+      if (typeof p !== 'string') return undefined;
+      if (p === 'getDataRange') return function () { return rangeOf(null); };
+      if (p === 'getRange') return function () { return rangeOf(Array.prototype.slice.call(arguments)); };
+      if (META[p] === 1) return function () { return real[p].apply(real, arguments); };
+      return function () { close(); return real[p].apply(real, arguments); };
+    } });
+  }
+  var hShReal16f = hSh, lShReal16f = lSh, memo16f = sadMemoOpen16f_();   // [PERF-R15F-S1-16] in-lock pre-write read memo W2 open (inside the lock)
+  hSh = sadMemoSheet16f_(hShReal16f, memo16f); lSh = sadMemoSheet16f_(lShReal16f, memo16f);
   var drafts = [], toTransition = [], alreadySubmitted = [], errors = [];
   var seenLineIds = {}, natKeys = {};
   ids.forEach(function (id) {
@@ -2468,6 +2790,9 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     if (status === 'expired') { errors.push({ allocation_draft_id: id, reason: 'DRAFT_EXPIRED_SUPERSEDED_BY_NEWER_AI_PLAN' }); return; }
     if (!isSubmitted && status !== 'draft' && status !== 'site_confirmed' && status !== 'partially_submitted') { errors.push({ allocation_draft_id: id, reason: 'STATUS_NOT_SUBMITTABLE:' + status }); return; } // (2)
     if (!isSubmitted && expectedVersions && expectedVersions[id] != null && String(expectedVersions[id]).trim() !== String(header.draft_version == null ? '' : header.draft_version).trim()) { errors.push({ allocation_draft_id: id, reason: 'STALE_VERSION', expected: String(expectedVersions[id]), current: String(header.draft_version) }); return; } // (12)
+    // BV1 (P3) - Submit advances draft_version, so the stored value must be one the shared helper can advance. Checked
+    // in this validation pass: a refusal lands in `errors` and nothing (no plan, no header) is written.
+    if (!isSubmitted) { var _bv1Sv = sadDraftVersionCheck_(header.draft_version); if (!_bv1Sv.ok) { errors.push({ allocation_draft_id: id, reason: _bv1Sv.code, stored_draft_version: _bv1Sv.stored }); return; } }
     // F1-7N-FB-4D §B5 — PROVENANCE IS CHECKED AGAINST WHAT THE DRAFT ACTUALLY IS.
     //
     // (10) and (11) demand the provenance of a COMPUTED recommendation: which planning cycle, which calculation
@@ -2522,6 +2847,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     drafts.push({ id: id, header: header, lines: shippable });
     if (isSubmitted) alreadySubmitted.push(id); else toTransition.push(id);
   });
+  sadMemoClose16f_(memo16f); hSh = hShReal16f; lSh = lShReal16f;   // [PERF-R15F-S1-16] in-lock pre-write read memo W2 closed before the station gate and every write
   // F1-7N-FB-3C §I — the ONE station this submit commits, taken from the PERSISTED headers (never the payload).
   // It is captured during the station gate below and reused by the post-commit output verification.
   var sadAppliedStation = null;
@@ -2577,6 +2903,11 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     if (!keyPlans0.length) return { success: false, error: 'SUBMIT_DRAFT_ALREADY_SUBMITTED', code: 'CONFLICT', stage: 'validation', zero_write: true, data: { execution_key: execKey, already_submitted: alreadySubmitted } };
   }
 
+  // A2-SUB16 (a) — ORIGIN + COMMITMENT-DATE HOLD, decided on the server's CURRENT rows, before any write. Runs after every
+  // existing gate above (version, ownership, station, replay), so it only ever ADDS a refusal; it never admits anything.
+  var sadGate16 = sadAiPlanSubmitGate16_(ss, drafts, toTransition, execKey);
+  if (!sadGate16.ok) return sadGate16.refusal;
+
   // ---- DERIVE the normalized shipping-plan lines[] from ALL persisted drafts (server-owned; stable fingerprint) ---
   // F1-7N-FB-4G-A2 §9 — THE WRITER THAT TURNS A DRAFT INTO A DURABLE WEEKLY SHIPPING PLAN DID NOT READ THE
   // CANONICAL DESTINATION AT ALL. Measured by executing this derivation over the four live header shapes:
@@ -2608,13 +2939,18 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   // ricDestinationIdentity_ when deployed). Gate (9) has already refused any header whose destination is
   // missing or ambiguous, so this cannot be reached with an unresolved identity — and if it somehow were, it
   // REFUSES rather than inventing one.
-  var submitLines = [];
+  // DC2-R2 D5: a blank draft site_sku is resolved HERE, by the commit's own marketplace_skus map and key, so
+  // the plan line and its verification expect the same value (a manual route has no site_sku).
+  var submitLines = [], sadSiteSku = shippingPlanSiteSkuMap_(ss);
   var destErrors = [];
   drafts.forEach(function (d) {
     var h = d.header;
     var shipFrom = String(h.recommended_source_warehouse_code_snapshot || h.recommended_source_warehouse_id || '').trim();
     var sadDst = sadDestinationIdentity_(h);
     if (!sadDst.ok) { destErrors.push({ allocation_draft_id: d.id, reason: sadDst.code || 'ROUTE_DESTINATION_UNRESOLVED' }); return; }
+    // A-DELTA1 c2 item 4: a WAREHOUSE destination passes the one destination-type rule (12_ shipDestinationTypeRule_) - zero write otherwise
+    if (sadDst.type === 'WAREHOUSE') { var tr16_ = sadDestTypeRefusal16_(ss, sadDst.id); if (tr16_) { destErrors.push({ allocation_draft_id: d.id, reason: tr16_.code, destination_warehouse_id: String(sadDst.id || ''), warehouse_type: tr16_.type || '' }); return; } }
+    var pf16_ = sadPlatformDestinationRefusal16_(sadDst, h); if (pf16_) { destErrors.push({ allocation_draft_id: d.id, reason: pf16_, destination: String(sadDst.type === 'WAREHOUSE' ? sadDst.id : h.destination_marketplace || ''), marketplace: String(h.marketplace || '') }); return; }   // AD3 C
     var destWhId = (sadDst.type === 'WAREHOUSE') ? String(sadDst.id || '').trim() : '';
     // A WAREHOUSE destination is displayed by its stored code when there is one (that is what the snapshot
     // column is for) and by its id otherwise. A MARKETPLACE destination is the route's OWN marketplace column —
@@ -2632,7 +2968,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
         destination_type: (sadDst.type === 'WAREHOUSE') ? 'warehouse' : 'marketplace',
         shipping_method: h.recommended_shipping_method, last_mile_delivery: h.recommended_last_mile_delivery, carrier_id: '', customs_type: '',
         planning_cycle: String(h.planning_cycle || '').trim(),   // F1-7N-FA-4B2(A): a grouping dimension (also fingerprint-bound via source_reason cyc:)
-        sku: ln.sku, site_sku: ln.site_sku, requested_qty: ln.planned_qty, units_per_carton: ln.units_per_carton,
+        sku: ln.sku, site_sku: String(ln.site_sku || '').trim() || shippingPlanSiteSkuFor_(sadSiteSku, h.company, h.country, h.marketplace, ln.sku), requested_qty: ln.planned_qty, units_per_carton: ln.units_per_carton,
         source_page: String(h.source_page || 'inventory_replenishment').trim(),
         source_reason: lineageBase + '|line:' + String(ln.allocation_draft_line_id || '').trim(),
         inventory_snapshot_date: String(h.source_data_as_of || '').trim()
@@ -2640,6 +2976,8 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     });
   });
 
+  // SANDBOX-GATE-1f: the Decision Snapshot comes from the server's own site authority (never the factory stock, never the quota)
+  try { sadAttachSiteSnapshot_(ss, drafts, submitLines, execKey); } catch (eSnap) { submitLines.forEach(function (l) { l.snapshot_avg_sales_warning = 'SITE_SNAPSHOT_FAILED: ' + String((eSnap && eSnap.message) || eSnap).slice(0, 80); }); }
   // F1-7N-FB-4G-A2 §9 — a destination that cannot be resolved fails the WHOLE batch with zero writes. Gate (9)
   // makes this unreachable through the normal path; it exists so that a future caller of this core cannot reach
   // the plan writer with a fabricated destination.
@@ -2647,6 +2985,12 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation',
       zero_write: true, data: { execution_key: execKey, errors: destErrors.slice(0, 25) } };
   }
+  // A2-SUB16 (b) — an AI-origin line whose site 42_ reports A0-BLOCKED (WAREHOUSE_SHARE_UNKNOWN / WAREHOUSE_COMPANY_UNKNOWN)
+  // is refused here, still before the first write.
+  var ovsPre16_ = sadOverseasPrecheck16_(ss, submitLines);   // C4 D-B2 (advisory unless REFUSE)
+  if (ovsPre16_.length && SAD_OVERSEAS_PRECHECK_MODE_ === 'REFUSE') return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation', zero_write: true, data: { execution_key: execKey, errors: ovsPre16_.slice(0, 25).map(function (x) { return Object.assign({ reason: x.code }, x); }) } };
+  var sadA0Gate16 = sadAiPlanSiteBlockGate16_(ss, drafts, sadGate16.aiDraftIds, execKey);
+  if (!sadA0Gate16.ok) return sadA0Gate16.refusal;
 
   // G — capture the EXACT before-state of every draft this execution will transition (durable rollback evidence +
   // in-execution restore). Only the cells this execution writes are captured (status/audit/note + draft_version).
@@ -2658,6 +3002,8 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
 
   // ---- WRITE via the SINGLE shipping_plans authority (idempotent + durable-journal + readback-verified inside the core).
   // journalExtra binds the affected draft ids + before-state into the writer's durable rollback evidence (phase 1).
+  var sadA0Re16 = sadAiPlanSiteBlockRecheck16_(sadA0Gate16, execKey, sadGate16.aiDraftIds);   // A2-SUB16 v2: last check, nothing written yet
+  if (!sadA0Re16.ok) return sadA0Re16.refusal;
   var commit = shippingPlanCommitFromLines_(ss, submitLines, { source: source, createdBy: submittedBy, providedKey: execKey,
     journalExtra: { affected_draft_ids: toTransition.slice(), draft_before: draftBefore } });
   if (!commit.success) { commit.data = commit.data || {}; commit.data.execution_key = execKey; commit.data.drafts_unsubmitted = toTransition.slice(); return commit; }   // downstream failed → drafts stay unsubmitted
@@ -2668,8 +3014,12 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   var planTag = planIds.join(',');
   toTransition.forEach(function (id) {
     var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f) return;
-    var prevNote = String(sadRowToObject_(hSh, f.row).note || '').trim();
+    var _bv1Row = sadRowToObject_(hSh, f.row), prevNote = String(_bv1Row.note || '').trim();
+    var _bv1Tv = sadDraftVersionCheck_(_bv1Row.draft_version);   // BV1 (P3): validated in the pass above, under the same lock
     function setCol(name, val) { var c = f.col(name); if (c !== -1) hSh.getRange(f.row, c + 1).setValue(val); }
+    // BV1 (P3) - the status change is covered by an advance. The POSTCHECK restore below puts status / audit / note back
+    // but NEVER the version: moving it back would let a request carrying the pre-Submit token land (ABA).
+    if (_bv1Tv.ok) setCol('draft_version', _bv1Tv.next);
     setCol('status', 'submitted'); setCol('submitted_by', submittedBy); setCol('submitted_at', now); setCol('updated_by', submittedBy); setCol('updated_at', now);
     var appended = '[SUBMITTED @' + now + ' → shipping_plan ' + (planTag || '(reused)') + ' · exec ' + execKey + ']';
     setCol('note', prevNote ? (prevNote + '\n' + appended) : appended);
@@ -2690,7 +3040,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     var restoreOk = true;
     toTransition.forEach(function (id) { var fr2 = procurementFindRow_(hSh, 'allocation_draft_id', id); if (fr2 && String(sadRowToObject_(hSh, fr2.row).status || '').trim().toLowerCase() === 'submitted') restoreOk = false; });
     var rolledOk = planRb.ok && restoreOk;
-    return { success: false, error: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', code: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', stage: 'draft_transition', zero_write: rolledOk, data: { execution_key: execKey, outcome: commit.data.outcome, plans_rolled_back: planIds, unverified_drafts: unverified, plan_rollback: planRb, draft_restore_ok: restoreOk } };
+    return { success: false, error: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', code: rolledOk ? 'POSTCHECK_FAILED_ROLLED_BACK' : 'POSTCHECK_FAILED_ROLLBACK_UNVERIFIED', stage: 'draft_transition', zero_write: rolledOk, data: { execution_key: execKey, outcome: commit.data.outcome, plans_rolled_back: planIds, unverified_drafts: unverified, plan_rollback: planRb, draft_restore_ok: restoreOk, draft_version_kept_advanced: toTransition.slice() } };   // BV1 (P3): the version is never restored
   }
 
   // ---- F1-7N-FB-3C §I — EXACT OUTPUT VERIFICATION over the committed plan, after the draft transition is
@@ -2718,7 +3068,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
         applied_station: sadAppliedStation,
         next_action: 'The Weekly Shipping Plan WAS committed and the drafts are submitted, but its lines do not match the frozen Execution Plan quantities field by field. Nothing was rolled back \u2014 reversing a durable plan on a verification read would be a second mutation. Review the named mismatches on the plan before approving it.' } };
   }
-  return { success: true, data: { execution_key: execKey, outcome: commit.data.outcome, reused: !!commit.data.reused,
+  return { success: true, data: { execution_key: execKey, outcome: commit.data.outcome, reused: !!commit.data.reused, overseas_precheck: { mode: SAD_OVERSEAS_PRECHECK_MODE_, warnings: ovsPre16_.slice(0, 25), binding_check: 'Shipment Draft creation (in-lock re-read + reservation)', reserved_at_submit: false, note: '僅提示：Submit 不保留任何庫存。建立 Shipment Draft 時才在鎖內重新讀取並保留（不足即拒絕）；Confirm 出庫時再於鎖內重讀並扣帳，重試不會重複扣帳。' },   // C4 D-B2
     output_verification: { verified: sadVerify.skipped ? null : sadVerify.ok, skipped: !!sadVerify.skipped,
       reason: sadVerify.reason || '', verified_lines: sadVerify.verified_lines || 0,
       verified_qty: sadVerify.verified_qty || 0, expected_lines: submitLines.length,
@@ -3162,11 +3512,446 @@ function handleCancelShippingAllocationDraft_(body) {
     var st = get('status').toLowerCase();
     if (st === 'cancelled') return jsonResponse_({ success: true, data: { allocation_draft_id: id, status: 'cancelled', already_cancelled: true } });
     if (st === 'submitted') return jsonResponse_({ success: false, error: 'IMMUTABLE_TERMINAL_STATUS:submitted' });
+    // BV1 (P3) - the cancel advances draft_version and honours a declared token; both checked before the first write.
+    var cPriorVersion = sadFpVal_(get('draft_version'));
+    if (body && body.expected_draft_version != null && String(body.expected_draft_version).trim() !== '' &&
+        sadFpVal_(body.expected_draft_version) !== cPriorVersion) {
+      return jsonResponse_({ success: false, error: 'STALE_OPTIMISTIC_TOKEN', code: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict', zero_write: true,
+        data: { allocation_draft_id: id, expected: sadFpVal_(body.expected_draft_version), current: cPriorVersion } });
+    }
+    var cNextVersion = sadDraftVersionCheck_(cPriorVersion);
+    if (!cNextVersion.ok) return jsonResponse_(sadDraftVersionRefusal_(id, cNextVersion, 'version'));
     var now = procurementTimestamp_();
     var actor = String((body && body.cancelled_by) || (body && body.actor) || 'inventory-replenishment').trim();
+    setCol('draft_version', cNextVersion.next);   // BV1 (P3) / BV1-R2: the first cell written (partial failure)
     setCol('status', 'cancelled'); setCol('cancelled_by', actor); setCol('cancelled_at', now);
     setCol('cancel_reason', String((body && body.cancel_reason) || '').trim());
     setCol('updated_by', actor); setCol('updated_at', now);
-    return jsonResponse_({ success: true, data: { allocation_draft_id: id, status: 'cancelled', already_cancelled: false } });
+    return jsonResponse_({ success: true, data: { allocation_draft_id: id, status: 'cancelled', already_cancelled: false, draft_version: cNextVersion.next } });
   } finally { try { lock.releaseLock(); } catch (e2) { /* best-effort release */ } }
 }
+
+
+// ============================================================================================================
+// SANDBOX-GATE-1f — THE SUBMIT DECISION SNAPSHOT, FROM THE SITE'S OWN AUTHORITY.
+// The plan line's snapshot_current_stock / snapshot_avg_sales_per_day are the SITE's stock and sales rate for the SAME company + country +
+// marketplace + SKU, read through handleRecommendationWorkspaceGet_ - the server read the Site Inventory page itself shows (currentStockQty =
+// the site stock; horizonBasis.avgSalesPerDay = the normalized sales rate). Never the factory stock, never the factory quota. A replay of the
+// same execution key reuses what is already stored under that key, so a retry never drifts the fingerprint. Anything not resolvable stays
+// BLANK with a typed warning - an unknown is never written as 0.
+// ============================================================================================================
+function sadAttachSiteSnapshot_(ss, drafts, submitLines, execKey) {
+  if (!submitLines || !submitLines.length) return { attached: 0 };
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function fin(v) { return typeof v === 'number' && isFinite(v); }
+  var SNAP = ['snapshot_current_stock', 'snapshot_avg_sales_per_day', 'snapshot_days_of_supply', 'snapshot_avg_sales_source', 'snapshot_normal_days_count',
+    'snapshot_excluded_event_days_count', 'snapshot_avg_sales_warning', 'inventory_snapshot_date'];
+  // (1) replay: the values already persisted under this execution key
+  var pSh = ss.getSheetByName('shipping_plans'), lSh = ss.getSheetByName('shipping_plan_lines');
+  if (pSh && lSh && execKey) {
+    var keyPlans = shippingPlanReadObjects_(pSh).filter(function (p) { return S(p.submit_batch_id) === S(execKey); });
+    if (keyPlans.length) {
+      var ids = {}; keyPlans.forEach(function (p) { ids[S(p.shipping_plan_id)] = 1; });
+      var byReason = {}; shippingPlanReadObjects_(lSh).forEach(function (l) { if (ids[S(l.shipping_plan_id)]) byReason[S(l.source_reason)] = l; });
+      var hit = 0;
+      submitLines.forEach(function (l) { var o = byReason[S(l.source_reason)]; if (!o) return; hit++; SNAP.forEach(function (k) { l[k] = (o[k] == null ? '' : o[k]); }); });
+      if (hit === submitLines.length) return { attached: hit, basis: 'REPLAY_STORED' };
+    }
+  }
+  // (2) fresh: ONE read of the station (Submit is one station by gate 14), lines picked by SKU (+ destination warehouse when several)
+  var h = (drafts && drafts[0] && drafts[0].header) || {};
+  var scope = { company: S(h.company), country: S(h.country), marketplace: S(h.marketplace) };
+  if (!scope.company || !scope.country || !scope.marketplace) { submitLines.forEach(function (l) { l.snapshot_avg_sales_warning = 'SITE_SNAPSHOT_SCOPE_INCOMPLETE'; }); return { attached: 0 }; }
+  // SANDBOX-GATE-1g (review MAJOR-1): the measurement taken before the lock, when it is for this very scope and these SKUs
+  var pf = SAD_SNAPSHOT_PREFETCH_1G_, skuSet = {}, oneSku = null, env, stockPre = null, coPre13 = null, basis1g = 'PREFETCH_BEFORE_LOCK';
+  submitLines.forEach(function (l) { skuSet[S(l.sku).toLowerCase()] = S(l.sku); }); if (Object.keys(skuSet).length === 1) oneSku = skuSet[Object.keys(skuSet)[0]];
+  if (pf && pf.key === sadScopeKey1g_(scope) && (pf.sku === null ? true : (oneSku !== null && pf.sku.toLowerCase() === oneSku.toLowerCase()))) { env = pf.env; stockPre = pf.stock; coPre13 = pf.co || null; }
+  else { env = sadReadSiteWorkspace1g_(ss, scope, oneSku, execKey); basis1g = 'IN_LOCK_FALLBACK'; }
+  var siteReady = !!(env && env.success === true && env.data);
+  var siteError = siteReady ? '' : ((env && env.errors && env.errors[0] && env.errors[0].code) || 'SITE_SNAPSHOT_UNAVAILABLE');
+  var all = siteReady ? (env.data.lines || []) : [], n = 0, stock1g = stockPre || sadSiteCurrentStock1g_(ss, scope);   // SANDBOX-GATE-1g: the Site Inventory measure
+  var co13 = coPre13 || sadSiteCompanies13_(ss, scope);   // SANDBOX-GATE-1h (N8): who lists this site + SKU
+  submitLines.forEach(function (l) {
+    var why13 = sadSiteSourceUnknown13_(co13, scope, l.sku) || sadSiteBlankOnly16_(stock1g, l.sku);   // SANDBOX-GATE-1k (A-1)
+    if (why13) {   // fail closed: the site number cannot be attributed to this company - stored blank with the reason, never as this company's value
+      l.snapshot_current_stock = ''; l.snapshot_avg_sales_per_day = ''; l.snapshot_days_of_supply = ''; l.snapshot_avg_sales_source = '';
+      l.snapshot_normal_days_count = ''; l.snapshot_excluded_event_days_count = ''; l.inventory_snapshot_date = '';
+      l.snapshot_avg_sales_warning = why13; return;
+    }
+    var mine = all.filter(function (x) { return S(x.sku).toLowerCase() === S(l.sku).toLowerCase() && S(x.company) === scope.company && S(x.country) === scope.country && S(x.marketplace) === scope.marketplace; });
+    if (mine.length > 1 && S(l.destination_warehouse_id)) mine = mine.filter(function (x) { return S(x.warehouseId || x.destinationRefId) === S(l.destination_warehouse_id); });
+    var st1g = stock1g[S(l.sku).toLowerCase()] || null;   // SANDBOX-GATE-1g: stock does not depend on the 42_ line
+    l.snapshot_current_stock = st1g ? st1g.qty : ''; l.inventory_snapshot_date = st1g ? st1g.date : '';
+    if (!siteReady) {
+      l.snapshot_avg_sales_per_day = ''; l.snapshot_days_of_supply = ''; l.snapshot_avg_sales_source = '';
+      l.snapshot_normal_days_count = ''; l.snapshot_excluded_event_days_count = '';
+      l.snapshot_avg_sales_warning = 'SITE_SNAPSHOT_UNAVAILABLE: ' + siteError + (st1g ? '' : '; SITE_STOCK_ROW_NOT_FOUND');
+      return;
+    }
+    if (mine.length !== 1) { l.snapshot_avg_sales_per_day = ''; l.snapshot_days_of_supply = ''; l.snapshot_avg_sales_warning = (mine.length ? 'SITE_SNAPSHOT_AMBIGUOUS' : 'SITE_SNAPSHOT_LINE_NOT_FOUND') + (st1g ? '' : '; SITE_STOCK_ROW_NOT_FOUND'); return; }
+    var x = mine[0], b = x.horizonBasis || {};
+    var cs = st1g ? st1g.qty : '', av = fin(b.avgSalesPerDay) ? b.avgSalesPerDay : '';
+    l.snapshot_current_stock = cs;
+    l.snapshot_avg_sales_per_day = av;
+    l.snapshot_days_of_supply = (cs !== '' && av !== '' && av > 0) ? Math.round((cs / av) * 10) / 10 : '';
+    l.snapshot_avg_sales_source = S(b.source);
+    l.snapshot_normal_days_count = fin(b.normalDayCount) ? b.normalDayCount : '';
+    l.snapshot_excluded_event_days_count = Array.isArray(b.excludedDates) ? b.excludedDates.length : '';
+    l.snapshot_avg_sales_warning = [S(b.warning) || (b.basisQualityError ? ('SALES_BASIS: ' + S(b.basisQualityError)) : '') || (x.blocked ? ('SITE_LINE_BLOCKED: ' + S(x.blockedReason)) : ''), st1g ? '' : 'SITE_STOCK_ROW_NOT_FOUND'].filter(function (w) { return w; }).join('; ');
+    n++;
+  });
+  return { attached: n, basis: 'SITE_RECOMMENDATION_WORKSPACE', read: basis1g };
+}
+
+// ============================================================================================================
+// A2-SUB16 (Owner A0 + D14 = (c), 2026-11-19) — THE SUBMIT GATE FOR AUTOMATIC PLANS.
+// A plan under commitment-date HOLD, or on an A0-BLOCKED site, must not be produced, SUBMITTED or replaced. 61_ already
+// refuses to produce / replace it; a draft written BEFORE the HOLD or the block could still be submitted here. This gate
+// closes that, on the server's CURRENT state only:
+//   * origin  = the PERSISTED header's generation_type (+ generation_run_id), re-read inside the lock. No request field,
+//               page state or stored Gap row is consulted. A draft whose origin is blank, unrecognised or inconsistent is
+//               refused (SUBMIT_DRAFT_ORIGIN_UNKNOWN) - it is never assumed to be manual.
+//   * HOLD    = 61_ weeklyAiPlanQualifyingPlannedQty_ -> weeklyAiPlanCommitmentHold_, recomputed now from the current draft /
+//               plan rows, read-only. Absent (a half-sync with an older 61_) -> AI_PLAN_HOLD_AUTHORITY_MISSING.
+//   * A0      = the 42_ site line read AGAIN inside the Submit lock (never the pre-lock prefetch), with the share config
+//               fingerprinted before / after that read and once more immediately before the write (blocked +
+//               WAREHOUSE_SHARE_UNKNOWN / WAREHOUSE_COMPANY_UNKNOWN). Unreadable, changed, no site line for the SKU, or a site
+//               line blocked for another reason (A0 undetermined) -> AI_PLAN_SITE_BLOCK_UNVERIFIED. Limits: see the gate body.
+// Every refusal is zero-write, carries a code and a message, and never states a quantity. A user_created (manual) draft is
+// not subject to HOLD / A0 here; it keeps every existing check above this gate. A batch is atomic: one refused draft refuses
+// the whole Submit (nothing is dropped silently).
+// ============================================================================================================
+var SAD_AI_ORIGIN_TYPES_16_ = { system_generated: 1, scheduled: 1, manual_refresh: 1 };   // 61_ K2 = system_generated; 24_/90_ = scheduled / manual_refresh
+var SAD_SUBMIT_HOLD_MESSAGE_16_ = '承諾日期未知，請補日期';
+var SAD_SUBMIT_A0_MESSAGE_16_ = '倉庫份額未設定，無法自動送出';
+var SAD_A0_BLOCK_RX_16_ = /^(WAREHOUSE_SHARE_UNKNOWN|WAREHOUSE_COMPANY_UNKNOWN)(:|$)/;
+function sadDraftOrigin16_(h) {
+  h = h || {};
+  var gt = String(h.generation_type == null ? '' : h.generation_type).trim().toLowerCase();
+  var run = String(h.generation_run_id == null ? '' : h.generation_run_id).trim();
+  if (gt === 'user_created') {
+    if (run) return { origin: 'INCONSISTENT', generation_type: gt, reason: 'generation_type is user_created but the row carries an AI generation_run_id' };
+    return { origin: 'MANUAL', generation_type: gt };
+  }
+  if (SAD_AI_ORIGIN_TYPES_16_[gt] === 1) return { origin: 'AI', generation_type: gt };
+  if (!gt) return { origin: 'UNKNOWN', generation_type: '', reason: 'generation_type is blank' };
+  return { origin: 'UNKNOWN', generation_type: gt, reason: 'generation_type is not a recognised value' };
+}
+function sadSubmitRefusal16_(code, message, execKey, extra) {
+  var data = { execution_key: execKey, code: code, message: message };
+  if (extra) for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) data[k] = extra[k]; }
+  return { ok: false, refusal: { success: false, error: code, code: code, message: message, stage: 'ai_plan_submit_gate', zero_write: true, data: data } };
+}
+function sadAiPlanSubmitGate16_(ss, drafts, toTransition, execKey) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  var want = {}; (toTransition || []).forEach(function (id) { want[S(id)] = 1; });
+  var unknown = [], ai = [];
+  (drafts || []).forEach(function (d) {
+    if (want[S(d.id)] !== 1) return;   // an already-submitted draft is only an idempotent replay of a plan that exists
+    var o = sadDraftOrigin16_(d.header);
+    if (o.origin === 'AI') ai.push(d);
+    else if (o.origin !== 'MANUAL') unknown.push({ allocation_draft_id: d.id, origin: o.origin, generation_type: o.generation_type, reason: o.reason });
+  });
+  if (unknown.length) {
+    return sadSubmitRefusal16_('SUBMIT_DRAFT_ORIGIN_UNKNOWN', '草稿來源無法判定（不是手動也不是 AI），不能送出；請重新建立此路線。Draft origin unknown - nothing was submitted.',
+      execKey, { drafts: unknown.slice(0, 25) });
+  }
+  var aiIds = ai.map(function (d) { return d.id; });
+  if (!ai.length) return { ok: true, aiDraftIds: aiIds };
+  if (typeof weeklyAiPlanQualifyingPlannedQty_ !== 'function' || typeof weeklyAiPlanCommitmentHold_ !== 'function') {
+    return sadSubmitRefusal16_('AI_PLAN_HOLD_AUTHORITY_MISSING', '承諾日期 HOLD 判定不在此部署中（61_ 版本不符），AI 草稿不能送出。The commitment HOLD authority (61_) is missing - nothing was submitted.',
+      execKey, { allocation_draft_ids: aiIds.slice(0, 25) });
+  }
+  // one HOLD evaluation per (station, planning_cycle): gate (14) already made the station single
+  var groups = {}, order = [];
+  ai.forEach(function (d) {
+    var h = d.header || {}, k = [S(h.company), S(h.country), S(h.marketplace), S(h.planning_cycle)].join('|');
+    if (!groups[k]) { groups[k] = { scope: { company: S(h.company), country: S(h.country), marketplace: S(h.marketplace), planningCycle: S(h.planning_cycle) }, drafts: [] }; order.push(k); }
+    groups[k].drafts.push(d);
+  });
+  var held = [];
+  for (var gi = 0; gi < order.length; gi++) {
+    var g = groups[order[gi]], mk = g.scope.marketplace, planned, hold;
+    var sites = []; g.drafts.forEach(function (d) { d.lines.forEach(function (ln) { sites.push({ marketplace: mk, sku: S(ln.sku) }); }); });
+    try {
+      planned = weeklyAiPlanQualifyingPlannedQty_(ss, g.scope, { marketplaces: [mk] });
+      if (!planned || planned.ok !== true || !planned.hold) {
+        return sadSubmitRefusal16_('AI_PLAN_HOLD_AUTHORITY_UNAVAILABLE', '承諾日期 HOLD 無法判定，AI 草稿不能送出。The commitment HOLD could not be evaluated - nothing was submitted.',
+          execKey, { reason: (planned && planned.reason) || (planned && !planned.hold ? 'HOLD_SET_ABSENT' : 'NO_RESULT'), allocation_draft_ids: aiIds.slice(0, 25) });
+      }
+      hold = weeklyAiPlanCommitmentHold_(planned, g.scope, { scopes: [{ marketplace: mk }] }, sites);
+    } catch (eH) {
+      return sadSubmitRefusal16_('AI_PLAN_HOLD_AUTHORITY_UNAVAILABLE', '承諾日期 HOLD 無法判定，AI 草稿不能送出。The commitment HOLD could not be evaluated - nothing was submitted.',
+        execKey, { reason: 'THREW: ' + String((eH && eH.message) || eH).slice(0, 120), allocation_draft_ids: aiIds.slice(0, 25) });
+    }
+    if (!hold || typeof hold.isHeld !== 'function') {
+      return sadSubmitRefusal16_('AI_PLAN_HOLD_AUTHORITY_MISSING', '承諾日期 HOLD 判定不在此部署中（61_ 版本不符），AI 草稿不能送出。The commitment HOLD authority (61_) is missing - nothing was submitted.',
+        execKey, { allocation_draft_ids: aiIds.slice(0, 25) });
+    }
+    g.drafts.forEach(function (d) {
+      d.lines.forEach(function (ln) {
+        if (hold.isHeld(mk, ln.sku)) held.push({ allocation_draft_id: d.id, allocation_draft_line_id: S(ln.allocation_draft_line_id), key: [g.scope.company, g.scope.country, mk, S(ln.sku)].join('|'), status: 'HOLD' });
+      });
+    });
+    if (held.length) {
+      var rep = hold.report || {};
+      return sadSubmitRefusal16_('AI_PLAN_COMMITMENT_HOLD', SAD_SUBMIT_HOLD_MESSAGE_16_, execKey, { status: 'HOLD', held_lines: held.slice(0, 50),
+        held_keys: (rep.held_keys || []).slice(0, 20).map(function (x) { return { key: x.key, marketplace: x.marketplace, sku: x.sku, commitments: (x.commitments || []).slice(0, 10).map(function (c) { return { kind: c.kind, ref: c.ref, reason: c.reason }; }) }; }),
+        held_sites: (rep.held_sites || []).slice(0, 20), rule: rep.rule || null });
+    }
+  }
+  return { ok: true, aiDraftIds: aiIds };
+}
+function sadAiPlanSiteBlockGate16_(ss, drafts, aiDraftIds, execKey) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function lo(v) { return S(v).toLowerCase(); }
+  if (!aiDraftIds || !aiDraftIds.length) return { ok: true };
+  var want = {}; aiDraftIds.forEach(function (id) { want[S(id)] = 1; });
+  var aiDrafts = (drafts || []).filter(function (d) { return want[S(d.id)] === 1; });
+  var h = (aiDrafts[0] && aiDrafts[0].header) || {}, scope = { company: S(h.company), country: S(h.country), marketplace: S(h.marketplace) };
+  var skus = {}; aiDrafts.forEach(function (d) { d.lines.forEach(function (ln) { skus[lo(ln.sku)] = S(ln.sku); }); });
+  var skuList = Object.keys(skus), oneSku = skuList.length === 1 ? skus[skuList[0]] : null;
+  // A2-SUB16 v2/v3 — WHAT THIS GATE DOES AND DOES NOT GUARANTEE (stated as the limit, not as a promise).
+  //  * The pre-lock prefetch and the snapshot's read are never used to ALLOW: the site is read again inside the Submit
+  //    ScriptLock. Every normal program writer of the A0 inputs (share config, warehouses.company, overseas stock,
+  //    shipments / shipment_lines) takes the same ScriptLock before writing (audit A2_16 v3), so none of them can
+  //    interleave with this read.
+  //  * The share config (KM_WAREHOUSE_ALLOCATION_CONFIG) alone is fingerprinted: before and after the read, and once more
+  //    immediately before the write. These three reads / compares are NOT atomic with the write: a change after the last
+  //    compare cannot be prevented.
+  //  * Writes that bypass the lock - the Script Properties editor, direct sheet edits of warehouses.company, stock or
+  //    shipments, a hand-installed TEMP tool - are an OPERATING CONDITION ("no concurrent manual edits during Submit"),
+  //    not something this code guarantees. Only a share-config edit before the last compare is detected.
+  //  * When the A0 state cannot be determined from the read - read failed, the SKU has no site line, or its site line is
+  //    blocked for ANOTHER reason (42_ stops before evaluating the share) - the AI draft is refused (UNVERIFIED), never allowed.
+  var unverified = function (reason, extra) {
+    var x = { reason: reason, allocation_draft_ids: aiDraftIds.slice(0, 25) }; if (extra) for (var k in extra) { if (Object.prototype.hasOwnProperty.call(extra, k)) x[k] = extra[k]; }
+    return sadSubmitRefusal16_('AI_PLAN_SITE_BLOCK_UNVERIFIED', '無法確認倉庫份額狀態，AI 草稿不能自動送出。The site A0 state could not be verified - nothing was submitted.', execKey, x);
+  };
+  if (!scope.company || !scope.country || !scope.marketplace) return unverified('SITE_SCOPE_INCOMPLETE');
+  var cfg0 = sadShareConfigFingerprint16_();
+  if (!cfg0.ok) return unverified(cfg0.reason);
+  var env = null, basis = 'IN_LOCK_A0_READ';
+  try { env = sadReadSiteWorkspace1g_(ss, scope, oneSku, execKey); } catch (eR) { env = null; }
+  if (!env || env.success !== true || !env.data) return unverified((env && env.errors && env.errors[0] && env.errors[0].code) || 'SITE_READ_UNAVAILABLE');
+  var cfg1 = sadShareConfigFingerprint16_();
+  if (!cfg1.ok) return unverified(cfg1.reason);
+  if (cfg1.raw !== cfg0.raw) return unverified('SHARE_CONFIG_CHANGED_DURING_DECISION', { config_fp_before: cfg0.fp, config_fp_after: cfg1.fp });
+  var siteLines = env.data.lines || [], blocked = [], undetermined = [];
+  aiDrafts.forEach(function (d) {
+    d.lines.forEach(function (ln) {
+      var mine = siteLines.filter(function (x) { return x && lo(x.sku) === lo(ln.sku)
+        && lo(x.company) === lo(scope.company) && lo(x.country) === lo(scope.country) && lo(x.marketplace) === lo(scope.marketplace); });
+      var ref = { allocation_draft_id: d.id, allocation_draft_line_id: S(ln.allocation_draft_line_id), sku: S(ln.sku) };
+      var a0 = mine.filter(function (x) { return x.blocked === true && SAD_A0_BLOCK_RX_16_.test(S(x.blockedReason)); })[0];
+      if (a0) { blocked.push(Object.assign(ref, { status: 'BLOCKED', blocked_reason: S(a0.blockedReason).slice(0, 200) })); return; }
+      // A2-SUB16 v3 (review M-1): no site line for this SKU, or a site line blocked for another reason -> A0 undetermined
+      if (!mine.length) { undetermined.push(Object.assign(ref, { status: 'UNVERIFIED', why: 'SITE_LINE_NOT_FOUND' })); return; }
+      var other = mine.filter(function (x) { return x.blocked === true; })[0];
+      if (other) undetermined.push(Object.assign(ref, { status: 'UNVERIFIED', why: 'SITE_LINE_BLOCKED_OTHER', blocked_reason: S(other.blockedReason).slice(0, 200) }));
+    });
+  });
+  if (blocked.length) {
+    return sadSubmitRefusal16_('AI_PLAN_SITE_A0_BLOCKED', SAD_SUBMIT_A0_MESSAGE_16_, execKey, { status: 'BLOCKED', blocked_lines: blocked.slice(0, 50), site: scope, basis: basis });
+  }
+  if (undetermined.length) return unverified(undetermined[0].why, { status: 'UNVERIFIED', unverified_lines: undetermined.slice(0, 50), site: scope, basis: basis });
+  return { ok: true, basis: basis, config: cfg0 };
+}
+// A2-SUB16 v2 — the share config, read raw (exact string compare; fp is only a display label). Absent property = '' (a
+// valid state: no shares). A missing reader or a throwing read is NOT a state - it is unverifiable.
+function sadShareConfigFingerprint16_() {
+  try {
+    if (typeof warehouseAllocationConfigIo_ !== 'function') return { ok: false, reason: 'SHARE_CONFIG_READER_UNAVAILABLE' };
+    var raw = warehouseAllocationConfigIo_().getConfig();
+    raw = (raw === null || raw === undefined) ? '' : String(raw);
+    return { ok: true, raw: raw, fp: sadFnv1a_(raw) + ':' + raw.length };
+  } catch (e) { return { ok: false, reason: 'SHARE_CONFIG_READ_FAILED: ' + String((e && e.message) || e).slice(0, 120) }; }
+}
+// A2-SUB16 v2 — called IMMEDIATELY before the protected write (shippingPlanCommitFromLines_): the share config the A0
+// decision was made on must still be the stored one. Nothing to check when the batch held no AI draft.
+function sadAiPlanSiteBlockRecheck16_(gate, execKey, aiDraftIds) {
+  if (!gate || !gate.config) return { ok: true };
+  var now = sadShareConfigFingerprint16_();
+  if (now.ok && now.raw === gate.config.raw) return { ok: true };
+  return sadSubmitRefusal16_('AI_PLAN_SITE_BLOCK_UNVERIFIED', '無法確認倉庫份額狀態，AI 草稿不能自動送出。The site A0 state could not be verified - nothing was submitted.', execKey,
+    { reason: now.ok ? 'SHARE_CONFIG_CHANGED_BEFORE_WRITE' : now.reason, config_fp_decided: gate.config.fp, config_fp_now: now.ok ? now.fp : null, allocation_draft_ids: (aiDraftIds || []).slice(0, 25) });
+}
+
+// ============================================================================================================
+// SANDBOX-GATE-1f — CANCEL_ROUTE_LINES: the one lifecycle cancel, through the atomic writer (no separate line / header writers).
+// Body: { intent: 'CANCEL_ROUTE_LINES', allocation_draft_id, expected_draft_version, line_ids: [..], cancel_header_if_empty?: true }
+//   - the header must exist and be ACTIVE (terminal -> IMMUTABLE_TERMINAL_STATUS, zero write);
+//   - every line must belong to THIS header (else LINE_NOT_IN_DRAFT, zero write);
+//   - a replay (every named line already cancelled, header consistent) is ALREADY_CANCELLED, zero write - checked BEFORE the version;
+//   - expected_draft_version must equal the stored version (STALE_OPTIMISTIC_TOKEN / MISSING_OPTIMISTIC_TOKEN, zero write);
+//   - lines -> line_status cancelled; when no active line is left the header -> cancelled too; draft_version + 1; read back.
+// ============================================================================================================
+// every line of one header INCLUDING cancelled ones (sadReadLinesForDraft_ returns active lines only)
+function sadReadAllLinesForDraft1f_(lsh, draftId) {
+  var data = lsh.getDataRange().getValues(); if (data.length < 2) return [];
+  var hdr = data[0].map(function (x) { return String(x).trim(); }), di = hdr.indexOf('allocation_draft_id'), out = [];
+  for (var r = 1; r < data.length; r++) { if (String(data[r][di]).trim() !== draftId) continue; var o = {}; for (var c = 0; c < hdr.length; c++) if (hdr[c]) o[hdr[c]] = data[r][c]; Object.defineProperty(o, '__row1g', { value: r + 1, enumerable: false }); out.push(o); }
+  return out;
+}
+function sadAtomicCancelRouteLines_(hSh, lSh, body) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  var id = S(body.allocation_draft_id || (body.header && body.header.allocation_draft_id));
+  var want = (body.line_ids || []).map(S).filter(String);
+  var emptyHeader = body.cancel_header_if_empty === true;
+  if (!id) return jsonResponse_({ success: false, code: 'ALLOCATION_DRAFT_ID_REQUIRED', error: 'ALLOCATION_DRAFT_ID_REQUIRED', stage: 'validation', zero_write: true });
+  if (!want.length && !emptyHeader) return jsonResponse_({ success: false, code: 'LINE_IDS_REQUIRED', error: 'LINE_IDS_REQUIRED', stage: 'validation', zero_write: true });
+  var f = procurementFindRow_(hSh, 'allocation_draft_id', id);
+  if (!f) return jsonResponse_({ success: false, code: 'ALLOCATION_DRAFT_NOT_FOUND', error: 'ALLOCATION_DRAFT_NOT_FOUND', stage: 'validation', zero_write: true });
+  var hdr = sadRowToObject_(hSh, f.row), st = S(hdr.status).toLowerCase(), ver = S(hdr.draft_version);
+  var all = sadReadAllLinesForDraft1f_(lSh, id), byId = {};
+  all.forEach(function (l) { byId[S(l.allocation_draft_line_id)] = l; });
+  var foreign = want.filter(function (x) { return !byId[x]; });
+  if (foreign.length) return jsonResponse_({ success: false, code: 'LINE_NOT_IN_DRAFT', error: 'LINE_NOT_IN_DRAFT', stage: 'validation', zero_write: true, data: { allocation_draft_id: id, line_ids: foreign.slice(0, 10) } });
+  function lc(x) { return S(x).toLowerCase(); }
+  var active = all.filter(function (l) { return lc(l.line_status) !== 'cancelled' && lc(l.line_status) !== 'expired'; });
+  var skippedExpired = want.filter(function (x) { return lc(byId[x].line_status) === 'expired'; });   // SANDBOX-GATE-1g (review MINOR-5): never turned into cancelled
+  var toCancel = want.filter(function (x) { return lc(byId[x].line_status) !== 'cancelled' && lc(byId[x].line_status) !== 'expired'; });
+  var leftAfter = active.filter(function (l) { return want.indexOf(S(l.allocation_draft_line_id)) < 0; }).length;
+  var headerShouldCancel = leftAfter === 0 && (emptyHeader || want.length > 0);
+  if (!want.length && emptyHeader && leftAfter > 0) return jsonResponse_({ success: false, code: 'HEADER_HAS_ACTIVE_LINES', error: 'HEADER_HAS_ACTIVE_LINES', stage: 'validation', zero_write: true, data: { allocation_draft_id: id, active_lines: leftAfter } });
+  if (!toCancel.length && (!headerShouldCancel || st === 'cancelled')) {
+    return jsonResponse_({ success: true, reused: true, data: { allocation_draft_id: id, outcome: 'ALREADY_CANCELLED', zero_write: true, draft_version: ver, header_status: st, skipped_expired: skippedExpired,
+      cancelled_lines: [], persisted_lines: want.map(function (x) { return { allocation_draft_line_id: x, allocation_draft_id: id, line_status: 'cancelled' }; }) } });
+  }
+  if (SAD_TERMINAL_STATUSES_[st]) return jsonResponse_({ success: false, code: 'IMMUTABLE_TERMINAL_STATUS', error: 'IMMUTABLE_TERMINAL_STATUS:' + st, stage: 'terminal', zero_write: true, data: { allocation_draft_id: id, status: st } });
+  var exp = (body.expected_draft_version != null && S(body.expected_draft_version) !== '') ? S(body.expected_draft_version) : null;
+  if (exp === null) return jsonResponse_({ success: false, code: 'MISSING_OPTIMISTIC_TOKEN', error: 'MISSING_OPTIMISTIC_TOKEN', stage: 'conflict', zero_write: true, data: { allocation_draft_id: id, current_draft_version: ver } });
+  if (sadFpVal_(exp) !== sadFpVal_(ver)) return jsonResponse_({ success: false, code: 'STALE_OPTIMISTIC_TOKEN', error: 'STALE_OPTIMISTIC_TOKEN', stage: 'conflict', zero_write: true, data: { allocation_draft_id: id, current_draft_version: ver, expected: exp } });
+  var _bv1Next = sadDraftVersionCheck_(ver);   // BV1 (P1): validated before the first line write; a refusal writes nothing
+  if (!_bv1Next.ok) return jsonResponse_(sadDraftVersionRefusal_(id, _bv1Next, 'version'));
+  var now = procurementTimestamp_(), actor = S(body.actor) || 'inventory-replenishment', next = _bv1Next.next, done = [];
+  // BV1-R2 (partial failure) - the header's draft_version is the FIRST cell written, before any line, so an execution that
+  // dies part-way through the line loop has already moved it (the resend of the same request then answers STALE).
+  (function () { var cV0 = f.col('draft_version'); if (cV0 !== -1) hSh.getRange(f.row, cV0 + 1).setValue(next); })();
+  toCancel.forEach(function (x) {
+    var rowN = byId[x].__row1g, LD = lSh.getDataRange().getValues(), lh = LD[0].map(function (h) { return S(h); });
+    var cS = lh.indexOf('line_status'), cU = lh.indexOf('updated_at'), cI = lh.indexOf('allocation_draft_line_id'), cD = lh.indexOf('allocation_draft_id');
+    if (!rowN || cI === -1 || cD === -1) return;
+    var at = LD[rowN - 1] || [];
+    if (S(at[cI]) !== x || S(at[cD]) !== id) return;   // the checked row moved: nothing is written to any other row (readback reports it)
+    if (cS !== -1) lSh.getRange(rowN, cS + 1).setValue('cancelled');
+    if (cU !== -1) lSh.getRange(rowN, cU + 1).setValue(now);
+    done.push(x);
+  });
+  function setH(n, v) { var c = f.col(n); if (c !== -1) hSh.getRange(f.row, c + 1).setValue(v); }
+  if (headerShouldCancel) { setH('status', 'cancelled'); setH('cancelled_by', actor); setH('cancelled_at', now); setH('cancel_reason', 'CANCEL_ROUTE_LINES_LAST_LINE'); }
+  setH('updated_by', actor); setH('updated_at', now);   // draft_version: written first (BV1-R2)
+  SpreadsheetApp.flush();
+  var back = sadReadAllLinesForDraft1f_(lSh, id), bad = back.filter(function (l) { return done.indexOf(S(l.allocation_draft_line_id)) >= 0 && lc(l.line_status) !== 'cancelled'; }).concat(toCancel.filter(function (x) { return done.indexOf(x) < 0; }).map(function (x) { return { allocation_draft_line_id: x }; }));
+  var hBack = sadRowToObject_(hSh, f.row);
+  if (bad.length || (headerShouldCancel && lc(hBack.status) !== 'cancelled')) return jsonResponse_({ success: false, code: 'CANCEL_UNVERIFIED', error: 'CANCEL_UNVERIFIED', stage: 'readback', zero_write: false, data: { allocation_draft_id: id } });
+  return jsonResponse_({ success: true, data: { allocation_draft_id: id, outcome: 'CANCELLED', skipped_expired: skippedExpired, draft_version: S(hBack.draft_version), header_status: lc(hBack.status), header_cancelled: headerShouldCancel,
+    cancelled_lines: done, persisted_lines: want.map(function (x) { return { allocation_draft_line_id: x, allocation_draft_id: id, line_status: 'cancelled' }; }) } });
+}
+
+// ============================================================================================================
+// SANDBOX-GATE-1g — the Site Inventory "Current Stock", computed the way the Site Inventory page computes it
+// (inventory-replenishment.js IR.latestSnapshot + IR.stockCard + the row map): per SKU, the amazon_inventory_snapshot row with the LATEST
+// snapshot_date among rows matching the SKU, the country (UK = GB) and the marketplace, and the company when the row carries one
+// (a tie keeps the first row in sheet order); value = available_qty + fc_transfer_qty + fc_processing_qty, a blank cell counting 0
+// exactly as the page's num() does. Not the factory stock, not a site quota, not the 42_ supply projection. Returns { sku: {qty, date} }.
+// ============================================================================================================
+function sadSiteCurrentStock1g_(ss, scope) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function lo(v) { return S(v).toLowerCase(); }
+  function num(v) { var n = Number(v); return (S(v) !== '' && isFinite(n)) ? n : 0; }
+  function ymd(v) { if (v instanceof Date && !isNaN(v)) { try { return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd'); } catch (e) { return v.toISOString().slice(0, 10); } } return S(v).slice(0, 10); }
+  function ctry(a, b) { var x = lo(a), y = lo(b); if (x === 'gb') x = 'uk'; if (y === 'gb') y = 'uk'; return x === y; }
+  var sh = ss.getSheetByName('amazon_inventory_snapshot'), out = {}, blank16 = {};
+  Object.defineProperty(out, '__blank16', { value: blank16, enumerable: false });   // SANDBOX-GATE-1k (A-1): SKUs that had ONLY excluded blank-marketplace rows
+  if (!sh) return out;
+  shippingPlanReadObjects_(sh).forEach(function (r) {
+    var sku = lo(r.sku); if (!sku) return;
+    if (scope.company && S(r.company) && lo(r.company) !== lo(scope.company)) return;
+    if (scope.country && S(r.country) && !ctry(r.country, scope.country)) return;
+    if (!S(r.marketplace)) { blank16[sku] = 1; return; }   // SANDBOX-GATE-1k (A-1): no source rule says blank = Amazon - a blank-marketplace row is EXCLUDED
+    if (scope.marketplace && lo(r.marketplace) !== lo(scope.marketplace)) return;
+    var d = ymd(r.snapshot_date), cur = out[sku];
+    if (!cur || d > cur.date) out[sku] = { qty: num(r.available_qty) + num(r.fc_transfer_qty) + num(r.fc_processing_qty), date: d };
+  });
+  return out;
+}
+
+// SANDBOX-GATE-1g (review MAJOR-1) — the snapshot read BEFORE the Submit lock. Read-only: the drafts' headers give the one scope, their active
+// lines the SKUs; the 42_ read is narrowed to the SKU when there is exactly one (the full canonical sheet read is still what the
+// normalized sales rate needs - it cannot be narrowed to a few rows without a second, different rate). Any doubt -> null, and the
+// in-lock path reads as before.
+var SAD_SNAPSHOT_PREFETCH_1G_ = null;
+function sadScopeKey1g_(scope) { return [scope.company, scope.country, scope.marketplace].map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }).join('|'); }
+function sadReadSiteWorkspace1g_(ss, scope, sku, execKey) {
+  var io = recommendationWorkspaceDefaultIo_(); io.openTarget = function () { return ss; };
+  var sc = { company: scope.company, country: scope.country, marketplace: scope.marketplace }; if (sku) sc.sku = sku;
+  var res = handleRecommendationWorkspaceGet_({ requestId: 'SUBMIT-SNAPSHOT-' + String(execKey || '').slice(0, 24), payload: { scope: sc } }, io);
+  return (res && typeof res.getContent === 'function') ? JSON.parse(res.getContent()) : res;
+}
+function sadPrefetchSiteSnapshot1g_(ss, ids) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  var hSh = ss.getSheetByName('shipping_allocation_drafts'), lSh = ss.getSheetByName('shipping_allocation_draft_lines');
+  if (!hSh || !lSh || !ids || !ids.length) return null;
+  var want = {}; ids.forEach(function (x) { want[S(x)] = 1; });
+  var heads = shippingPlanReadObjects_(hSh).filter(function (h) { return want[S(h.allocation_draft_id)]; });
+  if (!heads.length) return null;
+  var key = sadScopeKey1g_(heads[0]); if (heads.some(function (h) { return sadScopeKey1g_(h) !== key; })) return null;
+  var scope = { company: S(heads[0].company), country: S(heads[0].country), marketplace: S(heads[0].marketplace) };
+  if (!scope.company || !scope.country || !scope.marketplace) return null;
+  var skus = {}; shippingPlanReadObjects_(lSh).forEach(function (l) { var st = S(l.line_status).toLowerCase(); if (want[S(l.allocation_draft_id)] && st !== 'cancelled' && st !== 'expired' && S(l.sku)) skus[S(l.sku).toLowerCase()] = S(l.sku); });
+  var list = Object.keys(skus), sku = list.length === 1 ? skus[list[0]] : null;
+  var t0 = Date.now(), env = sadReadSiteWorkspace1g_(ss, scope, sku, 'PREFETCH');
+  return { key: key, sku: sku, env: env, stock: sadSiteCurrentStock1g_(ss, scope), co: sadSiteCompanies13_(ss, scope), ms: Date.now() - t0 };
+}
+
+// ============================================================================================================
+// SANDBOX-GATE-1h (N8) — WHO LISTS THIS SITE + SKU. amazon_inventory_snapshot (natural key snapshot_date / country / marketplace / sku)
+// and the sales rows carry no company, so when more than one company lists the same country + marketplace + SKU in marketplace_skus the
+// site number belongs to the marketplace account, not to one company. Until the business declares that number shared, it is not stored
+// as any one company's value. Every row counts, whatever its status (a listing that is paused can still hold stock in that account).
+// ============================================================================================================
+// SANDBOX-GATE-1j — N8 by the Owner-confirmed SOURCE SCOPE + the marketplaces master relation (company + country + marketplace).
+// (1i resolved the report key through marketplace_skus listings; that interim basis is superseded and kept only in gate-1i.)
+// Source scope, Owner-confirmed 2026-11-04: the Combined Sheet and Raw Daily Sales hold ONLY the original "Amazon" account. Not a verified
+// account identity; it says nothing about any other marketplace. The attribution is then the master relation: exactly ONE marketplaces row
+// for this country + marketplace, and its company is the plan's. Every row counts whatever its status; never the first company.
+var SAD_SITE_SOURCE_BLANK_ = '(blank company)';
+// SANDBOX-GATE-1k (A-3): the confirmed source scope is this explicit set and nothing else (the same values in Site Inventory and Weekly).
+var SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_ = { marketplace: 'amazon', note: 'Original Amazon account reports; all countries confirmed by Owner 2026-11-06. KM Amazon excluded.' };
+// SANDBOX ACCEPTANCE scope, Sandbox-only by TWO means: it exists only in the Sandbox package lineage (km-gs-...-sandbox-gate-*; the base
+// package has no RTR_SANDBOX_GATE_), AND it applies only while THIS deployment's Sandbox gate says KM_SANDBOX. Anywhere else the answer
+// is the explicit SITE_SOURCE_SCOPE_UNDECIDED (blank + reason): the scope is never silently carried over and never silently dropped.
+function sadSandboxScopeActive1k_() { try { return typeof RTR_SANDBOX_GATE_ !== 'undefined' && !!RTR_SANDBOX_GATE_ && RTR_SANDBOX_GATE_.env === 'KM_SANDBOX'; } catch (e) { return false; } }
+function sadSiteBlankOnly16_(stock, sku) {
+  var k = String(sku == null ? '' : sku).trim().toLowerCase(), b = stock && stock.__blank16;
+  if (!b || !b[k] || stock[k]) return '';
+  return 'SITE_SOURCE_MARKETPLACE_BLANK: the only amazon_inventory_snapshot rows for this SKU have a blank marketplace; no source rule says blank means Amazon, so they are excluded (' + SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_.note + ')';
+}
+function sadSiteCompanies13_(ss, scope) {
+  function S(v) { return String(v == null ? '' : v).trim(); }
+  function lo(v) { return S(v).toLowerCase(); }
+  function ctry(a, b) { var x = lo(a), y = lo(b); if (x === 'gb') x = 'uk'; if (y === 'gb') y = 'uk'; return x === y; }
+  var sh = ss.getSheetByName('marketplaces'), out = { basis: 'MARKETPLACES_MASTER_1J', rows: [] };
+  if (!sh) return out;
+  shippingPlanReadObjects_(sh).forEach(function (r) {
+    if (!S(r.marketplace) || !ctry(r.country, scope.country) || lo(r.marketplace) !== lo(scope.marketplace)) return;
+    out.rows.push(lo(r.company) || SAD_SITE_SOURCE_BLANK_);   // one entry per ROW (a duplicate row is not silently merged)
+  });
+  return out;
+}
+function sadSiteSourceUnknown13_(co, scope, sku) {
+  function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  var sc = SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_, why = ' (' + sc.note + ')';
+  if (!sadSandboxScopeActive1k_()) return 'SITE_SOURCE_SCOPE_UNDECIDED: the confirmed source scope is a SANDBOX acceptance scope (KM_SANDBOX only); no source scope has been decided by the Owner for this environment, so the report rows are not attributed';
+  if (lo(scope.marketplace) !== sc.marketplace) return 'SITE_SOURCE_NOT_CONFIRMED: no confirmed Amazon feed for this marketplace account';
+  var rows = (co && co.basis === 'MARKETPLACES_MASTER_1J' && co.rows) || [], me = lo(scope.company), distinct = [];
+  rows.forEach(function (x) { if (distinct.indexOf(x) < 0) distinct.push(x); });
+  if (!rows.length) return 'SITE_SOURCE_NO_MARKETPLACE_ROW: no marketplaces row for this country + marketplace' + why;
+  if (rows.indexOf(SAD_SITE_SOURCE_BLANK_) >= 0) return 'SITE_SOURCE_COMPANY_UNKNOWN: a marketplaces row for this country + marketplace has no company' + why;
+  if (distinct.indexOf(me) < 0) return 'SITE_SOURCE_COMPANY_NOT_LISTED: the marketplaces master gives this country + marketplace to another company, not this one' + why;
+  if (distinct.length > 1) return 'SITE_SOURCE_COMPANY_UNKNOWN: ' + distinct.length + ' companies hold this country + marketplace in marketplaces, so the report row cannot be attributed to one of them' + why;
+  if (rows.length > 1) return 'SITE_SOURCE_COMPANY_UNKNOWN: ' + rows.length + ' marketplaces rows for this country + marketplace (duplicate rows), so the relation is not exactly one' + why;
+  return '';
+}
+// R15G-STAMPS (final candidate): patched

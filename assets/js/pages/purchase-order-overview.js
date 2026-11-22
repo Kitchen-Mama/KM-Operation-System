@@ -545,11 +545,24 @@
     // Unreceived Qty = ordered_qty − completed_qty (production progress; NOT remaining_qty).
     // Receive Qty default = Unreceived; validated 0 ≤ x ≤ Unreceived; confirm → receivePurchaseOrderLines.
     // ========================================
+    // PG12R3 (M-C / m-5): the Receive modal is built from the server precondition read (13_ receivePurchaseOrderLines, mode preconditions; zero
+    // writes) of this one PO, in Workspace AND Legacy (kill-switch) mode alike. It does not use the workspace read (Legacy routes that to a
+    // KM.DB.getOperationDb this client does not have) nor the Legacy broad cache (dates there are yyyy-MM-dd only). No read -> no modal.
     function receive(id) {
         var m = modelById(id);
         if (!m) { alert('Purchase order not found.'); return; }
         closeModal();
-        var rows = m.lines.map(function (l, i) {
+        if (!(window.KM && window.KM.DB && typeof window.KM.DB.getPurchaseOrderReceiptPreconditions === 'function')) {
+            alert('Receiving needs a fresh read of this PO from the server, which this page cannot make. Nothing was received. Reload the page.'); return; }
+        Promise.resolve(window.KM.DB.getPurchaseOrderReceiptPreconditions(id)).then(function (d) {
+            var fl = ((d && d.lines) || []).map(function (l) { return { purchaseOrderLineId: l.purchase_order_line_id, sku: l.sku, orderedQty: l.ordered_qty, completedQty: l.completed_qty,
+                tokC: l.expected_completed_qty, tokU: l.expected_line_updated_at == null ? '' : String(l.expected_line_updated_at) }; });
+            if (!fl.length) { alert('The current state of this PO could not be read. Nothing was received. Reload and try again.'); return; }
+            _poReceiveModal_(id, m, fl);
+        }).catch(function (e) { alert('The current state of this PO could not be read (' + (e && e.message ? e.message : e) + '). Nothing was received. Reload and try again.'); });
+    }
+    function _poReceiveModal_(id, m, freshLines) {
+        var rows = freshLines.map(function (l, i) {
             var ordered = num(l.orderedQty);
             var completed = num(l.completedQty);
             var unreceived = ordered - completed;   // NOT remaining_qty
@@ -557,7 +570,7 @@
             var input = done
                 ? '<span class="po-rcv-done">0</span>'
                 : '<input type="number" class="pc-input po-rcv-input" data-line="' + esc(l.purchaseOrderLineId) +
-                    '" data-unreceived="' + unreceived + '" min="0" step="1" value="' + unreceived + '" style="width:90px;text-align:right;">';
+                    '" data-unreceived="' + unreceived + '" data-completed="' + esc(String(l.tokC)) + '" data-updated="' + esc(String(l.tokU == null ? '' : l.tokU)) + '" min="0" step="1" value="' + unreceived + '" style="width:90px;text-align:right;">';
             return '<tr>' +
                 '<td>' + dash(l.sku) + '</td>' +
                 '<td class="pc-num">' + ordered.toLocaleString() + '</td>' +
@@ -572,7 +585,7 @@
             '<div class="procurement-table-wrap"><table class="procurement-table po-rcv-table">' +
                 '<thead><tr><th>SKU</th><th class="pc-num">Ordered Qty</th><th class="pc-num">Completed Qty</th>' +
                 '<th class="pc-num">Unreceived Qty</th><th class="pc-num">Receive Qty</th></tr></thead>' +
-                '<tbody>' + (m.lines.length ? rows : '<tr><td colspan="5">No PO lines.</td></tr>') + '</tbody>' +
+                '<tbody>' + (freshLines.length ? rows : '<tr><td colspan="5">No PO lines.</td></tr>') + '</tbody>' +
             '</table></div>';
         openModal('Receive — ' + esc(m.poNo), body,
             '<button class="pc-btn pc-btn--default" onclick="poCloseModal()">Cancel</button>' +
@@ -616,6 +629,29 @@
         if (op) _poPendingRcv[id] = op; else delete _poPendingRcv[id];
         try { if (op) sessionStorage.setItem(_poRcvKey_(id), JSON.stringify(op)); else sessionStorage.removeItem(_poRcvKey_(id)); } catch (e) {}
     }
+    // PG12R2 (m-1): a NEW receipt's key binds its content: PORCV-UI2-<32 hex random>-<16 hex of sha256(canon)>. The server (13_ poRcvRequestDigest_)
+    // recomputes it and refuses the key with any other line, quantity or precondition. A held receipt keeps its key and lines (same canon).
+    // PG12R2-CANON-BEGIN
+    function _poRcvCanon_(poId, lines) {
+        function v(x) { return x === undefined || x === null ? null : String(x); }
+        var arr = (lines || []).map(function (l) { l = l || {}; return [v(l.purchase_order_line_id), v(l.receive_qty), v(l.expected_completed_qty), v(l.expected_line_updated_at)]; });
+        arr.sort(function (a, b) { var x = String(a[0]), y = String(b[0]); return x < y ? -1 : (x > y ? 1 : 0); });
+        return JSON.stringify(['PORCV-UI2', String(poId), arr]);
+    }
+    function _poBindKey_(poId, lines) {
+        if (!(typeof crypto !== 'undefined' && crypto && crypto.subtle && typeof crypto.getRandomValues === 'function' && typeof TextEncoder !== 'undefined')) return Promise.reject(new Error('NO_WEB_CRYPTO'));
+        function hex(u) { return Array.prototype.map.call(u, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); }
+        var rnd = new Uint8Array(16); crypto.getRandomValues(rnd);
+        return crypto.subtle.digest('SHA-256', new TextEncoder().encode(_poRcvCanon_(poId, lines))).then(function (d) { return 'PORCV-UI2-' + hex(rnd) + '-' + hex(new Uint8Array(d)).slice(0, 16); });
+    }
+    // PG12R2-CANON-END
+    // PG12R2 (m-5): after a precondition / identity refusal the page shows the CURRENT figures: Workspace -> the scoped read; Legacy -> a forced broad read
+    function _poReloadFresh_() {
+        if (_poEffectiveWorkspace()) { loadAndRender(); return; }
+        if (window.KM.DB && typeof window.KM.DB.loadOperationDb === 'function') { window.KM.DB.loadOperationDb({ force: true }).then(renderFromDb).catch(renderFromDb); return; }
+        loadAndRender();
+    }
+    function _poIsPreconditionRefusal_(e) { var c = String((e && e.code) || ''); return !!(e && e.kmServerAnswered) && (c.indexOf('PO_RECEIPT_PRECONDITION_') === 0 || c.indexOf('PO_RECEIPT_REQUEST_IDENTITY_') === 0); }
     function _poNewOpId_() {
         try { if (typeof crypto !== 'undefined' && crypto && typeof crypto.randomUUID === 'function') return 'PORCV-UI-' + crypto.randomUUID().replace(/-/g, ''); } catch (e) {}
         var r = ''; for (var i = 0; i < 4; i++) r += ('0000000' + Math.floor(Math.random() * 0x100000000).toString(16)).slice(-8);
@@ -656,7 +692,7 @@
                 if (released_) _poRcvHold_(id, null);
                 _poEndCmd(key, null);
                 alert('The resend of receipt ' + op.key + ' did not complete: ' + (e && e.message ? e.message : e) + (released_ ? '' : String.fromCharCode(10) + 'Receipt STILL HELD in this tab: resend it again later with the SAME id and quantities (' + _poHeldText_(op) + ') before changing this PO.'));
-                loadAndRender();
+                if (_poIsPreconditionRefusal_(e)) _poReloadFresh_(); else loadAndRender();   // PG12R2 (m-5)
             });
     }
     // R71-FE-3: a same-key resend that completed the missing PO header is RECORDED (said once; the hold is already released by the caller)
@@ -684,7 +720,10 @@
     // EVIDENCE_READ_FAILED, any other zero-write and any unknown shape keep the hold (same key, same lines).
     function _poHeldReleasedBy_(e) {
         var c = String((e && e.code) || '');
-        return !!(e && e.kmServerAnswered) && (c === 'PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH' || (c === 'PO_RECEIPT_RECORDED_STATUS_STALE' && !!(e.data && e.data.already_recorded === true)));
+        // PG12R2: PRECONDITION_* / REQUEST_IDENTITY_UNBOUND are answered only after the in-lock ledger read found this key NOT recorded (receipt_key_recorded false).
+        // REQUEST_IDENTITY_MISMATCH is answered before any read, so it proves nothing about the original: the hold is KEPT.
+        return !!(e && e.kmServerAnswered) && (c === 'PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH' || (c === 'PO_RECEIPT_RECORDED_STATUS_STALE' && !!(e.data && e.data.already_recorded === true)) ||
+            ((c.indexOf('PO_RECEIPT_PRECONDITION_') === 0 || c === 'PO_RECEIPT_REQUEST_IDENTITY_UNBOUND') && !!(e.data && e.data.receipt_key_recorded === false)));
     }
     function _poHeldText_(op) { return ((op && op.lines) || []).map(function (l) { return String(l.purchase_order_line_id) + ' x ' + String(l.receive_qty); }).join(', '); }
 
@@ -698,7 +737,8 @@
             var v = inp.value === '' ? 0 : parseFloat(inp.value);
             if (isNaN(v) || v < 0) { invalid = 'Receive Qty must be 0 or a positive number.'; return; }
             if (v > unreceived) { invalid = 'Receive Qty cannot exceed Unreceived Qty (' + unreceived.toLocaleString() + ').'; return; }
-            if (v > 0) lines.push({ purchase_order_line_id: inp.getAttribute('data-line'), receive_qty: v });
+            if (v > 0) lines.push({ purchase_order_line_id: inp.getAttribute('data-line'), receive_qty: v,   // PG12R2: the line state this receipt was entered against
+                expected_completed_qty: num(inp.getAttribute('data-completed')), expected_line_updated_at: String(inp.getAttribute('data-updated') || '') });
         });
         var op = _poRcvPending_(id), wasHeld_ = !!op;   // R71-FE-4: a gate refusal discards only a NEW receipt
         if (op) {
@@ -711,10 +751,13 @@
         } else {
             if (invalid) { alert(invalid); return; }
             if (!lines.length) { alert('Enter a Receive Qty greater than 0 on at least one line.'); return; }
-            op = { key: _poNewOpId_(), lines: lines };
+            op = null;   // PG12R2 (m-1): minted below - the key binds this exact content
         }
         var btn = overlay.querySelector('.pc-btn--primary'), key = id + ':receive';
         if (!_poBeginCmd(key, btn)) return;   // in-flight → suppress the duplicate write
+        (op ? Promise.resolve(op) : _poBindKey_(id, lines).then(function (k) { return { key: k, lines: lines }; })).then(function (o) { op = o; _poSendHeldOrNew_(); },
+            function (eK) { _poEndCmd(key, btn); alert('This browser cannot make a receipt key (' + (eK && eK.message ? eK.message : eK) + '). Nothing was received.'); });
+        function _poSendHeldOrNew_() {
         _poRcvHold_(id, op);
         window.KM.DB.receivePurchaseOrderLines({ purchase_order_id: id, lines: op.lines, actor: 'operation-system',
             idempotency_key: op.key })
@@ -728,6 +771,15 @@
                 // R71-FE-5 (F-1): a NEW receipt keeps the fe-4 rules; a HELD one is released only by _poHeldReleasedBy_
                 if (wasHeld_ ? _poHeldReleasedBy_(e) : (cls_ === 'SETTLED' || cls_ === 'GATE')) _poRcvHold_(id, null);
                 _poEndCmd(key, btn);
+                if (_poIsPreconditionRefusal_(e)) {   // PG12R2 (m-5): stale / identity -> nothing posted for THIS request; never retried automatically
+                    alert('This receipt was NOT posted (' + e.code + '). ' + (e && e.message ? e.message : '') + String.fromCharCode(10) +
+                        (_poRcvPending_(id) ? 'The receipt this tab holds (' + _poHeldText_(op) + ') stays held; its SAME id is resent later.' : 'The quantities you typed were NOT kept. The PO now shows its current figures; enter a receipt only for what is still due.'));
+                    closeModal(); _poReloadFresh_(); return; }
+                if (answered && e.code === 'PO_RECEIPT_LINE_STAMP_IN_FUTURE') {   // JR2 (review J-M1): a line stamp ahead of the clock - not posted, not retried
+                    alert('This receipt was NOT posted (PO_RECEIPT_LINE_STAMP_IN_FUTURE). ' + (e && e.message ? e.message : '') + String.fromCharCode(10) +
+                        'Do not send it again now: ask the owner to review the updated_at of the PO line named above. ' +
+                        (_poRcvPending_(id) ? 'The receipt this tab holds (' + _poHeldText_(op) + ') stays held; its SAME id is resent later.' : 'The quantities you typed were NOT kept.'));
+                    closeModal(); loadAndRender(); return; }
                 if (cls_ === 'GATE') {
                     alert('This receipt was NOT posted (' + e.code + '). An existing receipt on this PO must be resolved first. ' + (e && e.message ? e.message : '') +
                         (wasHeld_ ? String.fromCharCode(10) + 'The receipt this tab holds (' + _poHeldText_(op) + ') stays held; its SAME id is resent later.' : String.fromCharCode(10) + 'Nothing is kept for it: enter it again once the existing receipt is resolved.'));
@@ -744,6 +796,7 @@
                     '\nThe server did not answer, so this receipt may already be recorded. Confirm again to resend the same receipt and find out.'));
                 if (answered && e.code === 'PO_RECEIPT_IDEMPOTENCY_KEY_CONTENT_MISMATCH') { closeModal(); loadAndRender(); }
             });
+        }
     }
 
     // ========================================

@@ -1097,7 +1097,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var totalNet = planLines.reduce(function(s, l) { return s + _spNum(l.netWeight); }, 0);
         var totalCostNum = (plan.estimatedTotalCost === '' || plan.estimatedTotalCost == null) ? null : _spNum(plan.estimatedTotalCost);
         var _cur11 = String(plan.currency || (plan.raw && plan.raw.currency) || '').trim();   // R71-FE-11: the server's currency
-        var totalCostDisp = (totalCostNum == null) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + totalCostNum.toFixed(2));
+        var totalCostDisp = (totalCostNum == null) ? (String(plan.carrierId || '').trim() ? 'Cost pending' : '--') :   // AD3 D r2: a carrier without a quote is cost PENDING, never 0
+             ((_cur11 ? _spEsc(_cur11) + ' ' : '') + totalCostNum.toFixed(2));
         var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(4));
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
@@ -2080,7 +2081,7 @@ function _spCostBreakdownHtml_(plan, totalPcs) {
         row('Carrier', cbCarrier) +
         row('Freight', priced ? _spMoney_(raw.estimated_freight_cost, cur) : '--') +
         row('Duty / Custom', priced ? _spMoney_(dc, cur) : '--') +
-        row('Total Cost', priced ? _spMoney_(total, cur) : '--') +
+        row('Total Cost', priced ? _spMoney_(total, cur) : (String(plan.carrierId || '').trim() ? 'Cost pending' : '--')) +   // AD3 D r2
         row('Currency', priced ? _spEsc(cur || '--') : '--') +
         row('Cost per pcs', unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(4))) +
         '<div class="sp-cost-basis" style="font-size:11px;color:#94A3B8;margin-top:6px;">' + (priced
@@ -2203,13 +2204,24 @@ function _spRcPlan_(planId) { var m = _spLastModel && _spLastModel.plans; return
 function _spRcRender_(planId) {
     _spRcRenderBase13_(planId);   // WK1: no Delivery-warehouse / Save route panel
 }
+// AD4 (Owner 2026-11-22): ONE customs control for the priced and the zero-card paths. The server says when customs does not apply
+// (lane.customs_applicable === false: a proven same-country overseas-3PL transfer) - then no select, only the statement.
+function _spCustomsNa_(r) { return !!(r && r.lane && r.lane.customs_applicable === false); }
+function _spCustomsHtml_(planId, host, r) {
+    if (_spCustomsNa_(r)) { var cb = (r.lane && r.lane.customs_basis) || {}; return '<div class="sp-rc-customs-na" style="font-size:11px;color:#475569;margin-top:6px;">Customs: not applicable (domestic transfer' + (cb.country ? ' within ' + _spEsc(cb.country) : '') + ')</div>'; }
+    var cl = (r.lane && r.lane.customs) || [], cs = host.getAttribute('data-sel-customs') || (r.preview_customs_type != null ? r.preview_customs_type : String((r.lane && r.lane.customs_type) || ''));
+    return '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Customs</label>' +
+        '<select class="sp-rc-customs" data-plan="' + _spEsc(planId) + '" onchange="spRcPickCustoms(this.getAttribute(&quot;data-plan&quot;), this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
+        '<option value=""' + (cs ? '' : ' selected') + '>-- Choose customs --</option>' +
+        cl.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === cs ? ' selected' : '') + '>' + _spEsc(c.label || c.id) + '</option>'; }).join('') + '</select>';
+}
 function _spRcRenderBase13_(planId) {
     var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body'), r = SP_RC_[planId];
     if (!host || !body || !r) return;
     var plan = _spRcPlan_(planId), routeM = String((r.current && r.current.shipping_method) || plan.shippingMethod || '').trim();
     var opts = r.options || [], cars = [], seen = {};
     opts.forEach(function (o) { if (!seen[o.carrier_id]) { seen[o.carrier_id] = 1; cars.push({ id: o.carrier_id, name: o.carrier_name || o.carrier_id }); } });
-    if (!opts.length) { body.innerHTML = _spRcLoadingHtml_('No active rate card matches this route. Check destination, method and validity.'); return; }
+    if (!opts.length) { body.innerHTML = _spRcLoadingHtml_('No active rate card matches this route. Check destination, method and validity.') + _spCustomsHtml_(planId, host, r) + _spSvcHtml_(planId, r); return; }   // AD4: the zero-card path shows the customs control (or 'not applicable') too   // AD3 D r2: + explicit service (zero cards)
     var selC = host.getAttribute('data-sel-carrier');
     if (selC == null) {
         selC = (r.current && r.current.carrier_id && seen[r.current.carrier_id]) ? r.current.carrier_id : '';
@@ -2240,12 +2252,8 @@ function _spRcRenderBase13_(planId) {
         '</select>' +
         '<details class="sp-rc-token" style="font-size:11px;color:#64748B;margin-top:2px;"><summary>Details</summary>' + (o ? ('method token: ' + _spEsc(o.shipping_method) + (o.last_mile_delivery ? ' \u00b7 last mile: ' + _spEsc(o.last_mile_delivery) : '') + ' \u00b7 card ' + _spEsc(o.rate_card_id)) : '') + '</details>' +
         '<div class="sp-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? ((o.lead_time && o.lead_time.state === 'MATCHED') ? '<span style="color:#475569;">Lead time: ' + _spEsc(o.lead_time.days) + ' days \u00b7 ' + _spEsc(o.lead_time.origin_country || '?') + ' \u2192 ' + _spEsc(o.lead_time.destination_country || '?') + '</span>' : '<span style="color:#B45309;">Lead time: UNKNOWN for this carrier / method (' + _spEsc((o.lead_time && o.lead_time.reason) || 'no match') + ')</span>') : '') + '</div>' +
-        (function () { var cl = (r.lane && r.lane.customs) || [], cs = host.getAttribute('data-sel-customs') || (r.preview_customs_type != null ? r.preview_customs_type : String((r.lane && r.lane.customs_type) || ''));
-            return '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Customs</label>' +
-            '<select class="sp-rc-customs" onchange="spRcPickCustoms(\'' + _spEsc(planId) + '\', this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
-            '<option value=""' + (cs ? '' : ' selected') + '>-- Choose customs --</option>' +
-            cl.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === cs ? ' selected' : '') + '>' + _spEsc(c.label || c.id) + '</option>'; }).join('') + '</select>'; })() +
-        '<button type="button" class="sp-btn sp-btn-submit sp-rc-save" onclick="spRcSave(\'' + _spEsc(planId) + '\')"' + ((o && ((o.quote && o.quote.priced) || o.service_only)) || _spWk1CxPicked_(host, r) ? '' : ' disabled') + ' style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save</button>';
+        _spCustomsHtml_(planId, host, r) +
+        '<button type="button" class="sp-btn sp-btn-submit sp-rc-save" onclick="spRcSave(\'' + _spEsc(planId) + '\')"' + ((o && ((o.quote && o.quote.priced) || o.service_only)) || _spWk1CxPicked_(host, r) ? '' : ' disabled') + ' style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save</button>' + _spSvcHtml_(planId, r);   // AD3 D r2: + explicit service
 }
 // WK1 r3 (Owner): the plan stores no rate card id - the saved COST and the saved CARD are reported separately (current.card_check, 11_ r3)
 function _spWk1CardTxt_(r) { var c = (r && r.current && r.current.card_check) || {}; return 'COST SAVED, CARD NOT VERIFIED: the saved cost is still reproduced by a current rate card, but ' + (c.cards_with_saved_terms || 'several') + ' rate cards carry the same carrier / method / rate / customs and the plan does not record which one was chosen. Not verified as PRICED - choose the card again and Save to confirm it.'; }
@@ -2296,6 +2304,99 @@ function _spWk1Remember_(planId, patch) { var c = SP_RC_SEL_[planId] || {}; if (
 function spRcPickCustoms(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { customs: v || '' }); spRcRefresh(planId); }
 function spRcPickCarrier(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { carrier: v || '', rate_card_id: '' }); h.setAttribute('data-sel-carrier', v || ''); h.removeAttribute('data-sel-card'); _spRcRender_(planId); }
 function spRcPickMethod(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; var rr = SP_RC_[planId], oo = rr && rr.options && rr.options[Number(v)]; _spWk1Remember_(planId, { carrier: oo ? oo.carrier_id : ((SP_RC_SEL_[planId] || {}).carrier || ''), rate_card_id: oo ? oo.rate_card_id : '', service_key: oo && oo.service_only ? JSON.stringify([oo.carrier_id, oo.shipping_method, oo.last_mile_delivery]) : '' }); h.setAttribute('data-sel-card', v || ''); _spRcRender_(planId); }
+// AD3 D r2 (Owner decision 10; Author B contract 5) - WEEKLY PLAN EXPLICIT SERVICE, for a carrier with ZERO rate cards.
+// Lists come only from the server's service_vocabulary (shippingPlan.rateCardOptions): active carriers master rows, method / last mile tokens,
+// SPD / LTL delivery types (domestic only; the server checks the plan's warehouse countries). Save = the existing unified plan Save
+// (shippingPlan.selectRateCard, service_only + explicit_service) through the registered writer; the server prices it only when exactly one
+// card applies, otherwise every cost field is cleared (cost pending, never 0). A Save that does not read back the service is UNKNOWN.
+function _spSvcHtml_(planId, r) {
+    var v = r && r.service_vocabulary;
+    if (!v || !Array.isArray(v.carriers) || !Array.isArray(v.shipping_method) || !Array.isArray(v.last_mile_delivery)) return '';
+    var cur = (r && r.current) || {}, e = _spEsc(planId), seen = {};
+    var cC = String(cur.carrier_id || '').trim(), cM = String(cur.shipping_method || '').trim(), cL = String(cur.last_mile_delivery || '').trim();
+    function opt(val, label, sel) { return '<option value="' + _spEsc(val) + '"' + (sel ? ' selected' : '') + '>' + _spEsc(label) + '</option>'; }
+    var cars = v.carriers.filter(function (c) { var id = String((c && c.carrier_id) || '').trim(); if (!id || seen[id]) return false; seen[id] = 1; return true; });
+    var mets = v.shipping_method.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lms = v.last_mile_delivery.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
+    var dts = _spSvcDeliveryTypes_(v, cC);   // AD3 D r3: per carrier when the vocabulary names them (e.g. BestWay = LTL)
+    var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
+    return '<div class="sp-svc" data-plan-id="' + e + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
+        '<div style="font-size:11px;font-weight:600;color:#334155;">Service without a rate card</div>' +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
+        '<select class="sp-svc-carrier" aria-label="Carrier (explicit service)" onchange="spSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', !cC) +
+            cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm && nm !== id ? nm + ' (' + id + ')' : id, id === cC); }).join('') + '</select>' +
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sp-svc-method" aria-label="Shipping method (explicit service)" style="' + sel + '">' + opt('', '--', !cM) + mets.map(function (m) { return opt(m, m, m === cM); }).join('') + '</select></label>' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sp-svc-lastmile" aria-label="Last mile (explicit service)" style="' + sel + '">' + opt('', '--', !cL) + lms.map(function (m) { return opt(m, m, m === cL); }).join('') + '</select></label>' +
+        '</div>' +
+        (dts.length ? '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Delivery type (domestic only)<select class="sp-svc-dtype" aria-label="Delivery type" onchange="spSvcPickDeliveryType(\'' + e + '\', this.value)" style="' + sel + '">' + opt('', '-- none --', true) +
+            dts.map(function (d) { return '<option value="' + _spEsc(d.value) + '" data-method="' + _spEsc(d.shipping_method || '') + '" data-lastmile="' + _spEsc(d.last_mile_delivery || '') + '">' + _spEsc(d.value + (d.value === 'SPD' ? ' - parcel' : d.value === 'LTL' ? ' - pallet' : '')) + '</option>'; }).join('') + '</select></label>' : '') +
+        '<button type="button" class="sp-btn sp-svc-save" onclick="spSvcSave(\'' + e + '\')" style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save service (cost pending if no card)</button>' +
+        '<div class="sp-svc-note" role="status" style="font-size:11px;margin-top:3px;color:#475569;overflow-wrap:anywhere;"></div></div>';
+}
+function _spSvcDeliveryTypes_(v, carrierId) {
+    var all = ((v && v.delivery_type) || []).filter(function (d) { return d && d.value; }), c = null;
+    ((v && v.carriers) || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === String(carrierId || '').trim()) c = x; });
+    if (!c) return all;
+    if (c.services_known === true && Array.isArray(c.services)) all = all.filter(function (d) { return c.services.some(function (x) { return x && x.shipping_method === d.shipping_method && x.last_mile_delivery === d.last_mile_delivery; }); });   // r4 (B 16)
+    if (!Array.isArray(c.delivery_types)) return all;
+    var ok = c.delivery_types.map(function (t) { return String(t || '').trim().toUpperCase(); });
+    return all.filter(function (d) { return ok.indexOf(String(d.value).toUpperCase()) !== -1; });
+}
+function _spSvcPairOptions_(all, allowed, cur) { var list = allowed ? all.filter(function (m) { return allowed.indexOf(m) !== -1; }) : all; return '<option value="">--</option>' + list.map(function (m) { return '<option value="' + _spEsc(m) + '"' + (m === cur ? ' selected' : '') + '>' + _spEsc(m) + '</option>'; }).join(''); }
+function spSvcCarrierChanged(planId) {
+    var b = document.querySelector('.sp-svc[data-plan-id="' + String(planId).replace(/"/g, '') + '"]'), r = SP_RC_[planId]; if (!b || !r) return;
+    var d = b.querySelector('.sp-svc-dtype'); if (!d) return;
+    var list = _spSvcDeliveryTypes_(r.service_vocabulary, b.querySelector('.sp-svc-carrier').value), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : '';
+    d.innerHTML = '<option value="">-- none --</option>' + list.map(function (x) { return '<option value="' + _spEsc(x.value) + '" data-method="' + _spEsc(x.shipping_method || '') + '" data-lastmile="' + _spEsc(x.last_mile_delivery || '') + '">' + _spEsc(x.value + (x.value === 'SPD' ? ' - parcel' : x.value === 'LTL' ? ' - pallet' : '')) + '</option>'; }).join('');
+    d.value = keep;
+    var v = r.service_vocabulary, cid = b.querySelector('.sp-svc-carrier').value, cr = null;   // r4 (B 13 / 16): method / last mile limited to the carrier's declared tuples
+    (v.carriers || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === cid) cr = x; });
+    var svc = (cr && cr.services_known === true && Array.isArray(cr.services)) ? cr.services.filter(Boolean) : null;
+    var mAll = (v.shipping_method || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lAll = (v.last_mile_delivery || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
+    var mEl = b.querySelector('.sp-svc-method'), lEl = b.querySelector('.sp-svc-lastmile');
+    var mc = mEl.value, lc = lEl.value;
+    mEl.innerHTML = _spSvcPairOptions_(mAll, svc ? svc.map(function (x) { return x.shipping_method; }) : null, mc);
+    lEl.innerHTML = _spSvcPairOptions_(lAll, svc ? svc.map(function (x) { return x.last_mile_delivery; }) : null, lc);
+}
+window.spSvcCarrierChanged = spSvcCarrierChanged;
+function spSvcPickDeliveryType(planId, val) {
+    var b = document.querySelector('.sp-svc[data-plan-id="' + String(planId).replace(/"/g, '') + '"]'); if (!b) return;
+    var o = b.querySelector('.sp-svc-dtype option[value="' + String(val).replace(/"/g, '') + '"]');
+    if (o && val) { b.querySelector('.sp-svc-method').value = o.getAttribute('data-method') || ''; b.querySelector('.sp-svc-lastmile').value = o.getAttribute('data-lastmile') || ''; }
+}
+function spSvcSave(planId) {
+    var h = document.getElementById('sp-rc-' + planId), r = SP_RC_[planId], b = h ? h.querySelector('.sp-svc') : null;
+    if (!b || !r) return;
+    var note = b.querySelector('.sp-svc-note'), c = b.querySelector('.sp-svc-carrier').value, m = b.querySelector('.sp-svc-method').value, l = b.querySelector('.sp-svc-lastmile').value;
+    var dEl = b.querySelector('.sp-svc-dtype'), dt = dEl ? dEl.value : '';
+    note.style.color = '#B91C1C';
+    if (!c || !m || !l) { note.textContent = 'Choose the carrier, the shipping method and the last mile (or a delivery type). Nothing was sent.'; return; }
+    var cSel = h.querySelector('.sp-rc-customs'), cx = cSel ? String(cSel.value || '') : '';
+    if (!_spCustomsNa_(r) && r.lane && (r.lane.customs || []).length && !cx) { note.textContent = 'Choose a customs type first. Nothing was sent.'; return; }   // AD4
+    if (!_spPlanTok_(planId)) { note.textContent = 'This plan has no edit token on screen - it is being re-read. Nothing was sent.'; try { _spReadbackAfterWrite_(); } catch (eT) {} return; }
+    if (_SP_WK1_SAVING_[planId]) return;
+    var exp = String((r.current && r.current.carrier_id) || ''), tok = _spPlanTok_(planId), btn = b.querySelector('.sp-svc-save');
+    var o = { service_only: true, explicit_service: true, carrier_id: c, shipping_method: m, last_mile_delivery: l }; if (dt) o.delivery_type = dt;
+    _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    note.style.color = '#0369A1'; note.textContent = 'Saving the service…';
+    return _spRunCommand_(planId + ':ratecard', function () {
+        if (!window.KM.DB || typeof window.KM.DB.selectShippingPlanRateCardWithCustoms !== 'function') return { success: false, error: { code: 'WEEKLY_SAVE_UNAVAILABLE', message: 'This build has no unified Save. Nothing was sent.' } };
+        return Promise.resolve(window.KM.DB.selectShippingPlanRateCardWithCustoms(planId, o, exp, tok, cx)).then(function (x) {
+            if (x && x.success) {
+                if (x.carrier_id !== c || x.shipping_method !== m || x.last_mile_delivery !== l) return { success: false, error: { code: 'RATE_CARD_SELECTION_UNVERIFIED', message: 'The server did not read back the service.' } };
+                return { success: true, data: x };
+            }
+            var code = (x && (x.code || (typeof x.error === 'string' ? x.error : (x.error && x.error.code)))) || 'SELECTION_FAILED';
+            return { success: false, error: { code: code, message: (x && x.message) || code } };
+        });
+    }, { failPrefix: 'Save service failed', planId: planId,
+        onSuccess: function (res) { var d = res.data || {}; delete SP_RC_SEL_[planId];
+            if (d.priced === true) return 'Saved: ' + c + ' · ' + m + ' / ' + l + ' · ' + _spSavedQuoteTextCp2d_(d) + ' (one applicable rate card, priced by the server).';
+            return 'Saved: ' + c + ' · ' + m + ' / ' + l + '. Cost pending (' + String(d.unpriced_reason || 'no applicable rate card') + ') - no amount recorded; finish pricing in Shipment Draft.'; } })
+        .then(function (res) { delete _SP_WK1_SAVING_[planId]; if (btn) { btn.disabled = false; btn.textContent = 'Save service (cost pending if no card)'; } if (res && res.success === false) { note.style.color = '#B91C1C'; note.textContent = 'Not saved: ' + String((res.error && (res.error.code || res.error.message)) || 'refused'); } else if (res && res.success) { note.style.color = '#166534'; note.textContent = 'Saved.'; } return res; },
+            function (e) { delete _SP_WK1_SAVING_[planId]; if (btn) { btn.disabled = false; btn.textContent = 'Save service (cost pending if no card)'; } throw e; });
+}
+window.spSvcSave = spSvcSave; window.spSvcPickDeliveryType = spSvcPickDeliveryType;
 function spRcSave(planId) {
     var h = document.getElementById('sp-rc-' + planId), r = SP_RC_[planId], i = h ? h.getAttribute('data-sel-card') : null;
     if (!r || i == null || i === '' || !r.options[Number(i)]) {
@@ -2306,7 +2407,7 @@ function spRcSave(planId) {
     if (!(o.quote && o.quote.priced) && !o.service_only) { var cx1 = _spWk1CustomsOnlyCx_(h, r); if (cx1) return _spWk1SaveCustoms_(planId, h, r, cx1); _spNotify_('This method is not priced for the plan. Nothing was sent.'); return; }   // WK1 r3
     if (!_spPlanTok_(planId)) { _spNotify_('This plan has no edit token on screen - it is being re-read. Nothing was sent; choose again after it reloads.'); try { _spReadbackAfterWrite_(); } catch (eT) {} return; }   // R71-FE-12 (review MINOR-2)
     var cSel = h ? h.querySelector('.sp-rc-customs') : null, cx = cSel ? String(cSel.value || '') : '';
-    if (r.lane && (r.lane.customs || []).length && !cx) { _spNotify_('Choose a customs type first. Nothing was sent.'); return; }
+    if (!_spCustomsNa_(r) && r.lane && (r.lane.customs || []).length && !cx) { _spNotify_('Choose a customs type first. Nothing was sent.'); return; }   // AD4
     if (_SP_WK1_SAVING_[planId]) return;   // WK1: double-click guard (one unified Save per plan)
     var btn = h ? h.querySelector('.sp-rc-save') : null; _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
     var tok = _spPlanTok_(planId);

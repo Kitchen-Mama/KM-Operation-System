@@ -1,0 +1,222 @@
+AD4 上線操作單 / 2026-11-22 / r6.7-ad4-codex-c3
+================================================
+
+分工：Codex 修復、整理本機 Git；Owner 貼 GS、發布版本、實機測試與手動 push。
+目前不是「正式站驗收完成」。本機測試不等於實際文件、扣庫存或收貨已成功。
+Claude 的 frozen AD3-c2 未改動；B8 未合併。不要安裝本次 output 裡的 release 或 release-c2，它們是未交付的中間版。
+
+一、唯一交付來源
+----------------
+專案根目錄：
+C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\Operation System
+
+下文 $Root 代表這個專案根目錄，$R 代表：
+output\ad4-codex-20261122\release-final
+
+PowerShell 先設定：
+$Root = 'C:\Users\viczh\Desktop\KM\品牌資源\Vibe Coding\Operation System\Operation System'
+Set-Location -LiteralPath $Root
+$R = Join-Path $Root 'output\ad4-codex-20261122\release-final'
+node assets/tools/verify-ad4-release.cjs
+
+預期 AD4_RELEASE_VERIFIED。未通過不要貼 GS。
+同國合法海外 3PL -> 真實平台倉 / 已核准 US 同公司 3PL -> 3PL：Customs 顯示 not applicable。
+只有已存 Plan + 倉庫主檔可決定；前端傳旗標不授權。工廠、跨國、未知國家、停用/重複倉、跨公司、WFS 邏輯倉維持原檢查。
+修復包括：零報價畫面漏畫 Customs、服務入口省略空白 Customs 仍被拒、更換目的倉的舊必選檢查、舊 Plan 儲存可能寫入 undefined。
+無新動作權限，無新 DB 欄位。合法性、PO、文件、庫存規則沒有放寬。
+
+二、先完成 Sandbox 修復驗收
+--------------------------
+1. 記錄目前部署版本號，保留目前三個 GS 的原始內容；確認專案是 Sandbox，暫停其他人測試寫入。
+2. 從 $R\candidate\Sandbox\apps-script\，依序整檔覆蓋：
+   12_shipment_handlers.gs
+   11_shipping_plan_handlers.gs
+   63_api_v1_system_health.gs
+   這是「已完整 AD3-c2」的增量，不是給 b3/AD2 或未知基底使用。
+   不碰 00_config、84_、密碼、token 或任何 pin。
+3. 儲存後，先讀回：
+   powershell -NoProfile -ExecutionPolicy RemoteSigned -File assets/tools/capture-ad4.ps1 -Env Sandbox -DeltaOnly
+   預期 AD4_READBACK_MATCH files=3。任一 mismatch 停止，勿用改版本字串掩蓋。
+4. 在既有 Sandbox 網頁應用程式部署選「新版本」並更新；不是只在編輯器儲存。
+5. 舊 server 視窗 Ctrl+C，停止後用新版 launcher，原有 pin 沿用，不要複製到網站或 Git：
+   $Pin = Read-Host '請輸入既有 sandbox-pin.local.js 的完整路徑（不是內容）'
+   node "$R\launcher\serve-ad4.cjs" --pin-from "$Pin" --port 59511
+   這個視窗保持開啟。若 port 被占用，先確認並關閉舊 launcher，不要隨便 taskkill 其他程序。
+6. 另開 PowerShell，設定同一個 $Root/$R，再執行：
+   node "$R\tools\readback-assets-ad4.cjs" --port 59511
+   預期 SERVED_ASSETS_MATCH checked=361 match=361 mismatch=0。
+7. 瀏覽 http://127.0.0.1:59511，Ctrl+Shift+R，登入。
+   執行 $R\tools\SANDBOX_HEALTH_COPY_A2.v3_1.js 的既有 Console 收集器，將它複製的 JSON 存成 health-ad4-sandbox.json。
+   node "$R\tools\check-sbx-health-ad4.cjs" .\health-ad4-sandbox.json
+   必須 MATCH、mixed_deployment=false、stale/absent 空、guard 通過。
+   health 的 build_id/deployment_release 仍是 F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71，不應改成包名。
+   不要貼出 URL、Headers、session、pin 或 token。
+
+三、Sandbox 完整待測清單（U1-U7）
+---------------------------------
+P0 畫面與在途、U6：Owner 已回報 PASS；更新後簡單確認沒有回歸。其他項目仍待 Owner 實測。
+每張單都記下 Plan ID、Shipment ID、測試前後庫存、操作時間與結果；不改 DB 狀態來模擬通過。
+
+既有兩張獨立測試 Plan（不是 Production 單）：
+A: SP-UAT-AD3-20261122-FBA / ResUS US Amazon
+   WH-RESUS-US-3PL-AMZLGS -> WH-RESUS-US-FBA-ABE2
+   CO1100-W / 40 件 / 1 箱，BestWay / truck / truck / LTL。
+B: SP-UAT-AD3-20261122-3PL / ResUS US Amazon
+   WH-RESUS-US-3PL-AMZLGS -> WH-RESUS-US-3PL-WINIT
+   CO1100-W / 40 件 / 1 箱。
+請先重新讀取狀態；不要重複建單、不要沿用舊 approved_qty=空白。
+這兩張是獨立 UAT fixture，不代表 Site Inventory 的 Submit Plan 已經驗證。
+不要在 Site Inventory 直接 Submit 整站，因為同站另有未送出的工廠草稿。
+
+U1 + U4：A 單 / BestWay -> Amazon，零卡也能走完
+1. 海外倉庫存先截圖：來源 available/reserved、目的站庫存、工廠與 PO shipped_qty。
+   上次來源 available=8160、reserved=0 只是歷史基線；本次必須重新讀取，空白 physical 不當 0。
+2. Weekly Shipping Plan 找 A 單，核對公司、SKU、From/To、數量；正常 UI 將核准量設 40 並儲存。
+   收合重開/重載仍是 40 才算保存。
+3. 展開報價：Customs 顯示 not applicable；BestWay 只可 LTL，不得有 SPD。
+   選 LTL 後 truck/truck，Save service；重載後服務一致，不得再要求 Choose a customs type。
+4. 沒有卡：應為 COST_PENDING/NO_APPLICABLE_CARD，不是 0 元。
+   不新增假 rate card、不杜撰費用；選「略過報價」並填原因，保留 pending。
+   有真卡：選卡後確認伺服器保存金額/幣別與重載一致；無真卡則此「有報價」分支記 NOT_RUN，不能算通過。
+5. 送審/核准 -> 建 Shipment Draft。確認真實 ABE2，而不是 Amazon/WFS 邏輯倉。
+   填必要日期、箱號、箱數、參考號；儲存、重載。
+6. 產生 Shipment Details，下載並真正開啟；核對單號、公司、From/To、CO1100-W×40、1箱、參考號。
+   無 carrier 專屬範本才走既有出貨明細備援；讀檔/權限/逾時等錯誤不可假裝成功。
+   不應要求工廠 packing list/無 PO 的 allocation；Carrier/運費未知應顯示 pending，不能假造 tracking/booking。
+7. Ready/Confirm：第一次沒有路線時應提示可用人工物流，且庫存零變動。
+   明確選人工物流後 Confirm，重載為 Shipped，來源 shipment_out 恰好一筆。
+   再點/重載同一操作，不再扣第二次；PO 和工廠不變。
+
+U2：物流、部分/全部收貨、重試與對帳
+8. 同張 A 單人工回報 in_transit -> arrived。到達只改物流，不可自動收貨或再扣來源。
+9. 收 20 件，重載；同一操作重送/雙擊不得重複。再把累計收貨設 40，不能把累計輸入當新增 40。
+   A 目的地是 FBA：不得增加 overseas_inventory_snapshot；只在正確平台/Shipment 收貨層呈現。
+10. 對照來源 movement reference_id=Shipment ID、SKU、公司：出貨總和 40，只有一筆 shipment_out。
+    不論介面是否允許同 token 重送，結果只能拒絕或 idempotent，不可加帳兩次。
+
+U5：B 單 / 海外倉 -> 海外倉
+11. 以 B 單再走核准量 40 -> 合法服務 -> 文件 -> Confirm -> 人工物流 -> 到達 -> 收貨。
+    可選有真實主檔支持的 Carrier；不要強迫不存在的服務。
+    出貨來源扣一次 40；到達時目的 WINIT 不加庫存。
+12. WINIT 分兩次累計 20 / 40 收貨，目的可用庫存各增加實收 20、共 40。
+    目的原本沒有 snapshot 的情況，應由正常收貨服務建立，不手填假列；兩次收貨總量只計 40。
+    來源/目的皆 ResUS；工廠/PO 不動。
+13. 若兩張皆完成且期間沒有其他異動，來源總出貨應為 80；若本次基線仍 8160、且保留已釋放，完成後 available 應為 8080。
+    Draft 保留期間 available/reserved 會變動，要以 available+reserved 與 movement 對帳，不把保留誤認出貨。
+    兩份實際 Shipment Details 和兩張 Shipment ID 都留下。
+
+U3：Carrier 待指派與實際 Carrier
+14. 此分支需要一張尚未出貨、且 server 正常建立「待指派」標記的獨立少量 UAT Draft。
+    不清掉 A 單 BestWay 來假裝待指派，不自行填 marker。
+15. 填待指派原因 -> Confirm 對話框顯示 To be assigned / cost pending。
+    未勾確認前不能送；勾選後必須再手選人工物流，Carrier 可仍空白。
+16. 出貨成功後，用指派 Carrier 填實際 UPS 等合法主檔；重載一致，不能覆蓋已有 Carrier。
+    Amazon partnered 記錄實際 Carrier 是另一分支；有該模式的受控單才驗證，否則明列 NOT_RUN 並首批不採用。
+
+U6：WFS
+17. 已 Owner PASS，首批仍只暫停送 WFS 實體倉。邏輯 WFS 不能 Confirm。
+    Walmart 自配送與合法 Amazon/3PL 不因此停用。下週補真實 WFS 倉號/地址後另驗。
+
+U7：停用時效列（必做）
+18. 54 個 CLT-OWNER-DOM-* 與 18 範本保持停用，不刪、不啟用。
+    看 Weekly Plan、Inventory Replenishment 和可用的 AI 建議/唯讀結果：不得因停用列而出現 5/12 天或可用服務。
+    合法 active 時效若剛好同為 5/12 天，不是只憑數字判失敗，要核對來源列。
+    CN 起運路徑與原結果一致；海外庫存不當作平台可售或 18 天已到貨。
+    若 AI 按鈕受正式 gate 關閉，記該入口 NOT_RUN；不要為測試改 gate 或開 DB AI 生成。
+    U7 未通過，Production S7（54筆時效同步）仍 BLOCKED。
+
+共同回歸：工廠 -> 海外/平台依然需要 PO/文件；跨國與跨公司不會因為 From 是 3PL 而自動放行。
+P0 From 只列有可用工廠庫存；平台與海外在途分開，不改 Gap/RO/DoS 算法。
+
+四、Production GS 與 DB
+-----------------------
+只有 Sandbox 上述實機關鍵流程 PASS 後才做這節。先停全員寫入與寫入 trigger，備份 DB、舊 GS、前端 commit 與部署版本。
+本次 AD4 不增加 DB 欄位。Codex 已在 2026-11-22 唯讀重讀正式表頭：7+9+17 的表尾欄名/順序正確，BU1 正確；shipments 73 欄與 shipment_lines 35 欄均符合 Production 12_ 已知布局。
+讀回檔在 output\ad4-codex-20261122\PRODUCTION_HEADERS_READBACK.json；本次只查表頭，沒有修改 DB，也沒有驗證新欄資料列全空或舊欄逐格歷史不變。
+既有 7+9+17 已完整時不重加。重新核對：
+- shipping_plan_lines 7 個 snapshot_* 在表尾；shipment_final_output_snapshots 9 個、lines 17 個順序符合原遷移單。
+- shipments BS/BT 未動，BU1=final_output_validated_digest；不回填舊列，BV 後未被其他資料使用。
+- shipment_routes 24 / shipment_events 20 / shipment_lines 是 code 接受的完整既有布局；不因錯誤自行刪/挪欄。
+- shipment_plan_links 保留 link_status，不改 line_status。
+原檢查工具：C:\Users\viczh\kmc\pkg\phase1-next-20261113\decisions\prod-schema-33\check-headers.cjs
+有先前 before 記錄則跑 after；沒有 before 而全部已加完，可用 before 模式判斷 ALREADY_DONE，這不證明舊欄位沒移動，仍須對照備份。
+目前不做欄位縮減，留到上線穩定後的獨立遷移。
+
+Production GS 唯一來源：
+$R\candidate\Production\apps-script\
+或本機 Git 的 assets\specs\active\apps-script\ 同名檔（這 26 個已同步）。絕不從 Sandbox 取 12_/39_/63_/01_。
+若正式站不是已讀回確認的完整 AD3-c2，按這份累積清單整檔貼；不要只貼 AD4 四檔：
+01. 22_shipment_dispatch_handlers.gs
+02. 12_shipment_handlers.gs
+03. 11_shipping_plan_handlers.gs
+04. 78_api_v1_import_batch.gs
+05. 13_procurement_handlers.gs
+06. 87_api_v1_shipment_route_init.gs
+07. 31_shipment_receipt_route_handlers.gs
+08. 32_shipment_line_allocation_handlers.gs
+09. 34_shipment_final_output_handlers.gs
+10. 35_shipment_document_renderer.gs
+11. 39_document_runtime_service.gs
+12. 57_api_v1_shipment_workspace.gs
+13. 80_api_v1_shipment_import.gs
+14. 82_api_v1_po_factory_import.gs
+15. 16_shipping_allocation_handlers.gs
+16. 23_recommendation_persistence_repository.gs
+17. 50_api_v1_warehouse_allocation_config.gs
+18. 42_api_v1_recommendation_workspace.gs
+19. 43_api_v1_gap_materialization.gs
+20. 74_api_v1_overseas_allocation_preview_job.gs
+21. 61_api_v1_weekly_ai_plan.gs
+22. 71_api_v1_factory_stock_guard.gs
+23. 69_api_v1_ai_plan_lifecycle.gs
+24. 90_generated_supply_planning_bundle.gs
+25. 63_api_v1_system_health.gs
+26. 01_router.gs（最後）
+90_ 本輪未再手改/重建，沿用已驗證 c2 bundle；不要用舊主分支來源重建覆蓋。
+若 Production 的完整 AD3-c2 已另讀回確認，AD4 增量只需 12_ -> 11_ -> 63_ -> 01_；前端 production-config + index + shipping-plan 必須配套更新。
+本清單相對既定 R0/c2 基底；若 live 在其他檔有自訂修復，先比對備份，不直接覆蓋。
+貼完先儲存並跑：
+powershell -NoProfile -ExecutionPolicy RemoteSigned -File assets/tools/capture-ad4.ps1 -Env Production
+預期 AD4_READBACK_MATCH files=26，才在既有 Production 部署選「新版本」更新。
+舊版網址不能仍指向未受保護部署；由 Owner 確認多餘舊公開部署已封存。
+
+五、Git 前端發布與正式站冒煙
+----------------------------
+本機分支：codex/ad4-customs-go-live-20261122；遠端未推送。
+已整理 c2 累積 Production 更新與本次 AD4，不含 B8。Git source 中其餘非清單 GS 保留原狀。
+Owner 審核 Sandbox 結果後，在停寫期間手動：
+git diff main..codex/ad4-customs-go-live-20261122 --stat
+git switch main
+git merge --ff-only codex/ad4-customs-go-live-20261122
+git push origin main
+若 ff-only 拒絕或 origin 已前進，停止並回報，不 force、不 reset。
+不要 git add . 把本機 pin、測試憑證或別人的未追蹤檔加入。
+依原本正式站發布方式確認 Pages 確實更新；不是只有 push 成功就認定已發布。
+GS 部署和前端推送要在同一維護窗口完成：Production policy 已更新，未成套時 guard 拒絕屬預期，不要繞過。
+在正式網址硬重新整理，確認 Production 標示、production-config token 與 shipping-plan token 有 -ad4。
+使用 $R\tools\PROD_HEALTH_COPY_A2.v2_1.js 收集新 health，存成 health-ad4-production.json：
+node "$R\tools\check-prod-health-ad4.cjs" .\health-ad4-production.json
+必須 PROD_HEALTH_AD4 MATCH、guard VERIFIED、mixed_deployment=false；正式 health 要新鮮，30 分鐘內。
+本機 59511 是 Sandbox，不能把它當正式站測試。
+
+正式站受控測試（不要一開始就批次導入庫存/在途）：
+1. 檢查最小必要主檔：實際倉、公司、SKU、active Carrier、合法服務與正確地址。
+   BestWay 的 LTL 若缺少可辨識的服務主檔，停止補正；不能先啟用估計時效或假造報價卡。
+   主檔同步須沿用按 ID 的原 Production 計畫、讀回後差異才寫；本輪沒有幫你同步任何主檔。
+2. 用可明確識別的 UAT 單/數量，分別走 3PL->Amazon 和 US 3PL->3PL。
+   每張按上文核准 -> 文件下載開啟 -> 明確人工 Confirm -> 到達 -> 累計部分/全部收貨 -> movement/snapshot 對帳。
+3. 最少再查：有真卡報價能保存；無卡不擋且 pending；既有工廠單 PO 規則、P0 From/在途、WFS 暫停不回歸。
+4. 有用到待指派功能就做 U3；沒有驗完的 Carrier/模式/路徑首批不採用，不能寫「全部 U1-U7 PASS」。
+5. 全部採用路徑 PASS、帳務一致後才解除停寫，恢復必要 trigger，再做正式庫存/Shipment 導入；導入另有數量核對。
+   正式站不要盲刪已出貨測試交易：它們已改庫存/帳務。走受支援沖銷/調整並核對，或保留標記。
+   Sandbox 測試資料清理也必須另外列清單和確認，不在部署步驟順手刪除。
+
+六、失敗處理與已知限制
+----------------------
+任何 UNKNOWN/PARTIAL、CONFIRM_ROLLBACK_UNVERIFIED、重複扣庫存、目的增量不符、文件實際打不開、health/guard 不過：停止該單與下一張單，保留 ID/畫面/純錯誤碼。
+不要重新建單來重送、不要換 operation ID 試到成功、不要刪帳務、不要手改狀態或關掉 guard。
+回退先停寫，保存目前資料與版號；以維護前配套的 GS/前端恢復，不預設刪 Carrier/模板/時效/事件/交易，也不預設 R0 能處理 73 欄。
+若有 AD3/AD4 新型單，先依原 c2 rollback 分類判斷；無法證明相容就保持停寫，不能只切回 R0 宣稱完成。
+沿用 c2 addendum 的已知限制：備援 ETA 對日後帶 max_days 的停用列仍有風險；WFS 匯入邏輯倉在 Confirm 前仍可能被接受；部分操作者仍標記 operation-system/未驗證。
+Production 密碼模組未讀、真實 session 驗證核心未獨立審核；不可把本次測試當完整安全審計。
+實際跨國 3PL、真 WFS 倉、未完成 B8/後續 C 都不在本次首批交付範圍。

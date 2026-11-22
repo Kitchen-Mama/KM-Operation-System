@@ -34,7 +34,8 @@
 // ============================================================
 
 // The build stamp of THIS module. Moves only when this file changes (per-module stamp, not the release).
-var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1';
+var FSG_FACTORY_SOURCE_ONLY_ = true;   // A-delta1 C5: see fsgReadInventoryFacts_
+var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B';
 
 // ==============================================================================================================
 // THE APPEND-ONLY OVERRIDE AUDIT LEDGER — PROVISIONED BY MIGRATION, NEVER BY THE RUNTIME.
@@ -126,6 +127,19 @@ function fsgReadInventoryFacts_(ss, opts) {
     if (isFactory) eligible[id] = 1;
   });
 
+  // A-delta1 C5 (Owner 2026-11-21): the FACTORY stock guard counts FACTORY-sourced exposure only. A shipping plan or an allocation-draft line
+  // whose source is a known NON-factory warehouse (an overseas 3PL; 05_ ovsWarehouseSourceDomain_ = OVERSEAS) draws on the overseas ledger,
+  // which the 16_ Submit pre-check (C4 D-B2) and the 12_ Shipment Draft reservation govern. Before this, such a plan was keyed as a factory pool
+  // with no stock row (available 0), so every overseas -> platform plan demanded a "Confirm Overage" against FACTORY stock at submit / approve.
+  // A source that is not in the warehouse master keeps counting exactly as before. Switch: FSG_FACTORY_SOURCE_ONLY_ (false = previous behaviour).
+  if (FSG_FACTORY_SOURCE_ONLY_) {
+    var nonFactory_ = {}, hdrSrc_ = {}, nf_ = { plans: 0, draft_lines: 0 };
+    warehouses.forEach(function (w) { var id = fsgStr_(w.warehouse_id); if (!id || eligible[id] || fsgStr_(w.warehouse_type).toUpperCase() === 'FACTORY') return; nonFactory_[id] = 1; });
+    dHeaders.forEach(function (h) { hdrSrc_[fsgStr_(h.allocation_draft_id)] = fsgStr_(h.recommended_source_warehouse_id); });
+    plans = plans.filter(function (p) { if (nonFactory_[fsgStr_(p.source_warehouse_id)]) { nf_.plans++; return false; } return true; });
+    dLines = dLines.filter(function (l) { var src = fsgStr_(l.source_warehouse_id) || hdrSrc_[fsgStr_(l.allocation_draft_id)] || ''; if (nonFactory_[src]) { nf_.draft_lines++; return false; } return true; });
+    out.non_factory_excluded = nf_;
+  }
   var balances = KMFSG.normalizeBalances(stock, { eligibleWarehouseIds: eligible });
   var dEx = KMFSG.draftExposure(dHeaders, dLines, {
     releaseSet: opts.releaseSet || {},
@@ -143,7 +157,8 @@ function fsgReadInventoryFacts_(ss, opts) {
     priorityByReceiver[fsgStr_(m.company) + '||' + canon + '||' + fsgStr_(m.marketplace)] = ap;
   });
 
-  out.eligibleFactoryWarehouseIds = eligible;
+  if (opts.display14 === true) out.display14 = { factory_stock: stock, warehouses: warehouses };
+out.eligibleFactoryWarehouseIds = eligible;
   out.balances = balances;
   out.draftExposure = dEx;
   out.planExposure = pEx;
@@ -265,6 +280,7 @@ function fsgEvaluatePlanOverage_(ss, planId, opts) {
  */
 function handleFactoryStockGuardGet_(body) {
   body = body || {};
+  if (body.display_snapshot === true) return fsgDisplay14_(SpreadsheetApp.getActiveSpreadsheet());
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var planId = fsgStr_(body.shipping_plan_id);
   if (planId) {
@@ -816,4 +832,45 @@ function RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS() {
   }
   Logger.log(JSON.stringify(out, null, 2));
   return out;
+}
+
+// Display-only projection. Transition/dispatch gates still read uncached facts under their own lock.
+function fsgDisplay14_(ss) {
+  var before = typeof kmSrcRevGet_ === 'function' ? kmSrcRevGet_() : null;
+  if (!before) return jsonResponse_({ success: false, zero_write: true, code: 'SOURCE_REVISION_PENDING' });
+  var facts = fsgReadInventoryFacts_(ss, { display14: true });
+  if (!facts.ok) return jsonResponse_({ success: false, zero_write: true, code: facts.reason });
+  var raw = facts.display14;
+  var ids = {}, bad = false;
+  raw.warehouses.forEach(function (w) {
+    var id = fsgStr_(w.warehouse_id);
+    if (!id || ids[id]) bad = true;
+    ids[id] = true;
+  });
+  function integer(v, blankZero) {
+    if (v == null || String(v).trim() === '') return blankZero ? 0 : null;
+    var n = Number(v); return isFinite(n) && Math.floor(n) === n ? n : null;
+  }
+  raw.factory_stock.forEach(function (r) {
+    var wh = fsgStr_(r.warehouse_id);
+    if (!wh || !ids[wh]) { bad = true; return; }
+    if (!facts.eligibleFactoryWarehouseIds[wh]) return;
+    var n = integer(r.fac_current_stock != null ? r.fac_current_stock : r.current_stock, false);
+    var held = integer(r.fac_reserved_stock != null ? r.fac_reserved_stock : r.reserved_stock, true);
+    if (!fsgStr_(r.sku) || n === null || held === null || n < 0 || held < 0 || held > n) bad = true;
+  });
+  var after = kmSrcRevGet_();
+  if (bad) return jsonResponse_({ success: false, zero_write: true, code: 'FACTORY_DISPLAY_BALANCE_INVALID' });
+  if (!after || before !== after) return jsonResponse_({ success: false, zero_write: true, code: 'FACTORY_CHANGED_DURING_READ' });
+  return jsonResponse_({ success: true, zero_write: true, data: {
+    contract: KMFSG.CONTRACT, build: FSG_BUILD_VERSION_, pool_keys: facts.available.pool_keys,
+    byPool: facts.available.byPool, inventory_snapshot_fingerprint: facts.available.fingerprint,
+    tables_read: facts.tables_read,
+    display14: { revision: after, display_only: true, stock: {
+      success: true, meta: { onlyRequested: ['factory_stock', 'warehouses'], siteScopeRequested: false, siteScopeApplied: false },
+      data: { factory_stock: raw.factory_stock, warehouses: raw.warehouses,
+        capped: { factory_stock: false, warehouses: false },
+        counts: { factory_stock: raw.factory_stock.length, warehouses: raw.warehouses.length } }
+    } }
+  } });
 }

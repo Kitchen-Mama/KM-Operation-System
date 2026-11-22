@@ -172,7 +172,7 @@
     border-radius: var(--radius-sm);
     cursor: pointer;
     font-weight: var(--weight-medium);
-    white-space: nowrap;
+    white-space: normal;   /* C4: was nowrap */
 }
 #sku-section .btn-more-options:hover { background: #e2e8f0; }
 #sku-section .btn-more-options[aria-expanded="true"] { background: #e2e8f0; }

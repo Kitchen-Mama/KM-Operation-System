@@ -1889,9 +1889,13 @@ function _fiiXlsxRowValues(row) {
   for (var c = 1; c <= last; c++) out.push(_fiiCellText(row.getCell(c)).trim());
   return out;
 }
-function _fiiParseXlsx(file) {
+function _fiiParseXlsx(file) {   // A final4 Cut B: the Factory read waits for the SAME awaitable XLSX readiness as the PO/Factory and Shipment downloads
+  var te4_ = window.KM && window.KM.templateExport, rd4_ = (te4_ && typeof te4_.ready === 'function') ? te4_.ready() : Promise.resolve();
+  return rd4_.then(function () { return _fiiParseXlsxNow_(file); }, function () { return Promise.reject(new Error('暫時無法讀取檔案，請重新整理後再試。資料未變更。')); });
+}
+function _fiiParseXlsxNow_(file) {
   return new Promise(function (resolve, reject) {
-    if (!(window.ExcelJS && window.ExcelJS.Workbook)) { reject(new Error('XLSX engine (ExcelJS) not loaded.')); return; }
+    if (!(window.ExcelJS && window.ExcelJS.Workbook)) { reject(new Error('暫時無法讀取檔案，請重新整理後再試。資料未變更。')); return; }
     var reader = new FileReader();
     reader.onerror = function () { reject(new Error('Could not read the file.')); };
     reader.onload = function () {
@@ -2121,12 +2125,12 @@ function _fiiOpenLegacyBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=iu4-20261112').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 function _fiiOpenBatchImport() {
   function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
   if (window.KM && window.KM.poFactoryImport) return go();
-  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=iu4-20261112').then(function (ok) {
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r76-a2sad3-20261129').then(function (ok) {
     if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
     return go();
   }).catch(function (e) { alert(String(e.message || e)); });

@@ -11,7 +11,7 @@
         var flight = { env: env };
         flight.promise = window.KM.DB.importTemplateGet({ domain: 'po_factory_stock', mode: 'NEW_RECEIPT', scope: {} }).then(function (t) {
             if (environment() !== env) throw new Error('Environment changed. Reopen the import.');
-            if (!t || !t.success) throw new Error(t && (t.error || t.code) || 'Factory list unavailable');
+            if (!t || !t.success) { var e0 = new Error(t && (t.error || t.code) || 'Factory list unavailable'); e0.code = (t && t.code) || 'FACTORY_LIST_UNAVAILABLE'; throw e0; }   // SHIP-OPEN 2a: the dialog shows the server's reason code
             var rows = ((t.lists && t.lists.factories) || []).filter(function (f) { return f.status === 'active'; }).map(function (f) { return { value: f.value, label: f.label || f.value }; });
             if (env) factoryCache = { env: env, expires: Date.now() + FACTORY_TTL, rows: copyOptions(rows) };
             return rows;
@@ -59,7 +59,7 @@
     }
     function open(options) {
         if (window.KM.importBatch) return window.KM.importBatch.open(adapter(options));
-        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js?v=iu4-20261112').then(function (ok) {
+        return window.KM.scriptLoader.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) {
             if (!ok || !window.KM.importBatch) throw new Error('Import module unavailable');
             return window.KM.importBatch.open(adapter(options));
         });

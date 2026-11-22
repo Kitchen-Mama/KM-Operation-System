@@ -80,6 +80,7 @@
     var set15e = (ok && typeof KMRA.planningSetMembers === 'function') ? KMRA.planningSetMembers(lane.destinationCountry) : null;   // R15C-EU
     if (!ok) return out;
     (leadTimes || []).forEach(function (raw) {
+      if (typeof KMRA.leadTimeActive === 'function' && !KMRA.leadTimeActive(raw)) return;   // AD3 C round 3 (review F1): an inactive row is no service authority
       var lt = KMRA.normalizeLeadTime(raw);
       if (!KMRA.axisOk(lt.originCountry, lane.originCountry)) return;
       if (set15e) { if (!KMRA.destinationOk(lt.destinationCountry, lane.destinationCountry)) return; } else   // R15C-EU: a set lane admits its members; the exact rule below is unchanged

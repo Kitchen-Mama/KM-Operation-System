@@ -86,6 +86,9 @@ function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs, 
     if (!ln) return;
     var s = byId[ln.shipmentId]; if (!s) return;
     if (_IR_TERMINAL_SHIPMENT_STATUS[String(s.status || '').trim().toLowerCase()]) return;   // terminal → 0
+    // SHIP-OPEN R4 (Owner rule 4): an Amazon opening record (80_ import: IMPORT_HISTORICAL + opening_supply_mode DISPLAY_ONLY) is display only -
+    // its cut-off quantity never appears as live incoming on this card (the same rule as the shared core module KMSLS).
+    if (String(s.recordOrigin || '').trim() === 'IMPORT_HISTORICAL' && String(s.openingSupplyMode || '').trim() !== '' && String(s.openingSupplyMode || '').trim().toUpperCase() !== 'COUNTED') return;   /* r5.4: blank mode = legacy row = counted as before */   // R5: DISPLAY_ONLY or unfinished (PENDING:*)
     var remaining = _irRemainingIncoming(ln.shipmentQty, ln.shipmentReceivedQty);
     if (remaining <= 0) return;   // fully received / nothing remaining
     var etaMs = _irEtaMs(s.eta);
@@ -109,6 +112,77 @@ function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs, 
   });
   return map;
 }
+// A final3 (Owner 2026-11-20 item B): the Shipping Shipment CARD shows what is on the way to this receiver INCLUDING imported Amazon
+// display-only shipments. This is a separate DISPLAY projection; the SUPPLY projection above is untouched (On the Way, DoS, Gap, Suggested,
+// AI / OP / IR keep reading it). Display = every line the supply projection takes, plus lines of imported (IMPORT_HISTORICAL) shipments
+// whose mode is exactly DISPLAY_ONLY or COUNTED. A PENDING (unfinished batch) or unknown mode is excluded from both. Same receiver rule
+// (frozen plan-line lineage; blank lineage -> header scope; present but unresolved -> fail closed), same remaining quantity (shipment_qty -
+// received, never below 0), same exclusive ETA buckets (missing ETA -> unknown), each line once, joined by exact shipment_id. Pure.
+function _irShipLineFacts_(s, ln, todayMs, lineRecv) {
+  var origin = String(s.recordOrigin || '').trim(), modeRaw = String(s.openingSupplyMode || '').trim(), mode = modeRaw.toUpperCase();
+  var imported = origin === 'IMPORT_HISTORICAL' && modeRaw !== '';
+  var f = { external_no: String(s.externalShipmentId || s.shipmentNo || ''), shipment_id: String(s.shipmentId || ''), sku: String(ln.sku || ''), line_id: String(ln.shipmentLineId || ''),
+    receiver: '', mode: imported ? mode : (origin === 'IMPORT_HISTORICAL' ? 'LEGACY_IMPORT' : 'LIVE'),
+    commit_state: imported ? ((mode === 'DISPLAY_ONLY' || mode === 'COUNTED') ? 'COMMITTED' : (/^PENDING/.test(mode) ? 'PENDING_BATCH_NOT_FINISHED' : 'UNKNOWN_MODE')) : '-',
+    remaining: 0, eta_bucket: '', display_included: false, display_reason: '', supply_included: false, supply_reason: '' };
+  f.remaining = _irRemainingIncoming(ln.shipmentQty, ln.shipmentReceivedQty);
+  var etaMs = _irEtaMs(s.eta), days = etaMs === null ? null : Math.floor((etaMs - todayMs) / 86400000);
+  f.eta_bucket = days === null ? 'unknown' : _irShipmentEtaBucket(days);
+  var rcv = null, rcvWhy = '';
+  if (ln.shippingPlanLineId) { var lr = (lineRecv || {})[ln.shippingPlanLineId]; if (!lr || !_irIsSpecificReceiver(lr.company, lr.country, lr.marketplace)) rcvWhy = 'LINEAGE_UNRESOLVED'; else rcv = lr; }
+  else rcv = s;
+  if (rcv) f.receiver = _irReceiverKey(rcv.company, rcv.country, rcv.marketplace, ln.sku);
+  var common = _IR_TERMINAL_SHIPMENT_STATUS[String(s.status || '').trim().toLowerCase()] ? 'TERMINAL_STATUS' : (f.remaining <= 0 ? 'NOTHING_REMAINING' : rcvWhy);
+  var supplyOut = imported && mode !== 'COUNTED', displayOut = imported && !(mode === 'DISPLAY_ONLY' || mode === 'COUNTED');
+  f.supply_included = !common && !supplyOut; f.supply_reason = common || (supplyOut ? (mode === 'DISPLAY_ONLY' ? 'DISPLAY_ONLY_NOT_SUPPLY' : 'IMPORT_NOT_COMMITTED_OR_UNKNOWN_MODE') : 'INCLUDED');
+  f.display_included = !common && !displayOut; f.display_reason = common || (displayOut ? 'IMPORT_NOT_COMMITTED_OR_UNKNOWN_MODE' : 'INCLUDED');
+  return f;
+}
+function _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById) {
+  var byId = {}; (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId[s.shipmentId] = s; });
+  var out = [];
+  (shipmentLines || []).forEach(function (ln) { if (!ln) return; var s = byId[ln.shipmentId]; if (!s) return; out.push(_irShipLineFacts_(s, ln, todayMs, lineReceiverById || {})); });
+  return out;
+}
+// A-DELTA1 c2 item 3: the PHYSICAL destination (exact warehouse id) is a 3PL -> 'TO' (送往 3PL); proven arrived at that 3PL only by a persisted
+// status (arrived = verified destination, 31_) or a receipt there (partially received) -> 'AT' (已到 3PL). Never ETA alone. '' otherwise. Display only.
+function _irShip3plState_(s, whTypeById) {
+  if (!s || !whTypeById) return '';
+  var dw = String(s.destinationWarehouseId || s.warehouseId || '').trim(); if (!dw || String(whTypeById[dw] || '').toUpperCase() !== '3PL') return '';
+  var st = String(s.status || '').trim().toLowerCase();
+  return (st === 'arrived' || st === 'partially_received' || st === 'partial_received') ? 'AT' : 'TO';
+}
+function _irBuildShipmentDisplayByReceiver(shipments, shipmentLines, todayMs, lineReceiverById, whTypeById) {
+  var map = {}, byId3 = {};
+  if (whTypeById) (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId3[s.shipmentId] = s; });   // A-DELTA1 c2 item 3
+  _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById).forEach(function (f) {
+    if (!f.display_included) return;
+    var rec = map[f.receiver] || (map[f.receiver] = { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0, display_only: 0, to_3pl: 0, at_3pl: 0,
+      plat: { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 }, ovs: { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 }, untyped: 0 });   // AD3 D r5
+    rec[f.eta_bucket] += f.remaining; if (f.mode === 'DISPLAY_ONLY') rec.display_only += f.remaining;
+    var t3 = whTypeById ? _irShip3plState_(byId3[f.shipment_id], whTypeById) : '';   // A-DELTA1 c2 item 3: subsets, never added again
+    if (t3 === 'AT') rec.at_3pl += f.remaining; else if (t3 === 'TO') rec.to_3pl += f.remaining;
+    // AD3 D r5 (Owner P0): classified by the SAVED destination warehouse's master type ONLY (never marketplace / name / route text):
+    // FBA (incl. WFS) -> platform, 3PL -> overseas, anything else / unknown -> neither (still inside the totals above).
+    var s5 = byId3[f.shipment_id], ty5 = (whTypeById && s5) ? String(whTypeById[String(s5.destinationWarehouseId || s5.warehouseId || '').trim()] || '').trim().toUpperCase() : '';
+    if (ty5 === 'FBA') rec.plat[f.eta_bucket] += f.remaining; else if (ty5 === '3PL') rec.ovs[f.eta_bucket] += f.remaining; else rec.untyped += f.remaining;
+  });
+  return map;
+}
+// Read-only per-line reconciliation of the loaded site (Shipping Shipment card > 對帳明細): a CSV download, no endpoint / token / payload.
+function _irShipDisplayCsv_(ev) {
+  try { if (ev && ev.stopPropagation) ev.stopPropagation(); } catch (e0) {}
+  var e = (typeof _irExposureActiveEntry_ === 'function') ? _irExposureActiveEntry_() : null;
+  if (!e || !e.model) { alert('The shipment detail of this site is not loaded yet. Nothing was exported.'); return null; }
+  var idx = e.indexes || _irBuildExposureIndexes_(e.model), d = new Date(), today = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
+  var rows = _irShipmentDisplayReconcile(e.model.getShipments || [], e.model.getShipmentLines || [], today, idx.lineReceiverById);
+  var cols = ['external_no', 'shipment_id', 'sku', 'receiver', 'mode', 'commit_state', 'remaining', 'eta_bucket', 'display_included', 'display_reason', 'supply_included', 'supply_reason'];
+  var q = function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  var text = '﻿' + [cols.join(',')].concat(rows.map(function (r) { return cols.map(function (c) { return q(r[c]); }).join(','); })).join('\n') + '\n';
+  var name = 'site-inventory-shipping-reconcile-' + d.toISOString().slice(0, 10) + '.csv';
+  try { var blob = new Blob([text], { type: 'text/csv' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); } catch (e2) {} }, 1500); } catch (e3) {}
+  return { name: name, rows: rows };
+}
 if (typeof window !== 'undefined') {
   window._irShipmentEtaBucket = _irShipmentEtaBucket;
   window._irRemainingIncoming = _irRemainingIncoming;
@@ -116,9 +190,10 @@ if (typeof window !== 'undefined') {
   window._irReceiverKey = _irReceiverKey;
   window._irIsSpecificReceiver = _irIsSpecificReceiver;
   window._irBuildShipmentRemainingByReceiver = _irBuildShipmentRemainingByReceiver;
+  window._irBuildShipmentDisplayByReceiver = _irBuildShipmentDisplayByReceiver; window._irShipmentDisplayReconcile = _irShipmentDisplayReconcile; window._irShipDisplayCsv_ = _irShipDisplayCsv_;   // A final3 (B)
 }
 if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta, _irReceiverKey: _irReceiverKey, _irIsSpecificReceiver: _irIsSpecificReceiver, _irEtaMs: _irEtaMs, _irBuildShipmentRemainingByReceiver: _irBuildShipmentRemainingByReceiver };
+  module.exports = { _irBuildShipmentDisplayByReceiver: _irBuildShipmentDisplayByReceiver, _irShipmentDisplayReconcile: _irShipmentDisplayReconcile, _irShipmentEtaBucket: _irShipmentEtaBucket, _irRemainingIncoming: _irRemainingIncoming, _irBucketRemainingByEta: _irBucketRemainingByEta, _irReceiverKey: _irReceiverKey, _irIsSpecificReceiver: _irIsSpecificReceiver, _irEtaMs: _irEtaMs, _irBuildShipmentRemainingByReceiver: _irBuildShipmentRemainingByReceiver };
 }
 
 function openReplenAddSkuModal() {
@@ -2203,7 +2278,7 @@ function _irScrollRowHtml_(item) {
         '<div class="scroll-cell">' + _replenMarketplaceLabel(item.marketplace, item.company, item.country) + '</div>' +
         '<div class="scroll-cell replen-cell--current-stock">' + (item.currentStockDisplay != null ? item.currentStockDisplay : item.currentInventory) + '</div>' +   // R71-FE-13
         '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
-        '<div class="scroll-cell">' + item.onTheWay + '</div>' +
+        _irOnTheWayCellHtml_(item) +   // A final4 Cut B: was the literal DTO onTheWay (0); the DTO field itself is unchanged
         '<div class="scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
         '<div class="scroll-cell">' + item.forecast60d + '</div>' +
         '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
@@ -3306,6 +3381,7 @@ function _irSetRouteSaveState_(sku, instanceIds, state) {
             if (!want[String(els[i].getAttribute('data-route-instance') || '')]) continue;
             els[i].setAttribute('data-route-save-state', state);
             els[i].setAttribute('data-route-save-label', IR_ROUTE_SAVE_STATES_[state]);
+            try { if (typeof _irRouteSaveChip_ === 'function') _irRouteSaveChip_(els[i], state); } catch (_eCh) {}   // RC1: visible
         }
     } catch (e) {}
     return n;
@@ -3439,6 +3515,7 @@ function toggleReplenRow(sku) {
                             <article class="replen-card replen-card--third-party">
                                 <h4 class="replen-card__title">3rd Party Stock</h4>
                                 ${skuData?.thirdPartyDetailHtml || ('<div class="replen-card__row"><span class="replen-card__label">Winit</span><span class="replen-card__value">' + (skuData?.winitStock || 0) + '</span></div><div class="replen-card__row"><span class="replen-card__label">ONUS</span><span class="replen-card__value">' + (skuData?.onusStock || 0) + '</span></div>')}
+                                <div class="ir-tp-onway" id="ir-tp-onway-${sku}">${_irTpOnWayHtml_(sku, skuData)}</div>
                             </article>
                         </div>
                     </section>
@@ -3908,6 +3985,7 @@ function _persistAllocationDraft() {
         var snapshot = {};
         for (var k in replenAllocationDraft) { if (Object.prototype.hasOwnProperty.call(replenAllocationDraft, k)) snapshot[k] = replenAllocationDraft[k]; }
         snapshot._unsavedRoutes = (typeof _irUnsavedRoutes === 'object' && _irUnsavedRoutes) ? _irUnsavedRoutes : {};
+        snapshot._routeCancelEvidence = (typeof _irRouteCancelEvidence_ !== 'undefined' && _irRouteCancelEvidence_) ? _irRouteCancelEvidence_ : [];   // RC1
         sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(snapshot));
     } catch (e) {}
 }
@@ -4031,14 +4109,22 @@ function _irSaveAcknowledged_(res) {
 function _irRenderUnsavedBanner_() {
     var host = _irStateHost_(); if (!host) return;
     var skus = _irUnsavedSkus_();
-    var existing = host.querySelector('.replen-unsaved-banner');
-    if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
-    if (!skus.length) { if (!host.innerHTML) { host.style.display = 'none'; } return; }
-    var html = '<div class="replen-unsaved-banner" role="alert" style="background:#FEF2F2;border-left:3px solid #EF4444;color:#B91C1C;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+    ['.replen-unsaved-banner', '.replen-route-op-banner', '.replen-route-op-notes'].forEach(function (sel) {   // RC1
+        var existing = host.querySelector(sel);
+        if (existing && existing.parentNode) existing.parentNode.removeChild(existing);
+    });
+    // RC1 — an unresolved route DELETION is not a failed save: it gets its own notice with its state and the safe next step.
+    var opKeys = (typeof _irRouteCancelMarker_ === 'function') ? skus.filter(function (k) { return !!_irRouteCancelMarker_(k); }) : [];
+    var notes = (typeof _irRouteOpNotesHtml_ === 'function') ? _irRouteOpNotesHtml_() : '';
+    skus = skus.filter(function (k) { return opKeys.indexOf(k) < 0; });
+    if (!skus.length && !opKeys.length && !notes) { if (!host.innerHTML) { host.style.display = 'none'; } return; }
+    var html = !skus.length ? '' : '<div class="replen-unsaved-banner" role="alert" style="background:#FEF2F2;border-left:3px solid #EF4444;color:#B91C1C;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
         '<strong>Unsaved — database update failed.</strong> ' + _irEsc_(String(skus.length)) +
         ' Execution Plan route(s) were NOT saved: ' + _irEsc_(skus.join(', ')) +
-        '. They are kept on screen so you can correct and retry them. Submit Plan is blocked until every route is saved.' +
-        '</div>';
+        ((typeof _irSaveMarksAllOnScreen_ !== 'function' || _irSaveMarksAllOnScreen_(skus)) ? '. They are kept on screen so you can correct and retry them. Submit Plan is blocked until every route is saved.' : _irSaveMarksOffScreenText_(skus)) +   // RC1-R2: truthful when no row is on screen
+        (typeof _irSaveMarksCheckHtml_ === 'function' ? _irSaveMarksCheckHtml_(skus) : '') + '</div>';
+    if (opKeys.length) html += _irRouteOpBannerHtml_(opKeys);   // RC1
+    html += notes;
     host.insertAdjacentHTML('afterbegin', html);
     host.style.display = '';
 }
@@ -4778,13 +4864,15 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
                        ' — ' + (ov.verified_lines || 0) + '/' + (ov.expected_lines || 0) + ' line(s), ' +
                        (ov.verified_qty || 0) + ' unit(s) matched against the frozen Execution Plan' +
                        (ov.applied_station ? ('\nStation verified: ' + [ov.applied_station.company, ov.applied_station.country, ov.applied_station.marketplace].filter(Boolean).join(' / ')) : '')));
-            alert('Weekly Shipping Plan ' + (d.reused ? 'already created (reused)' : 'created') + '.\nShipping Plans: ' + (d.plan_count || (d.plans ? d.plans.length : 0)) + '\nSKU lines: ' + (d.line_count || expectedLineCount || 0) + '\nStatus: Draft' + ovLine);
+            alert((typeof _irOverseasPrecheckText_ === 'function' ? _irOverseasPrecheckText_(d.overseas_precheck) : '') + 'Weekly Shipping Plan ' + (d.reused ? 'already created (reused)' : 'created') + '.\nShipping Plans: ' + (d.plan_count || (d.plans ? d.plans.length : 0)) + '\nSKU lines: ' + (d.line_count || expectedLineCount || 0) + '\nStatus: Draft' + ovLine);
             showSection('shippingplan'); setTimeout(function () { renderShippingPlan(); }, 100);
             return result;
         }
         var code = result.code || '';
         if (!code && result.error && typeof result.error === 'object' && result.error.code) code = String(result.error.code);   // R71-FE-6: the transport's error shape
+        if (!code && Array.isArray(result.errors) && result.errors[0] && result.errors[0].code) code = String(result.errors[0].code);   // A2: a structured 16_ refusal
         if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'IN_PROGRESS_SAME_EXECUTION_KEY') _irUnknown = true;
+        try { if (typeof _execApplyServerRouteNotices_ === 'function') _execApplyServerRouteNotices_(result); } catch (_eSrn) {}   // A-delta2 F: refusal reasons beside the From field
         if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR') {
             alert('Submit outcome UNKNOWN (' + code + ').' + NL2 + 'The request may or may not have been applied. It was NOT sent again and the same execution key is kept.' + NL2 +
                 'Reload the page and check the Weekly Shipping Plan before doing anything else. Submitting again later reuses the same key, so it cannot create a second plan.');
@@ -4817,6 +4905,12 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
                 'Press Search to re-apply the station you intend to submit, then Submit Plan again.');
         } else if (code === 'CONFLICT' || code === 'SUBMIT_EXECUTION_DUPLICATE_CONFLICT' || code === 'SUBMIT_DRAFT_ALREADY_SUBMITTED') {
             alert('This plan changed since it was prepared, or was already submitted under a different attempt. Refresh and review before submitting again.');   // CONFLICT → refresh/review
+        } else if (_irSubmitGateRefusal_(code, result)) {
+            // A2 — the 16_ Submit gate (stage ai_plan_submit_gate, zero_write), named per code (never the generic
+            // wording). One held / blocked AI draft refuses the WHOLE batch, so the blocking drafts and site/SKU are listed.
+            var _sg = _irSubmitGateRefusal_(code, result);
+            alert('Cannot Submit Plan — ' + _sg.headline + ' [' + _sg.code + ']' + NL2 + _sg.list + NL2 +
+                '整批被拒、沒有草稿被改 — nothing was submitted and no draft was changed. Submit Plan always sends every saved route of this station; there is no option to submit only part of it.' + NL2 + _sg.next);
         } else {
             alert('Could not create Weekly Shipping Plan (' + (code || 'error') + '). ' + (result.error || '') + '\nThe draft is kept so you can retry.');   // keep draft
         }
@@ -5082,12 +5176,14 @@ function _cancelAllocationDraftHeader(explicitDraftId) {
         })
             .then(function (res) {
                 if (!res || res.success === false) {
-                    _irMarkRouteUnsaved_('draft:' + draftId, _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_drafts', 'draft header cancel failed'));
-                    try { _irUnsavedRoutes['draft:' + draftId].op = 'CANCEL_HEADER'; _irUnsavedRoutes['draft:' + draftId].draftId = draftId; _persistAllocationDraft(); } catch (_eOp2) {}   // R71-FE-7
+                    // RC1 — a ticket cancel that did not succeed is a DELETION mark with an explicit state (REFUSED / UNKNOWN), never a generic failed save
+                    _irRouteOpSet_('draft:' + draftId, { op: 'CANCEL_HEADER', state: 'DELETING', draftId: draftId, scope: _irRouteOpScope_(), table: 'shipping_allocation_drafts', at: _irRoNow_() });
+                    _irOnCancelAnswer_('draft:' + draftId, res);
                 }
                 return res;
             })['catch'](function (e2) {
-                _irMarkRouteUnsaved_('draft:' + draftId, _irMakeDraftSaveError_({ code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) }, 'shipping_allocation_drafts', 'draft header cancel failed'));
+                _irRouteOpSet_('draft:' + draftId, { op: 'CANCEL_HEADER', state: 'DELETING', draftId: draftId, scope: _irRouteOpScope_(), table: 'shipping_allocation_drafts', at: _irRoNow_() });
+                _irOnCancelAnswer_('draft:' + draftId, { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) } });
             });
     } catch (e) { console.warn('[replen] cancel draft header error:', e); }
 }
@@ -5838,6 +5934,7 @@ function _flushDraftDbPersist(sku) {
         // that must agree are better as one statement. Note this also covers the empty-touched-set fallback,
         // which widens the scope to every row on screen — the exact path by which a held route would have been
         // re-sent by an edit that had nothing to do with it.
+        _scoped = _scoped.filter(function (r) { return !(typeof _irRouteCancelHeld_ === 'function' && _irRouteCancelHeld_(r.allocation_draft_line_id)); });   // RC1: never re-save a route under deletion
         var _held = _scoped.filter(function (r) { return _irAckUnknownIsHeld_(sku, r.client_route_instance_id); });
         _scoped = _scoped.filter(function (r) { return !_irAckUnknownIsHeld_(sku, r.client_route_instance_id); });
         if (_held.length) {
@@ -6697,39 +6794,729 @@ function _irCancelChain11_(draftId, send) {
     p.then(function () { if (_irLineCancelInFlight_[draftId] === p) delete _irLineCancelInFlight_[draftId]; }, function () { if (_irLineCancelInFlight_[draftId] === p) delete _irLineCancelInFlight_[draftId]; });
     return p;
 }
-function _cancelAllocationDraftLine(lineId, explicitDraftId) {
+function _cancelAllocationDraftLine(lineId, explicitDraftId, meta) {
     try {
+        meta = meta || {};
         if (!lineId || !(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftAtomic && window.IRDraft)) return;   // R71-FE-11: the atomic CANCEL_ROUTE_LINES intent
         if (typeof isOperationDbApiConfigured === 'function' && !isOperationDbApiConfigured()) return;
         // Under multi-route the header MUST come from the line itself; there is no single "current" draft to
         // fall back on without risking a soft-cancel against the wrong shipment group.
         var draftId = String(explicitDraftId == null ? '' : explicitDraftId).trim() || replenAllocationDraft.allocationDraftId;
         if (!draftId) return;
-        // R71-FE-7 (H4): a historical draft is never modified, and a line is never cancelled under a draft it does not belong to. NOT a
-        // success: nothing was written and nothing is claimed; the row simply is not part of the active plan.
+        // R71-FE-7 (H4): a historical draft is never modified, and a line is never cancelled under a draft it does not belong to.
         var _ownDraft = String(_irLineDraftOf_[String(lineId)] || '').trim();
         if (_irIsHistoricalDraft_(draftId) || _irIsHistoricalDraft_(_ownDraft)) { try { console.warn('[replen] HISTORICAL_DRAFT_NOT_MODIFIED - line ' + lineId + ' belongs to a submitted/cancelled draft; no cancel was sent'); } catch (_eW) {} return Promise.resolve({ success: false, zero_write: true, skipped: 'HISTORICAL_DRAFT_NOT_MODIFIED' }); }
         if (_ownDraft && _ownDraft !== draftId) { try { console.warn('[replen] LINE_BELONGS_TO_ANOTHER_DRAFT - line ' + lineId + ' is under ' + _ownDraft + ', not ' + draftId + '; no cancel was sent'); } catch (_eW2) {} return Promise.resolve({ success: false, zero_write: true, skipped: 'LINE_BELONGS_TO_ANOTHER_DRAFT' }); }
-        // F1-7N-FB-2A §D — a soft-cancel is a business WRITE. If it fails, the line still exists in the DB
-        // while the UI shows it removed, which is the same false-persistence class as a failed save. Record it
-        // as UNSAVED so Submit is blocked and the failure is visible rather than swallowed by a console warn.
-        // R71-FE-11: cancels of one draft run ONE AT A TIME (each bumps draft_version; the next one carries the adopted version)
-        var _v11 = _irCancelVer11_(draftId);   // captured synchronously: the row may be gone from the model when the chain sends
-        var _p11 = _irCancelChain11_(draftId, function () { return window.KM.DB.upsertShippingAllocationDraftAtomic({ intent: 'CANCEL_ROUTE_LINES', allocation_draft_id: draftId, expected_draft_version: (_irMaxVer11_(_v11, _irCancelVer11_(draftId)) || undefined), line_ids: [lineId], actor: 'inventory-replenishment' }); });
-        return _p11
-            .then(function (res) {
-                if (!res || res.success === false) {
-                    var err = _irMakeDraftSaveError_(res && res.error, 'shipping_allocation_draft_lines', 'draft line cancel failed');
-                    _irMarkRouteUnsaved_('line:' + lineId, err);
-                    try { _irUnsavedRoutes['line:' + lineId].op = 'CANCEL_LINE'; _irUnsavedRoutes['line:' + lineId].draftId = draftId; _persistAllocationDraft(); } catch (_eOp) {}   // R71-FE-7
-                }
-                return res;
-            })['catch'](function (e2) {
-                _irMarkRouteUnsaved_('line:' + lineId, _irMakeDraftSaveError_({ code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) }, 'shipping_allocation_draft_lines', 'draft line cancel failed'));
-            });
+        // RC1 — the deletion is RECORDED BEFORE IT IS SENT (state DELETING, persisted with the recovery cache), so a reload,
+        // a lost answer or a closed tab can never leave a deletion that nobody knows about. Submit and Search are blocked by
+        // the same mark they always read. A deletion already waiting for its answer, or already awaiting resolution, is
+        // never sent a second time from here: a resend happens only through _irRouteCancelRetry_, after a read.
+        var _rk = 'line:' + lineId, _m0 = _irUnsavedRoutes[_rk] || null;
+        if (_m0 && _m0.op === 'CANCEL_LINE' && (_m0.state === 'DELETING' || _m0.state === 'VERIFYING')) return Promise.resolve({ success: false, zero_write: true, skipped: 'CANCEL_ALREADY_IN_FLIGHT' });
+        if (_m0 && _m0.op === 'CANCEL_LINE' && !(meta.retry && _m0.state === 'NOT_APPLIED')) return Promise.resolve({ success: false, zero_write: true, skipped: 'CANCEL_AWAITING_RESOLUTION' });
+        var _lbl0 = _irRouteOpLabelFromModel_(lineId);
+        _irRouteOpSet_(_rk, { op: 'CANCEL_LINE', state: 'DELETING', lineId: String(lineId), draftId: draftId, origin: meta.origin || (_m0 && _m0.origin) || 'ROUTE_MOVED',
+            sku: meta.sku || (_m0 && _m0.sku) || ((_lbl0 && _lbl0.sku) || ''), scope: meta.scope || (_m0 && _m0.scope) || _irRouteOpScope_(),
+            route: meta.route || (_m0 && _m0.route) || _lbl0, code: '', message: '', verifyCode: '', verifyMessage: '',
+            attempts: ((_m0 && _m0.attempts) || 0) + 1, table: 'shipping_allocation_draft_lines', retryable: false, at: _irRoNow_() });
+        // R71-FE-11: cancels of one draft run ONE AT A TIME (each bumps draft_version; the next one carries the adopted version).
+        // RC1: a retry carries the version the database read returned (meta.expectedVersion), never an older one.
+        var _v11 = _irMaxVer11_((meta && meta.expectedVersion) || '', _irCancelVer11_(draftId));   // captured synchronously
+        var _p11 = _irCancelChain11_(draftId, function () { var _sv = _irMaxVer11_(_v11, _irCancelVer11_(draftId)) || ''; _irRouteOpSet_(_rk, { sentAt: _irRoNow_(), sentVersion: _sv, serverAnswered: false }); /* RC1-R3: the token this request carries, for the fence */ return window.KM.DB.upsertShippingAllocationDraftAtomic({ intent: 'CANCEL_ROUTE_LINES', allocation_draft_id: draftId, expected_draft_version: (_sv || undefined), line_ids: [lineId], actor: 'inventory-replenishment' }); });
+        return _p11.then(
+            function (res) { return Promise.resolve(_irOnCancelAnswer_(_rk, res)).then(function () { return res; }); },
+            function (e2) { return Promise.resolve(_irOnCancelAnswer_(_rk, { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: (e2 && e2.message) || String(e2) } })).then(function () { return null; }); });
     } catch (e) { console.warn('[replen] cancel draft line error:', e); }
 }
 window._cancelAllocationDraftLine = _cancelAllocationDraftLine;
+// ================================================================================================================
+// RC1 (route-cancel fix-r1, 2026-11-13) — A ROUTE IS DELETED ONLY WHEN THE DATABASE SAYS SO, AND IT IS READ BACK.
+// ----------------------------------------------------------------------------------------------------------------
+// Production incident 2026-11-13 (US / Amazon / ResUS / CO1100-R, line SADL-K2-92B8BAD2): Delete removed the row
+// from the screen at once and fired the cancellation without waiting for it. The cancel did not come back as a
+// success, so the page recorded `line:<id>` as UNSAVED in this tab's recovery cache. After a reload there was no
+// row to repair (it had been removed), Search refused to run while the mark existed, and Search was the only thing
+// that could have re-read the database — a dead end with no supported way out.
+//
+// The rules this block implements (Owner, 2026-11-13):
+//   · the row STAYS on screen, labelled, until the cancellation is acknowledged AND a read of the database shows
+//     the line cancelled (or its route ticket terminal). Only then does it leave, and the read is kept as evidence;
+//   · a refusal keeps an operable row with the server's exact reason; an unanswered / unclassifiable write is
+//     OUTCOME UNKNOWN and is NEVER resent automatically — the only next step offered is a READ-ONLY check;
+//   · the mark is never deleted blindly. It leaves only (a) with read evidence that the line is cancelled / its
+//     ticket terminal, or (b) when a read proves the route is still saved and the operator explicitly keeps it.
+//     Submit Plan's unsaved guard and the Search guard are unchanged: they keep reading `_irUnsavedRoutes`;
+//   · a route under deletion is held out of every autosave, so a cancelled route can never be re-saved;
+//   · after a reload the mark comes back with a "Check with database (read-only)" action, so a refused Search
+//     always has a way forward. This is NOT the SCF1 Shipment cancellation; it touches allocation-draft lines only.
+// ================================================================================================================
+var IR_ROUTE_OP_STATES_ = {
+    DELETING: 'Deleting…',
+    VERIFYING: 'Checking with the database…',
+    DELETE_FAILED: 'Delete failed — route NOT deleted',
+    DELETE_UNKNOWN: 'Delete outcome unknown',
+    DELETE_UNVERIFIED: 'Delete acknowledged — not yet read back',
+    NOT_APPLIED: 'Delete not applied — route is still saved',
+    KEPT_RELOAD_REQUIRED: 'Route kept',
+    OTHER_SITE: 'Route belongs to another site',
+    OP_UNKNOWN: 'Operation outcome unknown',
+    STILL_ACTIVE: 'Route still saved — earlier operation unknown',
+    NOT_FOUND: 'Route not found in the database'
+};
+// RC1-R2 (review R-M1) — A line:/draft: MARK WITHOUT `op` IS A DELETION TOO. Today's Production build writes one from the
+// catch branch of _cancelAllocationDraftLine (no op, no draftId). It is a deletion whose outcome is unknown: it gets the
+// same read-only Check flow, is never cleared without read evidence and is never resent.
+function _irRoNormalizeMark_(k, m) {
+    if (!m || typeof m !== 'object') return m;
+    if (m.op === 'CANCEL_LINE' || m.op === 'CANCEL_HEADER') { if (!m.firstSeenAt) m.firstSeenAt = _irRoNow_(); return m; }   // RC1-R3: the time fence starts no later than this
+    var ml = /^line:(.+)$/.exec(String(k || '')), mh = /^draft:(.+)$/.exec(String(k || ''));
+    // RC1-R3 (Owner ruling 1): the operation of an op-less mark is NOT known. It is routed through the same read-only check
+    // (op is set only so the line / ticket is looked up), but it is labelled OPERATION OUTCOME UNKNOWN and opUnknown blocks
+    // every cancel Retry: a cancel is never sent on the strength of a mark that does not say it was a cancel.
+    if (ml) { m.op = 'CANCEL_LINE'; m.lineId = m.lineId || ml[1]; m.legacyNoOp = true; m.opUnknown = true; if (!m.state) m.state = 'OP_UNKNOWN'; }
+    else if (mh) { m.op = 'CANCEL_HEADER'; m.draftId = m.draftId || mh[1]; m.legacyNoOp = true; m.opUnknown = true; if (!m.state) m.state = 'OP_UNKNOWN'; }
+    if (ml || mh) { if (!m.firstSeenAt) m.firstSeenAt = _irRoNow_(); }
+    return m;
+}
+// A reload ends every request this tab had on its way: a deletion that was still waiting for its answer, or a check that
+// was still reading, comes back as OUTCOME UNKNOWN (never as done, never as not-done).
+function _irRoAfterReload_(map) {
+    var out = (map && typeof map === 'object') ? map : {};
+    Object.keys(out).forEach(function (k) {
+        var m = _irRoNormalizeMark_(k, out[k]);   // RC1-R2: op-less line:/draft: marks are deletions too
+        if (!m || (m.op !== 'CANCEL_LINE' && m.op !== 'CANCEL_HEADER')) return;
+        if (m.state === 'DELETING') { m.state = 'DELETE_UNKNOWN'; m.code = 'PAGE_RELOADED_DURING_DELETE'; m.message = 'The page was reloaded before the server answered.'; }
+        else if (m.state === 'VERIFYING') { m.state = 'DELETE_UNKNOWN'; m.verifyCode = 'PAGE_RELOADED_DURING_CHECK'; }
+        else if (!m.state) { m.state = m.opUnknown ? 'OP_UNKNOWN' : 'DELETE_UNKNOWN'; }   // a mark written by an earlier build carries no state: unknown until checked
+    });
+    return out;
+}
+// The cancel writer's PRE-WRITE refusals (16_ sadAtomicCancelRouteLines_ / handleUpsertShippingAllocationDraftAtomic_ and
+// the 01_ router, IU4N1 bytes): each answers zero_write:true before any cell is written. Anything else that is not a
+// recognised success is OUTCOME UNKNOWN (CANCEL_UNVERIFIED, a timeout, a dropped connection, a non-JSON answer).
+var IR_CANCEL_PREWRITE_CODES_ = { ALLOCATION_DRAFT_ID_REQUIRED: 1, LINE_IDS_REQUIRED: 1, ALLOCATION_DRAFT_NOT_FOUND: 1,
+    LINE_NOT_IN_DRAFT: 1, HEADER_HAS_ACTIVE_LINES: 1, IMMUTABLE_TERMINAL_STATUS: 1, MISSING_OPTIMISTIC_TOKEN: 1,
+    STALE_OPTIMISTIC_TOKEN: 1, ROUTE_INTENT_NOT_CLIENT_GRANTABLE: 1, SOURCE_REVISION_UNAVAILABLE: 1,
+    // BV1 (backend P1): the stored draft_version is not an integer the shared 16_ helper may advance - typed, zero_write:true,
+    // answered before any cell is written. NOT_APPLIED, never OUTCOME UNKNOWN; a Retry meets the same refusal until the data is repaired.
+    DRAFT_VERSION_NOT_INTEGER: 1, DRAFT_VERSION_OUT_OF_RANGE: 1 };
+var IR_ROUTE_OP_TABLES_ = ['shipping_allocation_drafts', 'shipping_allocation_draft_lines'];
+var _irRouteCancelEvidence_ = [];        // every resolution, with the read that justified it (also kept in the recovery cache)
+var _irRouteOpNotes_ = [];               // short confirmations shown to the operator (not a business state)
+var _irRouteVerifyInFlight_ = null;
+function _irRoS_(v) { return String(v == null ? '' : v).trim(); }
+function _irRoLc_(v) { return _irRoS_(v).toLowerCase(); }
+function _irRoNowMs_() { return Date.now(); }
+function _irRoNow_() { try { return new Date(_irRoNowMs_()).toISOString(); } catch (e) { return ''; } }
+function _irRoMs_(iso) { var t = Date.parse(_irRoS_(iso)); return isFinite(t) ? t : 0; }
+// RC1-R3 (Owner rulings 1, 3, 4) — CAN THE ORIGINAL REQUEST STILL LAND? A Retry, a Keep, an Acknowledge and a local discard
+// all release (or replace) a mark, so each first needs proof that the request this tab sent can no longer change the row:
+//   SERVER_ANSWERED  — the server answered it (a typed refusal or an acknowledged cancel): it is finished;
+//   VERSION_ADVANCED — a read shows the ticket's draft_version past the token the request carried, so if it arrives it is
+//                      refused STALE_OPTIMISTIC_TOKEN with zero write (16_ checks the version before writing);
+//   TIME_FENCE       — the request was sent no later than t0 (its send time, or the first time this build saw the mark,
+//                      which is later than the send), an Apps Script execution cannot outlive 6 minutes, and a read taken
+//                      AFTER t0 + the fence still shows the state. ASSUMPTION (STATIC, platform limit + 1 minute margin):
+//                      flagged for the Owner. Setting the fence to Infinity disables this proof entirely.
+// REVIEW_RC1_R2 MAJOR-1: OFF by default (Infinity). Only SERVER_ANSWERED and VERSION_ADVANCED are evidence; the Owner may
+// choose to accept the platform-timing fence by setting this to 7 * 60 * 1000 (6-minute Apps Script limit + 1 minute).
+var IR_ROUTE_OP_LAND_FENCE_MS_ = Infinity;   // Owner ruling r4 (1): stays OFF for this batch; platform time limits are not termination evidence
+// Owner ruling r4 (2): the ALL-SITE (unscoped) read of the two allocation-draft tables is NOT approved. OFF: a mark this site
+// cannot see stays unresolved (*_NOT_IN_SITE_READ) with guidance to select its site. See fix-r4/CROSS_SITE_READ_APPLICATION.md.
+var IR_ROUTE_OP_CROSS_SITE_READ_ = false;
+// RC1-R4b (REVIEW_RC1_R4 NOTE-2): the r3 list of client-invented codes was removed - since r4 no recorded code is read as
+// proof. The mark's `serverAnswered` field is written for DISPLAY / DIAGNOSIS ONLY; nothing reads it as termination evidence.
+// ROUTE-ONLY r2 (Owner): EVIDENCE GATE. Every exit that relies on VERSION_ADVANCED (Retry, Keep, Acknowledge) stays OFF until the
+// independent VERSION_WRITERS_INVENTORY proves that every writer of the two allocation-draft tables re-checks the version inside the
+// lock and that no path (e.g. 23_ whole-table write-back) can roll draft_version back or overwrite it. Default false; with it off
+// a mark leaves ONLY when a read shows the line cancelled / the ticket terminal (Check).
+var IR_ROUTE_OP_VERSION_EVIDENCE_ENABLED_ = false;
+function _irRoFence_(m) {
+    if (!m) return { ok: false, why: 'NO_MARK' };
+    if (!IR_ROUTE_OP_VERSION_EVIDENCE_ENABLED_) return { ok: false, why: 'VERSION_EVIDENCE_GATED_OFF' };
+    // RC1-R4: a server answer is NOT proof (it is not bound to the exact original request: no request id travels or is
+    // recorded, and a duplicate of the same POST may still commit). Only a read showing the ticket version past the token
+    // the original carried proves it can no longer land.
+    var _INT = /^[0-9]{1,15}$/, _lv = _irRoS_(m.liveVersion), _sv = _irRoS_(m.sentVersion);   // REVIEW_RC1_R4B P1-FE
+    if ((_lv !== '' && !_INT.test(_lv)) || (_sv !== '' && !_INT.test(_sv))) return { ok: false, why: 'NON_INTEGER_VERSION' };
+    var live = Number(_lv), sent = Number(_sv);
+    if (_sv !== '' && _lv !== '' && live > sent) return { ok: true, why: 'VERSION_ADVANCED' };
+    var t0 = _irRoMs_(m.sentAt) || _irRoMs_(m.firstSeenAt);
+    if (!t0 || !isFinite(IR_ROUTE_OP_LAND_FENCE_MS_)) return { ok: false, why: 'NO_SEND_TIME' };
+    var fenceAt = t0 + IR_ROUTE_OP_LAND_FENCE_MS_, at = new Date(fenceAt).toISOString();
+    if (_irRoNowMs_() < fenceAt) return { ok: false, why: 'FENCE_NOT_PASSED', at: at };
+    if (_irRoMs_(m.verifiedAt) < fenceAt) return { ok: false, why: 'READ_BEFORE_FENCE', at: at };
+    return { ok: true, why: 'TIME_FENCE', at: at };
+}
+function _irRoFenceText_(f) {
+    if (f.ok) return '';
+    if (f.why === 'VERSION_EVIDENCE_GATED_OFF') return ' Retry / Keep / Acknowledge are switched off in this build until the version evidence is approved; only a check that reads the route as cancelled can clear this mark. Nothing was changed or sent. Search and Submit Plan stay blocked; contact the Owner.';
+    if (f.why === 'FENCE_NOT_PASSED') return ' The original request could still arrive until ' + f.at + ' (or until the route ticket’s version moves), so nothing that releases this mark is offered yet — check again after that.';
+    if (f.why === 'READ_BEFORE_FENCE') return ' The last check was taken before ' + f.at + '; check again now to confirm the state after the original request can no longer arrive.';
+    return ' It cannot be proven that the original request can no longer arrive (only a read showing the route ticket’s version past the one that request carried proves it; a server answer is not bound to that exact request), so nothing that releases this mark is offered. The mark keeps Search and Submit Plan blocked; check again later, or contact the Owner.';
+}
+function _irRouteCancelMarker_(k) {
+    var m = (typeof _irUnsavedRoutes === 'object' && _irUnsavedRoutes) ? _irRoNormalizeMark_(k, _irUnsavedRoutes[k]) : null;
+    return (m && (m.op === 'CANCEL_LINE' || m.op === 'CANCEL_HEADER')) ? m : null;
+}
+function _irRouteCancelKeys_() { return Object.keys(_irUnsavedRoutes || {}).filter(function (k) { return !!_irRouteCancelMarker_(k); }); }
+// A line whose deletion is not resolved is held out of every write the page could start for it.
+function _irRouteCancelHeld_(lineId) {
+    var id = _irRoS_(lineId);
+    return !!(id && _irRouteCancelMarker_('line:' + id));
+}
+function _irRouteOpScope_() {
+    try { var s = (typeof _irExposureSite_ === 'function') ? _irExposureSite_() : null; if (s && s.company && s.country && s.marketplace) return { company: s.company, country: s.country, marketplace: s.marketplace }; } catch (e) {}
+    try { var c = (typeof _replenCtx === 'function') ? _replenCtx() : null; if (c && c.company && c.country && c.marketplace) return { company: c.company, country: c.country, marketplace: c.marketplace }; } catch (e2) {}
+    return null;
+}
+function _irRouteOpLabelFromModel_(lineId) {
+    var out = null;
+    try {
+        var by = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+        Object.keys(by).forEach(function (s) {
+            (by[s] || []).forEach(function (r) {
+                if (!out && r && _irRoS_(r.allocation_draft_line_id) === _irRoS_(lineId)) out = { sku: s, from: _irRoS_(r.ship_from), to: _irRoS_(r.destination), qty: _irRoS_(r.planned_qty || r.qty), method: _irRoS_(r.shipping_method) };
+            });
+        });
+    } catch (e) {}
+    return out;
+}
+function _irRouteOpLabelFromRow_(row, sku) {
+    function txt(f) {
+        var el = row && row.querySelector ? row.querySelector('[data-field="' + f + '"]') : null; if (!el) return '';
+        if (el.options && el.selectedIndex >= 0) { var o = el.options[el.selectedIndex]; return _irRoS_((o && (o.text || o.textContent)) || el.value); }
+        return _irRoS_(el.value);
+    }
+    return { sku: _irRoS_(sku), from: txt('source_warehouse_id'), to: txt('destination_warehouse_id'), qty: txt('qty'), method: txt('shipping_method') };
+}
+function _irRouteOpSet_(k, patch) {
+    var cur = _irUnsavedRoutes[k] || { code: '', message: '', table: '', requestId: '', retryable: false, nextAction: '', at: '' };
+    Object.keys(patch || {}).forEach(function (p) { cur[p] = patch[p]; });
+    cur.updatedAt = _irRoNow_();
+    _irUnsavedRoutes[k] = cur;
+    try { _persistAllocationDraft(); } catch (e1) {}
+    try { _irRenderUnsavedBanner_(); } catch (e2) {}
+    try { _irDecorateRouteOpRow_(k); } catch (e3) {}
+    return cur;
+}
+// The answer of ONE cancel request, classified. Success needs the outcome AND the named line reported cancelled.
+function _irClassifyCancelAnswer_(res, m) {
+    if (res && res.success !== false && res.data) {
+        var d = res.data, oc = _irRoS_(d.outcome).toUpperCase();
+        if (m.op === 'CANCEL_HEADER') {
+            if ((oc === 'CANCELLED' || oc === 'ALREADY_CANCELLED') && _irRoLc_(d.header_status) === 'cancelled') return { kind: 'ACKED', outcome: oc, version: _irRoS_(d.draft_version) };
+        } else {
+            var pl = (d.persisted_lines || []).filter(function (x) { return x && _irRoS_(x.allocation_draft_line_id) === _irRoS_(m.lineId); })[0];
+            if ((oc === 'CANCELLED' || oc === 'ALREADY_CANCELLED') && pl && _irRoLc_(pl.line_status) === 'cancelled') return { kind: 'ACKED', outcome: oc, version: _irRoS_(d.draft_version) };
+        }
+        return { kind: 'UNKNOWN', code: 'CANCEL_ANSWER_UNRECOGNISED', message: 'The server answered, but not with a recognised cancellation result (outcome ' + (oc || 'none') + ').' };
+    }
+    var e = (res && res.error) || {}, det = e.details || {}, code = _irRoS_(e.code), msg = _irRoS_(e.message);
+    if (det.zero_write === true || IR_CANCEL_PREWRITE_CODES_[code] || /could not acquire lock/i.test(msg) || /^SCHEMA_MISMATCH/.test(msg)) return { kind: 'REFUSED', code: code || 'CANCEL_REFUSED', message: msg || 'The server refused the cancellation before writing.' };
+    return { kind: 'UNKNOWN', code: code || 'NO_ANSWER', message: msg || 'No answer arrived from the server.' };
+}
+function _irOnCancelAnswer_(k, res) {
+    var m = _irUnsavedRoutes[k]; if (!m) return null;
+    var c = _irClassifyCancelAnswer_(res, m);
+    if (c.kind === 'ACKED') {
+        _irRouteOpSet_(k, { state: 'DELETE_UNVERIFIED', code: c.outcome, message: 'The server acknowledged the cancellation (' + c.outcome + '). Reading it back…', ackVersion: c.version, retryable: false, serverAnswered: true });
+        return _irVerifyRouteCancels_([k], { auto: true });
+    }
+    if (c.kind === 'REFUSED') { _irRouteOpSet_(k, { state: 'DELETE_FAILED', code: c.code, message: c.message, zeroWrite: true, retryable: true, serverAnswered: true }); return null; }
+    _irRouteOpSet_(k, { state: 'DELETE_UNKNOWN', code: c.code, message: c.message, zeroWrite: false, retryable: false, serverAnswered: false });
+    return null;
+}
+function _irRouteOpVerifyUnresolved_(k, prior, code, msg) {
+    var m = _irUnsavedRoutes[k]; if (!m) return;
+    var st = (prior === 'VERIFYING' || prior === 'DELETING' || !prior) ? (m.opUnknown ? 'OP_UNKNOWN' : 'DELETE_UNKNOWN') : prior;
+    _irRouteOpSet_(k, { state: st, verifyCode: _irRoS_(code) || 'VERIFY_FAILED', verifyMessage: _irRoS_(msg), lastCheckFailedAt: _irRoNow_() });   // REVIEW_RC1_R4B MAJOR-1: verifiedAt = last SUCCESSFUL read only
+}
+function _irRouteOpNote_(text) {
+    _irRouteOpNotes_.push({ at: _irRoNow_(), text: String(text) });
+    if (_irRouteOpNotes_.length > 5) _irRouteOpNotes_ = _irRouteOpNotes_.slice(-5);
+}
+// Resolution WITH evidence: the mark leaves, the evidence stays, and any row still bound to the line leaves the screen.
+function _irRouteOpResolve_(k, ev, opts) {
+    var m = _irUnsavedRoutes[k]; if (!m) return;
+    ev.resolved_at = _irRoNow_();
+    _irRouteCancelEvidence_.push(ev);
+    if (_irRouteCancelEvidence_.length > 50) _irRouteCancelEvidence_ = _irRouteCancelEvidence_.slice(-50);
+    var hst = _irRoLc_(ev.header_status);
+    if (ev.draftId && (hst === 'cancelled' || hst === 'expired' || hst === 'submitted')) { try { _irTerminalDraftIds_[ev.draftId] = 1; } catch (eT) {} }
+    if (ev.draftId && ev.header_draft_version) { try { _irDraftVer11_[ev.draftId] = _irMaxVer11_(_irDraftVer11_[ev.draftId] || '', ev.header_draft_version); } catch (eV) {} }
+    delete _irUnsavedRoutes[k];
+    var lineId = _irRoS_(ev.lineId), sku = _irRoS_(m.sku || (m.route && m.route.sku));
+    var lbl = m.route || m.live || {};
+    // RC1-R2 (review R-M2) — only a line the database shows CANCELLED (or, for a ticket deletion, a ticket it shows cancelled)
+    // is called "deleted". A line under a submitted / expired / otherwise cancelled ticket was NOT deleted by this request and
+    // is still stored as it was; it only stops being part of the plan being edited. The evidence carries which one it was.
+    var _res = String(ev.resolution || ''), _isHdr = m.op === 'CANCEL_HEADER';
+    ev.outcome = (_res === 'LINE_CANCELLED' || (_isHdr && _res === 'TICKET_CANCELLED')) ? 'DELETED'
+        : (_res === 'KEPT_BY_OPERATOR' ? 'KEPT' : (_res === 'NOT_FOUND_ANY_SITE' ? 'NOT_FOUND' : 'NOT_DELETED'));
+    var _lsTxt = ev.line_status ? ev.line_status : 'unchanged';
+    var _head = ev.outcome === 'DELETED' ? (m.opUnknown ? 'The database shows this route as cancelled (deleted); the earlier operation on it is unknown' : (_isHdr ? 'Route ticket cancellation confirmed by the database' : 'Route deletion confirmed by the database'))
+        : _res === 'KEPT_BY_OPERATOR' ? 'Route kept'
+        : _res === 'TICKET_SUBMITTED' ? 'Deletion NOT applied — the route ticket was already submitted; the line remains ' + _lsTxt + ' as part of the submitted plan (it is no longer part of the plan being edited)'
+        : _res === 'TICKET_EXPIRED' ? 'Deletion NOT applied — the route ticket has expired; the line remains ' + _lsTxt + ' (it is no longer part of the plan being edited)'
+        : _res === 'TICKET_CANCELLED' ? 'Deletion NOT applied by this request — the whole route ticket is cancelled; the line remains ' + _lsTxt + ' (it is no longer part of the plan being edited)'
+        : _res === 'LINE_EXPIRED' ? 'Deletion NOT applied — the line had already expired (it is no longer part of the plan being edited)'
+        : _res === 'NOT_FOUND_ANY_SITE' ? 'Acknowledged: this route is not in the database for any site — nothing was deleted'
+        : 'Resolved';
+    _irRouteOpNote_(_head +
+        ': ' + [lbl.sku || sku, (lbl.from || '') + (lbl.to ? ' → ' + lbl.to : ''), lbl.qty ? 'Qty ' + lbl.qty : ''].filter(String).join(' · ') +
+        (lineId ? ' (line ' + lineId + ')' : '') + ' — ' + ev.resolution + '.');
+    if (lineId && ev.resolution !== 'KEPT_BY_OPERATOR') {
+        try {
+            var by = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+            Object.keys(by).forEach(function (s) {
+                var keep = (by[s] || []).filter(function (r) { return _irRoS_(r && r.allocation_draft_line_id) !== lineId; });
+                if (keep.length !== (by[s] || []).length) { if (!sku) sku = s; if (keep.length) by[s] = keep; else delete by[s]; }
+            });
+        } catch (eM) {}
+        if (!(opts && opts.fromHydrate)) {
+            var removed = false;
+            try {
+                Array.prototype.forEach.call(document.querySelectorAll('.exec-route-row[data-line-id]'), function (el) {
+                    if (_irRoS_(el.getAttribute('data-line-id')) !== lineId) return;
+                    if (el.parentNode) el.parentNode.removeChild(el); removed = true;
+                });
+            } catch (eD) {}
+            if (removed && sku) {
+                try { onExecutionRouteEdit(sku); } catch (eE) {}
+                try { syncExpandPanelHeight(sku); } catch (eH) {}
+            }
+        }
+    }
+    try { _persistAllocationDraft(); } catch (e1) {}
+    try { _irRenderUnsavedBanner_(); } catch (e2) {}
+    try { console.info('[replen] RC1 route cancel resolved', JSON.stringify(ev)); } catch (e3) {}
+}
+// The judgement, from rows the DATABASE returned. `drafts` / `lines` are raw snake_case rows (all statuses).
+function _irRouteVerifyApply_(k, prior, drafts, lines, src, opts) {
+    var m = _irUnsavedRoutes[k]; if (!m) return 'GONE';
+    var isLine = m.op === 'CANCEL_LINE';
+    var lineId = isLine ? _irRoS_(m.lineId || k.slice(5)) : '';
+    var draftId = _irRoS_(m.draftId || (isLine ? '' : k.slice(6)));
+    var rows = isLine ? (lines || []).filter(function (l) { return _irRoS_(l.allocation_draft_line_id) === lineId && (!draftId || _irRoS_(l.allocation_draft_id) === draftId); }) : [];
+    if (isLine && !draftId && rows.length === 1) draftId = _irRoS_(rows[0].allocation_draft_id);
+    var hdrs = (drafts || []).filter(function (d) { return draftId && _irRoS_(d.allocation_draft_id) === draftId; });
+    var h = hdrs.length === 1 ? hdrs[0] : null, hst = h ? _irRoLc_(h.status) : '';
+    var ev = { key: k, op: m.op, lineId: lineId, draftId: draftId, read_source: (src && src.source) || '', read_request_id: (src && src.requestId) || '',
+        read_at: _irRoNow_(), header_status: hst || null, header_draft_version: h ? _irRoS_(h.draft_version) : null,
+        line_rows: rows.length, line_status: rows.length === 1 ? _irRoLc_(rows[0].line_status) : null,
+        line_updated_at: rows.length === 1 ? _irRoS_(rows[0].updated_at) : null, cancel_code: m.code || null, attempts: m.attempts || 0 };
+    function unresolved(code, msg) { _irRouteOpVerifyUnresolved_(k, prior, code, msg); return 'UNRESOLVED'; }
+    if (hdrs.length > 1 || rows.length > 1) return unresolved('VERIFY_AMBIGUOUS_ROWS', 'The database holds more than one row for this identity; nothing was changed. This needs a manual review.');
+    var terminal = (hst === 'cancelled' || hst === 'expired' || hst === 'submitted');
+    var wide = !!(opts && opts.wide);
+    // RC1-R2 (review R-m2) — not in THIS site's read: the caller re-reads ALL sites once (read-only) before saying anything.
+    // After that wider read: found under another site -> OTHER_SITE (no Retry / Keep from here); found nowhere -> NOT_FOUND.
+    function notHere(what) {
+        if (opts && opts.fromHydrate) return unresolved(what + '_NOT_IN_SITE_READ', (isLine ? 'Line ' + lineId : 'Route ticket ' + draftId) + ' is not in this site’s database read.');
+        if (!wide) return IR_ROUTE_OP_CROSS_SITE_READ_ ? 'NEED_WIDE' : unresolved(what + '_NOT_IN_SITE_READ', (isLine ? 'Line ' + lineId : 'Route ticket ' + draftId) + ' is not in the database read of ' + (function (c) { return c ? [c.company, c.country, c.marketplace].filter(String).join(' / ') : 'the selected site'; })(m.checkedScope || m.scope) + '. Select the Country and Marketplace of the site this route belongs to, then check again: the next check reads the site that is then selected. Nothing was changed or sent.');   // RC1-R4: cross-site read OFF unless the Owner approves
+        if (opts.capped) return unresolved('VERIFY_READ_CAPPED', 'The all-site read was truncated, so absence cannot be proven. Nothing was changed.');
+        ev.read_scope = 'ALL_SITES'; ev.resolution = 'NOT_FOUND';
+        _irRouteOpSet_(k, { state: 'NOT_FOUND', evidence: ev, verifyCode: 'NOT_FOUND_ANY_SITE', verifyMessage: '', verifiedAt: ev.read_at, liveVersion: (h ? _irRoS_(h.draft_version) : ''), retryable: false });   // RC1-R4: the ticket's version, when the ticket was read
+        return 'NOT_FOUND';
+    }
+    if (isLine) {
+        if (!rows.length) return notHere('LINE');
+        var ls = ev.line_status;
+        if (ls === 'cancelled' || ls === 'expired') { ev.resolution = 'LINE_' + ls.toUpperCase(); _irRouteOpResolve_(k, ev, opts); return 'RESOLVED'; }
+        if (terminal) { ev.resolution = 'TICKET_' + hst.toUpperCase(); _irRouteOpResolve_(k, ev, opts); return 'RESOLVED'; }
+        if (!h) return wide ? unresolved('TICKET_NOT_IN_READ', 'Line ' + lineId + ' exists but its route ticket ' + (draftId || '?') + ' was not returned. Nothing was changed; this needs a manual review.') : notHere('TICKET');
+    } else {
+        if (!h) return notHere('TICKET');
+        if (terminal) { ev.resolution = 'TICKET_' + hst.toUpperCase(); _irRouteOpResolve_(k, ev, opts); return 'RESOLVED'; }
+    }
+    if (wide && h) {
+        var hs = { company: _irRoS_(h.company), country: _irRoS_(h.country), marketplace: _irRoS_(h.marketplace) }, ws = opts.scope || {};
+        if (_irRoLc_(hs.company) !== _irRoLc_(ws.company) || _irRoLc_(hs.country) !== _irRoLc_(ws.country) || _irRoLc_(hs.marketplace) !== _irRoLc_(ws.marketplace)) {
+            ev.read_scope = 'ALL_SITES'; ev.found_site = hs;
+            _irRouteOpSet_(k, { state: 'OTHER_SITE', foundSite: hs, scope: null, evidence: ev, verifyCode: 'ACTIVE_IN_OTHER_SITE', verifyMessage: '', verifiedAt: ev.read_at, retryable: false });
+            return 'OTHER_SITE';
+        }
+    }
+    // The database still holds it as ACTIVE: the deletion did not happen. Its live values and version are kept so a retry
+    // carries the version the database actually holds, and so the operator sees what is stored.
+    if (draftId && ev.header_draft_version) { try { _irDraftVer11_[draftId] = _irMaxVer11_(_irDraftVer11_[draftId] || '', ev.header_draft_version); } catch (eV) {} }
+    var live = isLine ? { sku: _irRoS_(rows[0].sku), qty: _irRoS_(rows[0].planned_qty), from: _irRoS_(h.recommended_source_warehouse_id), to: _irRoS_(h.recommended_destination_warehouse_id) || _irRoS_(h.destination_marketplace) || _irRoS_(h.marketplace), method: _irRoS_(h.recommended_shipping_method) } : null;
+    ev.resolution = 'STILL_ACTIVE';
+    _irRouteOpSet_(k, { foundScope: m.checkedScope || m.foundScope || m.scope || null, evidenceScope: m.checkedScope || null, state: m.opUnknown ? 'STILL_ACTIVE' : 'NOT_APPLIED', draftId: draftId, liveVersion: ev.header_draft_version, live: live, evidence: ev, verifyCode: 'STILL_ACTIVE', verifyMessage: '', verifiedAt: ev.read_at, retryable: !m.opUnknown });   // RC1-R3: an unknown operation is never a cancel to retry
+    return 'NOT_APPLIED';
+}
+// READ-ONLY check of every unresolved deletion (or the named ones). One scoped read per site; it never writes, never
+// resends, and never resolves a deletion whose request is still on its way.
+function _irVerifyRouteCancels_(keys, opts) {
+    if (_irRouteVerifyInFlight_) return _irRouteVerifyInFlight_.then(function () { return _irVerifyRouteCancels_(keys, opts); });
+    var all = _irRouteCancelKeys_();
+    var want = (keys && keys.length) ? all.filter(function (k) { return keys.indexOf(k) >= 0; }) : all;
+    want = want.filter(function (k) { return _irUnsavedRoutes[k].state !== 'DELETING' && _irUnsavedRoutes[k].state !== 'VERIFYING'; });
+    if (!want.length) return Promise.resolve({ checked: 0, resolved: 0 });
+    var prior = {}, groups = {};
+    want.forEach(function (k) {
+        var m = _irUnsavedRoutes[k]; prior[k] = m.state;
+        var _notHere = /_NOT_IN_SITE_READ$/.test(String(m.verifyCode || ''));   // RC1-R4b MINOR-1
+        var sc = m.foundScope || (_notHere ? (_irRouteOpScope_() || m.scope) : (m.scope || _irRouteOpScope_()));   // REVIEW_RC1_R4B MINOR-R4B-1: stable once a read found the row
+        var gk = sc ? [sc.company, sc.country, sc.marketplace].join('|') : '';
+        (groups[gk] = groups[gk] || { scope: sc, keys: [] }).keys.push(k);
+        _irRouteOpSet_(k, _notHere ? { state: 'VERIFYING', checkedScope: sc || null } : { state: 'VERIFYING', scope: sc || m.scope || null, checkedScope: sc || null });   // RC1-R4b: the recorded scope is not replaced by a looked-at site
+    });
+    var api = (window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function') ? window.KM.api : null;
+    var tally = { checked: want.length, resolved: 0, notApplied: 0, unresolved: 0 };
+    // RC1-R2 (review R-m1) — LEGACY mode (the workspace kill switch is off): the route tables cannot be read on this page.
+    // Said plainly; nothing is cleared, nothing is resent.
+    var legacy = false;
+    try { legacy = !!(api && typeof api.effectiveMode === 'function' && String(api.effectiveMode('inventoryReplenishment')) === 'legacy'); } catch (eL) { legacy = false; }
+    var LEGACY_MSG = 'This check needs the Workspace read, which is switched off on this page (Legacy mode). Nothing was changed and nothing was resent. Ask the Owner / administrator to re-enable it; do not delete or retry this route until the check can run.';
+    var wideKeys = [];
+    function tallyOf(r, k) { if (r === 'RESOLVED') tally.resolved++; else if (r === 'NOT_APPLIED') tally.notApplied++; else if (r === 'NEED_WIDE') wideKeys.push(k); else tally.unresolved++; }
+    var p = Promise.all(Object.keys(groups).map(function (gk) {
+        var g = groups[gk];
+        if (legacy) { g.keys.forEach(function (k) { tally.unresolved++; _irRouteOpVerifyUnresolved_(k, prior[k], 'VERIFY_READ_UNAVAILABLE_LEGACY', LEGACY_MSG); }); return null; }
+        if (!api || !g.scope) {
+            g.keys.forEach(function (k) { tally.unresolved++; _irRouteOpVerifyUnresolved_(k, prior[k], api ? 'VERIFY_SCOPE_UNKNOWN' : 'VERIFY_READ_UNAVAILABLE',
+                api ? 'The site of this route is not known in this tab. Select its Country and Marketplace, then check again.' : 'The database read is not available in this page.'); });
+            return null;
+        }
+        return Promise.resolve(api.getWorkspace('inventoryReplenishment', { recentWindow: true, only: IR_ROUTE_OP_TABLES_.slice(), siteScope: { company: g.scope.company, country: g.scope.country, marketplace: g.scope.marketplace } }))
+            .then(function (env) {
+                var src = env && env.meta && env.meta.source;
+                var d = env && env.data;
+                if (src && src !== 'workspace') throw { code: 'VERIFY_READ_UNAVAILABLE_LEGACY', message: LEGACY_MSG };
+                if (!(env && env.success && d) || !Array.isArray(d.shipping_allocation_drafts) || !Array.isArray(d.shipping_allocation_draft_lines)) {
+                    throw (env && env.errors && env.errors[0]) || { code: 'VERIFY_READ_FAILED', message: 'The route tables were not returned by the read.' };
+                }
+                var meta = { source: 'inventoryReplenishment.workspace.get', requestId: _irRoS_(env.meta && env.meta.requestId) };
+                g.keys.forEach(function (k) { tallyOf(_irRouteVerifyApply_(k, prior[k], d.shipping_allocation_drafts, d.shipping_allocation_draft_lines, meta), k); });
+            })['catch'](function (err) {
+                g.keys.forEach(function (k) { tally.unresolved++; _irRouteOpVerifyUnresolved_(k, prior[k], (err && err.code) || 'VERIFY_READ_FAILED', (err && err.message) || 'The database could not be read.'); });
+            });
+    })).then(function () {
+        if (!wideKeys.length) return tally;
+        // RC1-R2 (review R-m2) — ONE read-only read of the two route tables for ALL sites, only for marks this site cannot see.
+        return Promise.resolve(api.getWorkspace('inventoryReplenishment', { recentWindow: true, only: IR_ROUTE_OP_TABLES_.slice() }))
+            .then(function (env) {
+                var src = env && env.meta && env.meta.source, d = env && env.data;
+                if (src && src !== 'workspace') throw { code: 'VERIFY_READ_UNAVAILABLE_LEGACY', message: LEGACY_MSG };
+                if (!(env && env.success && d) || !Array.isArray(d.shipping_allocation_drafts) || !Array.isArray(d.shipping_allocation_draft_lines)) throw (env && env.errors && env.errors[0]) || { code: 'VERIFY_READ_FAILED', message: 'The route tables were not returned by the all-site read.' };
+                var capped = !!(d.capped && (d.capped.shipping_allocation_drafts || d.capped.shipping_allocation_draft_lines));
+                var meta = { source: 'inventoryReplenishment.workspace.get(all sites)', requestId: _irRoS_(env.meta && env.meta.requestId) };
+                wideKeys.forEach(function (k) {
+                    var m = _irUnsavedRoutes[k]; var sc = (m && m.scope) || _irRouteOpScope_() || {};
+                    var r = _irRouteVerifyApply_(k, prior[k], d.shipping_allocation_drafts, d.shipping_allocation_draft_lines, meta, { wide: true, capped: capped, scope: sc });
+                    if (r === 'RESOLVED') tally.resolved++; else if (r === 'NOT_APPLIED') tally.notApplied++; else tally.unresolved++;
+                });
+            })['catch'](function (err) {
+                wideKeys.forEach(function (k) { tally.unresolved++; _irRouteOpVerifyUnresolved_(k, prior[k], (err && err.code) || 'VERIFY_READ_FAILED', (err && err.message) || 'The database could not be read.'); });
+            }).then(function () { return tally; });
+    });
+    _irRouteVerifyInFlight_ = p;
+    var clear = function () { if (_irRouteVerifyInFlight_ === p) _irRouteVerifyInFlight_ = null; };
+    p.then(clear, clear);
+    return p;
+}
+// Re-send ONLY after the database has been read and still holds the route as active (never from UNKNOWN), with the
+// version that read returned.
+// REVIEW_RC1_R4B MAJOR-1: the click-time re-read must have SUCCEEDED for this click (not an older read kept after a failure).
+function _irRoClickReadOk_(m, clickMs, wantCode) {
+    if (!m || m.verifyCode !== wantCode) return false;
+    if (_irRoMs_(m.verifiedAt) < clickMs) return false;
+    if (_irRoMs_(m.lastCheckFailedAt) >= clickMs) return false;
+    var a = m.evidenceScope || null, b = m.checkedScope || null;
+    return !!(a && b && a.company === b.company && a.country === b.country && a.marketplace === b.marketplace);
+}
+function _irRouteCancelRetry_(k) {
+    var m = _irRouteCancelMarker_(k); if (!m) return Promise.resolve(null);
+    if (m.opUnknown || (m.state !== 'NOT_APPLIED' && m.state !== 'DELETE_FAILED') || !_irRoFence_(m).ok) return Promise.resolve(null);   // RC1-R3 ruling 1
+    var ok = true;
+    try { ok = window.confirm('Delete this route again?' + String.fromCharCode(10, 10) + 'The database is read first; the cancellation is sent only if the route is still saved there.'); } catch (e) { ok = false; }
+    if (!ok) return Promise.resolve(null);
+    var clickMs = _irRoNowMs_();
+    return Promise.resolve(_irVerifyRouteCancels_([k])).then(function () {
+        var m2 = _irUnsavedRoutes[k];
+        if (!m2 || m2.state !== 'NOT_APPLIED' || m2.opUnknown || !_irRoFence_(m2).ok) return null;   // RC1-R3: re-proven on the fresh read
+        if (!_irRoClickReadOk_(m2, clickMs, 'STILL_ACTIVE')) { _irRouteOpNote_('Retry not sent: the database could not be re-read just now (' + _irRoS_(m2.verifyCode) + '). Nothing was changed or sent.'); try { _irRenderUnsavedBanner_(); } catch (eB) {} return null; }   // MAJOR-1
+        if (m2.op === 'CANCEL_HEADER') return _irRouteCancelHeaderSend_(k);
+        return _cancelAllocationDraftLine(m2.lineId, m2.draftId, { sku: m2.sku, origin: m2.origin, route: m2.route, scope: m2.scope, expectedVersion: m2.liveVersion, retry: true });
+    });
+}
+function _irRouteCancelHeaderSend_(k) {
+    var m = _irUnsavedRoutes[k]; if (!m) return null;
+    var draftId = _irRoS_(m.draftId || k.slice(6));
+    if (!(window.KM && window.KM.DB && window.KM.DB.upsertShippingAllocationDraftAtomic)) return null;
+    _irRouteOpSet_(k, { state: 'DELETING', attempts: (m.attempts || 0) + 1, code: '', message: '' });
+    var v = _irMaxVer11_(m.liveVersion || '', _irCancelVer11_(draftId));
+    return _irCancelChain11_(draftId, function () { return window.KM.DB.upsertShippingAllocationDraftAtomic({ intent: 'CANCEL_ROUTE_LINES', allocation_draft_id: draftId, expected_draft_version: v || undefined, line_ids: [], cancel_header_if_empty: true, actor: 'inventory-replenishment' }); })
+        .then(function (res) { _irOnCancelAnswer_(k, res); return res; }, function (e) { _irOnCancelAnswer_(k, { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: (e && e.message) || String(e) } }); return null; });
+}
+// Keep: only after a READ proved the route is still saved. The mark leaves with that read as its evidence; the row is
+// left disabled until a Search reloads the stored values, because the screen may not show what the database holds.
+function _irRouteCancelKeep_(k) {
+    var m = _irRouteCancelMarker_(k); if (!m || (m.state !== 'NOT_APPLIED' && m.state !== 'STILL_ACTIVE') || !_irRoFence_(m).ok) return Promise.resolve(false);   // RC1-R3 rulings 1 / 4
+    var ok = true;
+    try { ok = window.confirm('Keep this route in the plan?' + String.fromCharCode(10, 10) + 'The database is read again first. If it still holds the route as saved, this mark is cleared (and, if it is the last one, Search and Submit Plan are unblocked). Nothing is written. Press Search afterwards to reload its stored values before editing it.'); } catch (e) { ok = false; }
+    if (!ok) return Promise.resolve(false);
+    var clickMs = _irRoNowMs_();
+    return Promise.resolve(_irVerifyRouteCancels_([k])).then(function () {   // REVIEW_RC1_R2 Z2: act on a read taken now
+        var m2 = _irUnsavedRoutes[k];
+        if (!_irRoClickReadOk_(m2, clickMs, 'STILL_ACTIVE')) { _irRouteOpNote_('Keep not applied: the database could not be re-read just now (' + _irRoS_(m2 && m2.verifyCode) + '). The mark stays. Nothing was changed or sent.'); try { _irRenderUnsavedBanner_(); } catch (eB) {} return false; }   // REVIEW_RC1_R4B MAJOR-1
+        return _irRouteCancelKeepNow_(k);
+    });
+}
+function _irRouteCancelKeepNow_(k) {
+    var m = _irRouteCancelMarker_(k); if (!m || (m.state !== 'NOT_APPLIED' && m.state !== 'STILL_ACTIVE') || !_irRoFence_(m).ok) return false;
+    var ev = {}; Object.keys(m.evidence || {}).forEach(function (p) { ev[p] = m.evidence[p]; });
+    ev.key = k; ev.resolution = 'KEPT_BY_OPERATOR';
+    var lineId = _irRoS_(m.lineId);
+    _irRouteOpResolve_(k, ev);
+    try {
+        Array.prototype.forEach.call(document.querySelectorAll('.exec-route-row[data-line-id]'), function (el) {
+            if (_irRoS_(el.getAttribute('data-line-id')) !== lineId) return;
+            el.setAttribute('data-route-op', 'KEPT_RELOAD_REQUIRED');
+            _irRouteOpStatusHtml_(el, 'KEPT_RELOAD_REQUIRED', 'Kept. Press Search to reload the stored values before editing this route.', '');
+        });
+    } catch (eD) {}
+    return true;
+}
+function _irRouteOpButtons_(k, st) {
+    var a = "'" + _irEsc_(k).replace(/'/g, '') + "'";
+    function b(fn, label) { return '<button type="button" class="ir-route-op-btn" style="margin-left:6px;font-size:12px;" onclick="event.stopPropagation();' + fn + '(' + a + ')">' + label + '</button>'; }
+    if (st === 'DELETE_FAILED') return b('_irRouteCancelVerify_', 'Check with database (read-only)') + (_irRoFence_(_irUnsavedRoutes[k] || {}).ok && !(_irUnsavedRoutes[k] || {}).opUnknown ? b('_irRouteCancelRetry_', 'Retry delete') : '');   // RC1-R4
+    var m = _irUnsavedRoutes[k] || {}, f = _irRoFence_(m);   // RC1-R3: release actions only with proof the original request cannot land
+    if (st === 'DELETE_UNKNOWN' || st === 'DELETE_UNVERIFIED' || st === 'OP_UNKNOWN') return b('_irRouteCancelVerify_', 'Check with database (read-only)');
+    if (st === 'NOT_APPLIED') return b('_irRouteCancelVerify_', 'Check again (read-only)') + (f.ok && !m.opUnknown ? b('_irRouteCancelRetry_', 'Retry delete') : '') + (f.ok ? b('_irRouteCancelKeep_', 'Keep route') : '');
+    if (st === 'STILL_ACTIVE') return b('_irRouteCancelVerify_', 'Check again (read-only)') + (f.ok ? b('_irRouteCancelKeep_', 'Keep route as stored') : '');
+    if (st === 'OTHER_SITE') return b('_irRouteCancelVerify_', 'Check with database (read-only)');
+    if (st === 'NOT_FOUND') return b('_irRouteCancelVerify_', 'Check again (read-only)') + (f.ok ? b('_irRouteCancelAckNotFound_', 'Acknowledge — not in database') : '');
+    return '';
+}
+// RC1-R2 (review R-m2) — a deletion whose line / ticket an ALL-SITE read proved absent: there is nothing to delete. The mark
+// leaves only on the operator's explicit acknowledgement, with that read as its evidence; nothing is written or sent.
+function _irRouteCancelAckNotFound_(k) {
+    var m = _irRouteCancelMarker_(k); if (!m || m.state !== 'NOT_FOUND' || !m.evidence || !_irRoFence_(m).ok) return Promise.resolve(false);   // RC1-R3 ruling 4: absence is not enough
+    var ok = true;
+    try { ok = window.confirm('Acknowledge that this route is not in the database?' + String.fromCharCode(10, 10) + 'A read of every site found no line ' + _irRoS_(m.lineId || m.draftId) + '. Nothing is written or sent. This clears the mark; if it is the last one, Search and Submit Plan are unblocked. If you believe it should exist, cancel and contact the Owner.'); } catch (e) { ok = false; }
+    if (!ok) return Promise.resolve(false);
+    var clickMs = _irRoNowMs_();
+    return Promise.resolve(_irVerifyRouteCancels_([k])).then(function () {   // REVIEW_RC1_R2 Z2: absence re-proven at click time
+        var m2 = _irRouteCancelMarker_(k); if (!m2 || m2.state !== 'NOT_FOUND' || !m2.evidence || !_irRoFence_(m2).ok) return false;
+        if (_irRoMs_(m2.verifiedAt) < clickMs || _irRoMs_(m2.lastCheckFailedAt) >= clickMs) return false;   // REVIEW_RC1_R4B MAJOR-1
+        var ev = {}; Object.keys(m2.evidence).forEach(function (p) { ev[p] = m2.evidence[p]; });
+        ev.key = k; ev.resolution = 'NOT_FOUND_ANY_SITE'; ev.fence = _irRoFence_(m2).why;
+        _irRouteOpResolve_(k, ev);
+        return true;
+    });
+}
+function _irRouteOpGuidance_(m) {
+    var st = m.state;
+    if (st === 'DELETING') return 'Waiting for the server’s answer. Do not close or reload this tab.';
+    if (st === 'VERIFYING') return 'Reading this site’s routes from the database (read-only)…';
+    if (st === 'DELETE_FAILED') return 'The server answered with a refusal' + (m.code ? ' (' + m.code + (m.message && m.message !== m.code ? ': ' + m.message : '') + ')' : '') + '. That answer alone does not prove the request cannot still land (no request id is bound to it). Check with the database first.';
+    if (st === 'DELETE_UNKNOWN') return 'No reliable answer' + (m.code ? ' (' + m.code + ')' : '') + '. The cancellation may or may not have been saved. It is NOT resent automatically — check with the database first.';
+    if (st === 'DELETE_UNVERIFIED') return 'The server acknowledged the cancellation' + (m.code ? ' (' + m.code + ')' : '') + ', but it has not been read back yet.';
+    var _lv = m.live ? ' Stored: ' + [m.live.sku, m.live.qty ? 'Qty ' + m.live.qty : '', (m.live.from || '') + (m.live.to ? ' → ' + m.live.to : ''), m.live.method, m.liveVersion ? 'ticket version ' + m.liveVersion : ''].filter(String).join(' · ') + '.' : '';
+    var _f = _irRoFence_(m);
+    if (st === 'OP_UNKNOWN') return 'This tab recorded that an operation on this route got no reliable answer' + (m.code ? ' (' + m.code + ')' : '') + ', but not which operation. Nothing is resent. Check with the database (read-only).';
+    if (st === 'STILL_ACTIVE') return 'The database holds this route as saved (read ' + _irRoS_(m.verifiedAt) + ').' + _lv + ' This tab does not know which operation failed earlier, so nothing is retried from here.' + (_f.ok ? ' You may keep it as stored.' : _irRoFenceText_(_f));
+    if (st === 'NOT_APPLIED') return 'The database still holds this route as saved (read ' + _irRoS_(m.verifiedAt) + ').' + _lv + (_f.ok ? ' Retry the delete, or keep the route.' : _irRoFenceText_(_f));
+    if (st === 'OTHER_SITE') { var fs = m.foundSite || {}; return 'The database holds this route as saved under another site (' + [fs.company, fs.country, fs.marketplace].filter(String).join(' / ') + '). It cannot be retried or kept from this site. Select that site’s Country and Marketplace, then check again.'; }
+    if (st === 'NOT_FOUND') return 'A read of every site found no such route in the database (read ' + _irRoS_(m.verifiedAt) + '). There is nothing to delete. Nothing was written or sent.' + (_f.ok ? ' Acknowledge clears this mark (and, if it is the last one, unblocks Search and Submit Plan).' : _irRoFenceText_(_f));
+    return '';
+}
+function _irRouteOpStatusHtml_(row, st, text, buttons) {
+    var el = null;
+    for (var i = 0; row.children && i < row.children.length; i++) { if (row.children[i].className === 'ir-route-op-status') { el = row.children[i]; break; } }
+    if (!st) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) { el = document.createElement('div'); el.className = 'ir-route-op-status'; row.appendChild(el); }
+    var bad = (st === 'DELETE_FAILED' || st === 'DELETE_UNKNOWN' || st === 'NOT_APPLIED' || st === 'OTHER_SITE' || st === 'NOT_FOUND' || st === 'OP_UNKNOWN' || st === 'STILL_ACTIVE');
+    el.setAttribute('role', bad ? 'alert' : 'status');
+    el.setAttribute('data-route-op-state', st);
+    el.setAttribute('style', 'grid-column:1/-1;font-size:12px;padding:4px 6px;margin:2px 0;border-left:3px solid ' + (bad ? '#D97706' : '#64748B') + ';background:' + (bad ? '#FFFBEB' : '#F8FAFC') + ';color:' + (bad ? '#92400E' : '#334155') + ';');
+    el.innerHTML = '<strong>' + _irEsc_(IR_ROUTE_OP_STATES_[st] || st) + '</strong> ' + _irEsc_(text || '') + (buttons || '');
+}
+// The row of a deletion carries the state: disabled controls, a label, the reason and the only safe next step.
+function _irDecorateRouteOpRow_(k) {
+    if (typeof document === 'undefined' || !document.querySelectorAll) return;
+    var ml = /^line:(.+)$/.exec(String(k || '')); if (!ml) return;
+    var lineId = _irRoS_(ml[1]), m = _irRouteCancelMarker_(k);
+    if (m && m.origin && m.origin !== 'DELETE_BUTTON') return;
+    Array.prototype.forEach.call(document.querySelectorAll('.exec-route-row[data-line-id]'), function (row) {
+        if (_irRoS_(row.getAttribute('data-line-id')) !== lineId) return;
+        var ctl = row.querySelectorAll('select, input, button.replen-card__remove-btn');
+        if (!m) {
+            row.removeAttribute('data-route-op');
+            Array.prototype.forEach.call(ctl, function (c) { if (c.getAttribute('data-route-op-disabled') === '1') { c.disabled = false; c.removeAttribute('data-route-op-disabled'); } });
+            _irRouteOpStatusHtml_(row, '', '', '');
+            return;
+        }
+        row.setAttribute('data-route-op', m.state);
+        Array.prototype.forEach.call(ctl, function (c) { if (!c.disabled) { c.disabled = true; c.setAttribute('data-route-op-disabled', '1'); } });
+        _irRouteOpStatusHtml_(row, m.state, _irRouteOpGuidance_(m), _irRouteOpButtons_(k, m.state));
+    });
+}
+function _irRouteOpBannerHtml_(keys) {
+    var items = keys.map(function (k) {
+        var m = _irUnsavedRoutes[k] || {}, lbl = m.route || m.live || {};
+        var what = [lbl.sku || m.sku || '', (lbl.from || '') + (lbl.to ? ' → ' + lbl.to : ''), lbl.qty ? 'Qty ' + lbl.qty : '', lbl.method || ''].filter(String).join(' · ');
+        var ids = (m.op === 'CANCEL_HEADER' ? 'route ticket ' + _irRoS_(m.draftId || k.slice(6)) : 'line ' + _irRoS_(m.lineId || k.slice(5)) + (m.draftId ? ', ticket ' + m.draftId : ''));
+        var last = m.verifyCode && m.verifyCode !== 'STILL_ACTIVE' ? ' Last check: ' + m.verifyCode + (m.verifyMessage ? ' — ' + m.verifyMessage : '') + '.' : '';
+        return '<li data-route-op-key="' + _irEsc_(k) + '" data-route-op-state="' + _irEsc_(m.state || '') + '" style="margin:3px 0;"><strong>' + _irEsc_(IR_ROUTE_OP_STATES_[m.state] || m.state || 'Unresolved') + '</strong> — ' +
+            _irEsc_(what || '(route details not in this tab)') + ' (' + _irEsc_(ids) + '). ' + _irEsc_(_irRouteOpGuidance_(m)) + _irEsc_(last) + _irRouteOpButtons_(k, m.state) + '</li>';
+    }).join('');
+    return '<div class="replen-route-op-banner" role="alert" style="background:#FFFBEB;border-left:3px solid #D97706;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
+        (function () { var nU = keys.filter(function (k) { return !!(_irUnsavedRoutes[k] && _irUnsavedRoutes[k].opUnknown); }).length, nD = keys.length - nU;   // RC1-R4
+            return '<strong>' + [nD ? 'Route deletion not confirmed — ' + _irEsc_(String(nD)) + ' route(s)' : '', nU ? 'Operation outcome unknown — ' + _irEsc_(String(nU)) + ' route(s)' : ''].filter(String).join('; ') + '.</strong> ' +
+                (nD ? 'A route leaves the plan only after the database confirms the cancellation and it is read back. ' : '') + (nU ? 'For an operation of unknown type nothing is retried. ' : ''); })() +
+        'Submit Plan and Search stay blocked until each one is resolved. Nothing is resent automatically.' +
+        '<ul style="margin:4px 0 4px 16px;padding:0;">' + items + '</ul>' +
+        '<button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irRouteCancelVerify_()">Check all with database (read-only)</button></div>';
+}
+// Owner 2026-11-13 (1): ADD and MODIFY show their state too. The state already existed (data-route-save-state, set by
+// _irSetRouteSaveState_) but nothing displayed it, so an operator could not see Saving / Saved / Not saved / Outcome unknown.
+function _irRouteSaveChip_(row, state) {
+    if (!row || !row.appendChild || typeof document === 'undefined') return;
+    var el = null;
+    for (var i = 0; row.children && i < row.children.length; i++) { if (row.children[i].className === 'ir-route-save-chip') { el = row.children[i]; break; } }
+    var label = (typeof IR_ROUTE_SAVE_STATES_ !== 'undefined') ? IR_ROUTE_SAVE_STATES_[state] : '';
+    if (!label) { if (el && el.parentNode) el.parentNode.removeChild(el); return; }
+    if (!el) { el = document.createElement('div'); el.className = 'ir-route-save-chip'; row.appendChild(el); }
+    var bad = (state === 'NOT_SAVED' || state === 'OUTCOME_UNKNOWN'), ok = (state === 'SAVED');
+    el.setAttribute('role', bad ? 'alert' : 'status');
+    el.setAttribute('data-route-save-state', state);
+    el.setAttribute('style', 'grid-column:1/-1;font-size:11px;padding:1px 6px;color:' + (bad ? '#B91C1C' : (ok ? '#166534' : '#475569')) + ';');
+    el.textContent = label + (state === 'SAVING' ? '…' : '');
+}
+function _irRouteOpNotesHtml_() {
+    if (!_irRouteOpNotes_.length) return '';
+    return '<div class="replen-route-op-notes" role="status" style="background:#F0FDF4;border-left:3px solid #16A34A;color:#166534;padding:6px 10px;margin:0 0 8px;font-size:12px;">' +
+        _irRouteOpNotes_.map(function (n) { return _irEsc_(n.text); }).join('<br>') +
+        ' <button type="button" class="ir-route-op-btn" style="font-size:12px;margin-left:6px;" onclick="event.stopPropagation();_irRouteOpDismissNotes_()">Dismiss</button></div>';
+}
+// After a SUCCESSFUL hydrate the database rows are on hand: a deletion mark is judged against them instead of being
+// wiped (a save-failure mark is cleared exactly as before). A mark whose request is still in flight is left alone.
+function _irReconcileCancelMarkersAfterHydrate_(seed) {
+    var src = (seed && typeof seed === 'object') ? seed : _irUnsavedRoutes;
+    var kept = {};
+    Object.keys(src || {}).forEach(function (k) { var m = _irRoNormalizeMark_(k, src[k]); if (m && (m.op === 'CANCEL_LINE' || m.op === 'CANCEL_HEADER')) kept[k] = m; });   // RC1-R2: op-less line:/draft: marks are deletions too
+    _irUnsavedRoutes = kept;
+    var keys = Object.keys(kept);
+    if (keys.length) {
+        var drafts = null, lines = null;
+        try { drafts = _irWsGet('getShippingAllocationDrafts'); lines = _irWsGet('getShippingAllocationDraftLines'); } catch (e) { drafts = null; lines = null; }
+        if (drafts && lines) {
+            var raw = function (x) { return (x && x.raw) || x || {}; };
+            var D = drafts.map(raw), L = lines.map(raw);
+            keys.forEach(function (k) {
+                var st = kept[k] && kept[k].state;
+                if (st === 'DELETING' || st === 'VERIFYING') return;
+                try { _irRouteVerifyApply_(k, st, D, L, { source: 'hydrate', requestId: '' }, { fromHydrate: true }); } catch (eA) {}
+            });
+        }
+    }
+    try { _persistAllocationDraft(); } catch (e1) {}
+    return _irUnsavedRoutes;
+}
+window._irRouteCancelVerify_ = function (k) { return _irVerifyRouteCancels_(k ? [k] : null); };
+window._irRouteCancelRetry_ = _irRouteCancelRetry_;
+window._irRouteCancelKeep_ = _irRouteCancelKeep_;
+window._irRouteCancelAckNotFound_ = _irRouteCancelAckNotFound_;
+window._irSaveMarksCheck_ = _irSaveMarksCheck_;   // the function itself: a wrapper under the same name would replace the global and recurse (run r2.y.Production.out.144647)
+window._irRouteOpDismissNotes_ = function () { _irRouteOpNotes_ = []; try { _irRenderUnsavedBanner_(); } catch (e) {} };
+window._irRouteCancelEvidenceList_ = function () { return _irRouteCancelEvidence_.slice(); };   // NOT the var name: a window property of that name IS the var
+window._irRouteCancelHeld_ = _irRouteCancelHeld_;
+window._irVerifyRouteCancels_ = _irVerifyRouteCancels_;
+window._irRoAfterReload_ = _irRoAfterReload_;
+// ================================================================================================================
+// RC1-R2 (review R-M1, SKU part) — A SAVE-FAILURE MARK WHOSE ROUTE IS NOT ON SCREEN. After a reload the typed values live
+// only in this tab's recovery cache; the table is not drawn before a Search and the Search is refused. The Owner has NOT
+// decided what may happen to such values, so nothing here discards, re-enters or resends anything. The banner says what
+// is true, and offers ONE read-only check of what the database holds for those SKUs, shown beside this tab's values.
+// ================================================================================================================
+var _irSaveMarksResult_ = null;   // { at, requestId, code, message, db: { sku: [..] } } - display only, never a business state
+function _irSaveMarksOnScreen_(k) {
+    try { var el = document.getElementById('shipping-methods-' + k); return !!(el && el.querySelector && el.querySelector('.exec-route-row')); } catch (e) { return false; }
+}
+function _irSaveMarksAllOnScreen_(keys) { return (keys || []).every(function (k) { return _irSaveMarksOnScreen_(k); }); }
+function _irSaveMarksOffScreenText_(keys) {
+    return '. Their values exist only in this browser tab and are NOT on screen (the page was reloaded before they were saved), so they cannot be corrected here. ' +
+        'Nothing was resent. Do not re-enter or resend them — contact the Owner, who decides what happens to them. Submit Plan and Search stay blocked.';
+}
+function _irSaveMarksCheckHtml_(keys) {
+    if (_irSaveMarksAllOnScreen_(keys)) return '';
+    var html = '<div style="margin-top:4px;"><button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irSaveMarksCheck_()">Check what the database holds for these SKUs (read-only)</button></div>';
+    var r = _irSaveMarksResult_;
+    if (!r) return html;
+    if (r.code) return html + '<div class="replen-savemarks-result" style="margin-top:4px;">Check not completed: ' + _irEsc_(r.code) + (r.message ? ' — ' + _irEsc_(r.message) : '') + '. Nothing was changed.</div>';
+    var by = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+    var parts = keys.map(function (k) {
+        function fmt(x) { return [x.qty ? 'Qty ' + x.qty : '', (x.from || '') + (x.to ? ' → ' + x.to : ''), x.method || '', x.line ? '(line ' + x.line + ')' : ''].filter(String).join(' · '); }
+        var db = (r.db && r.db[k]) || [];
+        var mine = (by[k] || []).map(function (x) { return { qty: _irRoS_(x.planned_qty || x.qty), from: _irRoS_(x.ship_from), to: _irRoS_(x.destination), method: _irRoS_(x.shipping_method), line: _irRoS_(x.allocation_draft_line_id) }; });
+        var _sf = _irSaveMarkFence_(k);   // RC1-R3 ruling 3
+        return '<li data-savemark-key="' + _irEsc_(k) + '"><strong>' + _irEsc_(k) + '</strong> — database: ' + (db.length ? _irEsc_(db.map(fmt).join('; ')) : 'no saved route') +
+            '. This tab (unsaved): ' + (mine.length ? _irEsc_(mine.map(fmt).join('; ')) : 'no values in this tab') + '. ' +
+            (_sf.ok ? '<button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irSaveMarkDiscard_(&quot;' + _irEsc_(k) + '&quot;)">Discard my local change and load the server value</button>'
+                : _irEsc_('Discarding the local change is not offered: it cannot be proven that the original save can no longer reach the database (route-line saves do not check or advance a version, and no request id is recorded). This mark keeps Search and Submit Plan blocked; contact the Owner.')) + '</li>';
+    }).join('');
+    return html + '<div class="replen-savemarks-result" style="margin-top:4px;">Database read ' + _irEsc_(r.at) + ' (read-only; nothing was changed):<ul style="margin:2px 0 2px 16px;padding:0;">' + parts + '</ul>Contact the Owner before doing anything with these values; do not resend them.</div>';
+}
+function _irSaveMarksCheck_() {
+    var api = (window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function') ? window.KM.api : null;
+    var sc = _irRouteOpScope_();
+    function done(r) { _irSaveMarksResult_ = r; try { _irRenderUnsavedBanner_(); } catch (e) {} return r; }
+    var legacy = false;
+    try { legacy = !!(api && typeof api.effectiveMode === 'function' && String(api.effectiveMode('inventoryReplenishment')) === 'legacy'); } catch (eL) {}
+    if (legacy) return Promise.resolve(done({ at: _irRoNow_(), code: 'VERIFY_READ_UNAVAILABLE_LEGACY', message: 'the Workspace read is switched off on this page (Legacy mode)' }));
+    if (!api || !sc) return Promise.resolve(done({ at: _irRoNow_(), code: api ? 'VERIFY_SCOPE_UNKNOWN' : 'VERIFY_READ_UNAVAILABLE', message: api ? 'select the Country and Marketplace of these routes first' : 'the database read is not available in this page' }));
+    return Promise.resolve(api.getWorkspace('inventoryReplenishment', { recentWindow: true, only: IR_ROUTE_OP_TABLES_.slice(), siteScope: { company: sc.company, country: sc.country, marketplace: sc.marketplace } }))
+        .then(function (env) {
+            var src = env && env.meta && env.meta.source, d = env && env.data;
+            if (src && src !== 'workspace') return done({ at: _irRoNow_(), code: 'VERIFY_READ_UNAVAILABLE_LEGACY', message: 'the Workspace read is switched off on this page (Legacy mode)' });
+            if (!(env && env.success && d) || !Array.isArray(d.shipping_allocation_drafts) || !Array.isArray(d.shipping_allocation_draft_lines)) return done({ at: _irRoNow_(), code: 'VERIFY_READ_FAILED', message: 'the route tables were not returned' });
+            var hdr = {}; d.shipping_allocation_drafts.forEach(function (h) { hdr[_irRoS_(h.allocation_draft_id)] = h; });
+            var db = {};
+            d.shipping_allocation_draft_lines.forEach(function (l) {
+                var ls = _irRoLc_(l.line_status), h = hdr[_irRoS_(l.allocation_draft_id)], hs = h ? _irRoLc_(h.status) : '';
+                if (!h || ls === 'cancelled' || ls === 'expired' || hs === 'cancelled' || hs === 'expired' || hs === 'submitted') return;
+                (db[_irRoS_(l.sku)] = db[_irRoS_(l.sku)] || []).push({ qty: _irRoS_(l.planned_qty), from: _irRoS_(h.recommended_source_warehouse_id), to: _irRoS_(h.recommended_destination_warehouse_id) || _irRoS_(h.destination_marketplace) || _irRoS_(h.marketplace), method: _irRoS_(h.recommended_shipping_method), line: _irRoS_(l.allocation_draft_line_id) });
+            });
+            return done({ at: _irRoNow_(), atMs: _irRoNowMs_(), requestId: _irRoS_(env.meta && env.meta.requestId), db: db });
+        }, function (err) { return done({ at: _irRoNow_(), code: (err && err.code) || 'VERIFY_READ_FAILED', message: (err && err.message) || 'the database could not be read' }); });
+}
+// RC1-R3 (Owner ruling 3) — DISCARD ONE SAVE-FAILURE MARK. Preconditions, all required: the server value for that SKU has been
+// read and shown beside the local value; nothing for that SKU is in flight or queued in this tab; the original save provably
+// can no longer land (time fence, with the read taken after it — a save carries no version this tab can compare). Then, on
+// the operator's explicit choice, THAT mark and THAT SKU's local values are dropped so a Search loads the server value. No
+// business write; no other mark is touched; the evidence (local values, server values, fence) is kept.
+function _irSaveMarkFence_(k) {
+    var m = _irUnsavedRoutes[k];
+    if (!m || _irRouteCancelMarker_(k)) return { ok: false, why: 'NOT_A_SAVE_MARK' };
+    try { if ((typeof _draftDbInFlight !== 'undefined' && _draftDbInFlight[k]) || (typeof _draftDbTimers !== 'undefined' && _draftDbTimers[k] != null) || (typeof _draftDbDirty !== 'undefined' && _draftDbDirty[k])) return { ok: false, why: 'IN_FLIGHT_IN_THIS_TAB' }; } catch (e) {}
+    if (!m.firstSeenAt) { m.firstSeenAt = _irRoNow_(); try { _persistAllocationDraft(); } catch (eP) {} }
+    // RC1-R4 (REVIEW_RC1_R3 §10): no SKU save path can be proven unable to land today. The line writer (16_ :835) neither
+    // checks nor advances the ticket version; the atomic writer does, but this tab records no token for a save, and no save
+    // carries a request id. So the discard is NEVER offered; the mark keeps blocking (View / Check only).
+    return { ok: false, why: 'SAVE_LANDING_NOT_PROVABLE' };
+}
+function _irSaveMarkDiscard_(k) {
+    var f = _irSaveMarkFence_(k); if (!f.ok) return false;
+    var by = (replenAllocationDraft && replenAllocationDraft.bySku) || {}, r = _irSaveMarksResult_;
+    var ok = true;
+    try { ok = window.confirm('Discard my local change and load the server value for ' + k + '?' + String.fromCharCode(10, 10) + 'Your unsaved values for this SKU are dropped from this tab. Nothing is written to the database. Press Search afterwards to load the server value. Other unsaved routes are not touched.'); } catch (e) { ok = false; }
+    if (!ok) return false;
+    _irRouteCancelEvidence_.push({ key: k, resolution: 'LOCAL_DISCARDED_FOR_SERVER_VALUE', outcome: 'LOCAL_DISCARDED', fence: f.why, fence_at: f.at || null, read_at: r && r.at, read_request_id: r && r.requestId,
+        local: JSON.parse(JSON.stringify(by[k] || [])), server: JSON.parse(JSON.stringify((r && r.db && r.db[k]) || [])), mark: JSON.parse(JSON.stringify(_irUnsavedRoutes[k] || {})), resolved_at: _irRoNow_() });
+    delete _irUnsavedRoutes[k];
+    delete by[k];
+    _irRouteOpNote_('Local change discarded for ' + k + ' — press Search to load the server value. Nothing was written.');
+    try { _persistAllocationDraft(); } catch (e1) {}
+    try { _irRenderUnsavedBanner_(); } catch (e2) {}
+    return true;
+}
+window._irSaveMarkDiscard_ = _irSaveMarkDiscard_;
+window._irRoFence_ = _irRoFence_;
 // Async-race guard: only the newest context hydrate may write the working draft.
 var _replenHydrateToken = 0;
 // Hydrate the working draft from the DB (SSOT) for the current scope. DB state wins over the
@@ -7072,7 +7859,7 @@ function _irHydrateDraftForAppliedScope_(opts) {
             if (ok) {
                 // The DB is the SSOT for what is persisted, so any prior UNSAVED mark is void — the same rule
                 // _restoreAllocationDraftFromSession applies after its own successful hydrate.
-                _irUnsavedRoutes = {};
+                if (typeof _irReconcileCancelMarkersAfterHydrate_ === 'function') _irReconcileCancelMarkersAfterHydrate_(); else _irUnsavedRoutes = {};   // RC1: a save-failure mark is void as before; a DELETION mark is judged against the rows just read
                 try { _irRenderUnsavedBanner_(); } catch (eB) {}
                 // S8-R4B-2B — a caller that is already INSIDE an open row must be able to refuse this repaint.
                 // renderReplenishment() nulls currentExpandedRow and abandons both reveal generations, which
@@ -7271,7 +8058,9 @@ async function _restoreAllocationDraftFromSession() {
                 // F1-7N-FB-2A §D — the DB is the SSOT: what it returns IS the persisted truth, so any prior
                 // UNSAVED mark is void (a route that failed to save simply is not in these rows, and correctly
                 // disappears from the UI rather than lingering as a fake row).
-                _irUnsavedRoutes = {};
+                var _rcSeed = null;   // RC1: this tab’s DELETION marks survive the reload and are judged against the rows just read
+                try { var _rcRaw = sessionStorage.getItem(REPLEN_ALLOC_DRAFT_KEY); var _rcP = _rcRaw ? JSON.parse(_rcRaw) : null; _rcSeed = _irRoAfterReload_((_rcP && _rcP._unsavedRoutes) || {}); if (_rcP && Array.isArray(_rcP._routeCancelEvidence)) _irRouteCancelEvidence_ = _rcP._routeCancelEvidence; } catch (_eRc) { _rcSeed = null; }
+                if (typeof _irReconcileCancelMarkersAfterHydrate_ === 'function') _irReconcileCancelMarkersAfterHydrate_(_rcSeed || {}); else _irUnsavedRoutes = {};
                 _irRenderUnsavedBanner_();
                 return;   // DB SSOT loaded → do not overlay the cache
             }
@@ -7290,6 +8079,8 @@ async function _restoreAllocationDraftFromSession() {
             // failed write into canonical state: the routes come back visibly labelled and Submit stays blocked
             // until each one is actually persisted.
             _irUnsavedRoutes = (parsed._unsavedRoutes && typeof parsed._unsavedRoutes === 'object') ? parsed._unsavedRoutes : {};
+            if (typeof _irRoAfterReload_ === 'function') _irUnsavedRoutes = _irRoAfterReload_(_irUnsavedRoutes);   // RC1: an in-flight deletion is UNKNOWN after a reload
+            if (Array.isArray(parsed._routeCancelEvidence)) _irRouteCancelEvidence_ = parsed._routeCancelEvidence;   // RC1
             try { _irDropHistoricalModelRows_(); _irPurgeHistoricalMarkers_(); } catch (_eRH) {}   // R71-FE-7 (R1): a cached route of a submitted/cancelled draft is history
             _irRenderUnsavedBanner_();
         }
@@ -7458,6 +8249,7 @@ function _saveAllocationDraftFromDom(sku) {
             qty: qty,                              // = planned_qty (canonical)
             planned_qty: qty,
             source_warehouse_id: sourceWarehouseId,   // canonical From (warehouse_id)
+            from_held: sourceWarehouseId ? '' : String(rowEl.getAttribute('data-from-held') || ''),   // AD3 D r5: display only, never sent
             ship_from: shipFrom,                       // display name only
             ship_from_type: shipFromType,
             // F1-7N-FB-4G-A0-R1 §D — the CODE that belongs in recommended_source_warehouse_code_snapshot. It sits
@@ -7465,7 +8257,7 @@ function _saveAllocationDraftFromDom(sku) {
             source_warehouse_code: shipFromCode,
             // Amazon logical destination → destination_warehouse_id null + marketplace=Amazon (Decision B).
             destination_warehouse_id: (destPayload.selected_destination_warehouse_id == null ? '' : destPayload.selected_destination_warehouse_id),
-            destination: isLogicalAmazon ? 'Amazon' : destination,   // display name only
+            destination: isLogicalAmazon ? (String((destPayload && destPayload.marketplace) || destination || 'Amazon').trim()) : destination,   // display name only (AD3 D: the token's marketplace)
             destination_type: isLogicalAmazon ? 'MARKETPLACE_DESTINATION' : destType,
             // §D XOR — a marketplace destination has NO warehouse code, and writing one blank is how an
             // explicit Amazon save CLEARS the legacy `Amazon` value the live H4 header carries in this column.
@@ -7597,6 +8389,7 @@ function _saveAllocationDraftFromDom(sku) {
         // completeness filter, because a guarantee that lives one layer downstream is exactly the "default
         // preview that writes nothing" claim E1 had to remove.
         if (r && String(r.route_kind || '') === _irComposerKind_()) return;
+        if (typeof _irRouteCancelHeld_ === 'function' && _irRouteCancelHeld_(r && r.allocation_draft_line_id)) return;   // RC1: a route under deletion is never queued for a save
         var prior = _priorByInstance[String(r.client_route_instance_id || '')] ||
                     _priorByLine[String(r.allocation_draft_line_id || '')];
         var isNew = !(prior);
@@ -7610,6 +8403,7 @@ function _saveAllocationDraftFromDom(sku) {
 // (Pure render must NOT call this.)
 function onExecutionRouteEdit(sku) {
     _execEnforceDistinctWarehouses(sku);   // From and To can never be the same warehouse_id (verify #19)
+    if (typeof _execFromAvailabilityRefresh_ === 'function') { try { _execFromAvailabilityRefresh_(sku); } catch (eC5) {} }   // C5: re-validate From availability on From / To / Qty edits
     _execRebuildMethodOptions(sku);        // re-filter Method from carrier_rate_cards on From/scope change (§3.5)
     // F1-7N-FC-1B-E1 §G — REMOVING THE LAST ROUTE LEAVES AN EMPTY PLAN, NOT AN EMPTY-LOOKING ONE. The
     // cancel path removes the row and calls this; before E1 the next pure re-render would then re-seed the
@@ -8538,9 +9332,14 @@ function _irUpdateRouteEtas(sku) {
 function _execEq(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
 function _execWhType(w) { return String((w && w.warehouseType) || '').trim().toUpperCase(); }
 
-function _execWarehouseCandidates() {
+function _execWarehouseCandidates(sku) {
     var scope = _replenSelectedScope();
-    var whs = _irWsGet('getWarehouses');   // F1-7J-A2: warehouses from the scoped IR read-model (Workspace) / broad getter (Legacy)
+    var whs = _irWsGet('getWarehouses');
+    // AD3 D (Owner decision 12): with a SKU, the shared builder may add the site's platform logical To (Walmart / KM Walmart) for a SKU this
+    // site fulfils through the platform (hybrid: marketplace_skus per SKU; unresolved never platform). Without a SKU: the c2 answer.
+    if (sku != null && String(sku).trim() !== '') {
+        scope = Object.assign({}, scope, { sku: String(sku).trim(), marketplaces: _irWsGet('getMarketplaces') || [], marketplaceSkus: _execMarketplaceSkusIfLoaded_() });
+    }   // F1-7J-A2: warehouses from the scoped IR read-model (Workspace) / broad getter (Legacy)
 
     // One central candidate contract for EVERY site (System Repair 1) — see inventory-compat.js
     // IRWarehouse.buildCandidates. Classification is by warehouse master fields (warehouse_type /
@@ -8575,7 +9374,9 @@ function _execWarehouseCandidates() {
         var isFactory = (w.isFactoryWarehouse === true) || t === 'FACTORY';
         if (isFactory && companyStrict(w)) from.push(w);
         else if (t === '3PL' && companyStrict(w) && countryStrict(w)) from.push(w);
-        if (!isAmazon && t === '3PL' && companyStrict(w) && countryStrict(w)) to.push(w);
+        // P3PL-1 (Owner 2026-11-21): any site may ship to a LEGAL 3PL (same company + country, Active, warehouse_type 3PL) - the same To set
+        // as IRWarehouse.buildCandidates. FBA / RETURN / FACTORY / other types and other companies / countries stay out of To.
+        if (t === '3PL' && companyStrict(w) && countryStrict(w)) to.push(w);
     });
     return { from: _execDedupWh(from), to: _execDedupWh(to), isAmazon: isAmazon };
 }
@@ -8606,7 +9407,7 @@ function _execNameCounts(list) {
 function _execWhOption(w, selectedId, ambiguous) {
     var name = w.warehouseName || w.warehouseId;
     var label = name;
-    if (ambiguous) { var extra = [w.warehouseCode, w.country].filter(Boolean).join(' / '); if (extra) label = name + ' (' + extra + ')'; }
+    if (ambiguous && w.warehouseCode) label = name + ' (' + w.warehouseCode + ')';   // A-delta2 F (Owner rule 5): the warehouse code only
     var sel = (selectedId && String(w.warehouseId) === String(selectedId)) ? ' selected' : '';
     // F1-7N-FB-4C - data-wh-code carries the warehouse CODE, which is the canonical destination axis the
     // carrier_rate_cards catalogue is keyed on (destination_warehouse_code). Without it the Method picker had to
@@ -8615,32 +9416,164 @@ function _execWhOption(w, selectedId, ambiguous) {
         '" data-wh-code="' + _execEsc(w.warehouseCode || '') +
         '" data-wh-type="' + _execEsc(w.warehouseType || '') + '" data-wh-country="' + _execEsc(w.country || '') + '"' + sel + '>' + _execEsc(label) + '</option>';
 }
-function _execFromOptionsHtml(list, selectedId) {
-    if (!list.length) return '<option value="">No warehouses</option>';
-    var counts = _execNameCounts(list);
-    var html = '<option value="">From…</option>';
-    list.forEach(function (w) { html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1); });
-    return html;
+// A-delta2 F (Owner rule 5, 2026-11-21) — FROM / TO PICKERS LIST LEGAL CHOICES ONLY. (Replaces the A-delta1 C5 availability labels.)
+// From = factories + the overseas 3PLs where THIS SKU has proven usable stock (IRWarehouse.fromAvailability: company / country / To / one
+// readable stock row / the 43_ pool hold judged PER SKU for hybrid sites / stock > 0). To = the candidate contract minus this row's From.
+// Option text = warehouse name (+ ' (code)' only when two listed names repeat); value = warehouse id. No quantity, no reason text, no
+// disabled option, no group. A saved From / To that is not legal now is never inserted: the select is left blank and a short note
+// OUTSIDE the select says why (data-field from_check / to_check). Re-validated on every From / To / Qty edit (onExecutionRouteEdit) and
+// after every render (data refresh). Server refusals that name a warehouse x SKU are shown in the same note (_execApplyServerRouteNotices_).
+// Rules: IRWarehouse.fromAvailability + IRWarehouse.buildRoutePickerOptions (inventory-compat.js). Read-only, no request. Guards unchanged.
+function _execAllocRulesIfLoaded_() {
+    try { var c = (typeof window !== 'undefined') ? window._opDbCache : null; return (c && Array.isArray(c.replenishmentDemandAllocationRules)) ? c.replenishmentDemandAllocationRules : null; } catch (e) { return null; }
 }
-function _execToOptionsHtml(list, selectedId, isAmazon) {
-    // Round 4 Decision B (Weekly Shipping Plan / planning level): To = eligible real 3PL warehouses
-    // (value = real warehouse_id) PLUS — for an Amazon marketplace — EXACTLY ONE Amazon logical
-    // destination (value = MARKETPLACE_DESTINATION token, NOT a warehouse_id; no individual FBA codes).
-    // buildCandidates already appended the single logical destination for Amazon. The real FBA
-    // warehouse_id is resolved later at the Shipment Draft execution stage (contract unchanged).
-    if (!list.length) return '<option value="">No eligible warehouses</option>';
-    var reals = list.filter(function (w) { return !w.logicalDestination; });
-    var counts = _execNameCounts(reals);
-    var html = '<option value="">To…</option>';
-    list.forEach(function (w) {
-        if (w.logicalDestination) {
-            var lsel = (selectedId && String(selectedId) === String(w.token)) ? ' selected' : '';
-            html += '<option value="' + _execEsc(String(w.token)) + '" data-wh-name="Amazon" data-wh-type="MARKETPLACE_DESTINATION" data-wh-country="' + _execEsc(w.country || '') + '"' + lsel + '>Amazon</option>';
-        } else {
-            html += _execWhOption(w, selectedId, (counts[_execNameKey(w)] || 0) > 1);
-        }
+// marketplace_skus rows for the per-SKU hybrid mode; null when the page cannot read them (every hybrid link then stays UNRESOLVED, as 43_)
+function _execMarketplaceSkusIfLoaded_() {
+    try { var m = _irWsGet('getMarketplaceSkus'); return Array.isArray(m) ? m : null; } catch (e) { return null; }
+}
+function _execFromAvailFor_(sku, toId, needByFrom, cand) {
+    if (!(window.IRWarehouse && typeof window.IRWarehouse.fromAvailability === 'function')) return null;
+    try {
+        var scope = _replenSelectedScope(), whs = _irWsGet('getWarehouses') || [];
+        return window.IRWarehouse.fromAvailability({ scope: scope, sku: sku, warehouses: whs, candidates: (cand && cand.from) || whs, overseasRows: _irWsGet('getOverseasInventorySnapshot') || [],
+            marketplaces: _irWsGet('getMarketplaces') || [], allocationRules: _execAllocRulesIfLoaded_(), marketplaceSkus: _execMarketplaceSkusIfLoaded_(), toId: toId || '', needByFrom: needByFrom || {},
+            factoryPools: _execFactoryPoolsFor_(sku), factoryOwnCounted: _execFactoryOwnCounted_(sku) });   // AD3 D r5 (Owner P0)
+    } catch (e) { return null; }
+}
+// AD3 D r5 (Owner P0): the factory availability authority for one SKU (KM.factoryAvailability = the KMFSG pools the server guard uses:
+// available_to_allocate = factory available - active allocation drafts - active shipping plans; never unproduced qty). The fresh READY read when
+// there is one, else the last snapshot shown on this page (the Draft / server guard re-checks); null = never read -> no factory is proven.
+function _execFactoryPoolsFor_(sku) {
+    try { var fa = window.KM && window.KM.factoryAvailability; if (!fa) return null;
+        var p = (typeof fa.poolsFor === 'function') ? fa.poolsFor(sku) : null;
+        if (!p && typeof fa.displayPoolsFor === 'function' && typeof fa.displayAt === 'function' && fa.displayAt()) p = fa.displayPoolsFor(sku);
+        return Array.isArray(p) ? p : null; } catch (e) { return null; }
+}
+// the PERSISTED planned qty of this card's saved routes per factory From: already inside the pool's active-draft deduction, so it is added back
+// once (never deducted twice). Only rows that carry a saved draft id, at their SAVED From and SAVED qty.
+function _execFactoryOwnCounted_(sku) {
+    var own = {}, list = (typeof document !== 'undefined') ? document.getElementById('shipping-methods-' + sku) : null;
+    if (!list) return own;
+    list.querySelectorAll('.ir-exec-plan__grid').forEach(function (rowEl) {
+        if (!String(rowEl.getAttribute('data-draft-id') || '').trim()) return;
+        var f = String(rowEl.getAttribute('data-from-persisted') || '').trim(), q = Number(rowEl.getAttribute('data-qty-persisted'));
+        if (f && isFinite(q) && q > 0) own[f] = (own[f] || 0) + q;
+    });
+    return own;
+}
+if (typeof window !== 'undefined' && window.KM && window.KM.factoryAvailability && typeof window.KM.factoryAvailability.subscribe === 'function') {
+    window.KM.factoryAvailability.subscribe(function () { try { document.querySelectorAll('[id^="shipping-methods-"]').forEach(function (el) { _execFromAvailabilityRefresh_(el.id.slice('shipping-methods-'.length)); }); } catch (e) {} });   // AD3 D r5: the From lists follow a new availability read
+}
+// planned qty per From for one SKU card (every route row of the card, composer included), as D-B2 sums need per warehouse x SKU
+function _execNeedByFrom_(sku) {
+    var need = {}, list = (typeof document !== 'undefined') ? document.getElementById('shipping-methods-' + sku) : null;
+    if (!list) return need;
+    list.querySelectorAll('.ir-exec-plan__grid').forEach(function (rowEl) {
+        var f = rowEl.querySelector('[data-field="source_warehouse_id"]'), q = rowEl.querySelector('[data-field="qty"]');
+        var id = f ? String(f.value || '').trim() : '', n = q ? Number(q.value) : 0;
+        if (id && isFinite(n) && n > 0) need[id] = (need[id] || 0) + n;
+    });
+    return need;
+}
+// The legal options of one row. Without the shared builder (a half-synced site) only factories are offered as From: an overseas source
+// cannot be proven usable here, and an unproven warehouse is never offered.
+function _execRoutePickers_(cand, avail, fromSelId, toSelId) {
+    cand = cand || { from: [], to: [] };
+    if (window.IRWarehouse && typeof window.IRWarehouse.buildRoutePickerOptions === 'function') {
+        return window.IRWarehouse.buildRoutePickerOptions({ candidates: cand, availability: avail, selectedFromId: fromSelId, selectedToId: toSelId });
+    }
+    function opt(w) { return { value: String(w.logicalDestination ? w.token : w.warehouseId), label: w.warehouseName || String(w.warehouseId || w.token), name: w.warehouseName || String(w.warehouseId || 'Amazon'), code: w.warehouseCode || '', type: w.logicalDestination ? 'MARKETPLACE_DESTINATION' : (w.warehouseType || ''), country: w.country || '', logical: !!w.logicalDestination }; }
+    var from = (cand.from || []).filter(function (w) { return w && (w.isFactoryWarehouse === true || _execWhType(w) === 'FACTORY'); }).map(opt);
+    var to = (cand.to || []).filter(Boolean).map(opt);
+    var fOk = from.some(function (o) { return o.value === String(fromSelId || ''); }), tOk = to.some(function (o) { return o.value === String(toSelId || ''); });
+    from.forEach(function (o) { o.selected = fOk && o.value === String(fromSelId); }); to.forEach(function (o) { o.selected = tOk && o.value === String(toSelId); });
+    return { from: from, to: to, fromEmpty: !from.length, toEmpty: !to.length, selectedFromId: fOk ? String(fromSelId) : '', selectedToId: tOk ? String(toSelId) : '',
+        fromNote: (fromSelId && !fOk) ? { state: 'STALE', warehouseId: String(fromSelId), reason: 'NOT_A_CANDIDATE', text: '不在此站點可選的倉庫內' } : null,
+        toNote: (toSelId && !tOk) ? { state: 'STALE', warehouseId: String(toSelId), reason: 'NOT_A_CANDIDATE', text: '不在此站點可選的倉庫內' } : null };
+}
+function _execPickerOptionsHtml_(opts, placeholder) {
+    var html = '<option value="">' + _execEsc(placeholder) + '</option>';
+    (opts || []).forEach(function (o) {
+        html += '<option value="' + _execEsc(o.value) + '" data-wh-name="' + _execEsc(o.name) + '" data-wh-code="' + _execEsc(o.code || '') +
+            '" data-wh-type="' + _execEsc(o.type || '') + '" data-wh-country="' + _execEsc(o.country || '') + '"' +
+            (o.logical ? ' data-wh-marketplace="' + _execEsc(o.marketplace || '') + '" data-wh-company="' + _execEsc(o.company || '') + '"' : '') +
+            (o.selected ? ' selected' : '') + '>' + _execEsc(o.label) + '</option>';
     });
     return html;
+}
+// the note beside a picker (outside the select): empty list, a saved choice that is not legal now, a planned qty above the proven stock
+function _execPickerNoteText_(note, empty, which) {
+    if (note && note.state === 'STALE') return '原本選的' + (which === 'from' ? '出貨倉' : '目的地') + '目前不能使用：' + String(note.text || note.reason || '') + '。請重新選擇。';
+    if (note && note.state === 'SHORT') return '計畫 ' + note.need + ' 超過此倉可用 ' + note.availableQty + '（建立 Shipment Draft 時會被拒絕）。';
+    if (note && note.state === 'SERVER') return String(note.text || '');
+    if (empty) return which === 'from' ? ('此 SKU 目前沒有可出貨的來源倉' + (_execFactoryPoolsFor_ && (typeof window !== 'undefined') && window.KM && window.KM.factoryAvailability && !_execFactoryPoolsForAny_() ? '（工廠可出貨量尚未讀取）' : '') + '。') : '此站點目前沒有可選的目的地。';
+    return '';
+}
+function _execFactoryPoolsForAny_() { try { var fa = window.KM && window.KM.factoryAvailability; return !!(fa && ((typeof fa.status === 'function' && fa.status() === 'READY') || (typeof fa.displayAt === 'function' && fa.displayAt()))); } catch (e) { return false; } }
+function _execPickerNoteHtml_(note, empty, which) {
+    var txt = _execPickerNoteText_(note, empty, which), st = note ? note.state : (empty ? 'EMPTY' : 'NONE');
+    var cls = 'exec-from-check' + (st === 'SHORT' ? ' exec-from-check--short' : (st === 'STALE' || st === 'SERVER' || st === 'EMPTY') ? ' exec-from-check--unusable' : '');
+    return '<span class="' + cls + '" data-field="' + (which === 'from' ? 'from_check' : 'to_check') + '" data-state="' + st + '" data-reason="' + _execEsc((note && note.reason) || '') + '" role="status">' + _execEsc(txt) + '</span>';
+}
+function _execSetPickerNote_(rowEl, which, note, empty) {
+    var chk = rowEl ? rowEl.querySelector('[data-field="' + (which === 'from' ? 'from_check' : 'to_check') + '"]') : null;
+    if (!chk) return;
+    var tmp = document.createElement('span'); tmp.innerHTML = _execPickerNoteHtml_(note, empty, which);
+    var nu = tmp.firstChild; if (nu) chk.parentNode.replaceChild(nu, chk);
+}
+// re-validate every route row of the card: rebuild the From / To option lists and the notes (From / To / Qty edits and every render call this)
+function _execFromAvailabilityRefresh_(sku) {
+    var list = (typeof document !== 'undefined') ? document.getElementById('shipping-methods-' + sku) : null;
+    if (!list) return;
+    var cand = _execWarehouseCandidates(sku), need = _execNeedByFrom_(sku);
+    list.querySelectorAll('.ir-exec-plan__grid').forEach(function (rowEl) {
+        var fromEl = rowEl.querySelector('[data-field="source_warehouse_id"]'), toEl = rowEl.querySelector('[data-field="destination_warehouse_id"]');
+        if (!fromEl) return;
+        var fromSel = String(fromEl.value || '') || String(rowEl.getAttribute('data-from-held') || ''), toSel = toEl ? (String(toEl.value || '') || String(rowEl.getAttribute('data-to-held') || '')) : '';
+        var p = _execRoutePickers_(cand, _execFromAvailFor_(sku, toSel, need, cand), fromSel, toSel);
+        fromEl.innerHTML = _execPickerOptionsHtml_(p.from, 'From…'); fromEl.value = p.selectedFromId; fromEl.disabled = !!p.fromEmpty;
+        if (toEl) {
+            toEl.innerHTML = _execPickerOptionsHtml_(p.to, 'To…'); toEl.value = p.selectedToId; toEl.disabled = !!p.toEmpty;
+        }
+        // a choice the operator replaces is no longer "held": the note follows the CURRENT selection only
+        if (p.fromNote && p.fromNote.state === 'STALE') rowEl.setAttribute('data-from-held', p.fromNote.warehouseId); else rowEl.removeAttribute('data-from-held');
+        if (p.toNote && p.toNote.state === 'STALE' && !rowEl.querySelector('[data-field="destination_confirmation"]')) rowEl.setAttribute('data-to-held', p.toNote.warehouseId); else rowEl.removeAttribute('data-to-held');
+        var srv = rowEl.getAttribute('data-from-server-note');
+        _execSetPickerNote_(rowEl, 'from', (srv && !p.fromNote && p.selectedFromId && rowEl.getAttribute('data-from-server-wh') === p.selectedFromId) ? { state: 'SERVER', text: srv } : p.fromNote, p.fromEmpty);
+        _execSetPickerNote_(rowEl, 'to', rowEl.querySelector('[data-field="destination_confirmation"]') ? null : p.toNote, p.toEmpty);
+    });
+}
+window._execFromAvailabilityRefresh_ = _execFromAvailabilityRefresh_;
+// A server answer that names a warehouse x SKU (16_ Submit refusal errors / overseas_precheck warnings, a Draft refusal) is shown next to
+// the From field of the rows of that SKU that use that warehouse, until the operator changes that From. Text only; nothing is changed.
+function _execApplyServerRouteNotices_(result) {
+    if (typeof document === 'undefined' || !result) return 0;
+    var d = result.data || {}, items = [];
+    [result.errors, d.errors, d.warnings, d.overseas_precheck && d.overseas_precheck.warnings].forEach(function (a) { if (Array.isArray(a)) items = items.concat(a); });
+    var n = 0;
+    items.forEach(function (x) {
+        if (!x || typeof x !== 'object') return;
+        var wh = String(x.source_warehouse_id || x.warehouse_id || '').trim(), sku = String(x.sku || '').trim();
+        if (!wh || !sku) return;
+        var list = document.getElementById('shipping-methods-' + sku); if (!list) return;
+        list.querySelectorAll('.ir-exec-plan__grid').forEach(function (rowEl) {
+            var f = rowEl.querySelector('[data-field="source_warehouse_id"]'); if (!f || String(f.value || '') !== wh) return;
+            var txt = String(x.message || x.reason || x.code || '').slice(0, 300);
+            rowEl.setAttribute('data-from-server-note', txt); rowEl.setAttribute('data-from-server-wh', wh);
+            _execSetPickerNote_(rowEl, 'from', { state: 'SERVER', reason: String(x.code || ''), text: txt }, false); n++;
+        });
+    });
+    return n;
+}
+window._execApplyServerRouteNotices_ = _execApplyServerRouteNotices_;
+// Back-compat wrappers (older callers): legal options only, same rules as the route rows.
+function _execFromOptionsHtml(list, selectedId, avail) {
+    var p = _execRoutePickers_({ from: list || [], to: [] }, avail || null, selectedId, '');
+    return _execPickerOptionsHtml_(p.from, 'From…');
+}
+function _execToOptionsHtml(list, selectedId, isAmazon) {
+    var p = _execRoutePickers_({ from: [], to: list || [] }, null, '', selectedId);
+    return _execPickerOptionsHtml_(p.to, 'To…');
 }
 // From and To must never be the same warehouse_id — clear the To selection if it collides (verify #19).
 function _execEnforceDistinctWarehouses(sku) {
@@ -8856,8 +9789,8 @@ function _renderExecutionRoute(sku, route) {
     // resolved. It used to be computed here, before anything knew where the shipment starts, so the lookup
     // matched on destination alone and a domestic row could answer for an international one.
     // Warehouse picker candidates for the current scope + the saved (or name-resolved) selections.
-    var cand = _execWarehouseCandidates();
-    var fromSelId = route.source_warehouse_id || _execResolveIdByName(cand.from, route.ship_from);
+    var cand = _execWarehouseCandidates(sku);   // AD3 D: per SKU (platform logical To)
+    var fromSelId = route.source_warehouse_id || route.from_held || _execResolveIdByName(cand.from, route.ship_from);   // AD3 D r5: + the held saved From
     // F1-7N-FB-4F-B6 §D.6/§E.2 — the persisted TOKEN selects first. For a warehouse the token IS the id, so
     // this is a no-op for that case; for a marketplace it is the only value the option list can match. The
     // display-name fallback is kept last for a locally-collected row that carries no token.
@@ -8866,10 +9799,19 @@ function _renderExecutionRoute(sku, route) {
     // From / Method / Qty and a BLANK To carrying a stated requirement — never a pre-selected marketplace.
     var needsDest = (route.destination_state === 'DESTINATION_CONFIRMATION_REQUIRED' ||
         route.destination_state === 'DESTINATION_AMBIGUOUS');
-    var fromDisabled = cand.from.length ? '' : ' disabled';
+    // A-delta2 F (Owner rule 5): the From / To lists are the LEGAL choices of this row (this route's own qty here; the card-wide sum per From
+    // is applied by the refresh right after render). A saved choice that is not legal now is NOT inserted: it renders blank, with the reason
+    // beside the field, and the route stays incomplete (never written) until the operator chooses again. Empty list -> disabled + a note.
+    var _c5Avail = (typeof _execFromAvailFor_ === 'function') ? _execFromAvailFor_(sku, toSelId, (function () { var o = {}, q0 = Number(qty); if (fromSelId && isFinite(q0) && q0 > 0) o[String(fromSelId)] = q0; return o; })(), cand) : null;
+    var _pk = _execRoutePickers_(cand, _c5Avail, fromSelId, toSelId);
+    var _fromHeld = (_pk.fromNote && _pk.fromNote.state === 'STALE') ? _pk.fromNote.warehouseId : '';
+    var _toHeld = (!needsDest && _pk.toNote && _pk.toNote.state === 'STALE') ? _pk.toNote.warehouseId : '';
+    fromSelId = _pk.selectedFromId;
+    if (!needsDest) toSelId = _pk.selectedToId;
+    var fromDisabled = _pk.fromEmpty ? ' disabled' : '';
     // System Repair 1: To is enabled only when there are REAL candidates (Amazon no longer force-enabled
     // via a synthetic option). Empty → disabled + explicit empty state, for every site type alike.
-    var toDisabled = cand.to.length ? '' : ' disabled';
+    var toDisabled = _pk.toEmpty ? ' disabled' : '';
     // Method options from real carrier_rate_cards, keyed on the chosen From origin country (if any) +
     // destination country + marketplace. No hardcoded fallback.
     var fromWh = cand.from.filter(function (w) { return String(w.warehouseId) === String(fromSelId); })[0];
@@ -8897,6 +9839,8 @@ function _renderExecutionRoute(sku, route) {
     // collect runs, or the collector would still be selecting past it.
     var _editFn = _isComposer ? 'onExecutionComposerEdit' : 'onExecutionRouteEdit';
     var _editArg = _isComposer ? ', this' : '';
+    // A-delta2 F: re-validated card-wide right after render (the planned qty of every row of this SKU per From)
+    if (typeof setTimeout === 'function') setTimeout(function () { try { _execFromAvailabilityRefresh_(sku); } catch (eC5r) {} }, 0);
     var row = document.createElement('div');
     // §B — a PRISTINE composer deliberately does NOT carry `.exec-route-row`. The collector selects on that
     // class, so this is what makes "not collected while untouched" a property of the SELECTOR rather than a
@@ -8913,6 +9857,7 @@ function _renderExecutionRoute(sku, route) {
     // without these the page would forget which of a SKU's several headers each route belongs to and the next
     // save could soft-cancel or overwrite the wrong shipment group.
     if (route && route.allocation_draft_id) row.setAttribute('data-draft-id', String(route.allocation_draft_id));
+    if (route && route.allocation_draft_id) { row.setAttribute('data-from-persisted', String(route.source_warehouse_id || '')); row.setAttribute('data-qty-persisted', String(Number(route.planned_qty != null ? route.planned_qty : route.qty) || 0)); }   // AD3 D r5
     if (route && route.route_group_key) row.setAttribute('data-group-key', String(route.route_group_key));
     // R6-R6-R4-R2 — and the version that header was READ at. It travels with the identity because the
     // collector rebuilds from the DOM; a version left only on the model does not survive one edit.
@@ -8922,6 +9867,8 @@ function _renderExecutionRoute(sku, route) {
     // adoption of an existing legacy header apart from an ordinary edit, and adoption is the one that needs an
     // explicit confirmation before anything is written.
     if (route && route.destination_state) row.setAttribute('data-dest-state', String(route.destination_state));
+    if (_fromHeld) row.setAttribute('data-from-held', _fromHeld);   // A-delta2 F: the saved From that is not legal now (note only; never an option)
+    if (_toHeld) row.setAttribute('data-to-held', _toHeld);
     // F1-7N-FB-4G-A0-R1 §C.4 — the STORED service, kept with the row. The Method <select> cannot hold it while
     // the carrier catalogue is still loading, and the async rebuild that follows reads the DOM; without this the
     // persisted service is simply gone by the time the options exist. Never a label — the stored value itself.
@@ -8934,9 +9881,10 @@ function _renderExecutionRoute(sku, route) {
     // rebuilds every row from the DOM, and a snapshot that is not on the row cannot survive one.
     row.setAttribute('data-src-code-persisted', String((route && route.source_warehouse_code) || ''));
     row.innerHTML =
-        '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" aria-label="From" title="From" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execFromOptionsHtml(cand.from, fromSelId) + '</select>' +
+        '<span class="replen-card__from-cell">' + '<select class="replen-card__select replen-card__select--wh" data-field="source_warehouse_id" aria-label="From" title="From" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + fromDisabled + '>' + _execPickerOptionsHtml_(_pk.from, 'From…') + '</select>' + _execPickerNoteHtml_(_pk.fromNote, _pk.fromEmpty, 'from') + '</span>' +
         '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
-        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" aria-label="To" title="To" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execToOptionsHtml(cand.to, toSelId, cand.isAmazon) + '</select>' +
+        '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" aria-label="To" title="To" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execPickerOptionsHtml_(_pk.to, 'To…') + '</select>' +
+        _execPickerNoteHtml_(needsDest ? null : _pk.toNote, _pk.toEmpty, 'to') +
         (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" aria-label="Qty" title="Qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
@@ -8966,6 +9914,8 @@ function _renderExecutionRoute(sku, route) {
     // Plan the operator must see the AI routes, not the AI routes plus a leftover blank row). A composer
     // appending itself obviously does not, or the first one would delete the second.
     if (list) { if (!_isComposer) _execDropPristineComposers_(sku); list.appendChild(row); }
+    if (!_isComposer && route && route.route_save_state && typeof _irRouteSaveChip_ === 'function') { try { _irRouteSaveChip_(row, route.route_save_state); } catch (_eSc) {} }   // RC1
+    if (!_isComposer && route && route.allocation_draft_line_id && typeof _irDecorateRouteOpRow_ === 'function') { try { _irDecorateRouteOpRow_('line:' + String(route.allocation_draft_line_id)); } catch (_eRo) {} }   // RC1
     return true;
 }
 
@@ -9043,6 +9993,7 @@ function removeExecutionRoute(event, sku) {
     if (row) {
         var lineId = row.getAttribute('data-line-id');
         var lineDraftId = row.getAttribute('data-draft-id') || '';
+        if (row.hasAttribute && row.hasAttribute('data-route-op')) return false;   // RC1: this route's deletion is already under way / awaiting resolution
         // F1-7N-FB-4G-A2-R4 §I.1 — CANCELLING A PERSISTED ROUTE IS AN EXPLICIT, CONFIRMED ACT.
         //
         // §I freezes the list of things allowed to soft-cancel a draft, and the first entry requires the
@@ -9058,7 +10009,17 @@ function removeExecutionRoute(event, sku) {
                     'This is not how you change a route — editing From / To / Method / Qty updates this same ticket in place.');
             } catch (e) { _goCancel = false; }
             if (!_goCancel) return false;      // ZERO WRITE, and the row stays exactly as it is
-            _cancelAllocationDraftLine(lineId, lineDraftId);
+            // RC1 — THE ROW STAYS. It is labelled Deleting and held out of every save; it leaves only when the database has
+            // acknowledged the cancellation AND a read shows the line cancelled (_irRouteOpResolve_). A refusal or an unknown
+            // outcome leaves it on screen with the reason and the safe next step.
+            var _rcP = _cancelAllocationDraftLine(lineId, lineDraftId, { sku: sku, origin: 'DELETE_BUTTON', route: _irRouteOpLabelFromRow_(row, sku) });
+            if (_rcP && typeof _rcP.then === 'function') {
+                _rcP.then(function (r) {
+                    // the two zero-write skips this page has always treated as "not part of the active plan" keep their old behaviour
+                    if (r && (r.skipped === 'HISTORICAL_DRAFT_NOT_MODIFIED' || r.skipped === 'LINE_BELONGS_TO_ANOTHER_DRAFT')) { try { row.remove(); } catch (eR) {} onExecutionRouteEdit(sku); syncExpandPanelHeight(sku); }
+                });
+                return false;
+            }
         }
         row.remove();
         onExecutionRouteEdit(sku);
@@ -9950,6 +10911,7 @@ function _irBuildExposureIndexes_(model) {
     return {
         planById: planById, lineReceiverById: lineReceiverById,
         shipRemainByReceiver: _irBuildShipmentRemainingByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById),
+        shipDisplayByReceiver: _irBuildShipmentDisplayByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById, _irWhTypeById_()),   // A final3 (B): display only
         builtForDayMs: todayMs
     };
 }
@@ -10039,6 +11001,7 @@ function _irOnExposureSettled_(key) {
     if (key !== _irExposureScopeKey_()) return;            // the operator moved on; this answer has no home
     var sku = (typeof currentExpandedRow !== 'undefined' && currentExpandedRow) ? currentExpandedRow : '';
     try { _irRepaintExposureCard_(sku); } catch (e) {}
+    try { _irPaintOnTheWayCells_(); } catch (eOW) {}   // A final4 Cut B: the first level follows the same settled snapshot
     // The persisted routes are an exposure table, so the hydrate could not have run before now. It pumps the
     // Execution gate itself on completion, which is what releases that panel from its skeleton.
     //
@@ -10111,6 +11074,7 @@ function _irExposureRefresh_(event, sku) {
     if (event) { event.stopPropagation(); if (event.preventDefault) event.preventDefault(); }
     _irInvalidateActiveExposure_();
     try { _irRepaintExposureCard_(sku || (typeof currentExpandedRow !== 'undefined' ? currentExpandedRow : '')); } catch (e) {}
+    try { _irPaintOnTheWayCells_(); } catch (eOW) {}   // A final4 Cut B: '--' while re-reading, never the old number
     _irEnsureExposureLoaded_({ retry: true });
     return false;
 }
@@ -10127,6 +11091,34 @@ function _irExposureStateOf_(skuData) {
 // THE FIVE BUCKETS WERE `${skuData?.within18days || 0}`. With the shipment family deferred that prints 0 for a
 // site nobody has read yet - a statement about incoming stock that no one has made. The number is now rendered
 // only from a READY entry; every other state says what it actually is.
+// A-DELTA1 c2 item 3: warehouse_id -> warehouse_type from the page's own warehouses read (exact id). Empty when not readable: no 3PL row is shown.
+function _irWhTypeById_() { var m = {}; try { ((typeof _irWsGet === 'function' ? _irWsGet('getWarehouses') : null) || []).forEach(function (w) { var id = String((w && (w.warehouseId || w.warehouse_id)) || '').trim(); if (id) m[id] = String((w.warehouseType || w.warehouse_type) || '').trim(); }); } catch (e) { m = {}; } return m; }
+// A-DELTA1 c2 item 3: the 3PL part of the card. 送往 3PL = remaining units whose physical destination is a 3PL and not yet proven there;
+// 已到 3PL = proven (status arrived / partially received). 「FBA 後段未定」 is shown when THIS row's fulfilment model needs a platform leg after the
+// 3PL (platform_fulfilled, incl. a hybrid SKU resolved to it) - decided by the model, never by the marketplace name (covers WFS etc.).
+function _ir3plCardNeedsLeg_(skuData) { return String((skuData && skuData.fulfillmentModel) || '').trim().toLowerCase() === 'platform_fulfilled'; }
+function _ir3plCardRows_(sd3, skuData, row) {
+  if (!sd3) return '';
+  var a = Number(sd3.to_3pl) || 0, b = Number(sd3.at_3pl) || 0, out = '';
+  if (a > 0) out += row('送往 3PL', a);
+  if (b > 0) out += row('已到 3PL', b);
+  if ((a > 0 || b > 0) && _ir3plCardNeedsLeg_(skuData)) out += row('<span title="3PL 之後到平台倉（FBA / WFS 等）的後段時間未定（B-Q1）：此站可售到貨未計入；缺口照算，供給可能低估、建議量可能偏多">FBA 後段未定</span>', 'B-Q1：未計入可售');   // r3: narrow (the site keeps planning; the row is not counted as sellable)
+  return out;
+}
+// AD3 D r5: the 30-day row is the 19-30 window (exclusive of 0-18), never a running total
+var IR_ROW30_LABEL_ = '<span title="19\u201330 days (not including 0\u201318)">Within 30 days <small class="ir-row30-range">(19\u201330)</small></span>';
+// AD3 D r5 (Owner P0): the 3rd Party Stock card's "On the Way" sub-block = in-transit to OVERSEAS 3PL warehouses (destination type 3PL),
+// 0-18 and 19-30. Same projection and the same read state as the Shipping Shipment card. Display only.
+function _irTpOnWayHtml_(sku, skuData) {
+    var state = _irExposureStateOf_(skuData), sd3 = skuData && skuData.shipDisplay;
+    function row(label, value) { return '<div class="replen-card__row"><span class="replen-card__label">' + label + '</span><span class="replen-card__value">' + value + '</span></div>'; }
+    var head = '<div class="ir-tp-onway__title" style="border-top:1px solid #E2E8F0;margin-top:6px;padding-top:6px;font-size:12px;font-weight:600;color:#334155;">On the Way</div>';
+    if (state === IR_EXPOSURE_STATES_.NOT_LOADED || state === IR_EXPOSURE_STATES_.LOADING) { var pend = '<span class="replen-card__value--pending">&hellip;</span>'; return head + row('Within 18 days', pend) + row(IR_ROW30_LABEL_, pend); }
+    if (state === IR_EXPOSURE_STATES_.FAILED) return head + '<div class="replen-card__row replen-card__row--error" role="alert"><span class="replen-card__label">In-transit not read (see Shipping Shipment)</span><span class="replen-card__value">&mdash;</span></div>';
+    if (state === 'NO_SCOPE' || !sd3 || !sd3.ovs) return head + row('Within 18 days', sd3 ? '0' : '&mdash;') + row(IR_ROW30_LABEL_, sd3 ? '0' : '&mdash;');
+    return head + row('Within 18 days', Math.round(sd3.ovs.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.ovs.d19_30 || 0).toLocaleString());
+}
+window._irTpOnWayHtml_ = _irTpOnWayHtml_;
 function _irShipCardInnerHtml_(sku, skuData) {
     var state = _irExposureStateOf_(skuData);
     var head = '<h4 class="replen-card__title">Shipping Shipment</h4>';
@@ -10137,8 +11129,7 @@ function _irShipCardInnerHtml_(sku, skuData) {
     if (state === IR_EXPOSURE_STATES_.NOT_LOADED || state === IR_EXPOSURE_STATES_.LOADING) {
         var pend = '<span class="replen-card__value--pending" title="Reading this site\'s incoming shipments">&hellip;</span>';
         return head + '<div class="replen-card__note" role="status" aria-live="polite">Incoming shipments load once for this site.</div>'
-            + row('Within 18 days', pend) + row('Within 30 days', pend)
-            + row('Within 45 days', pend) + row('45+ days', pend);
+            + row('Within 18 days', pend) + row(IR_ROW30_LABEL_, pend);   // AD3 D r5
     }
     if (state === IR_EXPOSURE_STATES_.FAILED) {
         var e = _irExposureActiveEntry_();
@@ -10149,26 +11140,73 @@ function _irShipCardInnerHtml_(sku, skuData) {
             + 'onclick="_irExposureRefresh_(event, \'' + sku + '\')">Retry</button></span></div>';
     }
     if (state === 'NO_SCOPE') {
-        return head + row('Within 18 days', '&mdash;') + row('Within 30 days', '&mdash;')
-            + row('Within 45 days', '&mdash;') + row('45+ days', '&mdash;');
+        return head + row('Within 18 days', '&mdash;') + row(IR_ROW30_LABEL_, '&mdash;');   // AD3 D r5
     }
     // READY (or LEGACY, where the broad cache holds all nineteen tables). These zeroes are measured.
-    var overdue = (skuData && skuData.shipOverdue) || 0;
+    // A final3 (B): the card reads the DISPLAY projection (incl. imported Amazon display-only) when present; the supply fields stay as they were
+    var sd3 = skuData && skuData.shipDisplay;
+    // AD3 D r5 (Owner P0): ONLY in-transit to PLATFORM warehouses (destination type FBA, incl. WFS), 0-18 and 19-30 (mutually exclusive).
+    if (sd3 && sd3.plat) return head + row('Within 18 days', Math.round(sd3.plat.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.plat.d19_30 || 0).toLocaleString());
+    var overdue = sd3 ? (sd3.overdue || 0) : ((skuData && skuData.shipOverdue) || 0);
     return head
         + (overdue > 0 ? row('Overdue', overdue, 'replen-card__row--overdue') : '')
-        + row('Within 18 days', (skuData && skuData.within18days) || 0)
-        + row('Within 30 days', (skuData && skuData.within30days) || 0)
-        + row('Within 45 days', (skuData && skuData.within45days) || 0)
-        + row('45+ days', (skuData && skuData.within45plus) || 0)
+        + row('Within 18 days', sd3 ? (sd3.d0_18 || 0) : ((skuData && skuData.within18days) || 0))
+        + row('Within 30 days', sd3 ? (sd3.d19_30 || 0) : ((skuData && skuData.within30days) || 0))
+        + row('Within 45 days', sd3 ? (sd3.d31_45 || 0) : ((skuData && skuData.within45days) || 0))
+        + row('45+ days', sd3 ? (sd3.d45_plus || 0) : ((skuData && skuData.within45plus) || 0))
+        + (sd3 && sd3.unknown > 0 ? row('ETA 未提供', sd3.unknown) : '')
+        + _ir3plCardRows_(sd3, skuData, row)   // A-DELTA1 c2 item 3: 送往 3PL / 已到 3PL / FBA 後段未定 (subsets of the rows above)
         + (state === IR_EXPOSURE_STATES_.READY
             ? ('<div class="replen-card__row replen-card__row--meta"><span class="replen-card__label"></span>'
                 + '<span class="replen-card__value"><button type="button" class="ir-exposure-refresh" '
                 + 'title="Re-read the shipment and allocation detail for THIS site. No other site is affected." '
-                + 'onclick="_irExposureRefresh_(event, \'' + sku + '\')">Refresh</button></span></div>')
+                + 'onclick="_irExposureRefresh_(event, \'' + sku + '\')">Refresh</button> <button type="button" class="ir-exposure-refresh" title="Read-only per-line reconciliation of this site (CSV)" onclick="_irShipDisplayCsv_(event)">對帳明細</button></span></div>')
             : '');
 }
 // In-place repaint of the one second-layer card that is not already owned by a reveal gate. Returns false when
 // no row is expanded, which is the ordinary case for a load the operator started and then collapsed.
+// A final4 Cut B (Owner 2026-11-20 override): the FIRST-LEVEL On the Way of a row = the Shipping Shipment DISPLAY total of the same receiver
+// (company + country + marketplace + SKU): overdue + d0_18 + d19_30 + d31_45 + d45_plus + unknown, from the SAME projection
+// (_irBuildShipmentDisplayByReceiver) and the SAME scoped snapshot (the active site's exposure entry) as the expanded card and the 對帳明細
+// CSV. display_only is a SUBSET of those buckets (shown in the tooltip, never added again). RENDER ONLY: the DTO field onTheWay stays 0 and no
+// DoS / Gap / Suggested Qty / AI / draft computation reads this. Not read yet -> '--'; read failed -> 重試; 0 only after a successful read.
+function _irOnTheWayKey_(item) { return _irReceiverKey(item.company, item.country, item.marketplace, item.sku); }
+function _irOnTheWayCellInner_(key, legacyItem) {
+    var st = _irExposureStateForRender_(), d = null;
+    if (st === 'LEGACY') {
+        if (legacyItem && !legacyItem.shipDisplay) return { html: String(legacyItem.onTheWay == null ? '--' : legacyItem.onTheWay), title: '' };   // demo rows: their own 18d + 45d (= their card)
+        d = legacyItem ? legacyItem.shipDisplay : null;
+    } else if (st === IR_EXPOSURE_STATES_.READY) {
+        var e = _irExposureActiveEntry_(), ix = e && e.indexes && e.indexes.shipDisplayByReceiver;
+        if (!ix) return { html: '--', title: '讀取中' };
+        d = ix[key] || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0, display_only: 0, plat: {}, ovs: {}, untyped: 0 };
+    } else if (st === IR_EXPOSURE_STATES_.FAILED) {
+        return { html: '<button type="button" class="ir-exposure-retry" title="在途資料讀取失敗，按此重新讀取（只讀取）" onclick="_irExposureRefresh_(event, \'\')">重試</button>', title: '' };
+    } else return { html: '--', title: st === IR_EXPOSURE_STATES_.LOADING ? '讀取中' : (st === 'NO_SCOPE' ? '' : '未載入：按 Search 或展開更新') };   // a3 (REVIEW_A1 MINOR-5)
+    if (!d) return { html: '--', title: '未載入：按 Search 或展開更新' };
+    var t = (d.overdue || 0) + (d.d0_18 || 0) + (d.d19_30 || 0) + (d.d31_45 || 0) + (d.d45_plus || 0) + (d.unknown || 0);
+    if (d.plat && d.ovs) {   // AD3 D r5 (Owner P0): platform / overseas as two short lines; an untyped destination stays in the total (tooltip)
+        var sum5 = function (b) { return (b.overdue || 0) + (b.d0_18 || 0) + (b.d19_30 || 0) + (b.d31_45 || 0) + (b.d45_plus || 0) + (b.unknown || 0); };
+        var pT = sum5(d.plat), oT = sum5(d.ovs);
+        return { html: '<span class="ir-ow-lines" style="display:inline-flex;flex-direction:column;align-items:flex-start;"><span class="ir-ow-line" data-ow-part="platform" style="display:block;white-space:nowrap;font-size:11px;line-height:1.25;">平台 ' + Math.round(pT).toLocaleString() + '</span>' +
+            '<span class="ir-ow-line" data-ow-part="overseas" style="display:block;white-space:nowrap;font-size:11px;line-height:1.25;">海外 ' + Math.round(oT).toLocaleString() + '</span></span>',
+            title: '在途：平台倉（FBA / WFS）' + Math.round(pT).toLocaleString() + '；海外 3PL ' + Math.round(oT).toLocaleString() + '；合計 ' + Math.round(t).toLocaleString() + (d.untyped > 0 ? '（含目的倉類型未知 ' + Math.round(d.untyped).toLocaleString() + '）' : '') + (d.display_only > 0 ? '；其中僅顯示（不計入供給）' + Math.round(d.display_only).toLocaleString() : '') };
+    }
+    return { html: String(Math.round(t).toLocaleString()), title: 'Shipping Shipment 在途合計（與展開卡片、對帳明細同一份資料）' + (d.display_only > 0 ? '；其中僅顯示（不計入供給）' + Math.round(d.display_only).toLocaleString() : '') + (d.unknown > 0 ? '；ETA 未提供 ' + Math.round(d.unknown).toLocaleString() : '') };
+}
+function _irOnTheWayCellHtml_(item) {
+    var k = _irOnTheWayKey_(item), c = _irOnTheWayCellInner_(k, item);
+    return '<div class="scroll-cell replen-onway-cell" data-ow-key="' + _irEsc_(k) + '"' + (c.title ? ' title="' + _irEsc_(c.title) + '"' : '') + '>' + c.html + '</div>';
+}
+// the rows stay as they are (a full re-render would collapse the open row): only the On the Way cells are repainted from the settled entry
+function _irPaintOnTheWayCells_() {
+    if (typeof document === 'undefined' || !document.querySelectorAll || _irExposureStateForRender_() === 'LEGACY') return 0;
+    var n = 0;
+    document.querySelectorAll('.replen-onway-cell[data-ow-key]').forEach(function (el) {
+        var c = _irOnTheWayCellInner_(el.getAttribute('data-ow-key'), null); el.innerHTML = c.html;
+        if (c.title) el.setAttribute('title', c.title); else el.removeAttribute('title'); n++; });
+    return n;
+}
 function _irRepaintExposureCard_(sku) {
     if (typeof document === 'undefined' || !sku) return false;
     var el = document.getElementById('ir-ship-card-' + sku);
@@ -10176,6 +11214,7 @@ function _irRepaintExposureCard_(sku) {
     var skuData = (typeof _irRevealSkuData_ === 'function') ? _irRevealSkuData_(sku) : null;
     el.setAttribute('data-ir-exposure', _irExposureStateOf_(skuData));
     el.innerHTML = _irShipCardInnerHtml_(sku, skuData);
+    var tp5 = document.getElementById('ir-tp-onway-' + sku); if (tp5) tp5.innerHTML = _irTpOnWayHtml_(sku, skuData);   // AD3 D r5: the overseas sub-block repaints with the card
     return true;
 }
 // The Recommendation Summary's persisted snapshot (_recDraftLines) is an exposure table too, so a panel that
@@ -11708,7 +12747,11 @@ function _irSearchBlockedNotice_(skus) {
         var el = document.createElement('div'); el.className = 'replen-search-blocked'; el.setAttribute('role', 'alert');
         el.setAttribute('style', 'background:#FFFBEB;border-left:3px solid #F59E0B;color:#92400E;padding:8px 10px;margin:6px 0;font-size:13px;');
         el.innerHTML = '<strong>Search not run - ' + skus.length + ' route(s) are not saved yet.</strong> Wait for Saving to finish, or fix the routes marked Not saved, then press Search again. Nothing was discarded.' +
-            '<details style="margin-top:4px;font-size:12px;"><summary>SKUs</summary>' + skus.map(function (k) { return _irEsc_(k); }).join(', ') + '</details>';
+            '<details style="margin-top:4px;font-size:12px;"><summary>SKUs</summary>' + skus.map(function (k) { return _irEsc_(k); }).join(', ') + '</details>' +
+            ((typeof _irRouteCancelKeys_ === 'function' && _irRouteCancelKeys_().length) ? '<div style="margin-top:4px;">' + _irEsc_(String(_irRouteCancelKeys_().length)) + ' of them are route deletions whose result is not confirmed. ' +   // RC1
+                '<button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irRouteCancelVerify_()">Check route deletions with the database (read-only)</button></div>' : '') +
+            ((typeof _irSaveMarksAllOnScreen_ === 'function' && !_irSaveMarksAllOnScreen_(skus.filter(function (k) { return !(typeof _irRouteCancelMarker_ === 'function' && _irRouteCancelMarker_(k)); }))) ? '<div style="margin-top:4px;">Some unsaved routes are not on screen (the page was reloaded). Do not re-enter or resend them; contact the Owner. ' +   // RC1-R2
+                '<button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irSaveMarksCheck_()">Check what the database holds for these SKUs (read-only)</button></div>' : '');
         host.insertBefore(el, host.firstChild);
     }
     if (typeof _irStateHostSync_ === 'function') { try { _irStateHostSync_(host); } catch (e) {} }
@@ -12044,6 +13087,7 @@ function _irApplySearch_(pending, mySeq) {
     // on every selector change — that was root cause 2/3 of the pre-Search auto-load. One request set per
     // confirmed Search; never per SKU; never both engines.
     if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
+    try { if (typeof _irEnsureExposureLoaded_ === 'function') _irEnsureExposureLoaded_(); } catch (eOW) {}   // A final4 Cut B: ONE exposure read per confirmed Search (cached per site) so the first level is not '--' until a row is expanded
     // F1-7N-FB-4F-B6 §C.3 — hydrate the persisted Execution Plan for the station that was just APPLIED. The
     // mount cannot do this (see _irHydrateDraftForAppliedScope_): at mount there is no scope to hydrate for.
     // NOT AWAITED — it re-renders itself when it has something, and it never blocks the first paint.
@@ -12836,6 +13880,91 @@ function _irAiPlanAdviceSentence_(cls) {
     return parts.join(' ');
 }
 
+// A2-D14C — THE COMMITMENT-DATE HOLD IS NAMED, NEVER SHOWN AS A ZERO OR AS SUCCESS. 61_ answers
+// AI_PLAN_COMMITMENT_HOLD (data.status HOLD, db_writes 0) with the held site/SKU list in commitment_hold
+// (held_keys / held_sites); the transport carries it in error.details. 16_ Submit refusals reuse this:
+// AI_PLAN_HOLD_AUTHORITY_MISSING is matched by name; any other 16_ hold / share code stays on the generic path
+// until 16_ publishes it. A held key has NO quantity to show, so this never prints one.
+var IR_AI_PLAN_HOLD_HEADLINE_ = '承諾日期未知，請補日期';
+// A2 v4 (N-2) — the A0 site hold is a DIFFERENT condition with its own sentence and next step. 61_ answers
+// AI_PLAN_SITE_A0_BLOCKED (status HOLD) when only A0 holds, and AI_PLAN_COMMITMENT_HOLD when a commitment hold is
+// present (with or without A0); the report says which via active / a0_active and lists a0_held_sites plus
+// affected_site_lines. Both parts are shown, separately, whenever both are present.
+var IR_AI_PLAN_A0_HEADLINE_ = '倉庫份額未設定，此站已暫停；保留既有 AI 計畫';
+function _irAiPlanHoldInfo_(code, status, hold) {
+    var c = String(code || ''), h = (hold && typeof hold === 'object') ? hold : null;
+    var a0Code = c === 'AI_PLAN_SITE_A0_BLOCKED';
+    var named = c === 'AI_PLAN_COMMITMENT_HOLD' || c === 'AI_PLAN_HOLD_AUTHORITY_MISSING' || a0Code;
+    var refusal = named || String(status || '') === 'HOLD';
+    var a0 = a0Code || !!(h && h.a0_active === true);
+    var commit = c === 'AI_PLAN_COMMITMENT_HOLD' || c === 'AI_PLAN_HOLD_AUTHORITY_MISSING' || !!(h && h.active === true) || (refusal && !a0);
+    if (!refusal && !commit && !a0) return null;
+    var list = [], parts = [], nexts = [];
+    if (commit) {
+        ((h && Array.isArray(h.held_sites)) ? h.held_sites : []).forEach(function (m) { if (m) list.push(String(m) + ' (whole site)'); });
+        ((h && Array.isArray(h.held_keys)) ? h.held_keys : []).forEach(function (x) {
+            if (x) list.push([x.marketplace, x.sku].filter(function (v) { return !!v; }).join(' / ') || String(x.key || '?'));
+        });
+        var hC = c === 'AI_PLAN_HOLD_AUTHORITY_MISSING'
+            ? 'The commitment-date hold could not be verified (AI_PLAN_HOLD_AUTHORITY_MISSING).'
+            : IR_AI_PLAN_HOLD_HEADLINE_ + (refusal ? '' : ' (held, not planned)');
+        parts.push(hC + (list.length ? ' Affected site/SKU: ' + list.slice(0, 10).join('; ') + (list.length > 10 ? ' (+' + (list.length - 10) + ' more)' : '') + '.' : ''));
+        nexts.push('Fill the missing commitment dates');
+    }
+    if (a0) {
+        var lines = (h && Array.isArray(h.affected_site_lines)) ? h.affected_site_lines : [];
+        var a0List = ((h && Array.isArray(h.a0_held_sites)) ? h.a0_held_sites : []).filter(function (m) { return !!m; }).map(function (m) {
+            var sk = [];
+            lines.forEach(function (x) { var s = x && String(x.marketplace) === String(m) ? String(x.sku || '') : ''; if (s && sk.indexOf(s) < 0) sk.push(s); });
+            return String(m) + (sk.length ? ' (SKU ' + sk.slice(0, 10).join(', ') + (sk.length > 10 ? ' +' + (sk.length - 10) + ' more' : '') + ')' : '');
+        });
+        parts.push(IR_AI_PLAN_A0_HEADLINE_ + (refusal ? '' : ' (paused, not planned)') + (a0List.length ? ' A0 site(s): ' + a0List.slice(0, 10).join('; ') + (a0List.length > 10 ? ' (+' + (a0List.length - 10) + ' more)' : '') + '.' : ''));
+        nexts.push('Set the warehouse share for this site');
+    }
+    return { code: c || (commit ? 'AI_PLAN_COMMITMENT_HOLD' : 'AI_PLAN_SITE_A0_BLOCKED'), refusal: refusal, commit: commit, a0: a0,
+        headline: commit ? parts[0].split(' Affected site/SKU: ')[0] : IR_AI_PLAN_A0_HEADLINE_, list: list,
+        text: parts.join(' | '), next: nexts.join('; ') + ', then run AI Plan again.' };
+}
+// A2 v2 — the 16_ Submit gate refusals ({ success:false, code, error:code, message, stage:'ai_plan_submit_gate',
+// zero_write:true, data }). One headline per code (the two Owner sentences verbatim; the others the server's own
+// sentence); the list names the blocking drafts and site/SKU from data. data carries no quantity and none is shown.
+var IR_SUBMIT_GATE_HEADLINES_ = {
+    AI_PLAN_COMMITMENT_HOLD: '承諾日期未知，請補日期',
+    AI_PLAN_SITE_A0_BLOCKED: '倉庫份額未設定，無法自動送出',
+    AI_PLAN_SITE_BLOCK_UNVERIFIED: '無法確認倉庫份額狀態，AI 草稿不能自動送出',
+    SUBMIT_DRAFT_ORIGIN_UNKNOWN: '草稿來源無法判定（不是手動也不是 AI），不能送出',
+    AI_PLAN_HOLD_AUTHORITY_MISSING: '承諾日期 HOLD 判定不在此部署中（61_ 版本不符），AI 草稿不能送出',
+    AI_PLAN_HOLD_AUTHORITY_UNAVAILABLE: '承諾日期 HOLD 無法判定，AI 草稿不能送出'
+};
+function _irSubmitGateRefusal_(code, result) {
+    var c = String(code || ''), r = result || {};
+    var named = Object.prototype.hasOwnProperty.call(IR_SUBMIT_GATE_HEADLINES_, c);
+    if (!named && r.stage !== 'ai_plan_submit_gate') return null;
+    var d = (r.data && typeof r.data === 'object') ? r.data
+        : ((Array.isArray(r.errors) && r.errors[0] && r.errors[0].details) || (r.error && typeof r.error === 'object' && r.error.details) || {});
+    var S = function (v) { return String(v == null ? '' : v).trim(); };
+    var drafts = [], seen = {}, items = [];
+    var addDraft = function (id) { id = S(id); if (id && !seen[id]) { seen[id] = 1; drafts.push(id); } };
+    var addItem = function (t) { t = S(t); if (t && items.indexOf(t) < 0) items.push(t); };
+    var hold = (d.commitment_hold && typeof d.commitment_hold === 'object') ? d.commitment_hold : d;
+    (Array.isArray(hold.held_sites) ? hold.held_sites : []).forEach(function (m) { addItem(S(m) && S(m) + ' (whole site)'); });
+    (Array.isArray(hold.held_keys) ? hold.held_keys : []).forEach(function (x) { if (x) addItem([S(x.marketplace), S(x.sku)].filter(Boolean).join(' / ') || S(x.key)); });
+    var siteMk = S(d.site && d.site.marketplace);
+    (Array.isArray(d.held_lines) ? d.held_lines : []).forEach(function (x) { if (x) { addDraft(x.allocation_draft_id); if (!(hold.held_keys || []).length) addItem(S(x.key).split('|').slice(2).join(' / ')); } });
+    (Array.isArray(d.blocked_lines) ? d.blocked_lines : []).forEach(function (x) { if (x) { addDraft(x.allocation_draft_id); addItem([siteMk, S(x.sku)].filter(Boolean).join(' / ')); } });
+    (Array.isArray(d.drafts) ? d.drafts : []).forEach(function (x) { if (x) { addDraft(x.allocation_draft_id); addItem(S(x.allocation_draft_id) + ': origin ' + (S(x.origin) || '?') + (x.generation_type ? ' (generation_type ' + S(x.generation_type) + ')' : '')); } });
+    (Array.isArray(d.allocation_draft_ids) ? d.allocation_draft_ids : []).forEach(addDraft);
+    var cut = function (a) { return a.slice(0, 12).join('; ') + (a.length > 12 ? ' (+' + (a.length - 12) + ' more)' : ''); };
+    var list = (items.length ? 'Affected: ' + cut(items) + '.' : '') + (items.length && drafts.length ? ' ' : '') +
+        (drafts.length ? 'Blocking draft(s): ' + cut(drafts) + '.' : '') + (d.reason ? ' Reason: ' + S(d.reason).slice(0, 160) + '.' : '');
+    var next = c === 'AI_PLAN_COMMITMENT_HOLD' ? 'Fill the missing commitment dates, run AI Plan again, then Submit.'
+        : c === 'AI_PLAN_SITE_A0_BLOCKED' ? 'Set the warehouse share for this site, then Submit again.'
+        : c === 'SUBMIT_DRAFT_ORIGIN_UNKNOWN' ? 'Re-create the listed route(s), then Submit.'
+        : 'Reload and Submit again. If it repeats, report the code.';
+    return { code: c || 'AI_PLAN_SUBMIT_GATE', headline: named ? IR_SUBMIT_GATE_HEADLINES_[c] : ('The AI Plan submit gate refused this batch' + (S(r.message) ? ': ' + S(r.message).slice(0, 160) : '')),
+        list: list || 'The server did not name the affected drafts.', next: next };
+}
+
 function _irClassifyGenerationResult_(res) {
     var d = (res && res.data) || {};
     // §D.2 — read the SINGULAR `error` the command result actually carries, as well as the plural
@@ -12868,8 +13997,9 @@ function _irClassifyGenerationResult_(res) {
     // correct result. The second means demand EXISTS and no route could be built for it, which is worth
     // investigating. The server names the first explicitly; the page keeps them apart.
     var noReplenishmentRequired = String(d.code || '') === 'NO_REPLENISHMENT_REQUIRED';
+    var _hold = _irAiPlanHoldInfo_((_e1 && _e1.code) || d.code, d.status, d.commitment_hold || _det.commitment_hold);   // A2-D14C
     return {
-        ok: backendOk || (zeroResult && !!(res && res.success)), status: status,
+        ok: !(_hold && _hold.refusal) && (backendOk || (zeroResult && !!(res && res.success))), status: status, hold: _hold, userSummary: (d && d.user_summary) || null,   // C4
         marketplaceCount: (d.marketplaceCount != null ? d.marketplaceCount : mkts.length),
         skuCount: (d.skuCount != null ? d.skuCount : null),
         lineTotal: lineTotal, draftIds: draftIds, blockedCount: blocked.length,
@@ -13121,6 +14251,12 @@ function _irRunInventoryAiPlanGeneration_(btn, opts) {
                 });
         }
         _irShowAiPlanResult_(cls);   // truthful blocked/no-demand/failed — never conceals committed draftIds
+        if (cls.hold && cls.hold.refusal) {   // A2-D14C — named, before every generic wording; no quantity is stated
+            return _irAiPlanTerminal_('warn',
+                cls.hold.text + ' Nothing was created, changed, submitted or replaced. ' + cls.hold.next +   // v4: per condition (N-2)
+                ' Your current Execution Plan is UNCHANGED.',
+                cls.hold.text + ' Nothing was written.');
+        }
         // ==========================================================================================================
         // F1-7N-FC-1B-E3-R4-A2-R1-R6 §4 — THIS IS THE BRANCH THE LIVE RUN ACTUALLY TOOK, AND IT SHOWED RED.
         //
@@ -13242,6 +14378,55 @@ function _irAiPlanReconcile_(cls) {
 window._irAiPlanReconcile_ = _irAiPlanReconcile_;
 // R6D1 — MANUAL-ONLY dismissible result popup (business-readable + a collapsed Technical-details disclosure; no raw tokens
 // in the headline). Reuses the R6E structured-disclosure template. Background/resume never call this (manual-click only).
+// A-delta1 C4 -> C5: the AI answer's user summary, shown OUTSIDE Technical details on a successful answer (data.user_summary from 61_). Text only.
+// C5: V2 shows the Order Planning numbers (b4 line fields as 43_ stored them: the same per-tier strings the Request Order page shows), the
+// leg note (FBA leg date unknown, not platform sellable), what THIS AI run planned, and the source version (Gap date + Order Planning run).
+// c7fix M-A (REVIEW_AD1B): the 16_ Submit overseas pre-check (data.overseas_precheck) is shown in the Submit result - every warning's own text
+// and the server's note that nothing is reserved at Submit. Text only; nothing when the answer carries no warning.
+function _irOverseasPrecheckText_(op) {
+    if (!op || typeof op !== 'object' || !Array.isArray(op.warnings) || !op.warnings.length) return '';
+    var w = op.warnings, NLc = String.fromCharCode(10);
+    var lines = w.slice(0, 10).map(function (x) { return '• ' + String((x && (x.message || x.code)) || ''); });
+    return '海外庫存預檢（僅提示，' + String(op.mode || 'WARN') + '）' + NLc + lines.join(NLc) + (w.length > 10 ? NLc + '…另有 ' + (w.length - 10) + ' 筆' : '') + NLc +
+        String(op.note || '目前尚未保留任何庫存；建立 Shipment Draft 時才會保留。') + NLc + NLc;
+}
+window._irOverseasPrecheckText_ = _irOverseasPrecheckText_;
+function _irAiUserSummaryHtml_(us, esc) {
+    if (!us || (us.kind !== 'AI_PLAN_USER_SUMMARY_V1' && us.kind !== 'AI_PLAN_USER_SUMMARY_V2')) return '';
+    var n = function (v) { var x = Number(v); return (v === null || v === undefined || !isFinite(x)) ? '—' : Math.round(x).toLocaleString(); }, rows = [];
+    var v2 = us.kind === 'AI_PLAN_USER_SUMMARY_V2', sv = us.source_version || {};
+    if (v2 && us.basis === 'ORDER_PLANNING_ROW') {
+        var ls = ((us.order_planning && us.order_planning.lines) || []).filter(function (l) { return l && l.status === 'READY'; });
+        ls.forEach(function (l) {
+            var sg = l.note_segments || {};
+            rows.push('<div data-us-row="op-line" data-us-sku="' + esc(l.sku) + '"><strong>' + esc(l.marketplace) + ' / ' + esc(l.sku) + '（Order Planning）</strong></div>');
+            var tv = function (k, v) { return '<span data-us-val="' + k + '">' + esc(v) + '</span>'; }, dv = (l.layers_source === 'DERIVED_NO_TRANSFER_NO_STOCK') ? '= 平台補貨需求' : '—';
+            rows.push('<div data-us-row="platform-need"><strong>平台補貨需求:</strong> 共 ' + tv('platform-need', n(l.platform_need_qty)) + ' 件</div>');
+            rows.push('<div data-us-row="overseas-transfer"><strong>海外可調撥（建議）:</strong> ' + tv('transfer-tiers', sg.OVERSEAS_TRANSFER_SUGGESTED || '0') + '（共 ' + tv('transfer-qty', n(l.overseas_transfer_qty)) + ' 件）</div>');
+            rows.push('<div data-us-row="factory-ship"><strong>工廠出貨量:</strong> ' + tv('ship-tiers', sg.FACTORY_SHIP || dv) + '（共 ' + tv('ship-qty', n(l.factory_ship_qty)) + ' 件）</div>');
+            rows.push('<div data-us-row="from-stock"><strong>其中由工廠現貨:</strong> ' + tv('stock-tiers', sg.FROM_FACTORY_STOCK || '0') + '（共 ' + tv('stock-qty', n(l.factory_ship_from_stock_qty)) + ' 件；到貨前不計入平台可售量）</div>');
+            rows.push('<div data-us-row="new-purchase"><strong>新採購／生產:</strong> ' + tv('new-tiers', sg.NEW_PURCHASE || dv) + '（共 ' + tv('new-qty', n(l.new_purchase_qty)) + ' 件；含箱規建議 ' + tv('suggested-qty', n(l.suggested_qty)) + '，RO/PO 依此）</div>');
+            if (sg.OVERSEAS_POOL_HELD) rows.push('<div data-us-row="held-pools"><strong>未列入調撥的海外庫存:</strong> ' + esc(sg.OVERSEAS_POOL_HELD) + '</div>');
+        });
+        if (us.leg_note) rows.push('<div data-us-row="leg" style="color:#B45309;"><strong>FBA 後段日期未定（B-Q1）:</strong> 海外調撥不計入平台可售量、不提高 DoS，只減少工廠出貨量（platformSellable = false）；不承諾平台到貨日</div>');
+    } else {
+        rows.push('<div data-us-row="overseas-transfer"><strong>海外轉運（3PL → 平台）:</strong> ' + n(us.overseas_transfer_qty) + ' 件' + ((us.overseas_sources || []).length ? '（' + us.overseas_sources.map(function (s) { return esc(s.warehouse_code || s.warehouse_id) + ' ' + n(s.qty); }).join('、') + '）' : '') + '</div>');
+        rows.push('<div data-us-row="factory-before-after"><strong>工廠需求:</strong> ' + n(us.factory_need_before_overseas) + ' → ' + n(us.factory_need_after_overseas) + ' 件（海外轉運後減少 ' + n(Number(us.factory_need_before_overseas) - Number(us.factory_need_after_overseas)) + '）</div>');
+        if (v2) rows.push('<div class="replen-muted" data-us-row="basis">依據：本次 AI 計畫（Order Planning 無可用列：' + esc(us.basis_reason || '') + '）</div>');
+    }
+    if (v2 && us.result && !us.result.success) rows.push('<div data-us-row="result" style="color:#B91C1C;"><strong>本次 AI 計畫未完成:</strong> ' + esc(us.result.outcome || us.result.job_status || 'NOT_SUCCESS') + '（下列風險與 Order Planning 數字仍然適用）</div>');
+    if (v2 && us.plan_allocation) {
+        var pa = us.plan_allocation;
+        rows.push('<div data-us-row="plan"><strong>本次 AI 計畫:</strong> 海外 <span data-us-val="plan-overseas">' + n(pa.overseas_qty) + '</span> 件' + ((pa.overseas_sources || []).length ? '（' + pa.overseas_sources.map(function (s) { return esc(s.warehouse_code || s.warehouse_id) + ' ' + n(s.qty); }).join('、') + '）' : '') +
+            ' · 工廠 <span data-us-val="plan-factory">' + n(pa.factory_qty) + '</span> 件 · 待生產 <span data-us-val="plan-production">' + n(pa.production_need_qty) + '</span> 件</div>');
+    }
+    if (Number(us.held_unknown_leg_qty) > 0) rows.push('<div><strong>FBA 後段未定（B-Q1）:</strong> ' + n(us.held_unknown_leg_qty) + ' 件送往 3PL，未計入可售</div>');
+    (us.shortage_risk || []).forEach(function (r) { rows.push('<div style="color:#B45309;"><strong>缺貨風險:</strong> ' + esc(r.code) + (r.qty != null ? ' ' + n(r.qty) + ' 件' : '') + (r.count != null ? ' ×' + n(r.count) : '') + (r.sku ? ' · ' + esc(r.sku) : '') + '</div>'); });
+    rows.push('<div class="replen-muted" data-us-row="version"><strong>資料版本:</strong> 來源 ' + esc(sv.source_data_as_of || '未提供') + ' · Gap 計算日 ' + esc(sv.accepted_gap_calculation_date || '未提供') +
+        (v2 ? ' · Order Planning 計算日 <span data-us-val="op-date">' + esc(sv.order_planning_calculation_date || '未提供') + '</span>' + (sv.order_planning_run_id ? '（' + esc(sv.order_planning_run_id) + '）' : '') : '') + '</div>');
+    rows.push('<div class="replen-muted">規則：' + esc(us.rule || '') + '</div>');
+    return '<div class="replen-ai-plan-result__summary" style="margin-top:6px;">' + rows.join('') + '</div>';
+}
 function _irShowAiPlanResult_(cls) {
     if (typeof document === 'undefined') return;
     var esc = (typeof escapeReplenHtml === 'function') ? escapeReplenHtml : function (v) { return String(v == null ? '' : v); };
@@ -13260,8 +14445,10 @@ function _irShowAiPlanResult_(cls) {
             : cls.zeroResult
             ? ('AI Plan: no recommendation for this scope this cycle.' + replaced)
             : ('AI Plan generated — ' + (cls.marketplaceCount || 0) + ' marketplace(s), ' + (cls.lineTotal || 0) + ' line(s).' + replaced))
-        : (cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready. Your current Execution Plan is unchanged.'
+        : (cls.hold && cls.hold.refusal ? (esc(cls.hold.text) + ' Nothing was created, changed, submitted or replaced. Your current Execution Plan is unchanged.')
+            : cls.status === 'BLOCKED_INPUT' ? 'AI Plan blocked — input not ready. Your current Execution Plan is unchanged.'
             : ('AI Plan could not complete' + (cls.reason ? ' — ' + esc(cls.reason) : '') + '. Your current Execution Plan is unchanged.'));
+    if (cls.ok && cls.hold) headline += ' ' + esc(cls.hold.text);   // A2-D14C — a partly held run names what it did not plan
     // ==========================================================================================================
     // R6-R7-R3 §6 — A COUNTER IS A NUMBER OR IT IS NOT A COUNTER.
     //
@@ -13328,6 +14515,7 @@ function _irShowAiPlanResult_(cls) {
     host.innerHTML = '<div style="display:flex;justify-content:space-between;gap:12px;align-items:flex-start;">' +
         '<div class="replen-ai-plan-result__msg">' + esc(headline) + '</div>' +
         '<button type="button" class="replen-ai-plan-result__close" aria-label="Dismiss" onclick="var h=document.getElementById(\'replen-ai-plan-result\'); if(h&&h.remove)h.remove();" style="border:none;background:none;cursor:pointer;font-size:16px;line-height:1;">×</button></div>' +
+        ((!cls.hold && cls.userSummary && typeof _irAiUserSummaryHtml_ === 'function') ? _irAiUserSummaryHtml_(cls.userSummary, esc) : '') +   // C4: visible user summary (success only); r3: never throws when the helper is absent (half-sync / extracted test pages)
         '<details class="replen-ai-plan-result__detail" style="margin-top:6px;"><summary>Technical details</summary>' + rows + '</details>';
     host.style.borderColor = cls.ok ? '#16a34a' : '#dc2626';
 }
@@ -13409,14 +14597,14 @@ function _getCloudReplenishmentData() {
     // When the second layer is not READY this stays NULL. A {} here would be worse than useless: every lookup
     // would miss, every row would take the zeroed default, and the screen would report "no incoming shipments"
     // about tables nobody has read.
-    var shipRemainByReceiver = null;
+    var shipRemainByReceiver = null, shipDisplayByReceiver = null;   // A final3 (B)
     if (_irExpReady) {
         var _expEntry = _irExposureActiveEntry_();
         var _expIdx = (_expEntry && _expEntry.indexes) ? _expEntry.indexes : _irBuildExposureIndexes_({
             getShipments: get('getShipments') || [], getShipmentLines: get('getShipmentLines') || [],
             getShippingPlans: get('getShippingPlans') || [], getShippingPlanLines: get('getShippingPlanLines') || []
         });
-        shipRemainByReceiver = _expIdx.shipRemainByReceiver;
+        shipRemainByReceiver = _expIdx.shipRemainByReceiver; shipDisplayByReceiver = _expIdx.shipDisplayByReceiver || null;   // A final3 (B)
     }
 
     // F1-7N-FB-4E-R4B-R1 - the factory projection's window anchor is INJECTED (the module never reads a clock),
@@ -13473,6 +14661,7 @@ function _getCloudReplenishmentData() {
             ? (shipRemainByReceiver[_irReceiverKey(scopeMkt.company, scopeMkt.country, scopeMkt.marketplace, mp.sku)]
                 || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0 })
             : null;
+        var shipDisp = shipDisplayByReceiver ? (shipDisplayByReceiver[_irReceiverKey(scopeMkt.company, scopeMkt.country, scopeMkt.marketplace, mp.sku)] || { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0, display_only: 0 }) : null;   // A final3 (B): display only, never supply
 
         var inv = IR.latestSnapshot(_irNoBlankMk16_(invSnaps), scope);   // R71-FE-16 (A-1): blank-marketplace rows excluded
         var _blank16 = !inv && !!IR.latestSnapshot(invSnaps, scope);       // ... and they were the only rows for this SKU
@@ -13678,6 +14867,7 @@ function _getCloudReplenishmentData() {
             within18days: shipRem ? shipRem.d0_18 : null, within30days: shipRem ? shipRem.d19_30 : null,
             within45days: shipRem ? shipRem.d31_45 : null, within45plus: shipRem ? shipRem.d45_plus : null,
             shipOverdue: shipRem ? shipRem.overdue : null,
+            shipDisplay: shipDisp,   // A final3 (B): the card's display projection; the supply fields above are unchanged
             // 3rd Party detail (only aggregate available in Phase 1)
             winitStock: 0, onusStock: 0,
             // Forecast breakdown (next 3 months)
@@ -15381,6 +16571,20 @@ function _irRecoMapLine(L) {
       contaminationSource: (L.horizonBasis.contaminationSource && typeof L.horizonBasis.contaminationSource === 'object')
         ? { campaigns: String(L.horizonBasis.contaminationSource.campaigns || ''), events: String(L.horizonBasis.contaminationSource.events || '') } : null
     } : null,
+    // D5-V3-R5E FE-WARNINGS - THE EIGHT WARNING FIELDS 42_ PUTS ON EVERY CALCULATED LINE (docs/WARNING_CONTRACT.md).
+    // Carried exactly as received, never computed or repaired; an absent field becomes an empty array, which the
+    // contract defines as "nothing to warn". Written inline because repo suites evaluate this mapper on its own.
+    incomingDateSources: Array.isArray(L.incomingDateSources) ? L.incomingDateSources.slice() : [],
+    arrivalUndetermined: Array.isArray(L.arrivalUndetermined) ? L.arrivalUndetermined.slice() : [],
+    shippedEtaMissing: Array.isArray(L.shippedEtaMissing) ? L.shippedEtaMissing.slice() : [],
+    inventoryShares: Array.isArray(L.inventoryShares) ? L.inventoryShares.slice() : [],
+    inventoryShareUnknown: Array.isArray(L.inventoryShareUnknown) ? L.inventoryShareUnknown.slice() : [],
+    inventoryShareReconciliation: Array.isArray(L.inventoryShareReconciliation) ? L.inventoryShareReconciliation.slice() : [],
+    incomingAttribution: Array.isArray(L.incomingAttribution) ? L.incomingAttribution.slice() : [],
+    shipmentDuplicates: {
+      conflicts: (L.shipmentDuplicates && Array.isArray(L.shipmentDuplicates.conflicts)) ? L.shipmentDuplicates.conflicts.slice() : [],
+      identical: (L.shipmentDuplicates && Array.isArray(L.shipmentDuplicates.identical)) ? L.shipmentDuplicates.identical.slice() : []
+    },
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };
 }
@@ -15920,25 +17124,304 @@ function _irRecoHorizonOutlookTableHtml(line) {
     + '<th class="replen-recsum-table__num">Suggested Qty</th><th class="replen-horizon-table__note">Note</th>'
     + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
 }
+// D5-V3-R5E FE-WARNINGS - THE PLANNING WARNINGS A NORMAL USER MUST SEE (docs/WARNING_CONTRACT.md, items 1-15).
+// The warning fields reached the page only as response data and as the collapsed Diagnostics list, so a stock part
+// that was not counted, an arrival date estimated from the plan, or a duplicated shipment never showed on the card.
+// These helpers turn them into short English notes inside the page's existing amber note box
+// (.replen-horizon-dest__blocked). PRESENTATION ONLY: no request, no write, no quantity is computed - every number
+// shown is the server's own. A line whose fields are empty or absent renders NOTHING here, so its card is unchanged.
+var _IR_WARN_REASON_TEXT_ = {
+  SHARE_MISSING: 'share not set', SHARE_NOT_A_NUMBER: 'invalid share', SHARE_NEGATIVE: 'invalid share', SHARE_OVER_100: 'invalid share',
+  WAREHOUSE_SHARE_PRECISION: 'share has more than 4 decimals', SHARE_SUM_OVER_100: 'shares exceed 100%',
+  SHARE_SUM_UNVERIFIABLE: 'shares cannot be verified', SHARE_CONFIG_UNAVAILABLE: 'share settings unavailable',
+  WAREHOUSE_POOL_NOT_WHOLE: 'stock is not a whole number', LINEAGE_SITE_NOT_IN_POOL: 'belongs to another site',
+  CROSS_COMPANY_LINEAGE: 'belongs to another company', RATIO_UNKNOWN: 'no share for unassigned goods',
+  INCOMING_QTY_NOT_WHOLE: 'quantity is not a whole number', WAREHOUSE_POOL_TOO_LARGE: 'stock is too large to split exactly',
+  INCOMING_QTY_TOO_LARGE: 'quantity is too large to split exactly', CROSS_COMPANY_HEADER: 'shipment header belongs to another company'
+};
+// The user text per code, in ONE place so a contract revision is a table edit. {w} = warehouse id. A share reason not listed
+// falls back to the generic "could not be applied" text; an attribution mode not listed and not counted for this site falls
+// back to "Not counted (<reason>)"; the modes in _IR_WARN_ATTR_SILENT_ need no note (contract item 11).
+var _IR_WARN_SHARE_TEXT_ = {
+  SHARE_MISSING: 'Warehouse share not set — stock in {w} not counted',
+  SHARE_NOT_A_NUMBER: 'Invalid warehouse share for {w} — not counted', SHARE_NEGATIVE: 'Invalid warehouse share for {w} — not counted',
+  SHARE_OVER_100: 'Invalid warehouse share for {w} — not counted',
+  WAREHOUSE_SHARE_PRECISION: 'Warehouse share has more than 4 decimals — not counted ({w})',
+  SHARE_SUM_OVER_100: 'Warehouse shares exceed 100% — {w} not counted',
+  SHARE_SUM_UNVERIFIABLE: "Warehouse shares cannot be verified (another site's share is invalid) — {w} not counted",
+  WAREHOUSE_POOL_TOO_LARGE: 'Warehouse stock too large to split — {w} not counted',
+  DEFAULT: 'Warehouse share could not be applied — {w} not counted'
+};
+var _IR_WARN_ATTR_TEXT_ = {
+  RATIO: 'Split by warehouse share (no shipment lineage)',
+  LINEAGE_SITE_NOT_IN_POOL: 'Not counted: belongs to another site / company', CROSS_COMPANY_LINEAGE: 'Not counted: belongs to another site / company',
+  RATIO_UNKNOWN: 'Not counted: no share for unassigned goods',
+  INCOMING_QTY_NOT_WHOLE: 'Not counted: quantity is not a whole number, so it cannot be split by share',
+  INCOMING_QTY_TOO_LARGE: 'Not counted: quantity too large to split',
+  CROSS_COMPANY_HEADER: 'Not counted: shipment header belongs to another company'
+};
+var _IR_WARN_ATTR_SILENT_ = { LINEAGE: 1, LINEAGE_OTHER_SITE: 1, SOLE_SITE: 1 };
+// why a dated entry is not counted: outside the calculation's own window (withinHorizon false) or not in its supply set
+var _IR_WARN_NOT_COUNTED_TEXT_ = { HORIZON: 'after the 90-day window', SUPPLY: "not part of this line's supply", OTHER: 'not used' };
+// ONE 42_ line -> [{ code, text, kind }]. kind 'info' = the reconciliation (no warning sign); everything else warns.
+function _irRecoWarningItems_(line) {
+  var out = [], seen = {};
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function s(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function add(code, text, kind) { out.push({ code: code, text: text, kind: kind || 'warn' }); }
+  function once(k) { if (seen[k]) return false; seen[k] = 1; return true; }
+  function sid(d) { return s(d && (d.shipmentId || d.lineageKey)) || '?'; }
+  function why(code) { return _IR_WARN_REASON_TEXT_[code] || s(code); }
+  if (!line) return out;
+  var dates = arr(line.incomingDateSources), dup = (line.shipmentDuplicates && typeof line.shipmentDuplicates === 'object') ? line.shipmentDuplicates : {};
+  // A-DELTA1 c2 item 2: a platform site line HELD because its own units go to a 3PL (P3PL-2, B-Q1) - the reason, with the 3PL quantities
+  arr(line.platformVia3pl).forEach(function (x) {
+    if (once('P3|' + sid(x))) add('PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN', 'Shipment ' + sid(x) + ': ' + s(x && x.qty) + ' 件送往 3PL ' + s(x && x.destinationWarehouseId) + '（3PL ETA ' + (s(x && x.threePlEta) || '未提供') + '）· FBA 後段未定（B-Q1）— ' + (line.blocked ? '此站可售到貨未計入，此 SKU 缺口暫停（HOLD）' : '未計入此站可售到貨；供給可能低估最多 ' + s(line.supplyUnderstatedQty) + '（建議量可能多最多 ' + s(line.supplyUnderstatedQty) + '）') + '；3PL 實體庫存與在途不變');   // r3: narrow vs whole-line
+  });
+  // 3 - arrival undetermined (the BLOCKED line PLANNED_SHIPMENT_ETA_MISSING carries arrivalUndetermined[])
+  arr(line.arrivalUndetermined).concat(dates.filter(function (d) { return d && d.dateSource === 'UNDETERMINED'; })).forEach(function (d) {
+    if (once('U|' + sid(d))) add('UNDETERMINED', 'Shipment ' + sid(d) + ': Arrival date unknown — add an ETA to include this shipment');
+  });
+  // 14 - conflicting duplicate rows (the BLOCKED line SHIPMENT_DUPLICATE_CONFLICT)
+  arr(dup.conflicts).forEach(function (c) {
+    add('SHIPMENT_DUPLICATE_CONFLICT', 'Conflicting shipment rows (' + arr(c && c.fields).map(s).join(', ') + ') — fix the shipment to calculate (' + s(c && c.table) + ' ' + s(c && c.id) + ')');
+  });
+  // 5 - shipped without an ETA (not counted)
+  arr(line.shippedEtaMissing).concat(dates.filter(function (d) { return d && d.dateSource === 'ETA_MISSING'; })).forEach(function (d) {
+    if (once('M|' + sid(d))) add('ETA_MISSING', 'Shipment ' + sid(d) + ': Shipped without ETA — not counted');
+  });
+  // 1 / 2 / 4 - date source: ETA needs no note; PLAN_DATE is an estimate; an entry not counted says why
+  dates.forEach(function (d) {
+    if (!d || (d.dateSource !== 'ETA' && d.dateSource !== 'PLAN_DATE')) return;
+    // this page shows the INVENTORY calculation: countedInventory (r5f; equal to `counted`, which r5e lines carry alone)
+    var plan = d.dateSource === 'PLAN_DATE', cInv = (d.countedInventory !== undefined) ? d.countedInventory : d.counted;
+    if (cInv === false) {
+      // review r2 m2: supply-set membership BEFORE the horizon, as 43_ writes NOT_IN_SET - an entry outside this line's supply is never
+      // "after the 90-day window" (it would not be counted inside the window either)
+      var r = _IR_WARN_NOT_COUNTED_TEXT_[(d.inSupplySet === false) ? 'SUPPLY' : ((d.withinHorizon === false) ? 'HORIZON' : 'OTHER')];
+      add('NOT_COUNTED', 'Shipment ' + sid(d) + ': Not counted in this calculation (' + r + ')' + (plan ? ' — date estimated from plan date (no ETA)' : ''));
+    } else if (plan) {
+      add('PLAN_DATE', 'Shipment ' + sid(d) + ': Estimated from plan date (no ETA)' + (d.date ? (' — ' + s(d.date)) : ''));
+    }
+  });
+  // 13 - identical duplicate rows (counted once)
+  arr(dup.identical).forEach(function (x) {
+    add('SHIPMENT_DUPLICATE_ROWS', 'Duplicate shipment rows — counted once (' + s(x && x.table) + ' ' + s(x && x.id) + ((x && x.rows != null) ? (', ' + s(x.rows) + ' rows') : '') + ')');
+  });
+  // 6-10 - warehouse share unknown: that warehouse's stock is not counted
+  arr(line.inventoryShareUnknown).forEach(function (u) {
+    var w = s(u && u.warehouseId) || '?', c = s(u && u.reason);
+    // review F1: a FUNCTION replacement, so a '$&' / "$'" / '$`' inside a database id is inserted literally
+    add(c || 'WAREHOUSE_SHARE_UNKNOWN', (_IR_WARN_SHARE_TEXT_[c] || _IR_WARN_SHARE_TEXT_.DEFAULT).replace('{w}', function () { return w; }));
+  });
+  // 11 / 12 - in-transit attribution: a RATIO split, and every mode that is not counted (with the reason). A mode this
+  // build does not know is shown as "Not counted (<reason>)" unless the server counted part of it for this site.
+  arr(line.incomingAttribution).forEach(function (a) {
+    var m = s(a && a.mode), head = 'Incoming ' + (s(a && a.incomingId) || '?') + ' to ' + (s(a && a.warehouseId) || '?') + ': ';
+    if (!m || _IR_WARN_ATTR_SILENT_[m]) return;
+    if (_IR_WARN_ATTR_TEXT_[m]) add(m, head + _IR_WARN_ATTR_TEXT_[m]);
+    else if (!(Number(a && a.countedForThisSite) > 0)) add(m, head + 'Not counted (' + why(m) + ')');
+  });
+  // 15 - reconciliation, so stock never looks like it vanished: pool = counted + rounding + unassigned + not counted.
+  // The same parts, and the same filter, as the server's WAREHOUSE_SHARE_RECONCILIATION issue.
+  arr(line.inventoryShareReconciliation).forEach(function (x) {
+    if (!x || typeof x !== 'object') return;
+    var shared = Number(x.linkedSites) > 1, showStock = shared || x.shareSource === 'INVENTORY_SHARE' || !!x.unknownReason;
+    ['stock', 'incoming'].forEach(function (part) {
+      var r = x[part]; if (!r || typeof r !== 'object') return;
+      if (part === 'stock' && !showStock) return;
+      if (part === 'incoming' && (!(Array.isArray(r.events) && r.events.length) || (!shared && !r.notCountedQty))) return;
+      var nc = r.notCountedReason ? [why(r.notCountedReason)]
+        : Object.keys((r.notCountedByReason && typeof r.notCountedByReason === 'object') ? r.notCountedByReason : {}).map(function (k) { return why(k) + ' ' + s(r.notCountedByReason[k]); });
+      add('WAREHOUSE_SHARE_RECONCILIATION', (s(x.warehouseId) || '?') + ' ' + part + ' — Pool ' + s(r.poolQty) + ': counted ' + s(r.countedQty)
+        + ', rounding ' + s(r.roundingRemainderQty) + ', unassigned ' + s(r.unassignedQty) + ', not counted ' + s(r.notCountedQty)
+        + (nc.length ? (' (' + nc.join(', ') + ')') : '') + ((r.reconciled === false) ? ' — does not reconcile' : ''), 'info');
+    });
+  });
+  return out;
+}
+// D5-V3-R5G FE-WARNINGS-R2 - THE MATERIALIZED CARD (the default surface) READS THE GAP-NOTE GRAMMAR OF CONTRACT DELTA 9:
+//   note = base { " | " segment } " | " identity;  identity = "CALC D=<date> AT=<ts> TZ=<zone> [RUN=<id>]", ALWAYS last.
+// Parsed defensively (the grammar is under review for separator safety): ONLY the last segment can be the identity; a segment
+// this build cannot read is still shown, as "Other warning: <CODE>" (review F4); a note without a readable CALC is never
+// presented as the current calculation (review F2). Nothing is computed: every number shown is the note's own text.
+var _IR_NOTE_CALC_RX_ = /^CALC D=([0-9-]+|-) AT=([0-9T:-]+|-) TZ=(\S+)( RUN=(\S+))?$/;
+var _IR_NOTE_LIST_CODES_ = { WAREHOUSE_SHARE_UNKNOWN: 1, ARRIVAL_FROM_PLAN_DATE: 1, SHIPPED_ETA_MISSING: 1, SHIPMENT_DUPLICATE_ROWS: 1,
+  NOT_COUNTED_THIS_CALC: 1, INCOMING_RATIO_SPLIT: 1, INCOMING_NOT_COUNTED: 1, PLATFORM_VIA_3PL_NOT_COUNTED: 1 };   // + P3PL-2 r3
+// NOTE INJECTION (r5g review): a raw id could forge a "CALC ..." or "RECON ..." segment inside a note. So the identity is read
+// ONLY from the LAST segment (never searched for elsewhere), and a note carrying more than one segment that STARTS with "CALC "
+// cannot confirm its calculation: `calcSegments` reports it and the "as of" rule marks it STALE. RECON and list segments are
+// shown as untrusted note text (escaped), never as an authoritative number (see the RECON branch below).
+function _irNoteParse_(note) {
+  var segs = String(note == null ? '' : note).split(' | '), id = null, calls = 0;
+  segs.forEach(function (sg, i) { if (i > 0 && sg.indexOf('CALC ') === 0) calls++; });
+  if (segs.length > 1) { var m = _IR_NOTE_CALC_RX_.exec(segs[segs.length - 1]); if (m) { id = { d: m[1], at: m[2], tz: m[3], run: m[5] || '' }; segs.pop(); } }
+  return { head: segs[0], segs: segs.slice(1), identity: id, calcSegments: calls };
+}
+// review r2 M1 - A GAP-ROW TIME VALUE IN EVERY FORM IT CAN ARRIVE IN, as Asia/Taipei wall time. 43_ writes 'yyyy-MM-dd HH:mm:ss'
+// strings, but Sheets turns them into Dates, and getValues + JSON deliver them as UTC ISO strings ('2026-10-21T16:00:00.000Z' for
+// calculation date 2026-10-22). Accepted: an ISO string with Z or an offset, a Date-like value (getTime), and plain local strings
+// 'yyyy-MM-dd HH:mm:ss' / 'yyyy-MM-ddTHH:mm:ss' / 'yyyy-MM-dd' / 'yyyy-MM' (taken as already Taipei). Asia/Taipei is a fixed UTC+8
+// with no DST (the reasoning _irTaipeiDay_ states). Returns { day, ts, month } (ts T-separated, null parts when not carried) or
+// null when the value is present but unreadable. Display and comparison only - no quantity.
+function _irTpeTs_(v) {
+  var ms = null, s = '';
+  if (v && typeof v === 'object' && typeof v.getTime === 'function') ms = v.getTime();
+  else if (typeof v === 'string') {
+    s = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/.test(s)) ms = Date.parse(s);
+    else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(s)) return { day: s.slice(0, 10), ts: s.slice(0, 10) + 'T' + s.slice(11), month: s.slice(0, 7) };
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { day: s, ts: null, month: s.slice(0, 7) };
+    else if (/^\d{4}-\d{2}$/.test(s)) return { day: null, ts: null, month: s };
+    else return null;
+  } else return null;
+  if (typeof ms !== 'number' || !isFinite(ms)) return null;
+  var t = new Date(ms + 480 * 60000).toISOString();
+  return { day: t.slice(0, 10), ts: t.slice(0, 19), month: t.slice(0, 7) };
+}
+// review r2 m1 - a RECON segment of a note against the live 42_ reconciliation of the same SKU, when the page holds one for the
+// applied scope: 'MATCH' only when EVERY field the note states is the same - pool, each site's counted (cnt, in 43_'s own site-key
+// and number spelling), rnd, una, nc and ok; 'DIFF' when anything differs; '' when there is no live answer to compare with.
+// Strings are compared as 43_ writes them (gapNoteTok_ / gapNoteSite_ / gapNoteNum_ of r5h); nothing is calculated.
+function _irReconVerdict_(sku, wh, part, f) {
+  try {
+    if (typeof _irRecoState === 'undefined' || !_irRecoState || !_irRecoState.loadedOk || !_irRecoState.linesBySku) return '';
+    if (typeof _irResultMatchesAppliedScope_ === 'function' && !_irResultMatchesAppliedScope_(_irRecoState)) return '';
+    function tok(v) { return String(v == null ? '' : v).trim().replace(/[^A-Za-z0-9_.#-]/g, '_'); }
+    function num(n) { if (!(typeof n === 'number' && isFinite(n))) return '-'; var t = String(n); return /^-?[0-9]+([.][0-9]+)?$/.test(t) ? t : 'NUM_' + tok(t); }
+    function site(k) { return String(k == null ? '' : k).trim().split('||').map(function (x) { return tok(x) || '-'; }).join('/'); }
+    var hit = null;
+    (_irRecoState.linesBySku[sku] || []).forEach(function (L) { (L.inventoryShareReconciliation || []).forEach(function (x) { if (x && tok(x.warehouseId) === wh && x[part.toLowerCase()]) hit = x[part.toLowerCase()]; }); });
+    if (!hit) return '';
+    var cnt = (hit.perSite || []).slice().sort(function (a, b) { return String(a.siteKey) < String(b.siteKey) ? -1 : 1; })
+      .map(function (p) { return site(p.siteKey) + ':' + num(p.countedQty); }).join('+') || '-';
+    var same = num(hit.poolQty) === f.pool && cnt === f.cnt && num(hit.roundingRemainderQty || 0) === f.rnd && num(hit.unassignedQty || 0) === f.una
+      && num(hit.notCountedQty || 0) === f.nc && (hit.reconciled === false ? '0' : '1') === f.ok;
+    return same ? 'MATCH' : 'DIFF';
+  } catch (e) { return ''; }
+}
+// ONE stored gap row -> items, with the SAME texts as the 42_ path wherever the note carries the same fact.
+function _irMatWarningItems_(row) {
+  var out = [], st = row ? String(row.calculation_status || '') : '';
+  function add(code, text, kind) { out.push({ code: code, text: text, kind: kind || 'warn' }); }
+  function list(t) { return String(t || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return !!x; }); }
+  function more(code, x) { var mm = /^\+(\d+)$/.exec(x); if (mm) add(code, '… and ' + mm[1] + ' more not listed (' + code + ')'); return !!mm; }
+  function why(code) { return _IR_WARN_REASON_TEXT_[code] || code; }
+  function site(k) { var a = k.lastIndexOf('@'); return a > 0 ? (k.slice(0, a) + ' to ' + k.slice(a + 1)) : k; }
+  if (!row || row.note == null || String(row.note) === '' || (st !== 'READY' && st !== 'BLOCKED')) return out;
+  var p = _irNoteParse_(row.note);
+  if (st === 'BLOCKED') {
+    var b = /^(PLANNED_SHIPMENT_ETA_MISSING|SHIPMENT_DUPLICATE_CONFLICT|PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN): (.*)$/.exec(String(p.head).trim());
+    if (b && b[1] === 'PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN') list(b[2]).forEach(function (x) { if (!more(b[1], x)) add('PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN', 'Shipment ' + x + ': 送往 3PL · FBA 後段未定（B-Q1）— 此站可售到貨未計入，此 SKU 缺口暫停（HOLD）；3PL 實體庫存與在途不變'); });   // A-DELTA1 c2 item 2
+    if (b && b[1] === 'PLANNED_SHIPMENT_ETA_MISSING') list(b[2]).forEach(function (x) { if (!more(b[1], x)) add('UNDETERMINED', 'Shipment ' + x + ': Arrival date unknown — add an ETA to include this shipment'); });
+    if (b && b[1] === 'SHIPMENT_DUPLICATE_CONFLICT') list(b[2]).forEach(function (x) { if (!more(b[1], x)) add('SHIPMENT_DUPLICATE_CONFLICT', 'Conflicting shipment rows — fix the shipment to calculate (' + x + ')'); });
+  }
+  p.segs.forEach(function (seg) {
+    var r = /^RECON (\S+) (STOCK|INCOMING) (.*)$/.exec(seg);
+    if (r) {   // #15 - the remainder, so stock never looks like it vanished
+      var f = {}; r[3].split(' ').forEach(function (kv) { var e = kv.indexOf('='); if (e > 0) f[kv.slice(0, e)] = kv.slice(e + 1); });
+      if (f.pool === undefined || f.cnt === undefined || f.ok === undefined) { add('RECON', 'Other warning: RECON'); return; }
+      var ncr = f.ncr ? list(f.ncr).map(function (x) { var c = x.lastIndexOf(':'); return c > 0 ? (why(x.slice(0, c)) + ' ' + x.slice(c + 1)) : x; }) : [];
+      // UNTRUSTED NOTE TEXT (injection review): shown as what the note says, never as an authoritative figure - unless the live
+      // 42_ reconciliation the page holds for this SKU says the same; a difference is a warning of its own.
+      var vr = _irReconVerdict_(String(row.sku == null ? '' : row.sku), r[1], r[2], f);
+      add(vr === 'DIFF' ? 'RECON_DIFFERS' : 'WAREHOUSE_SHARE_RECONCILIATION', r[1] + ' ' + r[2].toLowerCase() + ' — Pool ' + f.pool + ': counted ' + f.cnt.split('+').join(' + ') + ', rounding ' + (f.rnd || '-')
+        + ', unassigned ' + (f.una || '-') + ', not counted ' + (f.nc || '-') + (ncr.length ? (' (' + ncr.join(', ') + ')') : '') + (f.ok === '1' ? '' : ' — does not reconcile')
+        + (vr === 'MATCH' ? ' · matches the live calculation' : (vr === 'DIFF' ? ' — DIFFERS from the live calculation (not verified)' : ' · from the calculation note (not verified)')), vr === 'DIFF' ? 'warn' : 'info');
+      return;
+    }
+    var m = /^([A-Z][A-Z0-9_]*)(?: \([^)]*\))?: (.*)$/.exec(seg), code = m ? m[1] : ((/^([A-Z][A-Z0-9_]{2,})/.exec(seg) || [])[1] || '');
+    if (!m) { add('OTHER', 'Other warning: ' + (code || 'UNREADABLE')); return; }
+    if (code === 'NOTE_TRUNCATED') { add(code, 'Note truncated — ' + m[2] + ' more warning group(s) not shown here'); return; }
+    if (code === 'RECON_MORE') { add(code, m[2] + ' more warehouse reconciliation line(s) not shown', 'info'); return; }
+    var xs = list(m[2]);
+    if (!_IR_NOTE_LIST_CODES_[code]) { add(code, 'Other warning: ' + code + (xs.length ? (' (' + xs.join(', ') + ')') : '')); return; }   // review F4
+    xs.forEach(function (x) {
+      if (more(code, x)) return;
+      var eq = x.indexOf('='), k = eq > 0 ? x.slice(0, eq) : x, v = eq > 0 ? x.slice(eq + 1) : '';
+      if (code === 'WAREHOUSE_SHARE_UNKNOWN') add(v || code, v ? (_IR_WARN_SHARE_TEXT_[v] || _IR_WARN_SHARE_TEXT_.DEFAULT).replace('{w}', function () { return k; })
+        : ('Warehouse share missing or invalid — stock in ' + k + ' not counted'));   // r5f notes carry no reason
+      else if (code === 'ARRIVAL_FROM_PLAN_DATE') add('PLAN_DATE', 'Shipment ' + x + ': Estimated from plan date (no ETA)');
+      else if (code === 'SHIPPED_ETA_MISSING') add('ETA_MISSING', 'Shipment ' + x + ': Shipped without ETA — not counted');
+      else if (code === 'SHIPMENT_DUPLICATE_ROWS') add(code, 'Duplicate shipment rows — counted once (' + x + ')');
+      else if (code === 'PLATFORM_VIA_3PL_NOT_COUNTED') add(code, 'Shipment ' + k + ': ' + v + ' 件送往 3PL · FBA 後段未定（B-Q1）— 未計入此站可售到貨；供給可能低估最多 ' + v + '（建議量可能多最多 ' + v + '）');   // P3PL-2 r3
+      else if (code === 'NOT_COUNTED_THIS_CALC') add('NOT_COUNTED', 'Shipment ' + k + ': Not counted in this calculation ('
+        + (v === 'NOT_IN_SET' ? _IR_WARN_NOT_COUNTED_TEXT_.SUPPLY : (v.indexOf('AFTER_') === 0 ? _IR_WARN_NOT_COUNTED_TEXT_.HORIZON : _IR_WARN_NOT_COUNTED_TEXT_.OTHER)) + ')');
+      else if (code === 'INCOMING_RATIO_SPLIT') add('RATIO', 'Incoming ' + site(k) + ': ' + _IR_WARN_ATTR_TEXT_.RATIO + (v ? (' — counted ' + v.split('/').join(' of ')) : ''));
+      else if (code === 'INCOMING_NOT_COUNTED') { var c2 = v.lastIndexOf(':'), mode = c2 > 0 ? v.slice(0, c2) : v;
+        add(mode || code, 'Incoming ' + site(k) + ': ' + (_IR_WARN_ATTR_TEXT_[mode] || ('Not counted (' + why(mode) + ')')) + (c2 > 0 ? (' (qty ' + v.slice(c2 + 1) + ')') : '')); }
+    });
+  });
+  return out;
+}
+// review F2 - WHICH CALCULATION A STORED ROW'S WARNINGS BELONG TO, shown next to them, never "current" without proof. The
+// identity is the note's own CALC segment (contract delta 9, read from the LAST segment only), checked against the row - its
+// values NORMALISED to Asia/Taipei first (review r2 M1: Production delivers them as UTC ISO) - and against what the page already
+// holds (no request, no flag the release does not set). STALE when:
+//   NO_IDENTITY                 the note's LAST segment is not a readable CALC, or its D / AT is '-';
+//   MULTIPLE_CALC               more than one segment starts with "CALC " (a forged identity cannot be told from the real one);
+//   CALC_TZ_UNSUPPORTED         CALC TZ is not Asia/Taipei (its AT cannot be compared with the row's time);
+//   IDENTITY_MISMATCH           the row's calculation_date (Taipei day) is missing / unreadable / not CALC D, or its calculated_at
+//                               (Taipei time) is missing / unreadable / not CALC AT (review r2 m3: D must equal the row's date);
+//   OLDER_THAN_SITE_LATEST_RUN  AT is older than the newest calculated_at (Taipei) among the rows of the same site read (43_ stamps
+//                               ONE run time per job, so such a row was not rewritten by the latest run);
+//   OLDER_THAN_WORKSPACE_DATE   a live 42_ answer is held and its calculationDate is newer than D;
+//   OLDER_THAN_EXPECTED_DATE    KM_FLAGS.EXPECTED_CALCULATION_DATE is set and newer (kept; nothing sets it today);
+//   PREVIOUS_PLANNING_MONTH     D falls in a month before the current Asia/Taipei month (the page clock).
+function _irMatWarnAsOf_(row) {
+  function s(v) { return (v === null || v === undefined) ? '' : String(v); }
+  var pp = _irNoteParse_(row && row.note), id = pp.identity;
+  if (!id || id.d === '-' || id.at === '-') return { stale: true, reason: 'NO_IDENTITY', text: 'Planning warnings — calculation identity missing — STALE: may not be the latest calculation' };
+  if (pp.calcSegments > 1) return { stale: true, reason: 'MULTIPLE_CALC', text: 'Planning warnings — calculation identity cannot be confirmed (more than one CALC segment) — STALE: may not be the latest calculation' };
+  if (id.tz !== 'Asia/Taipei') return { stale: true, reason: 'CALC_TZ_UNSUPPORTED', text: 'Planning warnings — calculation time zone ' + id.tz + ' cannot be confirmed — STALE: may not be the latest calculation' };
+  var dn = _irTpeTs_(row.calculation_date), an = _irTpeTs_(row.calculated_at), day = dn ? s(dn.day) : '', at = an ? s(an.ts) : '', newest = '';
+  ((typeof _irMatState !== 'undefined' && _irMatState && _irMatState.rows) || []).forEach(function (r) { var c = _irTpeTs_(r && r.calculated_at); if (c && c.ts && c.ts > newest) newest = c.ts; });
+  var live = (typeof _irRecoState !== 'undefined' && _irRecoState && _irRecoState.loadedOk && _irRecoState.calculationDate) ? s(_irRecoState.calculationDate) : '';
+  var exp = (typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.EXPECTED_CALCULATION_DATE) ? s(window.KM_FLAGS.EXPECTED_CALCULATION_DATE) : '';
+  var month = (typeof _irTaipeiDay_ === 'function') ? _irTaipeiDay_(Date.now()).slice(0, 7) : '';
+  var reason = (!day || id.d !== day || !at || id.at !== at) ? 'IDENTITY_MISMATCH'
+    : (newest && id.at < newest) ? 'OLDER_THAN_SITE_LATEST_RUN'
+    : (live && id.d < live) ? 'OLDER_THAN_WORKSPACE_DATE'
+    : (exp && id.d < exp) ? 'OLDER_THAN_EXPECTED_DATE'
+    : (month && id.d.slice(0, 7) < month) ? 'PREVIOUS_PLANNING_MONTH' : null;
+  return { stale: !!reason, reason: reason, text: 'Planning warnings — as of ' + id.d + ' (run ' + id.at + ' ' + id.tz + ')' + (reason ? ' — STALE: older than the latest calculation (run Recalculate All Sites)' : '') };
+}
+// a live 42_ answer is the current calculation by definition; it names its calculation date when the server sent one
+function _irRecoWarnAsOf_() {
+  var d = (typeof _irRecoState !== 'undefined' && _irRecoState && _irRecoState.calculationDate) ? String(_irRecoState.calculationDate) : '';
+  return { stale: false, reason: null, text: 'Planning warnings — live calculation' + (d ? (' as of ' + d) : '') };
+}
+// The note box: '' when there is nothing to say. Every text and code is escaped (ids come from the database). The first
+// line says which calculation the warnings belong to (and STALE when it is not the latest).
+function _irWarnBoxHtml_(items, asof) {
+  if (!items || !items.length) return '';
+  var head = asof ? ('<div data-ir-warn-asof="' + (asof.stale ? 'stale' : 'current') + '"' + (asof.reason ? (' data-ir-warn-stale-reason="' + escapeReplenHtml(asof.reason) + '"') : '') + '>'
+    + (asof.stale ? '⚠ ' : '') + escapeReplenHtml(asof.text) + '</div>') : '';
+  return '<div class="replen-horizon-dest__blocked" data-ir-warnings="1">' + head + items.map(function (w) {
+    return '<div data-ir-warn="' + escapeReplenHtml(w.code) + '">' + (w.kind === 'info' ? '' : '⚠ ') + escapeReplenHtml(w.text) + '</div>';
+  }).join('') + '</div>';
+}
+function _irRecoWarningsHtml_(line) { return _irWarnBoxHtml_(_irRecoWarningItems_(line), _irRecoWarnAsOf_()); }
+function _irMatWarningsHtml_(row) { return row ? _irWarnBoxHtml_(_irMatWarningItems_(row), _irMatWarnAsOf_(row)) : ''; }
 // ONE destination subsection (MARKETPLACE → one; WAREHOUSE → one per warehouse; never pooled). Blocked and
 // horizon-unavailable states are shown truthfully instead of a fabricated table.
 function _irRecoHorizonSectionHtml(line) {
   function esc(v) { return escapeReplenHtml(v == null ? '' : v); }
-  var badge = _irRecoDestTypeBadge(line);
+  var badge = _irRecoDestTypeBadge(line), warn = _irRecoWarningsHtml_(line);   // D5-V3-R5E FE-WARNINGS ('' when none)
   var head = '<div class="replen-horizon-dest"><div class="replen-horizon-dest__hd">'
     + '<span class="replen-horizon-dest__name">' + esc(line.destinationLabel || '—') + '</span>'
     + (badge ? (' <span class="replen-horizon-dest__badge">' + esc(badge) + '</span>') : '');
   if (line.blocked) {
     var reason = line.blockedReason ? ('<code>' + esc(line.blockedReason) + '</code>') : 'blocked';
     if (line.incomingCompleteness === 'PARTIAL' || line.incomingCompleteness === 'UNAVAILABLE') {
-      return head + '</div><div class="replen-horizon-dest__blocked">Partial incoming — provisional; horizon withheld ' + reason + '</div></div>';
+      return head + '</div><div class="replen-horizon-dest__blocked">Partial incoming — provisional; horizon withheld ' + reason + '</div>' + warn + '</div>';
     }
-    return head + '</div><div class="replen-horizon-dest__blocked">Blocked — ' + reason + '</div></div>';
+    return head + '</div><div class="replen-horizon-dest__blocked">Blocked — ' + reason + '</div>' + warn + '</div>';
   }
   if (!line.horizons || !line.horizons.length) {
-    return head + '</div><div class="replen-horizon-dest__na">Horizon projection unavailable for this destination. <code>HORIZONS_NOT_AVAILABLE</code></div></div>';
+    return head + '</div><div class="replen-horizon-dest__na">Horizon projection unavailable for this destination. <code>HORIZONS_NOT_AVAILABLE</code></div>' + warn + '</div>';
   }
-  return head + '</div>' + _irRecoHorizonOutlookTableHtml(line) + '</div>';
+  return head + '</div>' + _irRecoHorizonOutlookTableHtml(line) + warn + '</div>';
 }
 // The legacy per-destination technical table (Destination/Mode/Demand-Gap/Stock/Incoming/Recommended/Status/
 // Reason) — RELOCATED under Diagnostics (no longer the primary surface). Content preserved verbatim.
@@ -16160,17 +17643,17 @@ function _irMatOutlookBody(skuData) {
   function placeholderLine(note) {
     return { destinationType: 'MARKETPLACE', horizons: _IR_HORIZON_WINDOWS.map(function (w) { return { windowCode: w.code, gapQty: null, suggestedOrderQty: null, note: note }; }) };
   }
-  var st = _irMatState, stateCls = 'replen-recsum-ws--ready', line, meta = '';
+  var st = _irMatState, stateCls = 'replen-recsum-ws--ready', line, meta = '', warn = '';
   if (st.status === 'CONTEXT_NOT_READY') { stateCls = 'replen-recsum-ws--info'; line = placeholderLine('Select a valid Country / Marketplace'); }
   else if (st.status === 'IDLE' || st.status === 'LOADING') { stateCls = 'replen-recsum-ws--loading'; line = placeholderLine('Loading…'); }
   else if (st.status === 'READ_ERROR') { stateCls = 'replen-recsum-ws--error'; line = placeholderLine('Calculation unavailable'); }
   else {
     var row = (skuData && _irMatState.bySku[String(skuData.sku)]) || null;
     if (!row) { stateCls = 'replen-recsum-ws--info'; line = placeholderLine('Not calculated'); }
-    else { stateCls = 'replen-recsum-ws--ready'; line = _irMatToLine(row); meta = _irMatMetaHtml(row); }
+    else { stateCls = 'replen-recsum-ws--ready'; line = _irMatToLine(row); meta = _irMatMetaHtml(row); warn = _irMatWarningsHtml_(row); }
   }
   var section = '<div class="replen-horizon-summary"><div class="replen-horizon-dest">'
-    + _irRecoHorizonOutlookTableHtml(line) + '</div></div>';
+    + _irRecoHorizonOutlookTableHtml(line) + warn + '</div></div>';
   // F1-4B-FM6 — append the deterministic Recommended Action (from AI Plan) UNDER the fixed 4-row gap table; never
   // replaces it (the materialized gap display is preserved). Empty string until AI Plan generates for this SKU.
   return wrap(stateCls, section + meta + (typeof _irRecoActionHtml === 'function' ? _irRecoActionHtml(skuData) : ''));
@@ -16462,6 +17945,12 @@ function _irRecoPatchSummaryCells(card, skuData) {
     setCell('suggested', w.code, (h && h.suggestedOrderQty != null) ? String(h.suggestedOrderQty) : '—');
     setCell('note', w.code, _irRecoHorizonNote_(h));
   });
+  // D5-V3-R5E FE-WARNINGS - the warnings box follows the patched row: replaced, added after the table wrap (where the
+  // full render puts it) or removed. No box before and none now -> the DOM is not touched at all.
+  var wHtml = _irMatWarningsHtml_(row);
+  var wOld = card.querySelector('[data-ir-warnings]');
+  if (wOld && wOld.parentNode) wOld.parentNode.removeChild(wOld);
+  if (wHtml && table.parentNode && typeof table.parentNode.insertAdjacentHTML === 'function') table.parentNode.insertAdjacentHTML('afterend', wHtml);
   return true;
 }
 // F1-4B-FM3a: repaint the main-table Suggested Qty cells from the current recommendation state (numeric

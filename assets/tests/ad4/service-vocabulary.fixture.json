@@ -1,0 +1,140 @@
+{
+ "source": "B final 12_ shipServiceVocabulary_ over fixture v2 rate cards / lead times / schedules + Codex seed carriers and inactive domestic templates (SYNTHETIC assembly of real rows)",
+ "vocabulary": {
+  "version": "SVC-VOCAB-1",
+  "shipping_method": [
+   {
+    "value": "air"
+   },
+   {
+    "value": "sea"
+   },
+   {
+    "value": "sea_express"
+   },
+   {
+    "value": "truck"
+   }
+  ],
+  "last_mile_delivery": [
+   {
+    "value": "parcel"
+   },
+   {
+    "value": "truck"
+   }
+  ],
+  "delivery_type": [
+   {
+    "value": "SPD",
+    "shipping_method": "truck",
+    "last_mile_delivery": "parcel",
+    "scope": "DOMESTIC"
+   },
+   {
+    "value": "LTL",
+    "shipping_method": "truck",
+    "last_mile_delivery": "truck",
+    "scope": "DOMESTIC"
+   }
+  ],
+  "carriers": [
+   {
+    "carrier_id": "CAR_AMAZON_PARTNERED",
+    "carrier_name": "Amazon",
+    "booking_channel": true,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "parcel"
+     },
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "truck"
+     }
+    ]
+   },
+   {
+    "carrier_id": "CAR_BESTWAY",
+    "carrier_name": "BestWay",
+    "booking_channel": false,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "truck"
+     }
+    ]
+   },
+   {
+    "carrier_id": "CAR_USPS",
+    "carrier_name": "USPS",
+    "booking_channel": false,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "parcel"
+     }
+    ]
+   },
+   {
+    "carrier_id": "CAR_UPS",
+    "carrier_name": "UPS",
+    "booking_channel": false,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "parcel"
+     }
+    ]
+   },
+   {
+    "carrier_id": "CAR_FEDEX",
+    "carrier_name": "FedEx",
+    "booking_channel": false,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "parcel"
+     }
+    ]
+   },
+   {
+    "carrier_id": "CAR_TOP_SEALAND",
+    "carrier_name": "TOP SEALAND",
+    "booking_channel": false,
+    "services_known": true,
+    "services": [
+     {
+      "shipping_method": "air",
+      "last_mile_delivery": "parcel"
+     },
+     {
+      "shipping_method": "sea_express",
+      "last_mile_delivery": "parcel"
+     },
+     {
+      "shipping_method": "sea_express",
+      "last_mile_delivery": "truck"
+     },
+     {
+      "shipping_method": "sea",
+      "last_mile_delivery": "parcel"
+     },
+     {
+      "shipping_method": "sea",
+      "last_mile_delivery": "truck"
+     },
+     {
+      "shipping_method": "truck",
+      "last_mile_delivery": "parcel"
+     }
+    ]
+   }
+  ]
+ }
+}

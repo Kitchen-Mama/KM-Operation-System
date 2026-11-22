@@ -151,7 +151,8 @@
 
 /* Search button */
 #shippinghistory-section .btn-primary {
-    height: var(--km-button-height);
+    min-height: var(--km-button-height);   /* C4: may grow (was a fixed height + nowrap) */
+    height: auto;
     padding: 0 var(--km-button-padding-x);
     border: none;
     border-radius: var(--km-button-radius);
@@ -160,7 +161,7 @@
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    white-space: nowrap;
+    white-space: normal;   /* C4: was nowrap (long labels clipped at narrow widths) */
     transition: opacity 0.15s;
 }
 

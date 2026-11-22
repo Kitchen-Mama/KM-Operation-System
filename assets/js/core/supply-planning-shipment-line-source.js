@@ -196,6 +196,20 @@
   //   }
   // A shipment_line whose parent shipment is missing, or that cannot mint a candidate, fails closed as an issue.
   // ==========================================================================================================
+  // SHIP-OPEN R4 (Owner rule 4): an AMAZON opening record (80_ shipment import: record_origin IMPORT_HISTORICAL + opening_supply_mode
+  // DISPLAY_ONLY - its destination is an FBA-type warehouse) is shown only. It is never a supply candidate: no Gap, AI Plan, Order Planning
+  // or pool counts it (Amazon stock comes only from the Amazon report). This is the ONE shared source every server and browser supply
+  // reader of shipment lines goes through (42_/43_ via recoWsShipmentLineCandidates_, 90_ KMPS, the IR page), so it is excluded here once.
+  function isDisplayOnlyOpening(shipment) {
+    return str(g(shipment, 'record_origin', 'recordOrigin')) === 'IMPORT_HISTORICAL' && str(g(shipment, 'opening_supply_mode', 'openingSupplyMode')).toUpperCase() === 'DISPLAY_ONLY';
+  }
+  // SHIP-OPEN R5 (Owner r5 item 4): a NEW-MODEL opening record counts as supply ONLY when it is COUNTED (PENDING:* while its import batch
+  // is still being written, or any other mode, is never a candidate). r5.4 (legacy): a record with a BLANK mode is a LEGACY row of the old
+  // historical import (the column did not exist) - it is not a new-model opening record and is counted exactly as before (base behaviour).
+  function isUncountedOpening(shipment) {
+    var mode = str(g(shipment, 'opening_supply_mode', 'openingSupplyMode')).toUpperCase();
+    return str(g(shipment, 'record_origin', 'recordOrigin')) === 'IMPORT_HISTORICAL' && mode !== '' && mode !== 'COUNTED';
+  }
   function buildShipmentLineCandidates(input) {
     input = input || {};
     var lines = input.shipmentLines || [];
@@ -213,12 +227,14 @@
       if (/\[SC13_(?:DONE:(?!register-)|PENDING:|UNLINKED:)/.test(str(g(sh0, 'note', 'note')))) dMerged[sid0] = dMerged[sid0] || 'HEADER_MERGE_RECORD';
     });
 
-    var shipmentInputs = [], candidates = [], issues = [];
+    var shipmentInputs = [], candidates = [], issues = [], displayOnlyExcluded = [], unfinishedOpeningExcluded = [];
     for (var i = 0; i < lines.length; i++) {
       var ln = lines[i]; if (!isObj(ln)) { issues.push({ i: i, reason: 'MALFORMED_LINE' }); continue; }
       var shipmentId = str(g(ln, 'shipment_id', 'shipmentId'));
       var shipment = shipmentById[shipmentId];
       if (!shipment) { issues.push({ i: i, reason: 'SHIPMENT_NOT_FOUND:' + shipmentId }); continue; }
+      if (isDisplayOnlyOpening(shipment)) { displayOnlyExcluded.push({ i: i, shipmentId: shipmentId, shipmentLineId: str(g(ln, 'shipment_line_id', 'shipmentLineId')) }); continue; }   // SHIP-OPEN R4
+      if (isUncountedOpening(shipment)) { unfinishedOpeningExcluded.push({ i: i, shipmentId: shipmentId, mode: str(g(shipment, 'opening_supply_mode', 'openingSupplyMode')) }); continue; }   // SHIP-OPEN R5
       var lrm_ = lineRemoved(ln); if (lrm_) { issues.push({ i: i, reason: lrm_ === 'INVALID' ? 'LINE_STATUS_INVALID' : 'LINE_REMOVED' }); continue; }   // XCO-R15G E1D   // XCO-R15G E1B (H2)
 
       var mergedShip = (!!linkCountById && Number(linkCountById[shipmentId]) >= 2) || !!dMerged[shipmentId];   // XCO-R15G E1 + option D
@@ -263,7 +279,7 @@
         headerScope: { company: str(g(shipment, 'company', 'company')), country: str(g(shipment, 'country', 'country')), marketplace: str(g(shipment, 'marketplace', 'marketplace')) }
       });
     }
-    return { shipmentInputs: shipmentInputs, candidates: candidates, issues: issues };
+    return { shipmentInputs: shipmentInputs, candidates: candidates, issues: issues, displayOnlyExcluded: displayOnlyExcluded, unfinishedOpeningExcluded: unfinishedOpeningExcluded };
   }
 
   // ONE bounded adapter: canonical candidate DTO → the KMDR marketplace-incoming candidate shape. Sets
@@ -288,6 +304,8 @@
   return {
     resolveShipmentLineReceiver: resolveShipmentLineReceiver,
     buildShipmentLineCandidates: buildShipmentLineCandidates,
+    isDisplayOnlyOpening: isDisplayOnlyOpening,
+    isUncountedOpening: isUncountedOpening,
     toMarketplaceIncomingCandidate: toMarketplaceIncomingCandidate,
     isSpecificReceiver: isSpecificReceiver,
     isMergedMarketplace: isMergedMarketplace

@@ -14,7 +14,7 @@
 // Canonical Formula Owner: docs/planning/SUPPLY_PLANNING_CALCULATION_RULES.md (v4.4).
 // This module implements these frozen sections, verbatim to their formulas:
 //   • §2D  Forecast-Driven Formula — Adjusted Regular FC (Target Rule) + 30-Day Safety + Special Event
-//   • §10  Special Event Pull-Forward — Event Preparation Date = Event Start − 30 calendar days
+//   • §10  Special Event Pull-Forward — Event Preparation Date = Event Start − 45 calendar days (D5-V3, Owner OD-1 / C-7; was 30)
 //   • §11  Shortage / Surplus definitions from a Projected Balance
 //   • §12  Company Reallocation — feasible-reallocation primitive + Net Order Need = Σ remaining shortage
 //   • §14  Order Need & Carton Rounding — Suggested Order Qty = CEILING(need ÷ UPC) × UPC
@@ -139,12 +139,13 @@
 
   var MS_PER_DAY = 24 * 60 * 60 * 1000;
 
-  // §10 — Event Preparation Date = Event Start Date − 30 calendar days. Deterministic UTC arithmetic
+  // §10 — Event Preparation Date = Event Start Date − 45 calendar days (D5-V3: the SAME replenishment prep date as KMPD;
+  // was 30). It is the required-by pull-forward of KMPCX.resolveWindow - the date supply must be available by. Deterministic UTC arithmetic
   // (no system clock, no timezone shift; UTC days are exactly 86,400,000 ms with no DST). Output YYYY-MM-DD.
   function eventPreparationDate(eventStartDate) {
     var p = parseStrictIsoDate(eventStartDate);
     var startMs = Date.UTC(p.y, p.mo - 1, p.d);
-    var prepMs = startMs - 30 * MS_PER_DAY;
+    var prepMs = startMs - 45 * MS_PER_DAY;
     var dt = new Date(prepMs);   // constructed from explicit epoch ms — does NOT read the clock
     return dt.getUTCFullYear() + '-' + pad2(dt.getUTCMonth() + 1) + '-' + pad2(dt.getUTCDate());
   }

@@ -1,1351 +1,2269 @@
-/**
- * 42_api_v1_recommendation_workspace.gs
- * Kitchen Mama Operation System — API v1 · Recommendation READ-ONLY Workspace (Phase F1-4B-A).
- *
- * SOURCE MIRROR / NOT DEPLOYED. One canonical read action:
- *   action = "recommendation.workspace.get"   (dispatched from 01_router.gs doPost; a body-carrying READ, no write).
- *
- * Contract — a PURE READ boundary over the ALREADY-COMPLETE recommendation runtime. It authors NO formula:
- *   doPost → 01_router → handleRecommendationWorkspaceGet_(body, io)
- *     → validateRecommendationWorkspaceRequest_   (mandatory scope + destination + calc month + planning cycle;
- *                                                   size <= 100; FAILS before any table read)
- *     → io.openTarget()                            (exact Spreadsheet-ID gate — fail closed)
- *     → KMPS.readCanonicalSnapshots(ss)            (the SAME targeted 11-table reader KMPS already owns; NOT getOperationDb)
- *     → KMPA.assembleProductionRecommendationFacts (KMPCX planning context → KMAF allocation facts → productionRequest)
- *     → KMPS.buildProductionRecommendationSource   (existing demand/supply ledger → allocator → resolver; NO write)
- *     → recommendationWorkspaceBuild_              (map/filter/sort/paginate → bounded View Model)
- *     → canonical envelope { success, data, meta, errors }
- *
- * It NEVER writes a Sheet (no setValues/appendRow/insertRow/deleteRow/clear), NEVER acquires a LockService lock,
- * NEVER creates a Draft / Allocation Draft / Weekly Plan / Request Order / Shipment / reservation / inventory row,
- * NEVER persists a recommendation, and creates/repairs NO sheet or header. It invents NO Coverage / DOS / Projected
- * Inventory / Reason / Status. Missing source is NEVER a fake zero — it is a structured failure or a runtime-blocked
- * line. A legitimate runtime-calculated zero stays a successful zero.
- *
- * Testability: every pure builder is a `function` declaration; the impure orchestrator takes an injectable `io`
- * (now/nextSeq/openTarget) so it runs against fixtures with ZERO SpreadsheetApp. Wall-clock / sequence live ONLY in
- * the io diagnostic layer, never in a pure builder. The runtime is the bundled KMPA / KMPS / KMPCX / KMAF (90_*.gs).
- */
 
-var RECO_WS_SEQ_ = 0;                 // API diagnostic-layer server correlation counter (not business runtime)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var RECO_WS_SEQ_ = 0;
 var RECO_WS_PAGE_MAX_ = 100;
 var RECO_WS_PAGE_DEFAULT_ = 50;
 
-// F1-4B-FM5-R4UI-R5C — READ-ONLY deployment/version PROBE (diagnostics only; NO DB write, NO schema, NO formula).
-// Stamped into the workspace envelope's `meta` so ONE direct recommendation.workspace.get Network response proves
-// which deployed recommendation-workspace handler is live — i.e. that the R5B sales-basis marshalling repair
-// (toYmd coercion + WEEKLY_ONLY sentinel + surfaced owner error) is actually running server-side. Bump per round.
-// CP2T-R2 — r5e. r5c String()-ed the campaign / event date cells; r5d still published a fabricated 0 when the
-// weekly rung had no readable source. All three differ in what they COMPUTE, so neither a cached r5c nor an r5d
-// answer may be replayed — the page accepts r5e alone (_IR_RECO_CACHE_HANDLERS).
-var RECO_WS_HANDLER_VERSION_ = 'fm5-r4ui-r5e';
-// S8-B3-R3-CP2V-R53 - THE MODULE STAMP, a different fact from the handler version above.
-// HANDLER_VERSION names the ANSWER CONTRACT; CP2V changed neither request nor business response, so it does
-// not move - and must not, since the browser's session cache keys on it. BUILD_VERSION names the FILE: the
-// read transport changed underneath that contract, and a pre-R53 copy answers identically while spending
-// twenty-one sheet reads. A contract comparison cannot see that; the 63_ manifest can.
-var RECO_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R54';
 
-// --------------------------------------------------------------------------------------------------------
-// PURE helpers (deterministic; no clock / no Spreadsheet / no formula)
-// --------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+var RECO_WS_HANDLER_VERSION_ = 'dc2-r2-f7';
+
+
+
+
+
+
+var RECO_WS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R68-R15G-AV1-V3A10-A2B12-AD1B";
+
+
+
+
 function recoWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function recoWsNum_(v) { if (v === '' || v === null || v === undefined) return null; var n = Number(v); return isFinite(n) ? n : null; }
 function recoWsIsObj_(x) { return x && typeof x === 'object' && !Array.isArray(x); }
-// S8-B3-R3-CP2T-R1 — THE CANONICAL SHEET-DATE COERCION, AT MODULE SCOPE BECAUSE TWO CALLERS NEED IT. A Sheets
-// date cell arrives as a JS Date OBJECT and recoWsStr_ leaves it as "Mon Sep 28 2026 00:00:00 GMT+0800 (...)",
-// which the frozen owner rejects. The coercion existed only as a CLOSURE inside recoWsResolveSalesRate_, so
-// snapshot_date got it and the campaign / event date columns, marshalled elsewhere, did not. One declaration now.
-// LOCAL CALENDAR COMPONENTS, NEVER toISOString(): in Asia/Taipei a Date at local midnight is 16:00 of the PREVIOUS
-// day in UTC, so an ISO slice moves a campaign off its own day. An unrecognised value is returned trimmed and
-// UNCHANGED so the owner still validates it — this MARSHALS, it does not accept. No date math, no substitution.
+
+
+
+
+
+
+
 function recoWsYmd_(v) {
-  if (v == null || v === '') return '';
-  if (Object.prototype.toString.call(v) === '[object Date]') {
-    if (isNaN(v.getTime())) return recoWsStr_(v);                    // an Invalid Date is not coerced into a plausible day
-    return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
-  }
-  var s = recoWsStr_(v);
-  var a = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (a) return a[1] + '-' + ('0' + a[2]).slice(-2) + '-' + ('0' + a[3]).slice(-2);
-  var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
-  return s;
+if (v == null || v === '') return '';
+if (Object.prototype.toString.call(v) === '[object Date]') {
+if (isNaN(v.getTime())) return recoWsStr_(v);
+return v.getFullYear() + '-' + ('0' + (v.getMonth() + 1)).slice(-2) + '-' + ('0' + v.getDate()).slice(-2);
+}
+var s = recoWsStr_(v);
+var a = s.match(/^(\d{4})[\/\-.](\d{1,2})[\/\-.](\d{1,2})/); if (a) return a[1] + '-' + ('0' + a[2]).slice(-2) + '-' + ('0' + a[3]).slice(-2);
+var b = s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{4})/); if (b) return b[3] + '-' + ('0' + b[1]).slice(-2) + '-' + ('0' + b[2]).slice(-2);
+return s;
+}
+
+// D5F1 (D5: an event is added once and never silently omitted) - fc_special_events date cells reach this file as Date
+// values (getValues, and the serial date map of 60_ SIR_B1_DATE_MAP_ which declares event_start_date/event_end_date).
+// KMPD reads YYYY-MM-DD text only, so a Date cell made the whole event vanish from horizons, tiers and pre-T1 alike while
+// the Avg-Sales exclusion (recoWsYmd_, above) still removed its selling days. Normalize the two event date fields with
+// that SAME recoWsYmd_ before any KMPD call. Returns copies; the cached snapshot rows are never mutated.
+function recoWsEventRowsYmd_(rows) {
+return (rows || []).map(function (r) {
+var o = {}; for (var k in r) { if (Object.prototype.hasOwnProperty.call(r, k)) o[k] = r[k]; }
+if (o.event_start_date != null && o.event_start_date !== '') o.event_start_date = recoWsYmd_(o.event_start_date);
+if (o.event_end_date != null && o.event_end_date !== '') o.event_end_date = recoWsYmd_(o.event_end_date);
+return o;
+});
+}
+
+// D5F1-R2 (reviewer m1/m2) - an invalid in-scope special event (start missing / not a real date, end not a real date,
+// end before start) or an unusable calculation date while such events exist makes the SKU's calculation INCOMPLETE:
+// the line is BLOCKED with a typed reason (43_ writes the row BLOCKED with that note). Never "no filter", never 0, and
+// the source rows are not touched. Validation authority = KMPD.validateScopedEvents (the same rules KMPD applies inside).
+function recoWsEventCheck_(evtRows, scope, sku, calc) {
+if (typeof KMPD === 'undefined' || !KMPD || typeof KMPD.validateScopedEvents !== 'function') return { ok: true, issues: [] };
+return KMPD.validateScopedEvents(evtRows, scope, sku, calc ? calc.calculationDate : null);
+}
+function recoWsEventBlockedLine_(destination, mode, sku, siteSku, evChk, vmeta) {
+var codes = [];
+(evChk.issues || []).forEach(function (x) { var c = x.code + (x.eventId ? '@' + x.eventId : ''); if (codes.indexOf(c) === -1) codes.push(c); });
+var reason = 'SPECIAL_EVENT_INVALID: ' + codes.slice(0, 5).join('; ') + (codes.length > 5 ? '; +' + (codes.length - 5) + ' more' : '');
+return KMDR.buildRecommendationLine({ destination: destination, recommendationMode: mode, sku: sku, siteSku: siteSku, blocked: true, blockedReason: reason,
+formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+diagnostics: { issues: (evChk.issues || []).map(function (x) { return { code: x.code, message: 'special event ' + (x.eventId || '(no id)') + (x.got != null ? ' calculationDate=' + x.got : '') + ' - calculation incomplete' }; }) } });
+}
+
+// D5-V3 (OD-3): pre-dispatch (draft / ready_to_ship) shipment lines resolved to THIS marketplace destination, with remaining
+// quantity, whose ETA is not a real YYYY-MM-DD date. Returns the sorted, de-duplicated shipment ids (empty = nothing to flag).
+// P3PL-2 (Owner 2026-11-21: any site may ship to a LEGAL 3PL). The receiver of a shipment line is its frozen lineage (KMSLS); its
+// physical destination is shipments.destination_warehouse_id. For a PLATFORM (marketplace-mode) site a line that it owns by lineage but
+// that is bound for a 3PL warehouse arrives at the 3PL on its ETA - NOT a marketplace (FBA) sellable date. The 3PL -> marketplace
+// leg / handling / putaway is B-Q1 (unresolved): UNKNOWN, never 0 days. Returns those open lines (RESOLVED to this site, 3PL
+// destination, active status = KMDR ACTIVE_INCOMING_STATUS, remaining > 0). Read only. Receipt still posts to the 3PL only (31_).
+var RECO_WS_P3PL_ACTIVE_ = { draft: 1, shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1, partially_received: 1, partial_received: 1 };   // = KMDR ACTIVE_INCOMING_STATUS
+function recoWsPlatformVia3pl_(read, sku, whRows, mktRows, destination) {
+if (typeof KMDR === 'undefined' || !KMDR || typeof KMDR.resolveMarketplaceIncomingIdentity !== 'function' || typeof KMSLS === 'undefined') return [];
+var raw = ((recoWsShipmentLineCandidates_(read).candidates) || []).filter(function (e) { return e && e.candidate && recoWsStr_(e.candidate.sku) === sku; });
+if (!raw.length) return [];
+var t3 = {}; (whRows || []).forEach(function (w) { var id = recoWsStr_(w && w.warehouse_id); if (id && recoWsStr_(w.warehouse_type).toUpperCase() === '3PL') t3[id] = 1; });
+var ids = KMDR.resolveMarketplaceIncomingIdentity({ candidates: raw.map(function (e) { return KMSLS.toMarketplaceIncomingCandidate(e); }), marketplaces: mktRows, scope: destination || {} });
+var out = [];
+for (var i = 0; i < raw.length; i++) {
+var c = raw[i].candidate, r = ids[i] || {};
+if (r.resolutionStatus !== 'RESOLVED') continue;
+var wid = recoWsStr_(c.destinationWarehouseId); if (!wid || !t3[wid]) continue;
+var st = recoWsStr_(c.status).toLowerCase(); if (RECO_WS_P3PL_ACTIVE_[st] !== 1) continue;
+var q = recoWsNum_(c.quantityRemaining); if (q === null || q <= 0) continue;
+out.push({ shipmentId: recoWsStr_(c.linkedShipmentId) || null, shipmentLineId: recoWsStr_(c.linkedShipmentLineId) || null, lineageKey: recoWsStr_(c.lineageKey) || null, destinationWarehouseId: wid, qty: q, status: st, threePlEta: recoWsYmd_(c.eta) || null, marketplaceAvailableDate: null, reason: 'THREE_PL_TO_MARKETPLACE_LEG_UNKNOWN', decision: 'B-Q1' });
+}
+return out;
+}
+function recoWsPreDispatchEtaGaps_(candidates, mktRows, destination) {
+if (typeof KMDR === 'undefined' || !KMDR || typeof KMDR.resolveMarketplaceIncomingIdentity !== 'function') return [];
+var cands = candidates || [];
+var ids = KMDR.resolveMarketplaceIncomingIdentity({ candidates: cands, marketplaces: mktRows, scope: destination || {} });
+var out = [];
+for (var i = 0; i < cands.length; i++) {
+var c = cands[i] || {}, r = ids[i] || {};
+if (r.resolutionStatus !== 'RESOLVED') continue;
+var st = recoWsStr_(c.status).toLowerCase(); if (st !== 'draft' && st !== 'ready_to_ship') continue;
+var q = recoWsNum_(c.quantityRemaining); if (q === null || q <= 0) continue;
+var eta = recoWsYmd_(c.eta);   // D5-V3-R5C (F-1): Date cell / 'YYYY/MM/DD' text normalised first
+if (/^\d{4}-\d{2}-\d{2}$/.test(eta) && !isNaN(Date.parse(eta + 'T00:00:00Z'))) continue;
+var id = recoWsStr_(c.shipmentId) || recoWsStr_(c.ref) || ('#' + i);
+if (out.indexOf(id) === -1) out.push(id);
+}
+return out.sort();
+}
+
+// D5-V3-R2 (review m1, D1): label the dated supply events of a line - PLANNED (a created-but-unconfirmed Shipment:
+// draft / ready_to_ship), SHIPPED in transit, ONGOING PO - separately. Pure labelling; the quantities used are unchanged.
+function recoWsSupplyBreakdown_(events, statusById) {
+var b = { plannedShipmentQty: 0, inTransitQty: 0, ongoingQty: 0, otherQty: 0 };
+(events || []).forEach(function (e) {
+var q = recoWsNum_(e && e.qty); if (q === null) return;
+var st = recoWsStr_((statusById || {})[recoWsStr_(e.incomingId)]).toLowerCase();
+var srcT = recoWsStr_(e && e.sourceType).toUpperCase();
+if (srcT === 'PLANNED_SHIPMENT' || st === 'draft' || st === 'ready_to_ship') b.plannedShipmentQty += q;
+else if (srcT.indexOf('ONGOING') === 0) b.ongoingQty += q;
+else if (st || srcT === 'KM') b.inTransitQty += q;
+else b.otherQty += q;
+});
+return b;
 }
 
 function recoWsRequestId_(provided, io) {
-  var p = recoWsStr_(provided);
-  if (/^REQ-[A-Za-z0-9_-]{1,40}$/.test(p)) return p;
-  var seq = (io && typeof io.nextSeq === 'function') ? io.nextSeq() : 0;
-  return 'REQ-S' + ('000000' + seq).slice(-6);
+var p = recoWsStr_(provided);
+if (/^REQ-[A-Za-z0-9_-]{1,40}$/.test(p)) return p;
+var seq = (io && typeof io.nextSeq === 'function') ? io.nextSeq() : 0;
+return 'REQ-S' + ('000000' + seq).slice(-6);
 }
 function recoWsEnvelope_(ok, data, errors, meta) {
-  var m = { apiVersion: '1', source: 'recommendation.workspace.get', workspace: 'recommendation', mode: 'WORKSPACE', cached: false, recommendationWorkspaceHandlerVersion: RECO_WS_HANDLER_VERSION_ };
-  if (meta) { for (var k in meta) m[k] = meta[k]; }
-  return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
+var m = { apiVersion: '1', source: 'recommendation.workspace.get', workspace: 'recommendation', mode: 'WORKSPACE', cached: false, recommendationWorkspaceHandlerVersion: RECO_WS_HANDLER_VERSION_,
+sourceRevision: RECO_WS_SRC_REV_ };
+if (meta) { for (var k in meta) m[k] = meta[k]; }
+return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
 }
 function recoWsErr_(code, message, details) { return { code: code, message: String(message == null ? code : message), details: (details === undefined ? null : details) }; }
 
-// F1-4B-FM1-T: SCOPE-ONLY request validation. The client owns ONLY the business scope + filters + pagination; the
-// SERVER owns destination expansion (MARKETPLACE vs WAREHOUSE) and the calculation context (month/cycle). A legacy
-// destinationWarehouseId / calculationMonth / planningCycle is accepted as DEPRECATED compatibility input, recorded
-// on the result, and NEVER used to drive fanout in scope-only mode (no dual execution). Runs BEFORE any table read.
+
+
+
+
 function validateRecommendationWorkspaceRequest_(payload) {
-  payload = recoWsIsObj_(payload) ? payload : {};
-  var scope = recoWsIsObj_(payload.scope) ? payload.scope : {};
-  var company = recoWsStr_(scope.company), country = recoWsStr_(scope.country), marketplace = recoWsStr_(scope.marketplace);
-  if (!company || !country || !marketplace) return { ok: false, error: recoWsErr_('VALIDATION_FAILED', 'scope.company/country/marketplace are mandatory (no implicit first company/marketplace)', { scope: scope }) };
-  if (recoWsIsObj_(payload.filters) && payload.filters.demandDriver && recoWsStr_(payload.filters.demandDriver).toUpperCase() !== 'FORECAST') {
-    return { ok: false, error: recoWsErr_('UNSUPPORTED_PHASE1_DEMAND_DRIVER', 'Phase-1 demandDriver is FORECAST only; no client override') };
-  }
-  var filters = recoWsIsObj_(payload.filters) ? payload.filters : {};
-  var pg = recoWsIsObj_(payload.pagination) ? payload.pagination : {};
-  var size = recoWsNum_(pg.size); size = (size && size > 0) ? Math.min(Math.floor(size), RECO_WS_PAGE_MAX_) : RECO_WS_PAGE_DEFAULT_;
-  var page = recoWsNum_(pg.page); page = (page && page > 0) ? Math.floor(page) : 1;
-  return {
-    ok: true,
-    scope: { company: company, country: country, marketplace: marketplace, sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null },
-    filters: { sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null, category: recoWsStr_(filters.category) || null, series: recoWsStr_(filters.series) || null },
-    page: page, size: size, include: recoWsIsObj_(payload.include) ? payload.include : {},
-    formulaVersion: recoWsStr_(payload.formulaVersion) || null, sourceDataAsOf: recoWsStr_(payload.sourceDataAsOf) || null,
-    // F1-4B-FM5-R2b: additive, server-internal per-receiver Overseas/Factory allocation injected by the Order Planning
-    // materialization batch (never client-driven; absent for a normal read → Site-Stock-only monthly opening).
-    supplyAllocationByReceiver: recoWsIsObj_(payload.supplyAllocationByReceiver) ? payload.supplyAllocationByReceiver : null,
-    deprecatedCompat: { destinationWarehouseId: recoWsStr_(payload.destinationWarehouseId) || null, calculationMonth: recoWsStr_(payload.calculationMonth) || null, planningCycle: recoWsStr_(payload.planningCycle) || null }
-  };
+payload = recoWsIsObj_(payload) ? payload : {};
+var scope = recoWsIsObj_(payload.scope) ? payload.scope : {};
+var company = recoWsStr_(scope.company), country = recoWsStr_(scope.country), marketplace = recoWsStr_(scope.marketplace);
+if (!company || !country || !marketplace) return { ok: false, error: recoWsErr_('VALIDATION_FAILED', 'scope.company/country/marketplace are mandatory (no implicit first company/marketplace)', { scope: scope }) };
+if (recoWsIsObj_(payload.filters) && payload.filters.demandDriver && recoWsStr_(payload.filters.demandDriver).toUpperCase() !== 'FORECAST') {
+return { ok: false, error: recoWsErr_('UNSUPPORTED_PHASE1_DEMAND_DRIVER', 'Phase-1 demandDriver is FORECAST only; no client override') };
+}
+var filters = recoWsIsObj_(payload.filters) ? payload.filters : {};
+var pg = recoWsIsObj_(payload.pagination) ? payload.pagination : {};
+var size = recoWsNum_(pg.size); size = (size && size > 0) ? Math.min(Math.floor(size), RECO_WS_PAGE_MAX_) : RECO_WS_PAGE_DEFAULT_;
+var page = recoWsNum_(pg.page); page = (page && page > 0) ? Math.floor(page) : 1;
+return {
+ok: true,
+scope: { company: company, country: country, marketplace: marketplace, sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null },
+filters: { sku: recoWsStr_(scope.sku) || recoWsStr_(filters.sku) || null, siteSku: recoWsStr_(scope.siteSku) || recoWsStr_(filters.siteSku) || null, category: recoWsStr_(filters.category) || null, series: recoWsStr_(filters.series) || null },
+page: page, size: size, include: recoWsIsObj_(payload.include) ? payload.include : {},
+formulaVersion: recoWsStr_(payload.formulaVersion) || null, sourceDataAsOf: recoWsStr_(payload.sourceDataAsOf) || null,
+
+
+supplyAllocationByReceiver: recoWsIsObj_(payload.supplyAllocationByReceiver) ? payload.supplyAllocationByReceiver : null,
+deprecatedCompat: { destinationWarehouseId: recoWsStr_(payload.destinationWarehouseId) || null, calculationMonth: recoWsStr_(payload.calculationMonth) || null, planningCycle: recoWsStr_(payload.planningCycle) || null }
+};
 }
 
-// F1-4B-FM1-T calculation-month authority — the SERVER owns the calc context via an injected configuration value
-// (io.configMonth() → Script Property RECOMMENDATION_CALCULATION_MONTH). NO browser clock, NO server clock, NO
-// current-month / latest-forecast fallback. Missing → NOT_CONFIGURED; malformed → INVALID. planningCycle = RECO-{YYYY-MM}.
+
+
+
 function recoWsResolveCalcContext_(io) {
-  var raw = recoWsStr_((io && typeof io.configMonth === 'function') ? io.configMonth() : '');
-  if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_MONTH is not configured (no clock fallback)') };
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_INVALID', 'RECOMMENDATION_CALCULATION_MONTH must be YYYY-MM (got "' + raw + '")') };
-  return { ok: true, calculationMonth: raw, planningCycle: 'RECO-' + raw };
+var raw = recoWsStr_((io && typeof io.configMonth === 'function') ? io.configMonth() : '');
+if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_MONTH is not configured (no clock fallback)') };
+if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_MONTH_INVALID', 'RECOMMENDATION_CALCULATION_MONTH must be YYYY-MM (got "' + raw + '")') };
+return { ok: true, calculationMonth: raw, planningCycle: 'RECO-' + raw };
 }
 
-// F1-4B-FM4a calculation-DAY authority — a SEPARATE server-owned Script Property RECOMMENDATION_CALCULATION_DATE
-// (YYYY-MM-DD) anchoring the day-horizon (D18/D30/D45/D90) projection. NO browser/server clock, NO new Date(), and
-// NEVER derived from RECOMMENDATION_CALCULATION_MONTH. Missing/malformed → fail closed (canonical codes). This is
-// ADDITIVE: it gates ONLY line.horizons; the existing monthly/OP response is unaffected when it is absent.
+
+
+
+
 function recoWsResolveCalcDate_(io) {
-  var raw = recoWsStr_((io && typeof io.configDate === 'function') ? io.configDate() : '');
-  if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_DATE is not configured (no clock fallback)') };
-  if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_INVALID', 'RECOMMENDATION_CALCULATION_DATE must be YYYY-MM-DD (got "' + raw + '")') };
-  return { ok: true, calculationDate: raw };
+var raw = recoWsStr_((io && typeof io.configDate === 'function') ? io.configDate() : '');
+if (!raw) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_NOT_CONFIGURED', 'RECOMMENDATION_CALCULATION_DATE is not configured (no clock fallback)') };
+if (!/^\d{4}-(0[1-9]|1[0-2])-(0[1-9]|[12]\d|3[01])$/.test(raw)) return { ok: false, error: recoWsErr_('RECOMMENDATION_CALCULATION_DATE_INVALID', 'RECOMMENDATION_CALCULATION_DATE must be YYYY-MM-DD (got "' + raw + '")') };
+return { ok: true, calculationDate: raw };
 }
-// Months (YYYY-MM) the day-horizon window spans: calcDate's month through (calcDate + maxDays)'s month, inclusive.
-// Read-scope only (which FC months to fetch); the canonical daily-distribution ÷ days-in-month lives in KMHP.
+
+
 function recoWsHorizonWindowMonths_(calcDate, maxDays) {
-  var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
-  function leap(Y) { return (Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0); }
-  function dim(Y, M) { return [31, leap(Y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][M - 1]; }
-  function key(Y, M) { return Y + '-' + (M < 10 ? '0' : '') + M; }
-  var seen = {}, out = []; function add(Y, M) { var k = key(Y, M); if (!seen[k]) { seen[k] = 1; out.push(k); } }
-  add(y, m);
-  for (var i = 0; i < maxDays; i++) { d++; if (d > dim(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } } add(y, m); }
-  return out;
+var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
+function leap(Y) { return (Y % 4 === 0 && Y % 100 !== 0) || (Y % 400 === 0); }
+function dim(Y, M) { return [31, leap(Y) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][M - 1]; }
+function key(Y, M) { return Y + '-' + (M < 10 ? '0' : '') + M; }
+var seen = {}, out = []; function add(Y, M) { var k = key(Y, M); if (!seen[k]) { seen[k] = 1; out.push(k); } }
+add(y, m);
+for (var i = 0; i < maxDays; i++) { d++; if (d > dim(y, m)) { d = 1; m++; if (m > 12) { m = 1; y++; } } add(y, m); }
+return out;
 }
-// F1-4B-FM5-R4UI-R3 — resolve the SKU's canonical Planning Model from marketplace_skus.replenishment_model
-// (00_config VALID_REPLENISHMENT_MODELS_ = sales_driven | forecast_driven; the master-data writer defaults new rows
-// to 'sales_driven'). scope+sku exact. A blank cell → 'sales_driven' (the DB default); any OTHER non-empty value is
-// returned verbatim so KMHP fails closed (PLANNING_MODEL_UNKNOWN) rather than this layer guessing a mode.
-// CP2X-R2 D - this and the two below run PER SKU; they take read to share recoWsRows_. D-S8-B3-149.
+
+
+
+
+
 function recoWsResolvePlanningModel_(read, scope, sku) {
-  var rows = recoWsRows_(read, 'marketplaceSkus');
-  for (var i = 0; i < rows.length; i++) {
-    var r = rows[i];
-    if (recoWsStr_(r.sku) !== sku) continue;
-    if (recoWsStr_(r.company) !== '' && recoWsStr_(r.company) !== scope.company) continue;
-    if (recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) continue;
-    var m = recoWsStr_(r.replenishment_model);
-    return m === '' ? 'sales_driven' : m;
-  }
-  return 'sales_driven';
+var rows = recoWsRows_(read, 'marketplaceSkus');
+for (var i = 0; i < rows.length; i++) {
+var r = rows[i];
+if (recoWsStr_(r.sku) !== sku) continue;
+if (recoWsStr_(r.company) !== '' && recoWsStr_(r.company) !== scope.company) continue;
+if (recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) continue;
+var m = recoWsStr_(r.replenishment_model);
+return m === '' ? 'sales_driven' : m;
+}
+return 'sales_driven';
 }
 
-// F1-4B-FM5-R4UI-R3a — marshal the CANONICAL contamination-day facts into the run-rate owner. The owner (§22)
-// excludes campaign/event SELLING days from the NORMAL-day window; it consumes:
-//   • campaigns: [{ status, start, end, skuLines:[{ marketplaceSkuId, sku }] }]  (campaigns + campaign_sku_lines)
-//   • events:    [{ sku, status, marketplaceId, company, country, marketplace, start, end }]  (fc_special_events)
-// This layer INVENTS no contamination definition — it only shapes existing rows; the owner OWNS the match/exclude
-// logic (marketplace_sku_id identity for campaigns; sku + marketplace_id-authoritative / composite for events) and
-// its own ambiguous-identity fail-fast. Availability is differentiated (§3): a MISSING campaigns/campaign_sku_lines
-// or fc_special_events sheet is source-UNAVAILABLE (never silently "no contamination"); a PRESENT-but-empty source
-// is the legitimate "zero contaminated days"; an ambiguous identity (owner throw) is a distinct conflict. Returns
-// { ok:true, campaigns, events } or { ok:false, reason }.
-// S8-B3-R3-CP2T-R1 — THE FOUR DATE COLUMNS ARE COERCED HERE. The owner throws on a non-ISO date under the label
-// campaigns[i].start / events[i].start, which this file's catch maps to SALES_BASIS_CONTAMINATION_UNRESOLVED — so
-// a Sheet DATE CELL was reported as an IDENTITY failure and the cell blamed an unmatched line for a format problem.
-// recoWsYmd_ shapes and nothing else: an unreadable date still reaches the owner unchanged and is still refused BY
-// NAME, no campaign is dropped, and a campaign outside the window is still passed for the OWNER to clip (this layer
-// owns no window and must never filter by date).
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function recoWsBuildContaminationFacts_(read, scope, sku, mSkuId) {
-  var snaps = read.snapshots || {};
-  // F1-4B-FM5-R4UI-R4 §5 — contamination sources are OPTIONAL exclusion FILTERS: the frozen owner accepts empty
-  // campaigns/events as a legitimate "no contaminated days". So a source that is PRESENT-BUT-EMPTY *or* genuinely
-  // ABSENT must NOT block the run-rate (that was the R3a over-strict CONTAMINATION_SOURCE_UNAVAILABLE that turned
-  // READY rows BLOCKED after recalc). This builder is best-effort and NEVER fails: a missing source simply
-  // contributes zero exclusions. Only the daily-sales BASIS gates READY (see recoWsResolveSalesRate_). The presence
-  // of each source is reported for diagnostics — TABLE PRESENT + 0 rows is differentiated from TABLE ABSENT — but
-  // neither blocks. The owner still OWNS the identity match/exclude + its own ambiguous-line fail-fast (handled by
-  // the caller's best-effort retry, so a malformed campaign line degrades to "no exclusion", never a SKU block).
-  var campPresent = recoWsIsObj_(snaps.campaigns) && recoWsIsObj_(snaps.campaignSkuLines);
-  var evtPresent = recoWsIsObj_(snaps.fcSpecialEvents);
-  var campaigns = [];
-  if (campPresent) {
-    var linesByCampaign = {};
-    recoWsRows_(read, 'campaignSkuLines').forEach(function (r) {
-      var cid = recoWsStr_(r.campaign_id); if (!cid) return;
-      (linesByCampaign[cid] = linesByCampaign[cid] || []).push({ marketplaceSkuId: recoWsStr_(r.marketplace_sku_id) || null, sku: recoWsStr_(r.sku) });
-    });
-    recoWsRows_(read, 'campaigns').forEach(function (c) {
-      var cid = recoWsStr_(c.campaign_id); if (!cid) return;
-      var lines = linesByCampaign[cid] || [];
-      // Only campaigns that TOUCH this SKU (by our marketplace_sku_id or the master sku) are relevant. Their FULL
-      // line set is passed so the owner applies its own identity guard.
-      var touches = lines.some(function (ln) { return (mSkuId && ln.marketplaceSkuId === mSkuId) || (ln.sku && recoWsStr_(ln.sku) === sku); });
-      if (!touches) return;
-      campaigns.push({ status: recoWsStr_(c.status), start: recoWsYmd_(c.start_date), end: recoWsYmd_(c.end_date), skuLines: lines });
-    });
-  }
-  var events = [];
-  if (evtPresent) {
-    recoWsRows_(read, 'fcSpecialEvents').forEach(function (r) {
-      if (recoWsStr_(r.sku) !== sku) return;
-      events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
-        company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
-        start: recoWsYmd_(r.event_start_date) || recoWsYmd_(r.eventStartDate), end: recoWsYmd_(r.event_end_date) || recoWsYmd_(r.eventEndDate) });
-    });
-  }
-  return { ok: true, campaigns: campaigns, events: events, sourceStatus: { campaigns: campPresent ? 'PRESENT' : 'ABSENT', events: evtPresent ? 'PRESENT' : 'ABSENT' } };
+var snaps = read.snapshots || {};
+
+
+
+
+
+
+
+
+var campPresent = recoWsIsObj_(snaps.campaigns) && recoWsIsObj_(snaps.campaignSkuLines);
+var evtPresent = recoWsIsObj_(snaps.fcSpecialEvents);
+var campaigns = [];
+if (campPresent) {
+var linesByCampaign = {};
+recoWsRows_(read, 'campaignSkuLines').forEach(function (r) {
+var cid = recoWsStr_(r.campaign_id); if (!cid) return;
+(linesByCampaign[cid] = linesByCampaign[cid] || []).push({ marketplaceSkuId: recoWsStr_(r.marketplace_sku_id) || null, sku: recoWsStr_(r.sku) });
+});
+recoWsRows_(read, 'campaigns').forEach(function (c) {
+var cid = recoWsStr_(c.campaign_id); if (!cid) return;
+var lines = linesByCampaign[cid] || [];
+
+
+var touches = lines.some(function (ln) { return (mSkuId && ln.marketplaceSkuId === mSkuId) || (ln.sku && recoWsStr_(ln.sku) === sku); });
+if (!touches) return;
+campaigns.push({ status: recoWsStr_(c.status), start: recoWsYmd_(c.start_date), end: recoWsYmd_(c.end_date), skuLines: lines });
+});
+}
+var events = [];
+if (evtPresent) {
+recoWsRows_(read, 'fcSpecialEvents').forEach(function (r) {
+if (recoWsStr_(r.sku) !== sku) return;
+events.push({ sku: recoWsStr_(r.sku), status: recoWsStr_(r.status), marketplaceId: recoWsStr_(r.marketplace_id) || null,
+company: recoWsStr_(r.company), country: recoWsStr_(r.country), marketplace: recoWsStr_(r.marketplace),
+start: recoWsYmd_(r.event_start_date) || recoWsYmd_(r.eventStartDate), end: recoWsYmd_(r.event_end_date) || recoWsYmd_(r.eventEndDate) });
+});
+}
+return { ok: true, campaigns: campaigns, events: events, sourceStatus: { campaigns: campPresent ? 'PRESENT' : 'ABSENT', events: evtPresent ? 'PRESENT' : 'ABSENT' } };
 }
 
-// F1-4B-FM5-R4UI-R3 (+R3a) — Sales-Driven canonical run-rate via the FROZEN KMCALC.normalizedAvgSalesPerDay owner
-// (§22: latest ≤30 confirmed NORMAL days inside the 90 completed-day window ÷ actual normal-day count, campaign/event
-// selling days EXCLUDED (R3a); <3 normal days → weekly_7d ÷ 7). This layer creates NO second averaging engine — it
-// only marshals the owner's inputs. Returns { ok:true, avgSalesPerDay, source, warning } or a differentiated
-// { ok:false, reason } → the caller fail-closes to a truthful BLOCKED (never a silent forecast substitution, never a
-// fabricated 0, never a thrown scope failure). company is stamped from the resolved scope (amazon_daily_sales_snapshot
-// carries no company column; one scope = one company); channel is derived from the scoped rows and MUST be
-// unambiguous; marketplaceId is resolved from the marketplaces registry (required by the owner for ID-bearing events).
-// Reasons: SALES_BASIS_UNAVAILABLE = no scoped daily-sales history · SALES_BASIS_AMBIGUOUS = ambiguous channel ·
-// MARKETPLACE_SKU_AMBIGUOUS = two ids for one scope+SKU · SALES_BASIS_CONTAMINATION_UNRESOLVED = a campaign line
-// that cannot be tied to this site.
-// CP2T CORRECTION: this block used to end "a contamination identity conflict degrades to an un-excluded basis -
-// never a block". That stopped being true in CP2R-R1, which made it fail CLOSED, and a comment that denies a
-// reason the code returns is read by whoever is trying to find out why a row refused. A source that is
-// present-but-empty or absent still means "no exclusion" and still does not block (R4 §5); an UNRESOLVED
-// IDENTITY does, because an un-excluded average is not this average.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function recoWsResolveSalesRate_(read, scope, sku, calcDate) {
-  var snaps = read.snapshots || {};
-  if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
-  if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
-  // F1-4B-FM5-R4UI-R7 §1 (audit Q3) — CANONICAL country identity when matching the sales snapshots. The daily/weekly
-  // snapshots and marketplace_skus can encode the same country differently (the known UK≡GB class the repo already
-  // repairs elsewhere via KMCID); a RAW string match dropped every scoped row → a false SALES_BASIS_UNAVAILABLE →
-  // the Sales-Driven horizon fail-closed as HORIZONS_NOT_AVAILABLE. Canonicalize BOTH sides (marketplace unchanged).
-  var recoWsCanonC = function (v) { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function') ? KMCID.canonicalCountryCode(v) : recoWsStr_(v).toUpperCase(); };
-  var scopeCountryC = recoWsCanonC(scope.country);
-  // F1-4B-FM5-R4UI-R5D — EU is a planning/marketplace REGION, not a country alias: match sales rows whose canonical
-  // country is a MEMBER of the scope's eligible SOURCE-country set (KMCID.sourceCountriesForScope, which mirrors the
-  // FROZEN IRCountry.SALES_AGG EU=IT+DE+ES+FR authority; Amazon-only). A single market (US/CA/UK/DE/…) resolves to
-  // its own one-member set, so membership matching is byte-equivalent to the prior exact canonical match for every
-  // non-EU scope. company isolation holds by construction (amazon_daily_sales_snapshot is one-company-per-scope);
-  // marketplace + sku + channel identity are still enforced below.
-  var srcSet = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.sourceCountriesForScope === 'function')
-    ? KMCID.sourceCountriesForScope(scope.country, scope.marketplace) : { members: [scopeCountryC], aggregate: false };
-  var srcMembers = {}; srcSet.members.forEach(function (m) { srcMembers[m] = 1; });
-  function recoWsInSrc_(c) { return srcMembers[recoWsCanonC(c)] === 1; }
-  // S8-B3-R3-CP2S - AN UNDATED ROW IS NOT AN OBSERVATION, AND IT MAY NOT DELETE THE ONES THAT ARE. The
-  // frozen owner requires a strict date per row and throws otherwise, correctly: a row whose date cannot
-  // be read cannot be placed in the 90-day window. But the single-market branch handed EVERY scoped row
-  // through, so one empty snapshot_date cell raised and the SKU published nothing at all - 84 dated rows
-  // unread behind 1 undated one. The EU branch had always skipped them. This moves that decision to the
-  // one boundary both branches read from, so the two cannot drift apart again.
-  // BLANK ONLY, and COUNTED. A non-empty value this layer cannot parse is a cell somebody wrote: it still
-  // fails closed rather than vanishing into a tally. No date is ever substituted - not synced_at, not
-  // today, not a neighbouring row - because a fabricated date puts real units on a day they did not happen.
-  // CP2S-R2 - ONCE COUNTED, ALWAYS REPORTED. Every return BELOW this filter carries blankDateRows, failures
-  // included: the two returns ABOVE it carry none, because they genuinely never counted. null means "not
-  // counted" and 0 means "counted none" - a failure that drops the number turns the first into the second.
-  var blankDates = 0;
-  var daily = recoWsRows_(read, 'amazonDailySalesSnapshot').filter(function (r) {
-    if (recoWsStr_(r.sku) !== sku || !recoWsInSrc_(r.country) || recoWsStr_(r.marketplace) !== scope.marketplace) return false;
-    if (recoWsStr_(r.snapshot_date) === '') { blankDates++; return false; }
-    return true;
-  });
-  var weeklyAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot').filter(function (r) {
-    return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
-  });
-  // F1-4B-FM5-R4UI-R5A §1/§2 — the weekly_7d rung MUST be reachable when there are ZERO scoped daily rows. Before,
-  // the resolver returned SALES_BASIS_UNAVAILABLE the instant `daily` was empty, so a SKU with ONLY weekly history
-  // fail-closed — the exact live CO1100-R defect (the Inventory UI's Avg Sales/day reads the WEEKLY snapshot, hence
-  // ~178.4, while this canonical reader blocked). The frozen §22/§29E ladder is "≥3 NORMAL days → normalized_30d,
-  // else weekly_7d ÷ 7" (KMCALC applies it: an EMPTY dailySales + a valid weekly7d yields weekly7d/7). So resolve
-  // the channel from daily when present, else from weekly; only a scope with NEITHER daily NOR weekly rows is a
-  // genuine SALES_BASIS_UNAVAILABLE. NO forecast fallback, NO fabricated value, NO new averaging engine — the same
-  // canonical owner, now correctly routed to its own weekly rung. (R7V diagnostic detail retained on each reason.)
-  // toYmd (needed by BOTH branches below) — coerce a Sheet cell (JS Date object / 'YYYY/MM/DD' / 'M/D/YYYY') to the
-  // STRICT 'YYYY-MM-DD' the frozen KMCALC owner requires (R5B). CP2T-R1 moved the algorithm to recoWsYmd_ at module
-  // scope so the campaign / event marshaller reads the SAME coercion instead of a second one; the local name is kept
-  // so both branches below read unchanged. Marshalling only — no date math, no owner change.
-  function toYmd(v) { return recoWsYmd_(v); }
-  // "no rows" and "rows that were all undated" are different facts and the operator needs the second one
-  // to know what to repair. Empty when nothing was skipped, so a clean scope reads exactly as before.
-  function undatedNote() { return blankDates ? ' (' + blankDates + ' undated rows skipped)' : ''; }
-  // S8-B3-R3-CP2T-R1 — AND "NO ROWS" IS FOUR FACTS AND FOUR REPAIRS: a table never in the read, a table with
-  // nothing for this SKU, rows for the SKU matching no scope dimension, and rows matching but outside the window.
-  // The first three reach the returns below as an empty `daily`; the FOURTH reaches the weekly rung instead (see
-  // CP2T-R2). Diagnostics only: the reason code and every published value are unchanged.
-  function srcNote() {
-    var dAll = recoWsRows_(read, 'amazonDailySalesSnapshot'), wAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot');
-    function forSku(rows) { var t = 0; for (var i = 0; i < rows.length; i++) { if (recoWsStr_(rows[i].sku) === sku) t++; } return t; }
-    return ' [daily ' + (recoWsIsObj_(snaps.amazonDailySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + dAll.length + ' rows, ' + forSku(dAll) + ' for this SKU'
-      + '; weekly ' + (recoWsIsObj_(snaps.amazonWeeklySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + wAll.length + ' rows, ' + forSku(wAll) + ' for this SKU]';
-  }
-  var calcYmd = toYmd(calcDate);
+var snaps = read.snapshots || {};
+if (typeof KMCALC === 'undefined' || !KMCALC || typeof KMCALC.normalizedAvgSalesPerDay !== 'function') return { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
+if (!calcDate) return { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
 
-  // CP2T-R2 — weeklyOk is set only where a weekly cell READS as a finite, non-negative number. weekly7d alone
-  // cannot carry that: 0 is both a real reported week and what an absent / blank / null / non-numeric / negative
-  // one leaves behind.
-  var channel, kmcalcChannel, weekly7d = 0, weeklyOk = false, dailySales;
-  if (srcSet.aggregate) {
-    // F1-4B-FM5-R4UI-R5D — EU roll-up (frozen IRCountry.SALES_AGG authority). The member markets (IT/DE/ES/FR) are
-    // DISTINCT Amazon sites, so "channel" is NOT a single-market identity here — the frozen weekly authority sums
-    // per-member latest-week units WITHOUT a channel filter. A stable synthetic channel token satisfies KMCALC's
-    // non-empty-channel contract WITHOUT changing the run-rate (KMCALC uses channel only to filter the daily series,
-    // which we PRE-aggregate). No new averaging engine — KMCALC stays the sole run-rate owner (§3/§11).
-    if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
-    channel = 'EU_AGG'; kmcalcChannel = channel;
-    // Daily: SUM eligible member rows by the SAME canonical date → ONE canonical EU daily entry per date (never
-    // per-country days, never averaged averages). The existing KMCALC ladder then owns the run-rate verbatim.
-    var byDate = {};
-    daily.forEach(function (r) { var d = toYmd(r.snapshot_date); var u = recoWsNum_(r.sales_units); byDate[d] = (byDate[d] || 0) + ((u === null || u < 0) ? 0 : u); });
-    dailySales = Object.keys(byDate).sort().map(function (d) { return { date: d, sku: sku, units: byDate[d], company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel }; });
-    // Weekly fallback: per eligible member country take its OWN latest week_end_date sales_units_7d, then SUM across
-    // members ONCE (mirrors IRCountry.weeklyUnits7d) → weekly7d ÷ 7 flows through the same owner.
-    srcSet.members.forEach(function (m) {
-      var mr = weeklyAll.filter(function (r) { return recoWsCanonC(r.country) === m; });
-      if (!mr.length) return;
-      mr.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
-      var wv = recoWsNum_(mr[mr.length - 1].sales_units_7d);
-      if (wv !== null && wv >= 0) { weekly7d += wv; weeklyOk = true; }   // an unreadable member adds nothing, proves nothing
-    });
-  } else {
-    // Single-market path — UNCHANGED (US/CA/UK/DE/…): channel must be unambiguous; latest week is the <3-day rung.
-    var chSource = daily.length ? daily : weeklyAll;
-    if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
-    var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
-    var chKeys = Object.keys(chSet);
-    if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']', blankDateRows: blankDates };   // 0 or ambiguous channel → fail closed (conflict)
-    channel = chKeys[0];
-    // A WEEKLY-ONLY source (0 daily rows) with a BLANK channel is a valid weekly_7d basis (result independent of
-    // channel); represent it with a stable token so KMCALC's non-empty-channel contract is met (R5B). Daily-driven
-    // paths keep the real channel (identity unchanged, never loosened).
-    kmcalcChannel = (!daily.length && !channel) ? 'WEEKLY_ONLY' : channel;
-    var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
-    if (weekly.length) {
-      weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
-      var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d);                 // latest week; the <3-day rung only
-      if (wv !== null && wv >= 0) { weekly7d = wv; weeklyOk = true; }
-    }
-    dailySales = daily.map(function (r) {
-      return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
-    });
-  }
-  // S8-B3-R3-CP2R-R1 - company + country + marketplace IS operational ownership, and it must resolve to ONE
-  // id. Omitting company let sheet row order choose; taking the first of several is the same guess one step
-  // later. Two ids for one scope is unrepairable here, so it refuses and names them.
-  var mSkuSet = {};
-  recoWsRows_(read, 'marketplaceSkus').forEach(function (mr) {
-    if (recoWsStr_(mr.sku) !== sku || recoWsStr_(mr.company) !== scope.company
-      || recoWsStr_(mr.country) !== scope.country || recoWsStr_(mr.marketplace) !== scope.marketplace) return;
-    var id = recoWsStr_(mr.marketplace_sku_id); if (id) mSkuSet[id] = 1;
-  });
-  var mSkuAll = Object.keys(mSkuSet);
-  if (mSkuAll.length > 1) return { ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: mSkuAll.join(','), blankDateRows: blankDates };
-  var mSkuId = mSkuAll.length ? mSkuAll[0] : null;
-  // scope marketplace_id — the owner treats an event's marketplace_id as AUTHORITATIVE and fail-fasts on an
-  // ID-bearing event when the scope marketplace_id is unresolved, so resolve it from the marketplaces registry.
-  var scopeMktId = null;
-  recoWsRows_(read, 'marketplaces').forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
-  // S8-B3-R3-CP2R-R1 - present-but-empty and ABSENT both still mean "no exclusion" and still resolve. An
-  // UNRESOLVED IDENTITY does not: recomputing without the filter published a rate inflated by the very
-  // campaign days §22 removes, as though it were a normal average. It now fails closed with a named error.
-  var contam = recoWsBuildContaminationFacts_(read, scope, sku, mSkuId);
-  function compute(campaigns, events) {
-    return KMCALC.normalizedAvgSalesPerDay({
-      calcDate: calcYmd,
-      scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: kmcalcChannel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
-      weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
-    });
-  }
-  // The REAL owner exception, stripped and truncated, so the named error says what to repair.
-  function ownerErr(e) { return (e && e.message) ? String(e.message).replace(/^supplyPlanningCalculations:\s*/, '').slice(0, 140) : '?'; }
-  // R1 - the two kinds of owner throw are NOT one error. A line that cannot prove site membership is a
-  // contamination-identity failure; an unparseable snapshot_date is a broken basis with nothing to do with
-  // exclusions. Naming both the same is the defect this round removes.
-  var res;
-  try { res = compute(contam.campaigns, contam.events); }
-  catch (e) {
-    var m = ownerErr(e);
-    if ((contam.campaigns.length || contam.events.length) && /campaigns\[|events\[|marketplaceSkuId|marketplaceId/.test(m)) {
-      return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m, blankDateRows: blankDates };
-    }
-    return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m, blankDateRows: blankDates };
-  }
-  // S8-B3-R3-CP2T-R2 — A MISSING WEEKLY SOURCE IS NOT A WEEK IN WHICH NOTHING SOLD. Below 3 normal days the
-  // ladder divides weekly7d by 7, and that was 0 whenever the cell could not be read, so the column printed a
-  // confident 0.0 indistinguishable from a real zero and fed Days of Supply as infinite cover. CP2T-R1 recorded
-  // it as expected behaviour; it was the defect written down as the design. KEYED ON THE RUNG THE OWNER SELECTED,
-  // never on a count re-derived here: an EXPLICIT 0 still resolves, and enough normal days is never refused for a
-  // fallback it does not use. Ladder, window, 3-day threshold, division and latest-week pick are all unchanged.
-  if (res && res.source === 'weekly_7d' && !weeklyOk) {
-    return { ok: false, reason: 'SALES_BASIS_WEEKLY_UNAVAILABLE', blankDateRows: blankDates,
-      detail: 'normal days=' + res.normalDayCount + ' (below the 3-day rung), no readable weekly sales_units_7d @ '
-        + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote() };
-  }
-  var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
-  if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)', blankDateRows: blankDates };
-  return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
-    contaminationSource: contam.sourceStatus, blankDateRows: blankDates };
+
+
+
+var recoWsCanonC = function (v) { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function') ? KMCID.canonicalCountryCode(v) : recoWsStr_(v).toUpperCase(); };
+var scopeCountryC = recoWsCanonC(scope.country);
+
+
+
+
+
+
+var srcSet = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.sourceCountriesForScope === 'function')
+? KMCID.sourceCountriesForScope(scope.country, scope.marketplace) : { members: [scopeCountryC], aggregate: false };
+var srcMembers = {}; srcSet.members.forEach(function (m) { srcMembers[m] = 1; });
+function recoWsInSrc_(c) { return srcMembers[recoWsCanonC(c)] === 1; }
+
+
+
+
+
+
+
+
+
+
+
+
+var blankDates = 0;
+var daily = recoWsRows_(read, 'amazonDailySalesSnapshot').filter(function (r) {
+if (recoWsStr_(r.sku) !== sku || !recoWsInSrc_(r.country) || recoWsStr_(r.marketplace) !== scope.marketplace) return false;
+if (recoWsStr_(r.snapshot_date) === '') { blankDates++; return false; }
+return true;
+});
+var weeklyAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot').filter(function (r) {
+return recoWsStr_(r.sku) === sku && recoWsInSrc_(r.country) && recoWsStr_(r.marketplace) === scope.marketplace;
+});
+
+
+
+
+
+
+
+
+
+
+
+
+function toYmd(v) { return recoWsYmd_(v); }
+
+
+function undatedNote() { return blankDates ? ' (' + blankDates + ' undated rows skipped)' : ''; }
+
+
+
+
+function srcNote() {
+var dAll = recoWsRows_(read, 'amazonDailySalesSnapshot'), wAll = recoWsRows_(read, 'amazonWeeklySalesSnapshot');
+function forSku(rows) { var t = 0; for (var i = 0; i < rows.length; i++) { if (recoWsStr_(rows[i].sku) === sku) t++; } return t; }
+return ' [daily ' + (recoWsIsObj_(snaps.amazonDailySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + dAll.length + ' rows, ' + forSku(dAll) + ' for this SKU'
++ '; weekly ' + (recoWsIsObj_(snaps.amazonWeeklySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + wAll.length + ' rows, ' + forSku(wAll) + ' for this SKU]';
+}
+var calcYmd = toYmd(calcDate);
+
+
+
+
+var channel, kmcalcChannel, weekly7d = 0, weeklyOk = false, dailySales;
+if (srcSet.aggregate) {
+
+
+
+
+
+if (!daily.length && !weeklyAll.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows for EU source set [' + srcSet.members.join(',') + '] @ ' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
+channel = 'EU_AGG'; kmcalcChannel = channel;
+
+
+var byDate = {};
+daily.forEach(function (r) { var d = toYmd(r.snapshot_date); var u = recoWsNum_(r.sales_units); byDate[d] = (byDate[d] || 0) + ((u === null || u < 0) ? 0 : u); });
+dailySales = Object.keys(byDate).sort().map(function (d) { return { date: d, sku: sku, units: byDate[d], company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel }; });
+
+
+srcSet.members.forEach(function (m) {
+var mr = weeklyAll.filter(function (r) { return recoWsCanonC(r.country) === m; });
+if (!mr.length) return;
+mr.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
+var wv = recoWsNum_(mr[mr.length - 1].sales_units_7d);
+if (wv !== null && wv >= 0) { weekly7d += wv; weeklyOk = true; }
+});
+} else {
+
+var chSource = daily.length ? daily : weeklyAll;
+if (!chSource.length) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'no daily or weekly rows @ ' + scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote(), blankDateRows: blankDates };
+var chSet = {}; chSource.forEach(function (r) { chSet[recoWsStr_(r.channel)] = 1; });
+var chKeys = Object.keys(chSet);
+if (chKeys.length !== 1) return { ok: false, reason: 'SALES_BASIS_AMBIGUOUS', detail: 'channels=' + chKeys.length + ' [' + chKeys.map(function (c) { return c || '(blank)'; }).join(',') + ']', blankDateRows: blankDates };
+channel = chKeys[0];
+
+
+
+kmcalcChannel = (!daily.length && !channel) ? 'WEEKLY_ONLY' : channel;
+var weekly = weeklyAll.filter(function (r) { return recoWsStr_(r.channel) === channel; });
+if (weekly.length) {
+weekly.sort(function (a, b) { return recoWsCmp_(recoWsStr_(a.week_end_date), recoWsStr_(b.week_end_date)); });
+var wv = recoWsNum_(weekly[weekly.length - 1].sales_units_7d);
+if (wv !== null && wv >= 0) { weekly7d = wv; weeklyOk = true; }
+}
+dailySales = daily.map(function (r) {
+return { date: toYmd(r.snapshot_date), sku: sku, units: recoWsNum_(r.sales_units), company: scope.company, country: scope.country, marketplace: scope.marketplace, channel: channel };
+});
 }
 
-// Build the additive per-destination day-horizon projection via the frozen KMHP owner. Returns null (→ line.horizons
-// absent → materialized BLOCKED) when unavailable (KMHP not bundled, calc-DATE not configured, opening unavailable, a
-// covered month's FC missing on the forecast path, or the Sales-Driven basis unresolvable) — never a fabricated
-// horizon. incomingEvents = the SAME ETA-dated events used by monthlyProjection.
-// F1-4B-FM5-R4UI-R3 — the Planning Model split lives HERE: forecast_driven → Target%-adjusted regular FC ÷ real days
-// (Authority E, unchanged); sales_driven → the canonical §22 run-rate (avgSalesPerDay), NO regular FC and NO Target%.
-// Special-event prep-dated demand (Authority F) is additive in BOTH paths (count-once). demandMode + avgSalesPerDay
-// are caller-resolved and passed to KMHP verbatim; an unknown model fails closed inside KMHP (PLANNING_MODEL_UNKNOWN).
+
+
+var mSkuSet = {};
+recoWsRows_(read, 'marketplaceSkus').forEach(function (mr) {
+if (recoWsStr_(mr.sku) !== sku || recoWsStr_(mr.company) !== scope.company
+|| recoWsStr_(mr.country) !== scope.country || recoWsStr_(mr.marketplace) !== scope.marketplace) return;
+var id = recoWsStr_(mr.marketplace_sku_id); if (id) mSkuSet[id] = 1;
+});
+var mSkuAll = Object.keys(mSkuSet);
+if (mSkuAll.length > 1) return { ok: false, reason: 'MARKETPLACE_SKU_AMBIGUOUS', detail: mSkuAll.join(','), blankDateRows: blankDates };
+var mSkuId = mSkuAll.length ? mSkuAll[0] : null;
+
+
+var scopeMktId = null;
+recoWsRows_(read, 'marketplaces').forEach(function (m) { if (scopeMktId) return; if (recoWsStr_(m.company) === scope.company && recoWsStr_(m.country) === scope.country && recoWsStr_(m.marketplace) === scope.marketplace) scopeMktId = recoWsStr_(m.marketplace_id) || null; });
+
+
+
+var contam = recoWsBuildContaminationFacts_(read, scope, sku, mSkuId);
+function compute(campaigns, events) {
+return KMCALC.normalizedAvgSalesPerDay({
+calcDate: calcYmd,
+scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: kmcalcChannel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
+weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
+});
+}
+
+function ownerErr(e) { return (e && e.message) ? String(e.message).replace(/^supplyPlanningCalculations:\s*/, '').slice(0, 140) : '?'; }
+
+
+
+var res;
+try { res = compute(contam.campaigns, contam.events); }
+catch (e) {
+var m = ownerErr(e);
+if ((contam.campaigns.length || contam.events.length) && /campaigns\[|events\[|marketplaceSkuId|marketplaceId/.test(m)) {
+return { ok: false, reason: 'SALES_BASIS_CONTAMINATION_UNRESOLVED', detail: m, blankDateRows: blankDates };
+}
+return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'run-rate owner error: ' + m, blankDateRows: blankDates };
+}
+
+
+
+
+
+
+if (res && res.source === 'weekly_7d' && !weeklyOk) {
+return { ok: false, reason: 'SALES_BASIS_WEEKLY_UNAVAILABLE', blankDateRows: blankDates,
+detail: 'normal days=' + res.normalDayCount + ' (below the 3-day rung), no readable weekly sales_units_7d @ '
++ scopeCountryC + '/' + recoWsStr_(scope.marketplace) + undatedNote() + srcNote() };
+}
+var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
+if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)', blankDateRows: blankDates };
+return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
+contaminationSource: contam.sourceStatus, blankDateRows: blankDates };
+}
+
+
+
+
+
+
+
+
+
+// D5F1-R2 / D5-V3: special events are passed with the calculation date, so an event that ENDED before D is never demand
+// (ending on D or in progress counts in full); the event demand date is its prep date (start - 45, OD-1 = B). Demand is
+// computed ONCE for the site - it is never split by warehouse (V3-3).
+// D5-V3-R3 (Owner m5 ruling, 2026-11-13): the line's `horizons` (Gap table / chart) keep every event at its prep date.
+// The AI may create an event's replenishment only from the event's first-suggestion Monday (start - 45 -> Monday on/before).
+// For each in-scope live event whose Monday is still AFTER the calculation date, the line also carries `aiHorizons` = the
+// SAME projection (same opening, incoming, carton, mode) without those events, and `aiGatedEvents` naming them. Read-only,
+// in-memory, no schema; 43_ / the Gap table ignore both fields.
+function recoWsAiGateEvents_(evtRows, scope, sku, calc) {
+var out = { rows: evtRows || [], gated: [] };
+if (typeof KMPD === 'undefined' || !KMPD || typeof KMPD.eventDates !== 'function' || typeof KMPD.scopedSpecialEventPreps !== 'function') return out;
+var cd = recoWsStr_(calc && calc.calculationDate); if (!/^\d{4}-\d{2}-\d{2}$/.test(cd)) return out;
+var preps = []; try { preps = KMPD.scopedSpecialEventPreps(evtRows, scope, sku, cd) || []; } catch (eP) { return out; }
+out.gated = preps.filter(function (p) { return p && p.firstSuggestionMonday && p.firstSuggestionMonday > cd; })
+.map(function (p) { return { startDate: p.startDate, prepDate: p.prepDate, firstSuggestionMonday: p.firstSuggestionMonday, qty: p.qty }; });
+if (!out.gated.length) return out;
+out.rows = (evtRows || []).filter(function (r) { var ed = null; try { ed = KMPD.eventDates(r); } catch (eD) { ed = null; } return !(ed && ed.firstSuggestionMonday && ed.firstSuggestionMonday > cd); });
+return out;
+}
 function recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination, demandMode, avgSalesPerDay) {
-  if (typeof KMHP === 'undefined' || !KMHP || typeof KMHP.projectHorizons !== 'function') return null;
-  if (!calc || !calc.calculationDate) return null;
-  var mode = (demandMode === 'sales_driven' || demandMode === 'forecast_driven') ? demandMode : 'forecast_driven';
-  var winMonths = recoWsHorizonWindowMonths_(calc.calculationDate, 90);
-  var hFc = {}, specialEventDemands = [];
-  if (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.adjustedRegularFc === 'function') {
-    // Forecast-Driven base demand (Authority E). Skipped by KMHP under sales_driven, but the special-event preps
-    // (Authority F) are model-agnostic and additive in BOTH paths, so they are always resolved from the ONE owner.
-    if (mode === 'forecast_driven') winMonths.forEach(function (ym) { var a = KMPD.adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym); if (a) hFc[ym] = a.adjusted; });
-    specialEventDemands = KMPD.scopedSpecialEventPreps(evtRows, scope, sku);
-  } else if (mode === 'forecast_driven') {
-    hFc = recoWsRegularForecastByMonth_(fcRows, scope, sku, winMonths);   // fallback: raw (KMPD absent)
-  }
-  var hr = KMHP.projectHorizons({ destination: destination || null, calculationDate: calc.calculationDate,
-    openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, specialEventDemands: specialEventDemands,
-    incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton,
-    demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null) });
-  return (hr && hr.ready) ? hr.horizons : null;
+if (typeof KMHP === 'undefined' || !KMHP || typeof KMHP.projectHorizons !== 'function') return null;
+if (!calc || !calc.calculationDate) return null;
+var mode = (demandMode === 'sales_driven' || demandMode === 'forecast_driven') ? demandMode : 'forecast_driven';
+var winMonths = recoWsHorizonWindowMonths_(calc.calculationDate, 90);
+var hFc = {}, specialEventDemands = [];
+if (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.adjustedRegularFc === 'function') {
+
+
+if (mode === 'forecast_driven') winMonths.forEach(function (ym) { var a = KMPD.adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym); if (a) hFc[ym] = a.adjusted; });
+try { specialEventDemands = KMPD.scopedSpecialEventPreps(evtRows, scope, sku, calc.calculationDate); } catch (eSev) { return null; }
+} else if (mode === 'forecast_driven') {
+hFc = recoWsRegularForecastByMonth_(fcRows, scope, sku, winMonths);
+}
+var hr = KMHP.projectHorizons({ destination: destination || null, calculationDate: calc.calculationDate,
+openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, specialEventDemands: specialEventDemands,
+incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton,
+demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null) });
+return (hr && hr.ready) ? hr.horizons : null;
 }
 
-// Source-proven per-SKU supply context from the projection's lifecycle-bucketed rows (KMPS.supplySourceEntries).
-// currentStockQty = Σ CURRENT_STOCK; qualifiedIncomingQty = Σ SHIPPED_IN_TRANSIT (F1-3 in-transit bucket). NOT invented.
+
+
 function recoWsSupplyBySku_(supplySourceEntries) {
-  var by = {};
-  (supplySourceEntries || []).forEach(function (e) {
-    var sku = recoWsStr_(e.sku); if (!sku) return;
-    if (!by[sku]) by[sku] = { currentStockQty: 0, qualifiedIncomingQty: 0 };
-    var q = recoWsNum_(e.quantity); if (q === null) return;
-    var bucket = recoWsStr_(e.lifecycle_bucket);
-    if (bucket === 'CURRENT_STOCK') by[sku].currentStockQty += q;
-    else if (bucket === 'SHIPPED_IN_TRANSIT') by[sku].qualifiedIncomingQty += q;
-  });
-  return by;
-}
-// calculatedGap per SKU from the productionRequest planning facts (KMPA attached it via the frozen calculateGap owner).
-function recoWsGapBySku_(planningFacts) {
-  var by = {};
-  (planningFacts || []).forEach(function (f) { var sku = recoWsStr_(f.sku || f.masterSku); if (sku && by[sku] === undefined && typeof f.calculatedGap === 'number') by[sku] = f.calculatedGap; });
-  return by;
+var by = {};
+(supplySourceEntries || []).forEach(function (e) {
+var sku = recoWsStr_(e.sku); if (!sku) return;
+if (!by[sku]) by[sku] = { currentStockQty: 0, qualifiedIncomingQty: 0 };
+var q = recoWsNum_(e.quantity); if (q === null) return;
+var bucket = recoWsStr_(e.lifecycle_bucket);
+if (bucket === 'CURRENT_STOCK') by[sku].currentStockQty += q;
+else if (bucket === 'SHIPPED_IN_TRANSIT') by[sku].qualifiedIncomingQty += q;
+});
+return by;
 }
 
-// ---- F1-4B-FM1-T pure transport helpers (row-object views + destination expansion; NO SpreadsheetApp) ----------
+function recoWsGapBySku_(planningFacts) {
+var by = {};
+(planningFacts || []).forEach(function (f) { var sku = recoWsStr_(f.sku || f.masterSku); if (sku && by[sku] === undefined && typeof f.calculatedGap === 'number') by[sku] = f.calculatedGap; });
+return by;
+}
+
+
 var RECO_WS_MONTH_ABBR_ = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
 function recoWsToRowObjects_(snap) {
-  if (!recoWsIsObj_(snap) || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return [];
-  var h = snap.headers.map(function (x) { return recoWsStr_(x); });
-  return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = r[c]; return o; });
+if (!recoWsIsObj_(snap) || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return [];
+var h = snap.headers.map(function (x) { return recoWsStr_(x); });
+return snap.rows.map(function (r) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = r[c]; return o; });
 }
 function recoWsUpcBySku_(skuRows) { var m = {}; (skuRows || []).forEach(function (r) { var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsNum_(r.units_per_carton); }); return m; }
 function recoWsSiteSkuBySku_(mskRows, scope) {
-  var m = {};
-  (mskRows || []).forEach(function (r) {
-    if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
-    var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.site_sku) || null;
-  });
-  return m;
-}
-// F1-7N-D-2h: per-SKU canonical fulfillment_model from marketplace_skus (SKU-level override). ONLY consulted when the
-// marketplace-level model is 'hybrid'; the value decides that SKU's destination lane (self_fulfilled→WAREHOUSE,
-// platform_fulfilled→MARKETPLACE, hybrid/blank/unknown→fail-closed). Returns the raw trimmed value (lowercased at use).
-function recoWsFulfillmentModelBySku_(mskRows, scope) {
-  var m = {};
-  (mskRows || []).forEach(function (r) {
-    if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
-    var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.fulfillment_model);
-  });
-  return m;
-}
-// Fulfillment authority: the scope's canonical marketplaces row. platform_fulfilled → MARKETPLACE; self_fulfilled →
-// WAREHOUSE; hybrid/blank/unknown → null (transport returns DESTINATION_AUTHORITY_UNRESOLVED — never guessed).
-function recoWsResolveFulfillment_(mktRows, scope) {
-  var rows = (mktRows || []).filter(function (r) { return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace; });
-  if (!rows.length) return { mode: null, row: null };
-  var active = rows.filter(function (r) { var st = recoWsStr_(r.status).toLowerCase(); return st === 'active' || r.status === true || st === ''; });
-  var pick = active.length ? active[0] : rows[0];
-  var fm = recoWsStr_(pick.fulfillment_model).toLowerCase();
-  if (fm === 'platform_fulfilled') return { mode: 'MARKETPLACE', row: pick };
-  if (fm === 'self_fulfilled') return { mode: 'WAREHOUSE', row: pick };
-  return { mode: null, row: pick };
-}
-// Σ Regular FC per month over M+1..M+4 for one sku+scope (month-abbrev columns + year). MISSING month → omitted
-// (KMPCX then emits MISSING_FORECAST_WEIGHT_SOURCE → a blocked line, never a fake 0). Conflicting values → omitted.
-function recoWsRegularForecastByMonth_(fcRows, scope, sku, months) {
-  var out = {};
-  (months || []).forEach(function (ym) {
-    var m = /^(\d{4})-(\d{2})$/.exec(ym); if (!m) return;
-    var year = Number(m[1]), abbr = RECO_WS_MONTH_ABBR_[Number(m[2]) - 1], vals = {};
-    (fcRows || []).forEach(function (r) {
-      if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace || recoWsStr_(r.sku) !== sku) return;
-      if (Number(r.year) !== year) return;
-      var v = r[abbr]; if (v !== '' && v !== null && v !== undefined && isFinite(Number(v))) vals[String(Number(v))] = Number(v);
-    });
-    var keys = Object.keys(vals);
-    if (keys.length === 1) out[ym] = vals[keys[0]];
-  });
-  return out;
+var m = {};
+(mskRows || []).forEach(function (r) {
+if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
+var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.site_sku) || null;
+});
+return m;
 }
 
-// ---- F1-4B-FM3c-2 canonical monthly-projection transport (server/runtime owned; delegates ALL math) ----------
-// Tiers T1..T4 = M+1..M+4 (the frozen KMPCX window); each tier's checkpoint/required-by = the tier month's first
-// calendar day (YYYY-MM-01) — an allowed derivation from the frozen monthly window (NO clock, NO day-horizon).
+
+
+function recoWsFulfillmentModelBySku_(mskRows, scope) {
+var m = {};
+(mskRows || []).forEach(function (r) {
+if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace) return;
+var s = recoWsStr_(r.sku); if (s && m[s] === undefined) m[s] = recoWsStr_(r.fulfillment_model);
+});
+return m;
+}
+
+
+function recoWsResolveFulfillment_(mktRows, scope) {
+var rows = (mktRows || []).filter(function (r) { return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country && recoWsStr_(r.marketplace) === scope.marketplace; });
+if (!rows.length) return { mode: null, row: null };
+var active = rows.filter(function (r) { var st = recoWsStr_(r.status).toLowerCase(); return st === 'active' || r.status === true || st === ''; });
+var pick = active.length ? active[0] : rows[0];
+var fm = recoWsStr_(pick.fulfillment_model).toLowerCase();
+if (fm === 'platform_fulfilled') return { mode: 'MARKETPLACE', row: pick };
+if (fm === 'self_fulfilled') return { mode: 'WAREHOUSE', row: pick };
+return { mode: null, row: pick };
+}
+
+
+function recoWsRegularForecastByMonth_(fcRows, scope, sku, months) {
+var out = {};
+(months || []).forEach(function (ym) {
+var m = /^(\d{4})-(\d{2})$/.exec(ym); if (!m) return;
+var year = Number(m[1]), abbr = RECO_WS_MONTH_ABBR_[Number(m[2]) - 1], vals = {};
+(fcRows || []).forEach(function (r) {
+if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.marketplace) !== scope.marketplace || recoWsStr_(r.sku) !== sku) return;
+if (Number(r.year) !== year) return;
+var v = r[abbr]; if (v !== '' && v !== null && v !== undefined && isFinite(Number(v))) vals[String(Number(v))] = Number(v);
+});
+var keys = Object.keys(vals);
+if (keys.length === 1) out[ym] = vals[keys[0]];
+});
+return out;
+}
+
+
+
+
 var RECO_WS_TIERS_ = ['T1', 'T2', 'T3', 'T4'];
 
-// One warehouse's OWN opening supply = Σ CURRENT_STOCK supplyRows for that warehouse_id. Missing (zero rows) →
-// null (UNKNOWN), never a fabricated 0; an explicit 0-qty row is a truthful 0. Per-warehouse (never pooled).
+
+
 function recoWsWarehouseOpeningStock_(supplySourceEntries, warehouseId) {
-  var sum = 0, found = false;
-  (supplySourceEntries || []).forEach(function (e) {
-    if (recoWsStr_(e.lifecycle_bucket) !== 'CURRENT_STOCK') return;
-    if (recoWsStr_(e.warehouse_id) !== warehouseId) return;
-    var q = recoWsNum_(e.quantity); if (q === null) return;
-    sum += q; found = true;
-  });
-  return found ? sum : null;
+var sum = 0, found = false;
+(supplySourceEntries || []).forEach(function (e) {
+if (recoWsStr_(e.lifecycle_bucket) !== 'CURRENT_STOCK') return;
+if (recoWsStr_(e.warehouse_id) !== warehouseId) return;
+var q = recoWsNum_(e.quantity); if (q === null) return;
+sum += q; found = true;
+});
+return found ? sum : null;
 }
 
-// F1-4B-FM5-R2b (§7) — PURE Order Planning OPENING-SUPPLY composition owner. It ADDS source-proven canonical
-// quantities into the SINGLE KMTPP opening supply: Site Stock (frozen MARKETPLACE Site Stock owner, Authority A)
-// + allocated eligible Overseas + allocated eligible Factory. It contains NO allocation math — the distribution is
-// the frozen KMMSA/KMALLOC's (§4/§5/§6); this helper only sums already-decided quantities. Missing Site Stock
-// (null) → null opening (KMTPP then fails closed; missing ≠ 0). An explicit 0 stays 0. Overseas/Factory absent
-// (no injected allocation) → 0 each, so opening == Site Stock and the monthly projection is byte-identical to the
-// pre-R2b behaviour (fully additive / backward-compatible). Returns the auditable composition facts (§7).
+
+
+
+
+
+
+
 function recoWsComposeOpeningSupply_(siteStockQty, allocatedOverseasQty, allocatedFactoryQty) {
-  var site = recoWsNum_(siteStockQty);
-  var ov = recoWsNum_(allocatedOverseasQty); if (ov === null) ov = 0;
-  var fc = recoWsNum_(allocatedFactoryQty); if (fc === null) fc = 0;
-  var opening = (site === null) ? null : (site + ov + fc);
-  return { siteStockQty: site, allocatedOverseasQty: ov, allocatedFactoryQty: fc, openingSupplyQty: opening };
+var site = recoWsNum_(siteStockQty);
+var ov = recoWsNum_(allocatedOverseasQty); if (ov === null) ov = 0;
+var fc = recoWsNum_(allocatedFactoryQty); if (fc === null) fc = 0;
+var opening = (site === null) ? null : (site + ov + fc);
+return { siteStockQty: site, allocatedOverseasQty: ov, allocatedFactoryQty: fc, openingSupplyQty: opening };
 }
 
-// Build the additive per-tier monthlyProjection for ONE canonical destination by delegating EVERY chronological
-// balance/carry-forward/count-once decision to the frozen KMTPP owner and EVERY per-tier carton suggestion to the
-// frozen KMCALC Monthly-CEIL owner. Returns null (→ line.monthlyProjection simply absent) when it cannot be built
-// TRUTHFULLY: KMTPP not bundled, no 4-month window, a missing forecast month, or KMTPP itself not ready (e.g.
-// opening supply unavailable). NEVER fabricates a number and NEVER re-implements gap/ceil math here.
-//   months          : ['YYYY-MM' × 4] (M+1..M+4)
-//   openingSupplyQty : canonical destination opening stock (number ≥0, or null → UNKNOWN → KMTPP fails closed)
-//   demandByMonth    : { 'YYYY-MM': qty } — must contain all 4 tier months (missing → truthful block, not 0)
-//   incomingEvents   : [{ incomingId, eta, qty, sourceType }] — already count-once, ETA-dated (marketplace
-//                      line.qualifiedEvents OR the warehouse-filtered warehouseQualifiedEvents; never reconstructed)
-//   unitsPerCarton   : canonical UPC for the carton owner (missing/invalid → suggestedOrderQty null + honest)
-//   destination      : canonical destination object (diagnostic passthrough into KMTPP)
-function recoWsBuildMonthlyProjection_(months, openingSupplyQty, demandByMonth, incomingEvents, unitsPerCarton, destination, preT1Demand, preT1Date) {
-  if (typeof KMTPP === 'undefined' || !KMTPP || typeof KMTPP.projectTimePhasedSupply !== 'function') return null;
-  if (!Array.isArray(months) || months.length !== 4) return null;
-  var demandEvents = [], i;
-  // F1-4B-FM3f-1 (Authority D): PRE-T1 current-month remaining demand consumed BEFORE T1 — a tier=null event dated
-  // at the current-month end (< T1 month-01), so KMTPP carries it forward into T1's opening. It is NOT a writable
-  // tier (never appears in the T1–T4 monthlyProjection array), only reduces the supply entering T1.
-  if (preT1Demand != null && isFinite(Number(preT1Demand)) && Number(preT1Demand) > 0 && recoWsStr_(preT1Date)) {
-    demandEvents.push({ demandId: 'PRE-T1', date: recoWsStr_(preT1Date), qty: Number(preT1Demand), demandType: 'CURRENT_MONTH_REMAINING', month: recoWsStr_(preT1Date).slice(0, 7), tier: null });
-  }
-  for (i = 0; i < 4; i++) {
-    var ym = months[i], q = demandByMonth ? demandByMonth[ym] : undefined;
-    if (q === null || q === undefined || !isFinite(Number(q))) return null;   // missing forecast month → truthful block (never coerced to 0)
-    demandEvents.push({ demandId: 'DMD-' + RECO_WS_TIERS_[i] + '-' + ym, date: ym + '-01', qty: Number(q), demandType: 'PLANNING_DEMAND', month: ym, tier: RECO_WS_TIERS_[i] });
-  }
-  var tierByMonth = {}; for (i = 0; i < 4; i++) tierByMonth[months[i]] = RECO_WS_TIERS_[i];
-  var inEvents = (incomingEvents || []).map(function (e) {
-    var eta = recoWsStr_(e.eta), ym2 = eta.slice(0, 7);
-    return { incomingId: recoWsStr_(e.incomingId) || null, availableDate: eta, qty: recoWsNum_(e.qty),
-      sourceType: recoWsStr_(e.sourceType) || null, tier: (tierByMonth[ym2] || null) };   // tier from ETA month only (else null → still carried by balance)
-  });
-  var proj = KMTPP.projectTimePhasedSupply({ destination: destination || null, openingSupplyQty: openingSupplyQty, demandEvents: demandEvents, incomingEvents: inEvents });
-  if (!proj || proj.ready !== true) return null;   // opening unavailable / invalid input → no fabricated monthly numbers
-  return (proj.monthlyProjection || []).map(function (r) {
-    // destinationGapQty = shortage after OPENING_DESTINATION_STOCK + QUALIFIED_INCOMING (KMTPP remainingGapQty).
-    // overseas/factory source coverage is the within-request Commit-2 slice → 0 here, so residualOrderNeedQty ==
-    // destinationGapQty for now. suggestedOrderQty = cartonized RESIDUAL NEW ORDER NEED (F1-4B-FM3f-1 §10).
-    var destinationGapQty = r.remainingGapQty;
-    var overseasCoveredQty = 0, factoryCoveredQty = 0;
-    var residualOrderNeedQty = (typeof destinationGapQty === 'number' && isFinite(destinationGapQty)) ? Math.max(0, destinationGapQty - overseasCoveredQty - factoryCoveredQty) : destinationGapQty;
-    var sug = null;
-    if (typeof residualOrderNeedQty === 'number' && isFinite(residualOrderNeedQty)) {
-      if (residualOrderNeedQty <= 0) sug = 0;
-      else if (typeof unitsPerCarton === 'number' && isFinite(unitsPerCarton) && unitsPerCarton > 0 && Math.floor(unitsPerCarton) === unitsPerCarton) {
-        try { sug = KMCALC.calculateSuggestedOrderQty({ netOrderNeed: residualOrderNeedQty, unitsPerCarton: unitsPerCarton }); } catch (e) { sug = null; }
-      } else sug = null;
-    }
-    return { tier: r.tier, month: r.month,
-      openingSupplyQty: r.openingSupplyQty, openingDestinationSupplyQty: r.openingSupplyQty,
-      incomingAddedQty: r.incomingAddedQty, qualifiedIncomingQty: r.incomingAddedQty,
-      demandQty: r.demandQty, coveredQty: r.coveredQty, remainingSupplyQty: r.remainingSupplyQty,
-      destinationGapQty: destinationGapQty, overseasCoveredQty: overseasCoveredQty, factoryCoveredQty: factoryCoveredQty,
-      remainingGapQty: r.remainingGapQty, residualOrderNeedQty: residualOrderNeedQty, suggestedOrderQty: sug };
-  });
+
+
+
+
+
+
+
+
+
+
+
+
+// b4 (Owner three-layer rule): the overseas transfer (and, when RECO_WS_FACTORY_STOCK_TO_PLATFORM_OPENING_ is false, the factory stock) is NOT
+// platform supply: it is consumed tier by tier (T1 first) against the platform gap and only lowers the FACTORY net need. Layer 1 constant:
+var RECO_WS_OVERSEAS_TO_PLATFORM_OPENING_ = false;      // true = AD1 (3PL pool added to the platform opening at day 0)
+var RECO_WS_FACTORY_STOCK_TO_PLATFORM_OPENING_ = false; // Q1 APPROVED (Owner 2026-11-21): factory finished stock is a separate source pool (never platform opening / DoS); true = AD1
+function recoWsBuildMonthlyProjection_(months, openingSupplyQty, demandByMonth, incomingEvents, unitsPerCarton, destination, preT1Demand, preT1Date, overseasTransferQty, factoryOffsetQty) {
+if (typeof KMTPP === 'undefined' || !KMTPP || typeof KMTPP.projectTimePhasedSupply !== 'function') return null;
+if (!Array.isArray(months) || months.length !== 4) return null;
+var demandEvents = [], i;
+
+
+
+if (preT1Demand != null && isFinite(Number(preT1Demand)) && Number(preT1Demand) > 0 && recoWsStr_(preT1Date)) {
+demandEvents.push({ demandId: 'PRE-T1', date: recoWsStr_(preT1Date), qty: Number(preT1Demand), demandType: 'CURRENT_MONTH_REMAINING', month: recoWsStr_(preT1Date).slice(0, 7), tier: null });
+}
+for (i = 0; i < 4; i++) {
+var ym = months[i], q = demandByMonth ? demandByMonth[ym] : undefined;
+if (q === null || q === undefined || !isFinite(Number(q))) return null;
+demandEvents.push({ demandId: 'DMD-' + RECO_WS_TIERS_[i] + '-' + ym, date: ym + '-01', qty: Number(q), demandType: 'PLANNING_DEMAND', month: ym, tier: RECO_WS_TIERS_[i] });
+}
+var tierByMonth = {}; for (i = 0; i < 4; i++) tierByMonth[months[i]] = RECO_WS_TIERS_[i];
+var inEvents = (incomingEvents || []).map(function (e) {
+var eta = recoWsStr_(e.eta), ym2 = eta.slice(0, 7);
+return { incomingId: recoWsStr_(e.incomingId) || null, availableDate: eta, qty: recoWsNum_(e.qty),
+sourceType: recoWsStr_(e.sourceType) || null, tier: (tierByMonth[ym2] || null) };
+});
+var proj = KMTPP.projectTimePhasedSupply({ destination: destination || null, openingSupplyQty: openingSupplyQty, demandEvents: demandEvents, incomingEvents: inEvents });
+if (!proj || proj.ready !== true) return null;
+var ovLeft_ = (typeof overseasTransferQty === 'number' && isFinite(overseasTransferQty) && overseasTransferQty > 0) ? overseasTransferQty : 0;   // b4
+var fcLeft_ = (typeof factoryOffsetQty === 'number' && isFinite(factoryOffsetQty) && factoryOffsetQty > 0) ? factoryOffsetQty : 0;   // b4 (Q1 false only)
+return (proj.monthlyProjection || []).map(function (r) {
+
+
+
+var destinationGapQty = r.remainingGapQty;
+var gapFin_ = (typeof destinationGapQty === 'number' && isFinite(destinationGapQty) && destinationGapQty > 0) ? destinationGapQty : 0;   // b4: FIFO over the tiers
+var overseasCoveredQty = Math.min(ovLeft_, gapFin_); ovLeft_ -= overseasCoveredQty;
+var factoryCoveredQty = Math.min(fcLeft_, gapFin_ - overseasCoveredQty); fcLeft_ -= factoryCoveredQty;
+var factoryShipQty = (typeof destinationGapQty === 'number' && isFinite(destinationGapQty)) ? gapFin_ - overseasCoveredQty : null;   // b5 Q1: what the factory must ship toward this platform tier
+var residualOrderNeedQty = (typeof destinationGapQty === 'number' && isFinite(destinationGapQty)) ? Math.max(0, destinationGapQty - overseasCoveredQty - factoryCoveredQty) : destinationGapQty;
+var sug = null;
+if (typeof residualOrderNeedQty === 'number' && isFinite(residualOrderNeedQty)) {
+if (residualOrderNeedQty <= 0) sug = 0;
+else if (typeof unitsPerCarton === 'number' && isFinite(unitsPerCarton) && unitsPerCarton > 0 && Math.floor(unitsPerCarton) === unitsPerCarton) {
+try { sug = KMCALC.calculateSuggestedOrderQty({ netOrderNeed: residualOrderNeedQty, unitsPerCarton: unitsPerCarton }); } catch (e) { sug = null; }
+} else sug = null;
+}
+return { tier: r.tier, month: r.month,
+openingSupplyQty: r.openingSupplyQty, openingDestinationSupplyQty: r.openingSupplyQty,
+incomingAddedQty: r.incomingAddedQty, qualifiedIncomingQty: r.incomingAddedQty,
+demandQty: r.demandQty, coveredQty: r.coveredQty, remainingSupplyQty: r.remainingSupplyQty,
+destinationGapQty: destinationGapQty, overseasCoveredQty: overseasCoveredQty, factoryCoveredQty: factoryCoveredQty,
+remainingGapQty: r.remainingGapQty, residualOrderNeedQty: residualOrderNeedQty, suggestedOrderQty: sug,
+factoryShipQty: factoryShipQty, factoryShipFromStockQty: factoryCoveredQty, newPurchaseQty: residualOrderNeedQty };   // b5 Q1: platform need = overseas transfer + factory ship; factory ship = from stock + new purchase
+});
 }
 
-// MARKETPLACE expansion → one canonical response line via the unified runtime (order-need; no source-pool allocator).
-// F1-4B-FM5-R2b: `supplyAllocationByReceiver` (optional, additive) carries the batch-decided per-receiver Overseas +
-// Factory allocation (keyed by the canonical KMMSA receiver key). When absent the monthly opening supply is Site
-// Stock only — byte-identical to the pre-R2b behaviour. The allocation is COMPOSED into the monthly opening supply
-// ONLY (order planning); the Inventory day-horizon (D18/D30/D45/D90) opening stays Site-Stock-only (§18 unchanged).
-// F1-SHIPMENT-INCOMING-R7C: canonical shipment-LINE incoming candidates, built ONCE per request (indexes cached
-// on `read`) by the SAME owner (KMSLS) that feeds the WAREHOUSE projection — so MARKETPLACE order-need incoming
-// never re-derives shipment physical qty / merged receiver identity from shipment headers. Physical grain =
-// shipment_lines; receiver FROZEN by dispatch lineage (shipping_plan_line_id → shipping_plan_lines → plans).
+
+
+
+
+
+
+
+
+
 function recoWsShipmentLineCandidates_(read) {
-  if (read.__slCandidates) return read.__slCandidates;
-  var snaps = read.snapshots || {};
-  read.__slCandidates = KMSLS.buildShipmentLineCandidates({
-    shipmentLines: recoWsToRowObjects_(snaps.shipmentLines),
-    shipments: recoWsToRowObjects_(snaps.shipments),
-    shippingPlanLines: recoWsToRowObjects_(snaps.shippingPlanLines),
-    shippingPlans: recoWsToRowObjects_(snaps.shippingPlans)
-  });
-  return read.__slCandidates;
+if (read.__slCandidates) return read.__slCandidates;
+var snaps = read.snapshots || {};
+read.__slCandidates = KMSLS.buildShipmentLineCandidates({
+shipmentLines: recoWsToRowObjects_(snaps.shipmentLines),
+shipments: recoWsToRowObjects_(snaps.shipments),
+shippingPlanLines: recoWsToRowObjects_(snaps.shippingPlanLines),
+shippingPlans: recoWsToRowObjects_(snaps.shippingPlans),
+shipmentLinkCountById: (typeof KMSLS.shipmentLinkCountsFromRows === 'function' && snaps.shipmentPlanLinks) ? KMSLS.shipmentLinkCountsFromRows(recoWsToRowObjects_(snaps.shipmentPlanLinks)) : undefined   // XCO-R15G projection
+});
+recoWsApplyPlanDates_(read);   // D5-V3-R5 (Owner ETA decision)
+return read.__slCandidates;
+}
+function recoWsApplyPlanDates_(read) {
+var map = read.__etaSourceByLineage = {};
+((read.__slCandidates && read.__slCandidates.candidates) || []).forEach(function (e) {
+var c = e && e.candidate; if (!c) return;
+var lk = recoWsStr_(c.lineageKey), st = recoWsStr_(c.status).toLowerCase();
+// D5-V3-R5C (F-1): the candidate's eta is already String(cell) (supply-candidates optStr), so a Date cell arrives as
+// 'Wed Nov 25 2026 ...'; the RAW shipments.eta cell of the snapshot is normalised instead (recoWsYmd_: Date cell,
+// 'YYYY/MM/DD', 'MM/DD/YYYY', ISO). The snapshot rows are only read, never changed.
+var sid = recoWsStr_(c.linkedShipmentId) || null, rawEta = sid ? recoWsShipEtaRaw_(read)[sid] : undefined;
+var etaN = recoWsYmd_((rawEta !== undefined && rawEta !== null && rawEta !== '') ? rawEta : c.eta);
+if (recoWsValidYmd_(etaN)) {
+if (recoWsStr_(c.eta) !== etaN) e.candidate = Object.assign({}, c, { eta: etaN });   // memory-only copy, ISO text - EVERY status (D5-V3-R5D, rule D2)
+if (lk) map[lk] = { dateSource: 'ETA', date: etaN, field: 'shipments.eta', estimated: false, shipmentId: sid }; return; }
+if (st !== 'draft' && st !== 'ready_to_ship') {   // D5-V3-R5D: shipped without any ETA -> not counted, not guessed, FLAGGED
+if (lk && RECO_WS_SHIPPED_ST_[st] && (recoWsNum_(c.quantityRemaining) || 0) > 0) map[lk] = { dateSource: 'ETA_MISSING', date: null, field: 'shipments.eta', estimated: false, label: RECO_WS_SHIPPED_ETA_MISSING_LABEL_, shipmentId: sid };   // D5-V3-R5E: remaining > 0 only
+return; }
+var pd = recoWsPlanDateOf_(read, c.linkedShippingPlanLineId);
+if (!pd) { if (lk) map[lk] = { dateSource: 'UNDETERMINED', date: null, field: null, estimated: false, label: RECO_WS_ARRIVAL_UNDETERMINED_LABEL_, shipmentId: sid }; return; }
+// a COPY carries the plan date; the shipment row and the canonical snapshot are untouched (nothing is ever written back)
+e.candidate = Object.assign({}, c, { eta: pd.date });
+if (lk) map[lk] = { dateSource: 'PLAN_DATE', date: pd.date, field: pd.field, estimated: true, label: RECO_WS_PLAN_DATE_LABEL_, planLineId: pd.planLineId, draftLineId: pd.draftLineId, shipmentId: sid };
+});
 }
 
-// F1-7M-E REUSE_MAP — per-request memoized {headers,rows} -> row-object materialization. The recommendation runtime
-// loops once PER SKU (recoWsScopeSkus_ / the for-loop in handleRecommendationWorkspaceGet_), and the MARKETPLACE +
-// WAREHOUSE expanders each re-ran recoWsToRowObjects_ for snapshots that are CONSTANT across SKUs (O(N_skus x M_tables)
-// redundant materialization). Cache the materialized row-objects on `read` — the SAME per-request cache precedent as
-// read.__slCandidates (already shared across the per-SKU loop) — so each snapshot is materialized ONCE per request.
-// OUTPUT-IDENTICAL: recoWsToRowObjects_ is deterministic and the consumers are PURE (read-only filter/map/indexOf that
-// build new structures; they never mutate the row-objects), so the cached array is the SAME deep value every SKU would
-// have rebuilt. A snapshot absent from `read.snapshots` yields [] — identical to recoWsToRowObjects_(undefined).
+
+
+
+
+
+
+
+
+
+// ============================================================================================================
+// D5-V3-R5 (Owner decisions 2026-11-18)
+// ============================================================================================================
+function recoWsValidYmd_(v) { var t = recoWsStr_(v); return /^\d{4}-\d{2}-\d{2}$/.test(t) && !isNaN(Date.parse(t + 'T00:00:00Z')); }
+function recoWsSiteKey_(c, k, m) { return [recoWsStr_(c), recoWsStr_(k), recoWsStr_(m)].join('||').toLowerCase(); }
+// (1a) warehouse -> site inventory shares, read from the SAME Script Property config the allocation rules come from
+// (KM_WAREHOUSE_ALLOCATION_CONFIG, owner 50_). Shape: scopes[<company||country||marketplace>].warehouses[i] =
+// { warehouse_id, forecast_ratio, sales_ratio, inventory_share } - inventory_share is a FRACTION 0..1 of the warehouse's
+// available pool that belongs to THIS site. Read-only here; raw values are kept so an invalid one can be reported.
+function recoWsReadInventoryShares_() {
+var out = { available: false, byWh: {}, error: null };
+try {
+if (typeof warehouseAllocationParseConfig_ !== 'function' || typeof warehouseAllocationConfigIo_ !== 'function') { out.error = 'CONFIG_READER_UNAVAILABLE'; return out; }
+var cfg = warehouseAllocationParseConfig_(warehouseAllocationConfigIo_().getConfig()) || {};
+out.available = true;
+var scopes = cfg.scopes || {};
+Object.keys(scopes).forEach(function (k) {
+var sc = scopes[k]; if (!sc || !Array.isArray(sc.warehouses)) return;
+var sk = recoWsSiteKey_(sc.company, sc.country, sc.marketplace);
+sc.warehouses.forEach(function (w) {
+var wid = recoWsStr_(w && (w.warehouse_id || w.warehouseId)); if (!wid) return;
+var has = !!w && (Object.prototype.hasOwnProperty.call(w, 'inventory_share') || Object.prototype.hasOwnProperty.call(w, 'inventoryShare'));
+var raw = has ? (w.inventory_share !== undefined ? w.inventory_share : w.inventoryShare) : undefined;
+(out.byWh[wid] = out.byWh[wid] || {})[sk] = { present: has && raw !== null && raw !== '' && raw !== undefined, raw: (raw === undefined ? null : raw) };
+});
+});
+} catch (e) { out.available = false; out.error = 'CONFIG_READ_FAILED: ' + String(e && e.message || e).slice(0, 120); }
+return out;
+}
+// (1a)+(1c) the share of warehouse `wid` that belongs to site `siteKey`. linkedSiteKeys = every site whose valid setting
+// links `wid` (this site included). Rules (no normalising, no demand weights, never a guess):
+//   * a stated share must be a number in [0, 1]; a non-number / negative / > 1 value -> UNKNOWN for this site
+//   * the stated shares of ALL linked sites must sum to <= 100%; > 100% -> UNKNOWN for every linked site; a linked
+//     site's invalid value makes that sum unverifiable -> UNKNOWN as well
+//   * no stated share: a warehouse linked to this site ONLY belongs to it in full (factor 1, as before); a warehouse
+//     linked to several sites -> UNKNOWN (SHARE_MISSING)
+// D5-V3-R5E share engine (Owner gate 2026-11-18). A share is a decimal fraction in [0, 1] with AT MOST 4 decimal places,
+// held as an exact integer number of basis points (bp, 0..10000). Anything else is an ERROR for that warehouse:
+//   SHARE_NOT_A_NUMBER / SHARE_NEGATIVE / SHARE_OVER_100 / WAREHOUSE_SHARE_PRECISION (more than 4 decimals, or a binary
+//   number farther than 1e-7 bp from a whole bp - i.e. not reliably a 4-decimal value; 0.29999999995 is an error).
+// No rounding happens anywhere: bp are exact, q x bp is an exact integer (q <= RECO_WS_SHARE_MAX_POOL_), floor is exact.
+var RECO_WS_SHARE_MAX_POOL_ = 900719925474;   // q x 10000 and q x bp stay exact (< 2^53)
+function recoWsShareParse_(e) {
+if (!e || !e.present) return { present: false, ok: false };
+var raw = e.raw;
+if (typeof raw === 'number') {
+if (!isFinite(raw)) return { present: true, ok: false, reason: 'SHARE_NOT_A_NUMBER', raw: raw };
+if (raw < 0) return { present: true, ok: false, reason: 'SHARE_NEGATIVE', raw: raw };
+if (raw > 1) return { present: true, ok: false, reason: 'SHARE_OVER_100', raw: raw };
+// D5-V3-R5F (m-4): a number is judged by its SHORTEST decimal form (String(v) - exactly what was written in the JSON); no
+// tolerance at all. 0.299999999999 stays 12 decimals -> PRECISION; 0.29 is '0.29' -> 2900 bp exactly.
+var tn = String(raw), mn = /^(\d+)(?:\.(\d+))?$/.exec(tn);
+if (!mn) return { present: true, ok: false, reason: 'WAREHOUSE_SHARE_PRECISION', raw: raw };   // exponent form (e.g. 5e-7)
+var fn = (mn[2] || '').replace(/0+$/, '');
+if (fn.length > 4) return { present: true, ok: false, reason: 'WAREHOUSE_SHARE_PRECISION', raw: raw };
+return { present: true, ok: true, bp: Number(mn[1]) * 10000 + Number((fn + '0000').slice(0, 4)) };
+}
+if (typeof raw === 'string') {
+var t = raw.trim(), m = /^(-?)(\d+)(?:\.(\d+))?$/.exec(t);
+if (!m) return { present: true, ok: false, reason: 'SHARE_NOT_A_NUMBER', raw: raw };
+var n = Number(t);
+if (n < 0) return { present: true, ok: false, reason: 'SHARE_NEGATIVE', raw: raw };
+if (n > 1) return { present: true, ok: false, reason: 'SHARE_OVER_100', raw: raw };
+var fs3 = (m[3] || '').replace(/0+$/, '');   // D5-V3-R5F: trailing zeros allowed ('0.123400' == 0.1234); > 4 significant decimals -> error
+if (fs3.length > 4) return { present: true, ok: false, reason: 'WAREHOUSE_SHARE_PRECISION', raw: raw };
+return { present: true, ok: true, bp: Number(m[2]) * 10000 + Number((fs3 + '0000').slice(0, 4)) };
+}
+return { present: true, ok: false, reason: 'SHARE_NOT_A_NUMBER', raw: raw };
+}
+// exact floor(q x bp / 10000); bp 10000 returns q unchanged (any finite q >= 0); otherwise q must be a whole number <= max
+// D5-V3-R5F (N-9): why a quantity cannot be split - over the exact-arithmetic cap, or not a whole number
+function recoWsQtyUnsplittable_(q, prefix) { return (typeof q === 'number' && isFinite(q) && Math.floor(q) === q && q > RECO_WS_SHARE_MAX_POOL_) ? prefix + '_TOO_LARGE' : prefix + '_NOT_WHOLE'; }
+function recoWsShareSplit_(q, bp) {
+if (bp === 10000) return (typeof q === 'number' && isFinite(q) && q >= 0) ? q : null;
+if (!(typeof q === 'number' && Math.floor(q) === q && q >= 0 && q <= RECO_WS_SHARE_MAX_POOL_)) return null;
+var p = q * bp; return (p - (p % 10000)) / 10000;
+}
+// the share of `wid` for `siteKey`; linkedSiteKeys = every site whose valid rule links `wid` (this site included).
+// warehouseLevel=true -> nobody can count this warehouse (an invalid value anywhere, a sum > 100%, config unreadable).
+function recoWsInventoryShareOf_(shares, wid, siteKey, linkedSiteKeys) {
+var shared = linkedSiteKeys.length > 1;
+if (!shares || shares.available !== true) {
+return shared ? { factor: null, unknown: { reason: 'SHARE_CONFIG_UNAVAILABLE', detail: (shares && shares.error) || null }, warehouseLevel: true, bpBySite: {}, linkedKeys: linkedSiteKeys.slice() }
+: { factor: 1, bp: 10000, source: 'SOLE_SITE_FULL', bpBySite: {}, linkedKeys: linkedSiteKeys.slice() };
+}
+var byS = shares.byWh[wid] || {}, parsed = {}, invalid = [], sumBp = 0, bpBySite = {};
+linkedSiteKeys.forEach(function (sk) { var p = recoWsShareParse_(byS[sk]); parsed[sk] = p; bpBySite[sk] = p.ok ? p.bp : null; if (p.present && !p.ok) invalid.push(sk); else if (p.ok) sumBp += p.bp; });
+var mine = parsed[siteKey] || { present: false, ok: false }, base = { bpBySite: bpBySite, linkedKeys: linkedSiteKeys.slice() };
+function u(o) { for (var k in base) if (Object.prototype.hasOwnProperty.call(base, k)) o[k] = base[k]; return o; }
+if (invalid.length) return u({ factor: null, unknown: { reason: (invalid.indexOf(siteKey) !== -1) ? mine.reason : 'SHARE_SUM_UNVERIFIABLE', value: mine.present ? mine.raw : undefined, invalidAt: invalid.sort() }, warehouseLevel: true });
+if (sumBp > 10000) return u({ factor: null, unknown: { reason: 'SHARE_SUM_OVER_100', sumBp: sumBp }, warehouseLevel: true });
+if (!mine.present) return shared ? u({ factor: null, unknown: { reason: 'SHARE_MISSING' }, warehouseLevel: false }) : u({ factor: 1, bp: 10000, source: 'SOLE_SITE_FULL' });
+return u({ factor: mine.bp / 10000, bp: mine.bp, source: 'INVENTORY_SHARE' });
+}
+// reconciliation of ONE quantity q of warehouse W across all linked sites, exact in units of 1/10000:
+//   q x 10000 = C (counted, every site with a valid share) + R (rounding remainder) + U (share assigned to no site) + N (not counted)
+function recoWsShareReconcile_(q, sh, mySiteKey) {
+var out = { poolQty: q, perSite: [], countedQty: 0, roundingRemainderQty: 0, unassignedQty: 0, notCountedQty: 0, notCountedReason: null, reconciled: false, check: null };
+var keys = (sh.linkedKeys || []).slice().sort();
+var whole = (typeof q === 'number' && Math.floor(q) === q && q >= 0 && q <= RECO_WS_SHARE_MAX_POOL_);
+if (!whole) {   // a non-whole / out-of-range pool cannot be split exactly: never split, never guessed
+var full = sh.source === 'SOLE_SITE_FULL' && !sh.unknown;
+out.perSite = keys.map(function (k) { return { siteKey: k, shareBp: full ? 10000 : null, countedQty: full ? q : 0 }; });
+if (full) { out.countedQty = q; } else { out.notCountedQty = q; out.notCountedReason = recoWsQtyUnsplittable_(q, 'WAREHOUSE_POOL'); }
+out.reconciled = true; out.check = 'not split (pool not a whole number)'; return out;
+}
+var Q = q * 10000, C = 0, R = 0, U = 0, N = 0, sumB = 0;
+if (sh.unknown && sh.warehouseLevel) {
+N = Q; out.notCountedReason = sh.unknown.reason;
+out.perSite = keys.map(function (k) { return { siteKey: k, shareBp: null, countedQty: 0, status: 'NOT_COUNTED' }; });
+} else {
+keys.forEach(function (k) {
+var bp = sh.bpBySite[k]; if ((bp === null || bp === undefined) && sh.source === 'SOLE_SITE_FULL' && k === mySiteKey) bp = 10000;
+if (bp === null || bp === undefined) { out.perSite.push({ siteKey: k, shareBp: null, countedQty: 0, status: 'NO_VALID_SHARE' }); return; }
+var c = recoWsShareSplit_(q, bp); out.perSite.push({ siteKey: k, shareBp: bp, countedQty: c, status: 'COUNTED' }); C += c * 10000; sumB += bp;
+});
+R = q * sumB - C; U = Q - q * sumB;
+}
+out.countedQty = C / 10000; out.roundingRemainderQty = R / 10000; out.unassignedQty = U / 10000; out.notCountedQty = N / 10000;
+out.reconciled = (Q === C + R + U + N) && C >= 0 && R >= 0 && U >= 0 && N >= 0;
+out.check = 'pool x 10000: ' + Q + ' = counted ' + C + ' + rounding ' + R + ' + unassigned ' + U + ' + not counted ' + N;
+return out;
+}
+// ======== D5-V3-R5E (Owner 2026-11-18): IN-TRANSIT IS LINEAGE-FIRST ========
+// An incoming quantity bound for a member warehouse belongs to the site its frozen Plan/Shipment lineage names (KMSLS
+// receiver resolution - the existing rules, incl. cross-company). Only a quantity that cannot be attributed to a site
+// (receiver UNRESOLVED, e.g. a merged/MULTI line without a plan line, or a non-shipment event) of a SHARED warehouse is
+// split by the user-specified ratio (RECO_WS_INTRANSIT_RATIO_SOURCE_), each site floor(q x bp / 10000) - never more than
+// the unreceived quantity q itself. Confirmed goods of one site are never redistributed to another.
+var RECO_WS_INTRANSIT_RATIO_SOURCE_ = 'inventory_share';   // ONE source constant; alternative 'forecast_ratio' (50_ forecast_ratio)
+function recoWsLineageByKey_(read) {
+if (!read.__lineageByKey) { read.__lineageByKey = {};
+((recoWsShipmentLineCandidates_(read).candidates) || []).forEach(function (e) { var c = (e && e.candidate) || {}; var lk = recoWsStr_(c.lineageKey); if (!lk) return;
+var ok = recoWsStr_(c.receiverResolutionStatus).toUpperCase() === 'RESOLVED' && !!recoWsStr_(c.marketplace);
+read.__lineageByKey[lk] = { resolved: ok, siteKey: ok ? recoWsSiteKey_(c.company, c.country, c.marketplace) : null, company: recoWsStr_(c.company), reason: c.receiverResolutionReason || null, shipmentId: recoWsStr_(c.linkedShipmentId) || null }; }); }
+return read.__lineageByKey;
+}
+function recoWsIntransitRatio_(sh, wid, linkedKeys, fcRatioByWh) {
+if (RECO_WS_INTRANSIT_RATIO_SOURCE_ === 'forecast_ratio') {
+var by = (fcRatioByWh || {})[wid] || {}, bpBySite = {}, sum = 0, bad = null;
+linkedKeys.forEach(function (k) { var v = by[k]; var p = recoWsShareParse_({ present: v !== undefined && v !== null && v !== '', raw: v }); bpBySite[k] = p.ok ? p.bp : null; if (p.present && !p.ok) bad = p.reason; else if (p.ok) sum += p.bp; });
+if (bad) return { source: 'forecast_ratio', bpBySite: {}, unknown: bad };
+if (sum > 10000) return { source: 'forecast_ratio', bpBySite: {}, unknown: 'SHARE_SUM_OVER_100' };
+return { source: 'forecast_ratio', bpBySite: bpBySite, unknown: null };
+}
+if (sh.unknown && sh.warehouseLevel) return { source: 'inventory_share', bpBySite: {}, unknown: sh.unknown.reason };
+return { source: 'inventory_share', bpBySite: sh.bpBySite || {}, unknown: null };
+}
+// attribute the incoming events of ONE member warehouse; exact reconciliation in units of 1/10000:
+//   incoming x 10000 = counted (all sites) + rounding + unassigned + not counted
+function recoWsIncomingAttribute_(evs, sh, mySiteKey, myCompany, lin, ratio) {
+var linked = (sh.linkedKeys && sh.linkedKeys.length) ? sh.linkedKeys.slice() : [mySiteKey];
+if (linked.indexOf(mySiteKey) === -1) linked.push(mySiteKey);
+var shared = linked.length > 1, per = {}, notBy = {}, U = { pool: 0, counted: 0, round: 0, unassigned: 0, notc: 0 };
+var out = { ratioSource: ratio.source, poolQty: 0, perSite: [], countedForThisSite: 0, countedQty: 0, roundingRemainderQty: 0, unassignedQty: 0, notCountedQty: 0, notCountedByReason: {}, ratioEvents: 0, reconciled: true, events: [] };
+function add(k, q) { per[k] = (per[k] || 0) + q; U.counted += q * 10000; }
+function notc(q, why) { notBy[why] = (notBy[why] || 0) + q; U.notc += q * 10000; }
+(evs || []).forEach(function (e) {
+var q = recoWsNum_(e.qty); if (q === null) return;
+U.pool += q * 10000; out.poolQty += q;
+var L = lin[recoWsStr_(e.incomingId)] || null, mode, mine = 0;
+if (e.crossCompanyHeader) { mode = 'CROSS_COMPANY_HEADER'; notc(q, mode); }   // D5-V3-R5F (m-6)
+else if (L && L.resolved) {
+if (L.company && myCompany && L.company !== myCompany) { mode = 'CROSS_COMPANY_LINEAGE'; notc(q, mode); }
+else if (L.siteKey === mySiteKey) { mode = 'LINEAGE'; mine = q; add(mySiteKey, q); }
+else if (linked.indexOf(L.siteKey) !== -1) { mode = 'LINEAGE_OTHER_SITE'; add(L.siteKey, q); }
+else { mode = 'LINEAGE_SITE_NOT_IN_POOL'; notc(q, mode); }
+} else if (!shared) { mode = 'SOLE_SITE'; mine = q; add(mySiteKey, q); }
+else if (ratio.unknown) { mode = 'RATIO_UNKNOWN'; notc(q, ratio.unknown); }
+else if (!(Math.floor(q) === q && q >= 0 && q <= RECO_WS_SHARE_MAX_POOL_)) { mode = recoWsQtyUnsplittable_(q, 'INCOMING_QTY'); notc(q, mode); }
+else {
+mode = 'RATIO'; out.ratioEvents++; var sumB = 0, C = 0;
+linked.forEach(function (k) { var bp = ratio.bpBySite[k]; if (bp === null || bp === undefined) return; var c = recoWsShareSplit_(q, bp); per[k] = (per[k] || 0) + c; C += c * 10000; sumB += bp; if (k === mySiteKey) mine = c; });
+U.counted += C; U.round += q * sumB - C; U.unassigned += q * 10000 - q * sumB;
+var myBp = ratio.bpBySite[mySiteKey]; if (myBp === null || myBp === undefined) mode = 'RATIO_UNKNOWN';   // D5-V3-R5F (m-5): this site has no valid ratio
+}
+out.countedForThisSite += mine;
+out.events.push({ incomingId: e.incomingId || null, sourceType: e.sourceType || null, qty: q, mode: mode, lineageSite: (L && L.resolved) ? L.siteKey : null, lineageReason: (L && !L.resolved) ? L.reason : null, countedForThisSite: mine, __src: e });
+});
+out.countedQty = U.counted / 10000; out.roundingRemainderQty = U.round / 10000; out.unassignedQty = U.unassigned / 10000; out.notCountedQty = U.notc / 10000; out.notCountedByReason = notBy;
+out.reconciled = Math.abs(U.pool - (U.counted + U.round + U.unassigned + U.notc)) < 1e-6 && U.round >= 0 && U.unassigned >= 0;
+out.check = 'incoming x 10000: ' + U.pool + ' = counted ' + U.counted + ' + rounding ' + U.round + ' + unassigned ' + U.unassigned + ' + not counted ' + U.notc;
+out.perSite = Object.keys(per).sort().map(function (k) { return { siteKey: k, countedQty: per[k] }; });
+return out;
+}
+// (2) missing ETA -> the PLAN date through the frozen lineage: shipment_lines.shipping_plan_line_id ->
+// shipping_plan_lines.source_reason 'line:<allocation_draft_line_id>' -> shipping_allocation_draft_lines.expected_arrival,
+// else .required_by_date. It is a PLANNED date, never an ETA: tagged PLAN_DATE + estimated, used in memory only and NEVER
+// written back to the Shipment. The draft-line table is read lazily, once per request, only when such a shipment exists.
+function recoWsPlanDateOf_(read, planLineId) {
+planLineId = recoWsStr_(planLineId); if (!planLineId) return null;
+if (!read.__planLineById) { read.__planLineById = {}; recoWsRows_(read, 'shippingPlanLines').forEach(function (r) { var id = recoWsStr_(r.shipping_plan_line_id); if (id) read.__planLineById[id] = r; }); }
+var pl = read.__planLineById[planLineId]; if (!pl) return null;
+var m = /(?:^|\|)line:([^|]+)/.exec(recoWsStr_(pl.source_reason)); if (!m) return null;
+var dlId = recoWsStr_(m[1]);
+if (!read.__draftLineById) {
+read.__draftLineById = {}; var rows = [];
+try { if (read.__poHeaderSs && typeof gapReadObjects_ === 'function') rows = gapReadObjects_(read.__poHeaderSs, 'shipping_allocation_draft_lines') || []; } catch (eR) { rows = []; }
+rows.forEach(function (r) { var id = recoWsStr_(r.allocation_draft_line_id); if (id) read.__draftLineById[id] = r; });
+}
+var dl = read.__draftLineById[dlId]; if (!dl) return null;
+var ea = recoWsYmd_(dl.expected_arrival), rb = recoWsYmd_(dl.required_by_date);
+if (recoWsValidYmd_(ea)) return { date: ea, field: 'shipping_allocation_draft_lines.expected_arrival', planLineId: planLineId, draftLineId: dlId };
+if (recoWsValidYmd_(rb)) return { date: rb, field: 'shipping_allocation_draft_lines.required_by_date', planLineId: planLineId, draftLineId: dlId };
+return null;
+}
+var RECO_WS_PLAN_DATE_LABEL_ = '依計畫日期，非 ETA (estimated from the plan date, not an ETA)';
+var RECO_WS_ARRIVAL_UNDETERMINED_LABEL_ = '到貨日未定：ETA 與計畫日期都沒有；未計入、未猜日期、未回補工廠池 (arrival date undetermined: no ETA and no plan date; not counted, not dated by guess, not returned to the factory pool)';
+// the date source of every dated / undated incoming Shipment line of one SKU, for the response (page marker)
+// D5-V3-R5E: ONE definition on both paths - counted = the entry is in the line's supply set (the incoming events the
+// projection receives) AND its date is on or before the D90 required-by date (calculation date + 90 days).
+function recoWsHorizonEnd_(calc) { var d = recoWsStr_(calc && calc.calculationDate); return /^\d{4}-\d{2}-\d{2}$/.test(d) ? new Date(Date.parse(d + 'T00:00:00Z') + 90 * 864e5).toISOString().slice(0, 10) : null; }
+function recoWsMonthsEnd_(months) { var m = recoWsStr_((months || [])[(months || []).length - 1]); var a = /^(\d{4})-(\d{2})$/.exec(m); return a ? new Date(Date.UTC(Number(a[1]), Number(a[2]), 0)).toISOString().slice(0, 10) : null; }
+// D5-V3-R5F (m-3): `counted` is defined PER CALCULATION - countedInventory: in the Inventory supply set and dated on/before
+// the D90 required-by date; countedOrderPlanning: in the Order Planning supply set and dated on/before the end of T4.
+// `counted` stays as the Inventory flag (unchanged name). The label never says 'not counted' - the page decides per calculation.
+function recoWsIncomingDateSources_(read, keys, countedIds, horizonEnd, opIds, opEnd) {
+var map = read.__etaSourceByLineage || {}, out = [];
+(keys || []).forEach(function (k) { var lk = recoWsStr_(k && k.lineageKey); var e = map[lk]; if (!e) return;
+var inSet = (e.dateSource === 'ETA' || e.dateSource === 'PLAN_DATE') && !!countedIds && (k.ids || [lk]).some(function (x) { return !!countedIds[recoWsStr_(x)]; });
+var inHorizon = !!e.date && (!horizonEnd || e.date <= horizonEnd);
+var counted = inSet && inHorizon;
+var label = e.label || null;
+var dated = (e.dateSource === 'ETA' || e.dateSource === 'PLAN_DATE');
+var opInSet = dated && !!opIds && (k.ids || [lk]).some(function (x) { return !!opIds[recoWsStr_(x)]; });
+var opInHorizon = !!e.date && (!opEnd || e.date <= opEnd);
+out.push({ shipmentId: recoWsStr_(k.shipmentId) || recoWsStr_(e.shipmentId) || null, lineageKey: lk, qty: recoWsNum_(k.qty), date: e.date, dateSource: e.dateSource, counted: counted, countedInventory: counted, countedOrderPlanning: opInSet && opInHorizon, inSupplySet: inSet, withinHorizon: inHorizon, inOrderPlanningSet: opInSet, withinOrderPlanningHorizon: opInHorizon, inventoryHorizonEnd: horizonEnd || null, orderPlanningHorizonEnd: opEnd || null,
+estimated: e.estimated === true, sourceField: e.field, label: label, planLineId: e.planLineId || null, draftLineId: e.draftLineId || null }); });
+return out;
+}
+// D5-V3-R5D: raw shipments.eta cells by shipment_id - the FIRST row of a duplicated id wins, exactly as core (KMSLS
+// indexBy) resolves it; duplicated ids are listed in read.__shipEtaDupIds. Read-only.
+function recoWsShipEtaRaw_(read) {
+if (!read.__shipEtaRawById) { read.__shipEtaRawById = {}; read.__shipEtaDupIds = [];
+recoWsRows_(read, 'shipments').forEach(function (r) { var id0 = recoWsStr_(r.shipment_id); if (!id0) return;
+if (Object.prototype.hasOwnProperty.call(read.__shipEtaRawById, id0)) { if (read.__shipEtaDupIds.indexOf(id0) === -1) read.__shipEtaDupIds.push(id0); return; }
+read.__shipEtaRawById[id0] = r.eta; }); }
+return read.__shipEtaRawById;
+}
+function recoWsSidByLineage_(read) {
+if (!read.__sidByLineage) { read.__sidByLineage = {}; ((recoWsShipmentLineCandidates_(read).candidates) || []).forEach(function (e) { var c = (e && e.candidate) || {}; var lk = recoWsStr_(c.lineageKey); if (lk) read.__sidByLineage[lk] = recoWsStr_(c.linkedShipmentId); }); }
+return read.__sidByLineage;
+}
+// a source-projection event's ETA, normalised from the RAW cell of its shipment (Date cell / 'YYYY/MM/DD' / ISO)
+function recoWsEventEtaYmd_(read, lineageKey, eta) {
+var sid = recoWsSidByLineage_(read)[recoWsStr_(lineageKey)], raw = sid ? recoWsShipEtaRaw_(read)[sid] : undefined;
+var y = recoWsYmd_((raw !== undefined && raw !== null && raw !== '') ? raw : eta);
+return recoWsValidYmd_(y) ? y : eta;
+}
+var RECO_WS_SHIPPED_ST_ = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1 };   // A-DELTA1 P0-1: `arrived` (at the destination, not received) is still incoming - never dropped
+var RECO_WS_SHIPPED_ETA_MISSING_LABEL_ = '已出貨但沒有 ETA：未計入、未猜日期 (shipped without an ETA: not counted, not dated by guess)';
+var RECO_WS_NOT_COUNTED_LABEL_ = '未計入此計算 (not counted in this calculation)';
+// D5-V3-R5E: duplicate ids in shipments (shipment_id) / shipment_lines (shipment_line_id). Rows equal in EVERY cell are
+// IDENTICAL - counted once (the in-memory view keeps the first; the sheet is never touched) and reported. Rows that differ
+// in ANY cell CONFLICT - kept as they are, reported, and every line they touch is BLOCKED (SHIPMENT_DUPLICATE_CONFLICT).
+function recoWsCellKey_(v) { if (Object.prototype.toString.call(v) === '[object Date]') return 'D:' + v.getTime(); return (typeof v) + ':' + String(v); }
+var RECO_WS_DUP_CACHE_ = (typeof WeakMap === 'function') ? new WeakMap() : null;   // D5-V3-R5F (M-1): scan cache keyed by the shared snapshots map
+function recoWsDupScan_(snaps, key, idCol) {
+var out = { identical: {}, conflict: {} }, snap = snaps && snaps[key];
+if (!recoWsIsObj_(snap) || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return out;
+var H = snap.headers.map(function (x) { return recoWsStr_(x); }), ix = H.indexOf(idCol); if (ix < 0) return out;
+var groups = {}, order = [];
+snap.rows.forEach(function (r, i) { var id = recoWsStr_(r[ix]); if (!id) return; if (!groups[id]) { groups[id] = []; order.push(id); } groups[id].push(i); });
+var drop = {};
+order.forEach(function (id) { var g = groups[id]; if (g.length < 2) return;
+var first = snap.rows[g[0]], diff = [];
+g.slice(1).forEach(function (i) { var r = snap.rows[i]; H.forEach(function (h, c) { if (recoWsCellKey_(r[c]) !== recoWsCellKey_(first[c]) && diff.indexOf(h) === -1) diff.push(h); }); });
+if (!diff.length) { out.identical[id] = { rows: g.length }; g.slice(1).forEach(function (i) { drop[i] = 1; }); }
+else { var info = { rows: g.length, fields: diff.sort(), marketplaces: [], warehouses: [] };
+var mi = H.indexOf('marketplace'), wi = H.indexOf('destination_warehouse_id'), wi2 = H.indexOf('warehouse_id');
+g.forEach(function (i) { var r = snap.rows[i]; if (mi >= 0 && info.marketplaces.indexOf(recoWsStr_(r[mi])) === -1) info.marketplaces.push(recoWsStr_(r[mi]));
+[wi, wi2].forEach(function (w) { if (w >= 0 && recoWsStr_(r[w]) && info.warehouses.indexOf(recoWsStr_(r[w])) === -1) info.warehouses.push(recoWsStr_(r[w])); }); });
+out.conflict[id] = info; } });
+if (Object.keys(drop).length) snaps[key] = { headers: snap.headers, rows: snap.rows.filter(function (r, i) { return !drop[i]; }) };   // a NEW view object in the CALLER'S private map copy (D5-V3-R5F)   // in-memory view only
+return out;
+}
+// the duplicates a set of candidates touches, for one site: conflicts (block) and identical repeats (report)
+function recoWsDupTouch_(read, cands, siteMarketplace, members, mySiteKey) {
+var D = read.__dupScan || { shipments: { identical: {}, conflict: {} }, lines: { identical: {}, conflict: {} } }, conf = [], ident = [], seen = {};
+(cands || []).forEach(function (c) {
+var sid = recoWsStr_(c.shipmentId || c.linkedShipmentId), lid = recoWsStr_(c.shipmentLineId || c.linkedShipmentLineId);
+var mine = members ? (members.indexOf(recoWsStr_(c.destinationWarehouseId)) !== -1) : (recoWsStr_(c.marketplace) === recoWsStr_(siteMarketplace));
+var cs = sid && D.shipments.conflict[sid];
+if (cs && (mine || cs.marketplaces.indexOf(recoWsStr_(siteMarketplace)) !== -1 || (members && cs.warehouses.some(function (w) { return members.indexOf(w) !== -1; }))) && !seen['S' + sid]) { seen['S' + sid] = 1; conf.push({ table: 'shipments', id: sid, rows: cs.rows, fields: cs.fields }); }
+var cl = lid && D.lines.conflict[lid];
+if (cl && mine && !seen['L' + lid]) { seen['L' + lid] = 1; conf.push({ table: 'shipment_lines', id: lid, rows: cl.rows, fields: cl.fields }); }
+// D5-V3-R5F (M-1): an identical-row report goes to the site that OWNS the goods by lineage (receiver resolved); an unresolved
+// candidate falls back to the destination / marketplace relation
+var owner = (recoWsStr_(c.receiverResolutionStatus).toUpperCase() === 'RESOLVED' && recoWsStr_(c.marketplace)) ? recoWsSiteKey_(c.company, c.country, c.marketplace) : null;
+var ownsIt = mySiteKey ? (owner ? owner === mySiteKey : mine) : mine;
+if (ownsIt && sid && D.shipments.identical[sid] && !seen['s' + sid]) { seen['s' + sid] = 1; ident.push({ table: 'shipments', id: sid, rows: D.shipments.identical[sid].rows, countedOnce: true }); }
+if (ownsIt && lid && D.lines.identical[lid] && !seen['l' + lid]) { seen['l' + lid] = 1; ident.push({ table: 'shipment_lines', id: lid, rows: D.lines.identical[lid].rows, countedOnce: true }); }
+});
+return { conflicts: conf, identical: ident };
+}
+var RECO_WS_DUP_CONFLICT_LABEL_ = 'conflicting duplicate shipment rows - this line is not calculated until the rows are fixed at the source';
+var RECO_WS_DUP_IDENTICAL_LABEL_ = 'identical duplicate shipment rows - counted once';
+// D5-V3-R5E (docs/WARNING_CONTRACT.md): the warning fields exist on every calculated line of both paths - an empty array /
+// object means 'nothing to warn', never 'not computed'. A BLOCKED line carries blockedReason + its own detail field.
+function recoWsWarnDefaults_(L) {
+if (!L) return L;
+['incomingDateSources', 'arrivalUndetermined', 'shippedEtaMissing', 'inventoryShares', 'inventoryShareUnknown', 'inventoryShareReconciliation', 'incomingAttribution'].forEach(function (k) { if (!Array.isArray(L[k])) L[k] = []; });
+if (!L.shipmentDuplicates) L.shipmentDuplicates = { conflicts: [], identical: [] };
+return L;
+}
 function recoWsRows_(read, key) {
-  if (!read.__rowCache) read.__rowCache = {};
-  if (read.__rowCache[key] === undefined) read.__rowCache[key] = recoWsToRowObjects_((read.snapshots || {})[key]);
-  return read.__rowCache[key];
+if (!read.__rowCache) read.__rowCache = {};
+if (read.__rowCache[key] === undefined) read.__rowCache[key] = recoWsToRowObjects_((read.snapshots || {})[key]);
+return read.__rowCache[key];
 }
 
-// F1-7N-FA-3B3a — Ongoing-PO future-factory incoming for ONE receiver (company/country/marketplace/siteSku), via the
-// single-authority chain KMSF (lifecycle/count-once admission) → KMOOP (site allocation) → KMOTA (Phase-1 timing),
-// orchestrated by KMOOR. Read-only (purchase_order_lines + request_order_line_sources canonical snapshots; NO write,
-// NO shipment/transit/destination read). Returns [] when KMOOR is unbundled or nothing is admitted for the receiver.
-// The events are the exact { incomingId, eta, qty, sourceType } shape mIncoming already carries → injected into the
-// SAME KMTPP incoming list (no second KMTPP call). received (completed) qty and shipped qty are excluded upstream by
-// the frozen MAX(0, ordered−completed) admission, so factory-current opening supply is never double-counted.
+
+
+
+
+
+
+
 function recoWsOngoingIncomingForReceiver_(read, scope, sku, siteSku, months) {
-  if (typeof KMOOR === 'undefined' || !KMOOR || typeof KMOOR.projectOngoingIncomingForSku !== 'function') return [];
-  var poRows = recoWsRows_(read, 'purchaseOrderLines');
-  if (!poRows.length) return [];
-  var srcRows = recoWsRows_(read, 'requestOrderLineSources');
-  var fcRows = recoWsRows_(read, 'fcRegularForecast');
-  var mskRows = recoWsRows_(read, 'marketplaceSkus');
-  // A2 basis: the company's sites selling THIS sku (marketplace_skus) × Σ Regular FC over the frozen M+1..M+4 window.
-  var siteFc = [], seenSite = {};
-  mskRows.forEach(function (m) {
-    if (recoWsStr_(m.company) !== scope.company || recoWsStr_(m.sku) !== sku) return;
-    var country = recoWsStr_(m.country), marketplace = recoWsStr_(m.marketplace), ssk = recoWsStr_(m.site_sku);
-    var key = country + '||' + marketplace + '||' + ssk; if (seenSite[key]) return; seenSite[key] = 1;
-    var byM = recoWsRegularForecastByMonth_(fcRows, { company: scope.company, country: country, marketplace: marketplace }, sku, months);
-    var basis = 0; (months || []).forEach(function (ym) { var v = byM[ym]; if (typeof v === 'number' && isFinite(v)) basis += v; });
-    siteFc.push({ company: scope.company, country: country, marketplace: marketplace, siteSku: ssk, siteFcBasis: basis });
-  });
-  var res;
-  try { res = KMOOR.projectOngoingIncomingForSku({ masterSku: sku, company: scope.company, purchaseOrderLines: poRows, requestOrderLineSources: srcRows, monthlySiteFcFacts: siteFc, months: months }); }
-  catch (e) { return []; }
-  var rk = [scope.company, scope.country, scope.marketplace, siteSku].join('||');
-  return (res && res.byReceiver && res.byReceiver[rk]) ? res.byReceiver[rk] : [];
+var poRows = recoWsRows_(read, 'purchaseOrderLines');
+if (!poRows.length) return [];
+if (!recoWsFormalPoLines_(read).rows.length) return [];
+var res = recoWsOngoingRun_(read, scope.company, sku, months);
+var rk = [scope.company, scope.country, scope.marketplace, siteSku].join('||');
+return (res && res.byReceiver && res.byReceiver[rk]) ? res.byReceiver[rk] : [];
+}
+
+
+
+
+
+
+
+function recoWsOngoingRun_(read, company, sku, months) {
+var poRows = recoWsFormalPoLines_(read).rows;
+var okey = company + '|' + sku, ograw = (read.__ogOut = read.__ogOut || {});
+if (typeof KMOOR === 'undefined' || !KMOOR || typeof KMOOR.projectOngoingIncomingForSku !== 'function') {
+if (!ograw[okey]) ograw[okey] = recoWsOngoingUnaccounted_(poRows, company, sku, null, 'ONGOING_RUNTIME_UNAVAILABLE', '');
+return null;
+}
+var srcRows = recoWsRows_(read, 'requestOrderLineSources');
+var fcRows = recoWsRows_(read, 'fcRegularForecast');
+var mskRows = recoWsRows_(read, 'marketplaceSkus');
+
+var siteFc = [], seenSite = {};
+mskRows.forEach(function (m) {
+if (recoWsStr_(m.company) !== company || recoWsStr_(m.sku) !== sku) return;
+var country = recoWsStr_(m.country), marketplace = recoWsStr_(m.marketplace), ssk = recoWsStr_(m.site_sku);
+var key = country + '||' + marketplace + '||' + ssk; if (seenSite[key]) return; seenSite[key] = 1;
+var byM = recoWsRegularForecastByMonth_(fcRows, { company: company, country: country, marketplace: marketplace }, sku, months);
+var basis = 0; (months || []).forEach(function (ym) { var v = byM[ym]; if (typeof v === 'number' && isFinite(v)) basis += v; });
+siteFc.push({ company: company, country: country, marketplace: marketplace, siteSku: ssk, siteFcBasis: basis });
+});
+var res;
+try { res = KMOOR.projectOngoingIncomingForSku({ masterSku: sku, company: company, purchaseOrderLines: poRows, requestOrderLineSources: srcRows, monthlySiteFcFacts: siteFc, months: months }); }
+catch (e) {
+if (!ograw[okey]) ograw[okey] = recoWsOngoingUnaccounted_(poRows, company, sku, null, 'ONGOING_RUNTIME_FAILED', String(e && e.message || e).slice(0, 120));
+return null;
+}
+if (!ograw[okey]) ograw[okey] = recoWsOngoingUnaccounted_(poRows, company, sku, res, null, '');
+return res;
+}
+
+
+
+
+
+function recoWsOngoingAdmission_(read, company, sku) {
+if (!recoWsRows_(read, 'purchaseOrderLines').length) return null;
+var k = company + '|' + sku, ogOut = (recoWsFormalPoLines_(read).excluded[k] || []).concat((read.__ogOut || {})[k] || []);
+return ogOut.length ? { excluded: ogOut, complete: ogOut.every(function (x) { return x.code === 'ONGOING_PO_DRAFT' || x.code === 'ONGOING_UNALLOCATED_RESIDUAL'; }) } : null;
+}
+
+
+
+
+
+
+function recoWsOngoingAdmissionLive_(ss, keys, io) {
+var out = { ok: false, code: null, byKey: {} };
+try {
+if (typeof KMPS === 'undefined' || !KMPS || typeof KMPS.readCanonicalSnapshots !== 'function') { out.code = 'ONGOING_CHECK_RUNTIME_UNAVAILABLE'; return out; }
+var read = KMPS.readCanonicalSnapshots(ss, { only: ['purchaseOrderLines'] }), has = {};
+read.__poHeaderSs = ss;
+recoWsRows_(read, 'purchaseOrderLines').forEach(function (l) { has[recoWsStr_(l.company) + '|' + recoWsStr_(l.sku)] = 1; });
+var want = (keys || []).filter(function (k) { if (has[k]) return true; out.byKey[k] = { complete: true, excluded: [] }; return false; });
+if (want.length) {
+var calc = recoWsResolveCalcContext_(io || recommendationWorkspaceDefaultIo_());
+if (!calc.ok) { out.code = 'ONGOING_CHECK_CALC_CONTEXT_UNAVAILABLE'; return out; }
+var more = KMPS.readCanonicalSnapshots(ss, { only: ['requestOrderLineSources', 'fcRegularForecast', 'marketplaceSkus'] }).snapshots || {};
+Object.keys(more).forEach(function (t) { read.snapshots[t] = more[t]; });
+var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+var formal = recoWsFormalPoLines_(read).rows, hasFormal = {};
+formal.forEach(function (l) { hasFormal[recoWsStr_(l.company) + '|' + recoWsStr_(l.sku)] = 1; });
+want.forEach(function (k) {
+var p = k.split('|');
+if (hasFormal[k]) recoWsOngoingRun_(read, p[0], p[1], months);
+out.byKey[k] = recoWsOngoingAdmission_(read, p[0], p[1]) || { complete: true, excluded: [] };
+});
+}
+out.ok = true;
+return out;
+} catch (e) { out.code = 'ONGOING_CHECK_FAILED'; out.message = String(e && e.message || e).slice(0, 120); return out; }
+}
+
+
+
+
+function recoWsOngoingUnaccounted_(formalRows, company, sku, res, whole, wholeDetail) {
+var mine = {}, order = [];
+formalRows.forEach(function (l) {
+if (recoWsStr_(l.company) !== company || recoWsStr_(l.sku) !== sku) return;
+var id = recoWsStr_(l.purchase_order_line_id), q = recoWsNum_(l.ordered_qty), c = recoWsNum_(l.completed_qty);
+var u = q === null || c === null ? null : Math.max(0, q - c);
+if (!id || u === 0 || mine[id]) return;
+mine[id] = { line: id, po: recoWsStr_(l.purchase_order_id), qty: u }; order.push(id);
+});
+if (whole) return order.map(function (id) { var m = mine[id]; return { line: m.line, po: m.po, code: whole, detail: wholeDetail, qty: m.qty }; });
+var out = [], seen = {}, named = 0;
+((res && res.issues) || []).forEach(function (x) {
+var id = recoWsStr_(x.poLineId);
+if (!id || seen[id] || !mine[id]) return;
+seen[id] = 1; named += mine[id].qty || 0;
+out.push({ line: id, po: mine[id].po, code: x.stage === 'KMOTA' && x.code === 'ONGOING_ORDER_ETA_UNRESOLVED' ? 'ONGOING_ETA_UNRESOLVED' : 'ONGOING_NOT_ACCOUNTED', detail: recoWsStr_(x.stage) + ' ' + recoWsStr_(x.code), qty: mine[id].qty });
+});
+var t = (res && res.totals) || {}, rest = (recoWsNum_(t.totalAdmittedQty) || 0) - (recoWsNum_(t.totalTimedIncomingQty) || 0) - named;
+if (rest > 0) out.push({ line: '(SKU)', po: '', code: 'ONGOING_UNALLOCATED_RESIDUAL', detail: 'KMOOP floor residual', qty: rest });
+return out;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+function recoWsFormalPoLines_(read) {
+if (read.__formalPo) return read.__formalPo;
+var out = { rows: [], excluded: {} }, heads = {}, down = null, snap = recoWsPoHeaders_(read), memo = read.__poCache || read, drift = memo.__poDrift || {};
+if (typeof aplOgOPEN_ === 'undefined' || typeof aplOgSHUT_ === 'undefined' || typeof aplOgDead_ !== 'function') down = 'ONGOING_PO_STATUS_AUTHORITY_UNAVAILABLE';
+else if (!snap) down = memo.__poHeadersWhy || 'ONGOING_PO_HEADERS_UNAVAILABLE';
+else recoWsToRowObjects_(snap).forEach(function (h) { var id = recoWsStr_(h.purchase_order_id); if (id) (heads[id] = heads[id] || []).push(h); });
+recoWsRows_(read, 'purchaseOrderLines').forEach(function (l, i) {
+var code = down, detail = '';
+if (!code && drift[recoWsStr_(l.company) + '|' + recoWsStr_(l.sku)]) { code = 'ONGOING_PO_READ_DRIFT'; detail = 'its lines changed after the snapshot'; }
+if (!code) {
+if (aplOgDead_(l)) return;
+var hs = heads[recoWsStr_(l.purchase_order_id)] || [], st = hs.length === 1 ? recoWsStr_(hs[0].order_status || hs[0].status).toLowerCase() : '';
+if (!hs.length) code = 'ONGOING_PO_HEADER_MISSING';
+else if (hs.length > 1) code = 'ONGOING_PO_HEADER_DUPLICATE';
+else if (aplOgOPEN_[st] === 1) { out.rows.push(l); return; }
+else if (st === 'draft') code = 'ONGOING_PO_DRAFT';
+else if (aplOgSHUT_[st] === 1) return;
+else { code = 'ONGOING_PO_STATUS_UNKNOWN'; detail = st || '(blank)'; }
+}
+var k = recoWsStr_(l.company) + '|' + recoWsStr_(l.sku), q = recoWsNum_(l.ordered_qty), c = recoWsNum_(l.completed_qty);
+(out.excluded[k] = out.excluded[k] || []).push({ line: recoWsStr_(l.purchase_order_line_id) || '#' + (i + 1), po: recoWsStr_(l.purchase_order_id), code: code, detail: detail,
+qty: q === null || c === null ? null : Math.max(0, q - c) });
+});
+
+Object.keys(memo.__poDriftNew || {}).forEach(function (k) {
+(memo.__poDriftNew[k] || []).forEach(function (x) { (out.excluded[k] = out.excluded[k] || []).push({ line: x.line, po: x.po, code: 'ONGOING_PO_READ_DRIFT', detail: 'line added after the snapshot', qty: null }); });
+});
+read.__formalPo = out;
+return out;
+}
+
+
+var RECO_WS_PO_LINE_FIELDS_ = ['purchase_order_line_id', 'purchase_order_id', 'request_order_line_id', 'company', 'sku', 'ordered_qty', 'requested_qty',
+'completed_qty', 'shipped_qty', 'expected_completion_date', 'supplier_warehouse_id', 'line_status', 'status'];
+var RECO_WS_PO_LOCK_WAIT_MS_ = 10000;
+function recoWsPoLineSig_(o) {
+return RECO_WS_PO_LINE_FIELDS_.map(function (f) {
+var v = o[f];
+if (Object.prototype.toString.call(v) === '[object Date]') return 'D' + v.getTime();
+var s = recoWsStr_(v), n = Number(s);
+return s !== '' && isFinite(n) ? 'N' + n : 'S' + s;
+}).join('\u0001');
+}
+
+function recoWsPoLineDrift_(before, after) {
+function index(rows) { var m = {}; rows.forEach(function (l, i) { var id = recoWsStr_(l.purchase_order_line_id) || '#' + (i + 1); m[id] = { k: recoWsStr_(l.company) + '|' + recoWsStr_(l.sku), sig: recoWsPoLineSig_(l), po: recoWsStr_(l.purchase_order_id) }; }); return m; }
+var a = index(before), b = index(after), drift = {}, added = {};
+Object.keys(a).forEach(function (id) { if (!b[id] || b[id].sig !== a[id].sig) { drift[a[id].k] = 1; if (b[id]) drift[b[id].k] = 1; } });
+Object.keys(b).forEach(function (id) { if (!a[id]) { drift[b[id].k] = 1; (added[b[id].k] = added[b[id].k] || []).push({ line: id, po: b[id].po }); } });
+return { drift: drift, added: added };
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+function recoWsPoHeaders_(read) {
+var memo = read.__poCache || read;
+if (memo.__poHeaders !== undefined) return memo.__poHeaders;
+var snap = null, ss = read.__poHeaderSs, why = null;
+var lock = null, held = false, drift = {}, added = {};
+try {
+lock = (typeof LockService !== 'undefined' && LockService) ? LockService.getScriptLock() : null;
+held = !!(lock && lock.hasLock());
+if (!lock || (!held && !lock.tryLock(RECO_WS_PO_LOCK_WAIT_MS_))) { lock = null; why = 'ONGOING_PO_CONSISTENCY_LOCK_UNAVAILABLE'; }
+} catch (eL) { lock = null; why = 'ONGOING_PO_CONSISTENCY_LOCK_UNAVAILABLE'; }
+if (!why) {
+try {
+var sh = ss && typeof ss.getSheetByName === 'function' ? ss.getSheetByName('purchase_orders') : null;
+var v = sh ? sh.getDataRange().getValues() : [];
+if (v.length) snap = { headers: v[0].map(function (x) { return recoWsStr_(x); }), rows: v.slice(1) };
+if (snap && snap.headers.indexOf('purchase_order_id') < 0) snap = null;
+if (!snap) why = sh ? 'ONGOING_PO_HEADERS_EMPTY' : 'ONGOING_PO_HEADERS_SHEET_MISSING';
+} catch (e) { snap = null; why = 'ONGOING_PO_HEADERS_READ_FAILED'; }
+if (snap) {
+try {
+var lsh = ss.getSheetByName('purchase_order_lines'), lv = lsh ? lsh.getDataRange().getValues() : null;
+if (!lv || !lv.length) throw new Error('purchase_order_lines not readable');
+var d = recoWsPoLineDrift_(recoWsRows_(read, 'purchaseOrderLines'), recoWsToRowObjects_({ headers: lv[0], rows: lv.slice(1) }));
+drift = d.drift; added = d.added;
+} catch (e2) { snap = null; why = 'ONGOING_PO_CONSISTENCY_UNVERIFIED'; }
+}
+if (lock && !held) { try { lock.releaseLock(); } catch (eR) {} }
+}
+memo.__poHeaders = snap; memo.__poHeadersWhy = why; memo.__poDrift = drift; memo.__poDriftNew = added;
+return snap;
 }
 
 function recoWsExpandMarketplace_(read, scope, sku, siteSku, calc, vmeta, supplyAllocationByReceiver) {
-  var snaps = read.snapshots || {};
-  var mktRows = recoWsRows_(read, 'marketplaces'), whRows = recoWsRows_(read, 'warehouses');
-  var amazonRows = recoWsRows_(read, 'amazonInventorySnapshot');
-  // MARKETPLACE incoming = line-grain candidates for THIS sku, adapted to the KMDR shape (receiver from frozen
-  // lineage; UNRESOLVED / merged → blank marketplace → KMDR identity fails closed; no header-qty derivation).
-  var shipmentRows = recoWsShipmentLineCandidates_(read).candidates
-    .filter(function (e) { return recoWsStr_(e.candidate.sku) === sku; })
-    .map(function (e) { return KMSLS.toMarketplaceIncomingCandidate(e); });
-  var fcRows = recoWsRows_(read, 'fcRegularForecast');
-  var skuDetailRows = recoWsRows_(read, 'skuDetails');
-  var upc = recoWsUpcBySku_(skuDetailRows)[sku];
-  var skuRow = null; for (var si = 0; si < skuDetailRows.length; si++) { if (recoWsStr_(skuDetailRows[si].sku) === sku) { skuRow = skuDetailRows[si]; break; } }
-  var skuMeta = { sku: sku, series: skuRow ? recoWsStr_(skuRow.series) : '', category: skuRow ? recoWsStr_(skuRow.category) : '', company: scope.company };
-  var tgtRows = recoWsRows_(read, 'fcTargetRules');
-  var evtRows = recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
-  var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace }, { marketplaces: mktRows });
-  if (!nd.ok) {
-    var code = (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_AUTHORITY_UNRESOLVED';
-    return KMDR.buildRecommendationLine({ destination: { destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, destinationKey: 'MARKETPLACE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code, message: (nd.issues && nd.issues[0] && nd.issues[0].message) || '' }] } });
-  }
-  var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
-  // F1-4B-FM3f-1 (Authorities E+F): canonical planning demand = Target%-adjusted regular FC + special-event FC,
-  // from the ONE KMPD owner (never page-side FC×Target). Fallback to raw FC only if KMPD is somehow unbundled.
-  var useKMPD = (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.planningDemandByMonth === 'function');
-  var pdmMap = useKMPD ? KMPD.planningDemandByMonth({ fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta, months: months }) : null;
-  var rawFcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
-  var demandByMonth = {}, demandQty = 0, haveAll = months.length === 4;
-  months.forEach(function (mm) {
-    var d = useKMPD ? (pdmMap[mm] ? pdmMap[mm].demand : undefined) : rawFcByMonth[mm];
-    if (d === null || d === undefined) { haveAll = false; return; }
-    demandByMonth[mm] = d; demandQty += d;
-  });
-  var requiredBy = (months[0] || calc.calculationMonth) + '-01';
-  var res = KMDR.resolveUnifiedDestinationRecommendation(
-    { marketplaces: mktRows, warehouses: whRows, amazonInventory: amazonRows, marketplaceIncomingCandidates: shipmentRows },
-    { recommendationType: 'MONTHLY_ORDER', scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }, destination: { destinationType: 'MARKETPLACE' }, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf },
-    { regularForecastByMonth: demandByMonth, unitsPerCarton: upc, requiredByDate: requiredBy }
-  );
-  var L = res.line || {};
-  var partial = L.incomingCompleteness === 'PARTIAL' || L.incomingCompleteness === 'UNAVAILABLE';
-  var blockedReason = L.blocked ? (partial ? 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED' : (recoWsStr_(L.blockedReason) || null)) : null;
-  var mLine = KMDR.buildRecommendationLine({
-    destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku,
-    allocatedForecastQty: haveAll ? demandQty : (demandQty > 0 ? demandQty : null),
-    currentStockQty: L.currentStockQty, qualifiedIncomingQty: L.confirmedQualifiedIncomingQty, incomingCompleteness: L.incomingCompleteness,
-    calculatedGap: L.calculatedGap, recommendedQty: L.recommendedQty, provisionalOrderNeed: L.provisionalOrderNeed,
-    blocked: L.blocked === true, blockedReason: blockedReason, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
-    diagnostics: { issues: (res.issues || []).map(function (x) { return { code: x.code, message: x.message }; }) }
-  });
-  // F1-4B-FM3c-2 + FM3f-1: additive per-tier monthly projection. Opening = canonical Site Stock (currentStockQty,
-  // now available+transfer+processing, Authority A); demand = adjusted regular + special (E+F); PRE-T1 current-month
-  // remaining consumed first (D); incoming = FM3c-1 line.qualifiedEvents. destinationGap/residualOrderNeed additive.
-  var mIncoming = (L.qualifiedEvents || []).map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
-  // F1-7N-FA-3B3a: additively inject Ongoing-PO future-factory incoming (single-authority KMSF→KMOOP→KMOTA) into the
-  // SAME KMTPP incoming list. eta = expected_completion_date; tier is derived by recoWsBuildMonthlyProjection_ from the
-  // eta month via the SAME tierByMonth (M+1..M+4). Blank/invalid completion date → no event (fail-closed, diagnostic).
-  var mOngoing = recoWsOngoingIncomingForReceiver_(read, scope, sku, siteSku, months);
-  if (mOngoing.length) mIncoming = mIncoming.concat(mOngoing);
-  var cmr = (useKMPD && calc.calculationDate) ? KMPD.currentMonthRemainingDemand({ calculationDate: calc.calculationDate, fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta }) : null;
-  var preT1Demand = (cmr && cmr.ready) ? Math.round(cmr.demand) : null;   // rounded once at emission (KMPD carries full precision)
-  var preT1Date = (cmr && cmr.ready) ? cmr.requiredByDate : null;
-  // F1-4B-FM5-R2b (§1/§7): opening ORDER-PLANNING supply = Site Stock + allocated eligible Overseas + allocated
-  // eligible Factory (composed once, counted once — the Overseas/Factory allocation is OPENING planning supply,
-  // NOT ETA-phased incoming; incoming lineage stays separate in mIncoming). The allocation is the batch-decided,
-  // conserved KMMSA result keyed by the canonical receiver key; absent → 0/0 → opening == Site Stock (pre-R2b).
-  var siteStockQty = recoWsNum_(L.currentStockQty);
-  var rKey = (typeof KMMSA !== 'undefined' && KMMSA && typeof KMMSA.receiverKeyOf === 'function')
-    ? KMMSA.receiverKeyOf({ company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }) : null;
-  var rAlloc = (recoWsIsObj_(supplyAllocationByReceiver) && rKey && recoWsIsObj_(supplyAllocationByReceiver[rKey])) ? supplyAllocationByReceiver[rKey] : null;
-  var composition = recoWsComposeOpeningSupply_(siteStockQty, rAlloc ? rAlloc.overseasCoveredQty : 0, rAlloc ? rAlloc.factoryCoveredQty : 0);
-  var mProj = recoWsBuildMonthlyProjection_(months, composition.openingSupplyQty, (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date);
-  if (mProj) { mLine.monthlyProjection = mProj; mLine.openingSupplyComposition = composition; }   // §7 auditable opening-supply facts
-  // F1-7N-FA-3B3b: §41 factory-reallocation diagnostics (runtime DTO only; persistence is FA-3B4). composition.allocatedFactoryQty
-  // above is ALREADY the POST-reallocation coverage (43_ mutated allocMap in place); these expose the pre/in/out facts.
-  if (rAlloc && (rAlloc.reallocationInQty != null || rAlloc.reallocationOutQty != null || rAlloc.factoryAvailableQtySnapshot != null)) {
-    mLine.factorySurplusReallocation = { factoryAvailableQtySnapshot: recoWsNum_(rAlloc.factoryAvailableQtySnapshot), reallocationInQtySnapshot: recoWsNum_(rAlloc.reallocationInQty), reallocationOutQtySnapshot: recoWsNum_(rAlloc.reallocationOutQty) };
-  }
-  if (cmr && cmr.ready) mLine.currentMonthRemaining = { requiredByDate: cmr.requiredByDate, month: cmr.ym, remainingDays: cmr.remainingDays, demandQty: Math.round(cmr.demand) };   // PRE-T1 audit (not a writable tier)
-  // F1-4B-FM4a + FM3f-1 + FM5-R4UI-R3: additive day-horizon projection on Site Stock opening. Demand authority now
-  // splits on the SKU's canonical Planning Model — sales_driven consumes the §22 run-rate (NOT regular FC / Target%),
-  // forecast_driven keeps the adjusted-regular+special demand. A Sales-Driven SKU whose run-rate cannot be resolved
-  // fail-closes (no horizons → materialized BLOCKED), never silently reverting to the forecast path.
-  var planModel = recoWsResolvePlanningModel_(read, scope, sku);
-  var salesRate = null, salesReason = null;
-  // S8-R5-B (R46) — Avg Sales is a HISTORICAL performance metric, independent of the Planning Model. The
-  // canonical §22 resolver used to be CALLED only under sales_driven, so a Forecast-Driven SKU had no rate
-  // to publish at all — the defect was the gate on this line, not the field at horizonBasis below.
-  //
-  // The resolver now runs for EVERY SKU, and its result (`sr`) serves DISPLAY. PLANNING is untouched:
-  // `salesRate` (the demand basis handed to recoWsBuildHorizons_) and `salesReason` (the fail-closed
-  // horizon reason) are still assigned ONLY under sales_driven, so a Forecast-Driven horizon can never be
-  // labelled SALES_BASIS_UNAVAILABLE and recoWsBuildHorizons_ receives byte-identical inputs in both modes.
-  // No second normalization engine is created — this layer still only marshals the frozen KMCALC owner.
-  var sr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
-  if (planModel === 'sales_driven') { if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
-  // F1-4B-FM5-R4UI-R5 §4 — the INVENTORY horizon opening is Site Stock, which is FORECAST-INDEPENDENT. The unified
-  // resolver returns a null line (→ null L.currentStockQty) when the MONTHLY demand (regular forecast) is not
-  // resolvable — so a Sales-Driven SKU with no regular forecast was losing its Site Stock and materializing
-  // HORIZONS_NOT_AVAILABLE despite a valid Site Stock + sales basis. Resolve the opening DIRECTLY from the canonical
-  // Site Stock owner (KMDR.resolveMarketplaceCurrentStock — the SAME owner the unified resolver uses) as a fallback
-  // when L.currentStockQty is absent. No formula change: identical owner, identical value; forecast SKUs (line
-  // present) keep L.currentStockQty verbatim. A genuinely missing/conflicting Site Stock stays null → truthfully
-  // BLOCKED (never a fabricated 0).
-  var horizonOpening = recoWsNum_(L.currentStockQty);
-  if (horizonOpening === null && typeof KMDR.resolveMarketplaceCurrentStock === 'function') {
-    var siteRes = KMDR.resolveMarketplaceCurrentStock({ rows: amazonRows, scope: { country: scope.country, marketplace: scope.marketplace, sku: sku } });
-    if (siteRes && siteRes.ready && typeof siteRes.qty === 'number') horizonOpening = siteRes.qty;
-  }
-  var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
-    : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, mIncoming, upc, nd.destination, planModel, salesRate);
-  if (mHz) mLine.horizons = mHz;
-  // F1-4B-FM5-R4UI-R7 §1/§4 — when the day-horizon cannot be built, PRESERVE the specific first reason so
-  // materialization surfaces it verbatim (a Sales-Driven SKU with an unresolvable canonical run-rate now reports
-  // SALES_BASIS_UNAVAILABLE / SALES_BASIS_AMBIGUOUS, not the generic HORIZONS_NOT_AVAILABLE that masked the real
-  // cause). Horizon-only reason — the line's own blocked/monthlyProjection (Order Planning) is untouched.
-  else mLine.horizonsBlockedReason = salesReason || 'HORIZON_PROJECTION_UNAVAILABLE';
-  // LIVE8 §A2/§A3/§A4 — additive READ-ONLY reconciliation diagnostic (NO formula/schema/calculation change):
-  // the canonical inputs recoWsBuildHorizons_ drops, so a stored D-horizon gap reconciles against
-  // horizons[].demandQty/coveredQty WITHOUT the Sheet and a divergence from the Inventory DoS column is
-  // observable (SALES_DOS_HORIZON_AUTHORITY_DIVERGENCE). S8-R5-B (R46) — `avgSalesPerDay` is the canonical §22
-  // HISTORICAL rate for BOTH Planning Models, NOT a claim about what drove the horizon (`demandMode` is that
-  // discriminator). The four §22 quality fields travel as INDEPENDENT diagnostics, verbatim from the owner, so a
-  // normalized rate can be told from a weekly fallback. An unresolved basis stays null in EVERY field — never a
-  // fabricated 0. S8-B3-R3-CP2R — AND IT IS PUBLISHED OUTSIDE THE HORIZON BRANCH: assigned inside `if (mHz)` it
-  // withheld a valid historical average whenever a horizon could not be built, deleting a sales fact for a
-  // forecast reason. R1 — `basisQualityError` travels with it because a forecast_driven line sets no blocked
-  // reason, so an unresolved basis had nowhere to say why and a surface could only show a blank.
-  mLine.horizonBasis = recoWsBasisOf_(sr, planModel, horizonOpening, (mIncoming || []).length);
-  return mLine;
+var snaps = read.snapshots || {};
+var mktRows = recoWsRows_(read, 'marketplaces'), whRows = recoWsRows_(read, 'warehouses');
+var amazonRows = recoWsRows_(read, 'amazonInventorySnapshot');
+
+
+var shipmentRows = recoWsShipmentLineCandidates_(read).candidates
+.filter(function (e) { return recoWsStr_(e.candidate.sku) === sku; })
+.map(function (e) { return KMSLS.toMarketplaceIncomingCandidate(e); });
+var fcRows = recoWsRows_(read, 'fcRegularForecast');
+var skuDetailRows = recoWsRows_(read, 'skuDetails');
+var upc = recoWsUpcBySku_(skuDetailRows)[sku];
+var skuRow = null; for (var si = 0; si < skuDetailRows.length; si++) { if (recoWsStr_(skuDetailRows[si].sku) === sku) { skuRow = skuDetailRows[si]; break; } }
+var skuMeta = { sku: sku, series: skuRow ? recoWsStr_(skuRow.series) : '', category: skuRow ? recoWsStr_(skuRow.category) : '', company: scope.company };
+var tgtRows = recoWsRows_(read, 'fcTargetRules');
+var evtRows = recoWsEventRowsYmd_(recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; }));
+var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace }, { marketplaces: mktRows });
+if (!nd.ok) {
+var code = (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_AUTHORITY_UNRESOLVED';
+return KMDR.buildRecommendationLine({ destination: { destinationType: 'MARKETPLACE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, destinationKey: 'MARKETPLACE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code, message: (nd.issues && nd.issues[0] && nd.issues[0].message) || '' }] } });
+}
+var evChk = recoWsEventCheck_(evtRows, scope, sku, calc);
+if (!evChk.ok) return recoWsEventBlockedLine_(nd.destination, 'MARKETPLACE_ORDER_NEED', sku, siteSku, evChk, vmeta);
+// D5-V3 (OD-3): reserved units of a created-but-unconfirmed Shipment are counted ONLY through the Shipment (planned supply at
+// its ETA) because the factory pool is current - reserved. Without a valid ETA they could not be dated, so the SKU is BLOCKED
+// with the shipment ids named - never dropped silently, never dated by guess.
+var _dupM = recoWsDupTouch_(read, shipmentRows, scope.marketplace, null, recoWsSiteKey_(scope.company, scope.country, scope.marketplace));   // D5-V3-R5E
+if (_dupM.conflicts.length) { var _bD = KMDR.buildRecommendationLine({ destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true,
+blockedReason: 'SHIPMENT_DUPLICATE_CONFLICT: ' + _dupM.conflicts.map(function (x) { return x.id; }).join(','), formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+diagnostics: { issues: [{ code: 'SHIPMENT_DUPLICATE_CONFLICT', message: RECO_WS_DUP_CONFLICT_LABEL_ + ': ' + _dupM.conflicts.map(function (x) { return x.table + ' ' + x.id + ' (' + x.fields.join(', ') + ')'; }).join('; ') }] } });
+_bD.shipmentDuplicates = { conflicts: _dupM.conflicts, identical: _dupM.identical }; return _bD; }
+var etaGap = recoWsPreDispatchEtaGaps_(shipmentRows, mktRows, nd.destination);
+if (etaGap.length) { var _auM = shipmentRows.filter(function (c) { return etaGap.indexOf(recoWsStr_(c.shipmentId) || recoWsStr_(c.ref)) !== -1; })
+.map(function (c) { return { shipmentId: recoWsStr_(c.shipmentId) || null, lineageKey: recoWsStr_(c.lineageKey) || null, qty: recoWsNum_(c.quantityRemaining), dateSource: 'UNDETERMINED', reason: 'NO_ETA_NO_PLAN_DATE', label: RECO_WS_ARRIVAL_UNDETERMINED_LABEL_ }; });
+var _blkM = KMDR.buildRecommendationLine({ destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true,
+blockedReason: 'PLANNED_SHIPMENT_ETA_MISSING: ' + etaGap.join(','), formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+diagnostics: { issues: [{ code: 'PLANNED_SHIPMENT_ETA_MISSING', message: 'pre-dispatch shipment(s) ' + etaGap.join(', ') + ' hold reserved stock for this site but have no valid ETA and no plan date' },
+{ code: 'ARRIVAL_DATE_UNDETERMINED', message: RECO_WS_ARRIVAL_UNDETERMINED_LABEL_ }] } });
+_blkM.arrivalUndetermined = _auM; return _blkM; }
+// P3PL-2 r3 (Owner 2026-11-21, NARROW): an open line owned by this platform site but bound for a 3PL arrives at the 3PL on its ETA - that is
+// not a platform (FBA / WFS ...) sellable date, and the 3PL -> platform leg is B-Q1 = UNKNOWN, never 0 days. ONLY those rows' platform-sellable
+// attribution is held: they are taken out of this site's dated supply (KMDR qualification, horizons, AI horizons) and named on the line
+// (platformVia3pl, supplyUnderstatedQty, issue PLATFORM_VIA_3PL_NOT_COUNTED). The rest of the site x SKU keeps planning (same contract as
+// SHIPPED_ETA_MISSING: not counted, not dated by guess, flagged, line READY). RISK, stated on the line: the gap does not count goods already on
+// their way to the 3PL, so the suggested qty may be overstated by up to supplyUnderstatedQty. A held row without a lineage key cannot be taken
+// out exactly, so the SKU falls back to the r2 whole-line HOLD below (fail closed - never counted at the 3PL ETA).
+var _v3 = recoWsPlatformVia3pl_(read, sku, whRows, mktRows, nd.destination), _h3 = {}, _q3 = 0, _noKey3 = false;
+_v3.forEach(function (x) { if (x && x.lineageKey) _h3[x.lineageKey] = 1; else _noKey3 = true; _q3 += Number(x && x.qty) || 0; });
+if (_v3.length && !_noKey3) shipmentRows = shipmentRows.filter(function (c) { return !_h3[recoWsStr_(c.lineageKey)]; });
+if (_v3.length && _noKey3) { var _n3 = _v3.map(function (x) { return x.shipmentId || x.lineageKey || '?'; }).filter(function (x, i, a) { return a.indexOf(x) === i; }).sort();
+var _b3 = KMDR.buildRecommendationLine({ destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku, blocked: true,
+blockedReason: 'PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN: ' + _n3.join(','), formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+diagnostics: { issues: [{ code: 'PLATFORM_INCOMING_VIA_3PL_LEG_UNKNOWN', message: 'shipment(s) ' + _n3.join(', ') + ' belong to this site but go to a 3PL warehouse; the 3PL ETA is not the marketplace arrival and the 3PL -> marketplace leg is not decided (B-Q1), so the date is UNKNOWN (HOLD, not 0 days)' }] } });
+_b3.platformVia3pl = _v3; return _b3; }
+var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+
+
+var useKMPD = (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.planningDemandByMonth === 'function');
+var pdmMap = useKMPD ? KMPD.planningDemandByMonth({ fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta, months: months }) : null;
+var rawFcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
+var demandByMonth = {}, demandQty = 0, haveAll = months.length === 4;
+months.forEach(function (mm) {
+var d = useKMPD ? (pdmMap[mm] ? pdmMap[mm].demand : undefined) : rawFcByMonth[mm];
+if (d === null || d === undefined) { haveAll = false; return; }
+demandByMonth[mm] = d; demandQty += d;
+});
+var requiredBy = (months[0] || calc.calculationMonth) + '-01';
+var res = KMDR.resolveUnifiedDestinationRecommendation(
+{ marketplaces: mktRows, warehouses: whRows, amazonInventory: amazonRows, marketplaceIncomingCandidates: shipmentRows },
+{ recommendationType: 'MONTHLY_ORDER', scope: { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }, destination: { destinationType: 'MARKETPLACE' }, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf },
+{ regularForecastByMonth: demandByMonth, unitsPerCarton: upc, requiredByDate: requiredBy }
+);
+var L = res.line || {};
+var partial = L.incomingCompleteness === 'PARTIAL' || L.incomingCompleteness === 'UNAVAILABLE';
+
+var unknownSt = (L.unknownStatusIncomingRefs || []).length > 0 && !(L.unresolvedIncomingRefs || []).length;
+var blockedReason = L.blocked ? (partial ? (unknownSt ? 'MARKETPLACE_INCOMING_STATUS_UNKNOWN' : 'MARKETPLACE_INCOMING_IDENTITY_UNRESOLVED') : (recoWsStr_(L.blockedReason) || null)) : null;
+var mLine = KMDR.buildRecommendationLine({
+destination: nd.destination, recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: sku, siteSku: siteSku,
+allocatedForecastQty: haveAll ? demandQty : (demandQty > 0 ? demandQty : null),
+currentStockQty: L.currentStockQty, qualifiedIncomingQty: L.confirmedQualifiedIncomingQty, incomingCompleteness: L.incomingCompleteness,
+calculatedGap: L.calculatedGap, recommendedQty: L.recommendedQty, provisionalOrderNeed: L.provisionalOrderNeed,
+blocked: L.blocked === true, blockedReason: blockedReason, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf,
+diagnostics: { issues: (res.issues || []).map(function (x) { return { code: x.code, message: x.message }; }) }
+});
+
+
+
+var mIncoming = (L.qualifiedEvents || []).map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
+
+
+
+var mOngoing = recoWsOngoingIncomingForReceiver_(read, scope, sku, siteSku, months);
+if (mOngoing.length) mIncoming = mIncoming.concat(mOngoing);
+
+
+
+
+var ogAdm = recoWsOngoingAdmission_(read, scope.company, sku), ogOut = ogAdm ? ogAdm.excluded : [];
+if (ogAdm) {
+mLine.ongoingAdmission = ogAdm;
+if (mLine.diagnostics && Array.isArray(mLine.diagnostics.issues)) ogOut.forEach(function (x) {
+var known = x.code === 'ONGOING_PO_DRAFT' || x.code === 'ONGOING_UNALLOCATED_RESIDUAL';
+mLine.diagnostics.issues.push({ code: x.code, message: 'PO line ' + x.line + ' (' + (x.qty === null ? 'quantity unreadable' : x.qty + ' unreceived') + (x.detail ? '; ' + x.detail : '') + '): not counted as incoming'
++ (x.code === 'ONGOING_PO_DRAFT' ? ' - a draft PO is not confirmed supply' : known ? ' - given to no site' : ' - its Ongoing is incomplete, not a verified 0') });
+});
+}
+var cmr = (useKMPD && calc.calculationDate) ? KMPD.currentMonthRemainingDemand({ calculationDate: calc.calculationDate, fcRegularRows: fcRows, fcTargetRuleRows: tgtRows, fcSpecialEventRows: evtRows, scope: scope, sku: sku, skuMeta: skuMeta }) : null;
+var preT1Demand = (cmr && cmr.ready) ? Math.round(cmr.demand) : null;
+var preT1Date = (cmr && cmr.ready) ? cmr.requiredByDate : null;
+
+
+
+
+var siteStockQty = recoWsNum_(L.currentStockQty);
+var rKey = (typeof KMMSA !== 'undefined' && KMMSA && typeof KMMSA.receiverKeyOf === 'function')
+? KMMSA.receiverKeyOf({ company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku }) : null;
+var rAlloc = (recoWsIsObj_(supplyAllocationByReceiver) && rKey && recoWsIsObj_(supplyAllocationByReceiver[rKey])) ? supplyAllocationByReceiver[rKey] : null;
+var ovAlloc_ = rAlloc ? (recoWsNum_(rAlloc.overseasCoveredQty) || 0) : 0, fcAlloc_ = rAlloc ? (recoWsNum_(rAlloc.factoryCoveredQty) || 0) : 0;   // b4
+var composition = recoWsComposeOpeningSupply_(siteStockQty, RECO_WS_OVERSEAS_TO_PLATFORM_OPENING_ ? ovAlloc_ : 0, RECO_WS_FACTORY_STOCK_TO_PLATFORM_OPENING_ ? fcAlloc_ : 0);
+composition.overseasTransferOfferedQty = RECO_WS_OVERSEAS_TO_PLATFORM_OPENING_ ? 0 : ovAlloc_; composition.factoryOffsetOfferedQty = RECO_WS_FACTORY_STOCK_TO_PLATFORM_OPENING_ ? 0 : fcAlloc_;   // b4: offered, not in the opening
+var mProj = recoWsBuildMonthlyProjection_(months, composition.openingSupplyQty, (haveAll ? demandByMonth : null), mIncoming, upc, nd.destination, preT1Demand, preT1Date, composition.overseasTransferOfferedQty, composition.factoryOffsetOfferedQty);
+if (mProj) { mLine.monthlyProjection = mProj; mLine.openingSupplyComposition = composition;
+  var ovUsed_ = mProj.reduce(function (a, x) { return a + (x.overseasCoveredQty || 0); }, 0);   // b4: the suggested transfer (FIFO-consumed part of the offer)
+  if (composition.overseasTransferOfferedQty > 0) mLine.overseasTransfer = { offeredQty: composition.overseasTransferOfferedQty, suggestedQty: ovUsed_, legDate: 'UNKNOWN', reason: 'FBA_LEG_UNDECIDED_B_Q1', platformSellable: false };
+  var sum_ = function (k) { return mProj.reduce(function (a, x) { return a + (typeof x[k] === 'number' && isFinite(x[k]) ? x[k] : 0); }, 0); };   // b5 Q1: the factory layer of the platform need
+  if (composition.factoryOffsetOfferedQty > 0 || ovUsed_ > 0) mLine.factoryShip = { stockOfferedQty: composition.factoryOffsetOfferedQty, shipQty: sum_('factoryShipQty'), fromStockQty: sum_('factoryShipFromStockQty'), newPurchaseQty: sum_('newPurchaseQty'), platformSellable: false }; }
+
+
+if (rAlloc && (rAlloc.reallocationInQty != null || rAlloc.reallocationOutQty != null || rAlloc.factoryAvailableQtySnapshot != null)) {
+mLine.factorySurplusReallocation = { factoryAvailableQtySnapshot: recoWsNum_(rAlloc.factoryAvailableQtySnapshot), reallocationInQtySnapshot: recoWsNum_(rAlloc.reallocationInQty), reallocationOutQtySnapshot: recoWsNum_(rAlloc.reallocationOutQty) };
+}
+if (cmr && cmr.ready) mLine.currentMonthRemaining = { requiredByDate: cmr.requiredByDate, month: cmr.ym, remainingDays: cmr.remainingDays, demandQty: Math.round(cmr.demand) };
+
+
+
+
+var planModel = recoWsResolvePlanningModel_(read, scope, sku);
+var salesRate = null, salesReason = null;
+
+
+
+
+
+
+
+
+
+var sr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
+if (planModel === 'sales_driven') { if (sr.ok) salesRate = sr.avgSalesPerDay; else salesReason = (sr.reason || 'SALES_BASIS_UNAVAILABLE') + (sr.detail ? ': ' + sr.detail : ''); }
+
+
+
+
+
+
+
+
+var horizonOpening = recoWsNum_(L.currentStockQty);
+if (horizonOpening === null && typeof KMDR.resolveMarketplaceCurrentStock === 'function') {
+var siteRes = KMDR.resolveMarketplaceCurrentStock({ rows: amazonRows, scope: { country: scope.country, marketplace: scope.marketplace, sku: sku } });
+if (siteRes && siteRes.ready && typeof siteRes.qty === 'number') horizonOpening = siteRes.qty;
 }
 
-// S8-B3-R3-CP2S-R1 - ONE SHAPE FOR THE HISTORICAL BASIS, BECAUSE THERE IS ONE BASIS.
-//
-// This was written inline in the MARKETPLACE expander and nowhere else, which is the whole reason a
-// self_fulfilled site - routed to the WAREHOUSE lane and so producing no marketplace line at all -
-// published no historical average and the column printed the same dash it prints for "no sales". A
-// second inline copy in the warehouse expander would have been the same defect with a longer fuse, so
-// there is one builder and both lanes call it.
-//
-// `blankDateRows` travels here too: the resolver counts the undated rows it skipped, and a count that
-// stops at the resolver is one nobody can act on. It is carried on FAILURES as well as successes,
-// because "no usable rows" and "the rows were all undated" are different repairs.
-//
-// NOTHING IS COMPUTED HERE. Every field is the owner's, passed through.
+
+
+var hzIncoming = mIncoming;
+if (calc.calculationDate && typeof KMDR.resolveMarketplaceQualifiedIncoming === 'function') {
+var c90 = new Date(Date.parse(calc.calculationDate + 'T00:00:00Z') + 90 * 864e5).toISOString().slice(0, 10);
+hzIncoming = (KMDR.resolveMarketplaceQualifiedIncoming({ candidates: shipmentRows, marketplaces: mktRows, scope: nd.destination, requiredByDate: c90 }).qualifiedEvents || [])
+.map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; }).concat(mOngoing);
+}
+var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
+: recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, hzIncoming, upc, nd.destination, planModel, salesRate);
+if (mHz) mLine.horizons = mHz;
+
+
+
+
+else mLine.horizonsBlockedReason = salesReason || 'HORIZON_PROJECTION_UNAVAILABLE';
+if (mHz) { var gM = recoWsAiGateEvents_(evtRows, scope, sku, calc); if (gM.gated.length) { mLine.aiGatedEvents = gM.gated;   // D5-V3-R3 (m5)
+mLine.aiHorizons = recoWsBuildHorizons_(calc, fcRows, tgtRows, gM.rows, skuMeta, scope, sku, horizonOpening, hzIncoming, upc, nd.destination, planModel, salesRate) || null; } }
+// D5-V3-R2 (review m1): planned / shipped / ongoing labelled separately (quantities unchanged)
+var stById = {}; shipmentRows.forEach(function (c) { var lk = recoWsStr_(c.lineageKey); if (lk) stById[lk] = c.status; });
+var _cntM = {}; (hzIncoming || []).forEach(function (ev) { var id = recoWsStr_(ev && ev.incomingId); if (id) _cntM[id] = 1; });   // D5-V3-R5D
+mLine.incomingDateSources = recoWsIncomingDateSources_(read, shipmentRows.map(function (c) { return { lineageKey: c.lineageKey, shipmentId: c.shipmentId, qty: c.quantityRemaining, ids: [c.lineageKey, c.supplyCandidateId, c.ref, c.shipmentLineId] }; }), _cntM, recoWsHorizonEnd_(calc),
+(function () { var o = {}; (mIncoming || []).forEach(function (ev) { var id = recoWsStr_(ev && ev.incomingId); if (id) o[id] = 1; }); return o; })(), recoWsMonthsEnd_(months));   // D5-V3-R5F (m-3)
+if (_dupM.identical.length) { mLine.shipmentDuplicates = { conflicts: [], identical: _dupM.identical }; mLine.diagnostics = mLine.diagnostics || { issues: [] }; mLine.diagnostics.issues = (mLine.diagnostics.issues || []).concat([{ code: 'SHIPMENT_DUPLICATE_ROWS', message: RECO_WS_DUP_IDENTICAL_LABEL_ + ': ' + _dupM.identical.map(function (x) { return x.table + ' ' + x.id + ' x' + x.rows; }).join('; ') }]); }
+var _shM = mLine.incomingDateSources.filter(function (d) { return d.dateSource === 'ETA_MISSING'; });
+if (_shM.length) { mLine.shippedEtaMissing = _shM; mLine.diagnostics = mLine.diagnostics || { issues: [] }; mLine.diagnostics.issues = (mLine.diagnostics.issues || []).concat([{ code: 'SHIPPED_ETA_MISSING', message: RECO_WS_SHIPPED_ETA_MISSING_LABEL_ + ': ' + _shM.map(function (d) { return d.shipmentId || d.lineageKey; }).join(', ') }]); }   // D5-V3-R5
+recoWsWarnDefaults_(mLine);   // D5-V3-R5E
+if (_v3.length) { mLine.platformVia3pl = _v3; mLine.supplyUnderstatedQty = _q3; mLine.diagnostics = mLine.diagnostics || { issues: [] };   // P3PL-2 r3 (narrow)
+mLine.diagnostics.issues = (mLine.diagnostics.issues || []).concat([{ code: 'PLATFORM_VIA_3PL_NOT_COUNTED', message: _v3.map(function (x) { return (x.shipmentId || x.lineageKey) + ' ' + x.qty + ' -> 3PL ' + x.destinationWarehouseId + ' (3PL ETA ' + (x.threePlEta || 'none') + ')'; }).join('; ') + ': not counted as this site\'s sellable supply - the 3PL -> platform leg is not decided (B-Q1, UNKNOWN, never 0 days). Supply may be UNDERSTATED by up to ' + _q3 + ' (the suggested qty may be overstated by up to ' + _q3 + ').' }]); }
+mLine.supplyBreakdown = recoWsSupplyBreakdown_(hzIncoming, stById);
+
+
+
+
+
+
+
+
+
+
+
+mLine.horizonBasis = recoWsBasisOf_(sr, planModel, horizonOpening, (hzIncoming || []).length);
+return mLine;
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 function recoWsBasisOf_(sr, planModel, openingQty, incomingCount) {
-  return { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
-    source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
-    normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
-    horizonOpeningQty: (openingQty === undefined ? null : openingQty),
-    qualifiedIncomingCount: (incomingCount === undefined ? null : incomingCount),
-    blankDateRows: (sr.blankDateRows == null ? null : sr.blankDateRows),
-    basisQualityError: (sr.ok ? null : (sr.reason || null)), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
+return { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
+source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
+normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
+horizonOpeningQty: (openingQty === undefined ? null : openingQty),
+qualifiedIncomingCount: (incomingCount === undefined ? null : incomingCount),
+blankDateRows: (sr.blankDateRows == null ? null : sr.blankDateRows),
+basisQualityError: (sr.ok ? null : (sr.reason || null)), contaminationSource: (sr.ok ? sr.contaminationSource : null) };
 }
 
-// WAREHOUSE expansion → one canonical line per configured warehouse. Demand is fanned per month by the FROZEN ratio;
-// each warehouse runs the FROZEN KMPA→KMPS Weekly path (real source-pool allocator) — the transport NEVER
-// reconstructs allocatedSupplyQty. Rule/warehouse problems fail closed as blocked lines with canonical tokens.
+
+
+
 function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
-  var snaps = read.snapshots || {}, lines = [];
-  var whRows = recoWsRows_(read, 'warehouses'), ruleRows = recoWsRows_(read, 'replenishmentDemandAllocationRules'), fcRows = recoWsRows_(read, 'fcRegularForecast');
-  var skuDetailRowsW = recoWsRows_(read, 'skuDetails');
-  var upc = recoWsUpcBySku_(skuDetailRowsW)[sku];   // F1-4B-FM3c-2: carton owner input (per-tier suggestedOrderQty)
-  var skuRowW = null; for (var swi = 0; swi < skuDetailRowsW.length; swi++) { if (recoWsStr_(skuDetailRowsW[swi].sku) === sku) { skuRowW = skuDetailRowsW[swi]; break; } }
-  var skuMetaW = { sku: sku, series: skuRowW ? recoWsStr_(skuRowW.series) : '', category: skuRowW ? recoWsStr_(skuRowW.category) : '', company: scope.company };
-  var tgtRowsW = recoWsRows_(read, 'fcTargetRules');
-  var evtRowsW = recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; });
-  var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
-  var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
-  // F1-4B-FM5-R4UI-R3 - resolve the SKU's Planning Model + canonical run-rate ONCE per SKU; the per-warehouse
-  // horizons below all share it (the model is a marketplace-SKU attribute, not per-warehouse).
-  //
-  // CP2S-R1 - RESOLVED FOR BOTH MODES. It used to run only for sales_driven, because that is the only mode whose
-  // HORIZON needs it. But the historical average is a published fact about the site SKU, not an input to one
-  // formula: a forecast_driven line still has a real Avg Sales to show, exactly as the marketplace lane has
-  // published for both modes since CP2R. The horizon below still consumes it only when the model asks for it.
-  //
-  // CP2S-R2 - AND RESOLVED ABOVE THE RULESET GATE, WHICH IS WHY THIS MOVED. R1 attached the basis after the
-  // per-warehouse loop and said in a comment that "a ruleset that would not assemble ... is not a reason to
-  // withhold the site SKU's sales history". The gate below is an EARLY RETURN that fires four lines before the
-  // resolver ever ran, so a site with no demand-allocation rule published no average at all and the column
-  // printed the dash it prints for "no sales". The comment described the intent; the code returned first.
-  // Both exits now go through whReturn_, so the attachment cannot be skipped by adding a third one.
-  var whPlanModel = recoWsResolvePlanningModel_(read, scope, sku);
-  var wsr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
-  var whBasis = recoWsBasisOf_(wsr, whPlanModel);
-  function whReturn_(ls) { ls.forEach(function (ln) { ln.horizonBasis = whBasis; }); return { lines: ls }; }
-  var whSalesRate = null, whSalesReason = null;
-  if (whPlanModel === 'sales_driven') { if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
-  var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
-  var ruleset = KMDA.validateAllocationRules(active, scopeObj, whById);
-  if (!ruleset.ok) {
-    var iss = (ruleset.issues && ruleset.issues[0]) || { code: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED' };
-    lines.push(KMDR.buildRecommendationLine({ destination: { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: iss.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: iss.code, message: iss.message || '' }] } }));
-    return whReturn_(lines);
-  }
-  var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
-  var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
-  var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
-  months.forEach(function (mm) {
-    var fcMonth = fcByMonth[mm]; if (fcMonth == null) return;
-    var split = KMDA.allocateMarketplaceDemand(fcMonth, ruleset, 'forecast');
-    if (split && split.ready) ruleset.warehouses.forEach(function (w) { if (split.byKey && split.byKey[w.warehouseId] != null) override[w.warehouseId][mm] = split.byKey[w.warehouseId]; });
-  });
-  ruleset.warehouses.forEach(function (w) {
-    var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, warehouseId: w.warehouseId }, { warehouses: whRows });
-    var node = nd.ok ? nd.destination : { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: w.warehouseId, warehouseId: w.warehouseId, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' + w.warehouseId };
-    var allocatedForecast = 0, cnt = 0; for (var k in override[w.warehouseId]) { allocatedForecast += override[w.warehouseId][k]; cnt++; }
-    if (!nd.ok) { lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: (nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_WAREHOUSE_INVALID', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })); return; }
-    var skuReq = { recommendationType: 'WEEKLY_SHIPPING', company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku, destinationWarehouseId: w.warehouseId, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, regularForecastByMonthOverride: override[w.warehouseId], formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf };
-    var assembled = KMPA.assembleProductionRecommendationFacts(read, skuReq);
-    if (!assembled.ready) { var a0 = (assembled.issues && assembled.issues[0]) || { code: 'RECOMMENDATION_RUNTIME_BLOCKED' }; lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: a0.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: a0.code, message: a0.message || '' }] } })); return; }
-    var pr = assembled.productionRequest; pr.preReadSnapshots = read.snapshots;
-    var src = KMPS.buildProductionRecommendationSource(ss, pr);
-    if (src.ready !== true) { var s0 = (src.issues && src.issues[0]) || {}; var code = s0.code || s0.reason || 'RECOMMENDATION_RUNTIME_BLOCKED'; lines.push(KMDR.buildRecommendationLine({ destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, allocatedForecastQty: cnt ? allocatedForecast : null, blocked: true, blockedReason: code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code, message: s0.reason || s0.message || '' }] } })); return; }
-    var supply = recoWsSupplyBySku_(src.supplySourceEntries)[sku] || { currentStockQty: 0, qualifiedIncomingQty: 0 };
-    var gap = recoWsGapBySku_(pr.planningFacts)[sku]; if (gap === undefined) gap = null;
-    var wline = null; (src.lines || []).forEach(function (l) { if (!wline && recoWsStr_(l.masterSku || l.sku) === sku) wline = l; }); if (!wline) wline = (src.lines || [])[0] || null;
-    var allocatedSupply = 0; if (wline && wline.allocationBreakdown) wline.allocationBreakdown.forEach(function (b) { if (typeof b.allocatedQty === 'number') allocatedSupply += b.allocatedQty; });
-    var wLine = KMDR.buildRecommendationLine({
-      destination: node, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku,
-      allocatedForecastQty: cnt ? allocatedForecast : null, currentStockQty: supply.currentStockQty, qualifiedIncomingQty: supply.qualifiedIncomingQty, incomingCompleteness: 'COMPLETE',
-      calculatedGap: gap, allocatedSupplyQty: wline ? allocatedSupply : null, recommendedQty: (wline && typeof wline.recommendedQty === 'number') ? wline.recommendedQty : null,
-      residualShortageQty: (wline && typeof wline.unallocatedQty === 'number') ? wline.unallocatedQty : null,
-      blocked: !!(wline && wline.blockedReason), blockedReason: wline ? wline.blockedReason : null,
-      formulaVersion: src.formulaVersion || vmeta.formulaVersion, sourceDataAsOf: src.sourceDataAsOf || vmeta.sourceDataAsOf
-    });
-    // F1-4B-FM3c-2: additive per-warehouse monthly projection — ONE independent KMTPP call per warehouse. Opening =
-    // this warehouse's OWN CURRENT_STOCK (never pooled); demand = the per-warehouse monthly split (override); incoming =
-    // ONLY the warehouseQualifiedEvents whose warehouseId === this warehouse (FM3c-1b; strictly isolated, count-once).
-    var whIncoming = (src.warehouseQualifiedEvents || []).filter(function (e) { return recoWsStr_(e.warehouseId) === w.warehouseId; })
-      .map(function (e) { return { incomingId: e.incomingId, eta: e.eta, qty: e.eligibleQty, sourceType: e.sourceType }; });
-    var whOpening = recoWsWarehouseOpeningStock_(src.supplySourceEntries, w.warehouseId);
-    var wProj = recoWsBuildMonthlyProjection_(months, whOpening, override[w.warehouseId], whIncoming, upc, node);
-    if (wProj) wLine.monthlyProjection = wProj;
-    // F1-4B-FM4a: additive per-warehouse day-horizon projection (opening = this warehouse's OWN stock; incoming =
-    // ONLY this warehouse's warehouseQualifiedEvents — same isolation as monthlyProjection; never pooled).
-    var wHz = (whPlanModel === 'sales_driven' && whSalesRate === null) ? null
-      : recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, whOpening, whIncoming, upc, node, whPlanModel, whSalesRate);
-    if (wHz) wLine.horizons = wHz;
-    else wLine.horizonsBlockedReason = whSalesReason || 'HORIZON_PROJECTION_UNAVAILABLE';   // R7 §1/§4 — preserve the specific reason (no generic mask)
-    lines.push(wLine);
-  });
-  // ATTACHED TO EVERY LINE, INCLUDING THE BLOCKED ONES. A warehouse that failed to normalize, a ruleset that
-  // would not assemble and a horizon that could not be built are all reasons about THAT WAREHOUSE; none of them
-  // is a reason to withhold the site SKU's sales history.
-  //
-  // ONE OBJECT, SHARED BY EVERY LINE, and that is the point rather than a saving: there is one basis for one
-  // site SKU. Building it per warehouse is how a reader starts believing the warehouses have different
-  // averages, which is the per-warehouse split and the averaged-average this round must not introduce. The
-  // opening and incoming counts stay NULL here for the same reason - they are per-warehouse horizon inputs,
-  // not part of the canonical historical basis.
-  return whReturn_(lines);
+var snaps = read.snapshots || {}, lines = [];
+var whRows = recoWsRows_(read, 'warehouses'), ruleRows = recoWsRows_(read, 'replenishmentDemandAllocationRules'), fcRows = recoWsRows_(read, 'fcRegularForecast');
+var skuDetailRowsW = recoWsRows_(read, 'skuDetails');
+var upc = recoWsUpcBySku_(skuDetailRowsW)[sku];
+var skuRowW = null; for (var swi = 0; swi < skuDetailRowsW.length; swi++) { if (recoWsStr_(skuDetailRowsW[swi].sku) === sku) { skuRowW = skuDetailRowsW[swi]; break; } }
+var skuMetaW = { sku: sku, series: skuRowW ? recoWsStr_(skuRowW.series) : '', category: skuRowW ? recoWsStr_(skuRowW.category) : '', company: scope.company };
+var tgtRowsW = recoWsRows_(read, 'fcTargetRules');
+var evtRowsW = recoWsEventRowsYmd_(recoWsRows_(read, 'fcSpecialEvents').filter(function (r) { return recoWsStr_(r.company) === '' || recoWsStr_(r.company) === scope.company; }));
+var whById = {}; whRows.forEach(function (w) { var id = recoWsStr_(w.warehouse_id); if (id) whById[id] = w; });
+var scopeObj = { company: scope.company, country: scope.country, marketplace: scope.marketplace };
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var whPlanModel = recoWsResolvePlanningModel_(read, scope, sku);
+var wsr = recoWsResolveSalesRate_(read, scope, sku, calc.calculationDate);
+var whBasis = recoWsBasisOf_(wsr, whPlanModel);
+function whReturn_(ls) { ls.forEach(function (ln) { ln.horizonBasis = whBasis; }); return { lines: ls }; }
+var whSalesRate = null, whSalesReason = null;
+if (whPlanModel === 'sales_driven') { if (wsr.ok) whSalesRate = wsr.avgSalesPerDay; else whSalesReason = (wsr.reason || 'SALES_BASIS_UNAVAILABLE') + (wsr.detail ? ': ' + wsr.detail : ''); }
+var active = KMDA.readActiveAllocationRules(ruleRows, scopeObj, calc.calculationMonth);
+var ruleset = KMDA.validateAllocationRules(active, scopeObj, whById);
+if (!ruleset.ok) {
+var iss = (ruleset.issues && ruleset.issues[0]) || { code: 'DEMAND_ALLOCATION_RULE_NOT_CONFIGURED' };
+lines.push(KMDR.buildRecommendationLine({ destination: { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: iss.code, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: iss.code, message: iss.message || '' }] } }));
+return whReturn_(lines);
+}
+var evChkW = recoWsEventCheck_(evtRowsW, scope, sku, calc);
+if (!evChkW.ok) {
+lines.push(recoWsEventBlockedLine_({ destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' }, 'WAREHOUSE_REPLENISHMENT', sku, siteSku, evChkW, vmeta));
+return whReturn_(lines);
+}
+var months = (typeof KMPCX !== 'undefined' && KMPCX._forecastWeightMonths) ? KMPCX._forecastWeightMonths(calc.calculationMonth) : [];
+var fcByMonth = recoWsRegularForecastByMonth_(fcRows, scope, sku, months);
+var override = {}; ruleset.warehouses.forEach(function (w) { override[w.warehouseId] = {}; });
+months.forEach(function (mm) {
+var fcMonth = fcByMonth[mm]; if (fcMonth == null) return;
+var split = KMDA.allocateMarketplaceDemand(fcMonth, ruleset, 'forecast');
+if (split && split.ready) ruleset.warehouses.forEach(function (w) { if (split.byKey && split.byKey[w.warehouseId] != null) override[w.warehouseId][mm] = split.byKey[w.warehouseId]; });
+});
+// D5-V3 (Owner V3-3, OD-2, OD-3, 2026-11-13): a self-fulfilled site gets ONE site-level line.
+//   Demand is counted ONCE for the site (Regular FC with its existing Target% rule, or the site's Sales Driven daily rate,
+//   plus each event once) - it is NEVER split by warehouse (the allocation ratios are not demand ratios).
+//   Supply = the site's member warehouses, i.e. the warehouses EXPLICITLY linked by the site's valid allocation setting:
+//   their CURRENT_STOCK summed, plus their incoming. A member warehouse that is also linked to another site has unknown
+//   ownership -> the line is BLOCKED (never counted twice, never guessed); an unknown member stock -> BLOCKED.
+//   Destination (OD-2): exactly one valid member -> it is the destination; several -> the destination is left for the
+//   user to choose (destinationChoiceRequired); the quantity is never split or averaged across them.
+//   `override` (the raw Regular FC split) is still the KMPA input, used here ONLY to read each member's supply facts; the
+//   KMPA per-warehouse gap/recommendation is not surfaced (it is a split-demand figure).
+var members = ruleset.warehouses.map(function (w) { return w.warehouseId; });
+var siteDest = { destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, destinationRefId: null, warehouseId: null, destinationKey: 'WAREHOUSE||' + scope.company + '||' + scope.country + '||' + scope.marketplace + '||' };
+function siteBlocked_(code, message, extra) {
+var ln = KMDR.buildRecommendationLine({ destination: siteDest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: code,
+formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf, diagnostics: { issues: [{ code: code.split(':')[0], message: message || '' }] } });
+if (extra) for (var xk in extra) { if (Object.prototype.hasOwnProperty.call(extra, xk)) ln[xk] = extra[xk]; }
+lines.push(ln); return whReturn_(lines);
+}
+// OD-3: a member linked to ANOTHER site's valid setting is shared; D5-V3-R5 (Owner M4 = (a)+(c)): its part is counted by
+// the configured inventory_share(W, S) - pool x share - or, when that share is missing / invalid, NOT counted and flagged.
+var allActive = KMDA.readActiveAllocationRules(ruleRows, {}, calc.calculationMonth), shared = [], linkedByWh = {};
+// A2-B2 (Owner A0 conditions 2026-11-19): a warehouse is shared only among the sites of the warehouse's OWN company
+// (warehouses.company). A rule of another company naming it is not a valid setting for that warehouse (KMDA refuses a
+// cross-company destination), so it never makes the warehouse shared; it is reported (crossCompanyLinks). A member
+// warehouse whose company is blank cannot say which sites share it -> this site is BLOCKED, never guessed.
+var whCoBlankW = members.filter(function (w3) { return !recoWsStr_(whById[w3] && whById[w3].company); }).sort();
+if (whCoBlankW.length) return siteBlocked_('WAREHOUSE_COMPANY_UNKNOWN: ' + whCoBlankW.join(','), 'member warehouse(s) ' + whCoBlankW.join(', ') + ' have no company - which sites share them cannot be determined; no suggestion until warehouses.company is set', recoWsWarnDefaults_({ memberWarehouses: members.slice().sort() }));
+var crossCoLinks = [];
+allActive.forEach(function (r) { var wid0 = recoWsStr_(r.destination_warehouse_id); if (!wid0) return; var sk0 = recoWsSiteKey_(r.company, r.country, r.marketplace);
+var wco0 = recoWsStr_(whById[wid0] && whById[wid0].company).toLowerCase();
+if (wco0 && recoWsStr_(r.company).toLowerCase() !== wco0) { if (members.indexOf(wid0) !== -1 && !crossCoLinks.some(function (x) { return x.warehouseId === wid0 && x.siteKey === sk0; })) crossCoLinks.push({ warehouseId: wid0, warehouseCompany: recoWsStr_(whById[wid0].company), siteKey: sk0 }); return; }
+(linkedByWh[wid0] = linkedByWh[wid0] || []); if (linkedByWh[wid0].indexOf(sk0) === -1) linkedByWh[wid0].push(sk0); });
+var mySiteKey = recoWsSiteKey_(scope.company, scope.country, scope.marketplace), shareByWh = {};
+var fcRatioByWh = {}; allActive.forEach(function (r) { var w9 = recoWsStr_(r.destination_warehouse_id); if (!w9) return; (fcRatioByWh[w9] = fcRatioByWh[w9] || {})[recoWsSiteKey_(r.company, r.country, r.marketplace)] = r.forecast_allocation_ratio; });   // D5-V3-R5E: used only when RECO_WS_INTRANSIT_RATIO_SOURCE_ = forecast_ratio
+members.forEach(function (wid1) { var ls = (linkedByWh[wid1] || []).slice(); if (ls.indexOf(mySiteKey) === -1) ls.push(mySiteKey); shareByWh[wid1] = recoWsInventoryShareOf_(read.__inventoryShares, wid1, mySiteKey, ls.sort()); shareByWh[wid1].linkedSites = ls.length; });
+allActive.forEach(function (r) {
+var same = recoWsStr_(r.company).toLowerCase() === recoWsStr_(scope.company).toLowerCase() && recoWsStr_(r.country).toLowerCase() === recoWsStr_(scope.country).toLowerCase()
+&& recoWsStr_(r.marketplace).toLowerCase() === recoWsStr_(scope.marketplace).toLowerCase();
+var wid = recoWsStr_(r.destination_warehouse_id);
+if (!same && members.indexOf(wid) !== -1 && shared.indexOf(wid) === -1) shared.push(wid);
+});
+// D5-V3-R3/R5: sharing alone never blocks; an unknown share removes only that warehouse's part (below).
+var useKMPDW = (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.planningDemandByMonth === 'function');
+var demandByMonthW = {}, demandQtyW = 0, haveAllW = months.length === 4;
+var pdmW = useKMPDW ? KMPD.planningDemandByMonth({ fcRegularRows: fcRows, fcTargetRuleRows: tgtRowsW, fcSpecialEventRows: evtRowsW, scope: scope, sku: sku, skuMeta: skuMetaW, months: months }) : null;
+months.forEach(function (mm) {
+var d = useKMPDW ? (pdmW[mm] ? pdmW[mm].demand : undefined) : fcByMonth[mm];
+if (d === null || d === undefined) { haveAllW = false; return; }
+demandByMonthW[mm] = d; demandQtyW += d;
+});
+var cmrW = (useKMPDW && calc.calculationDate) ? KMPD.currentMonthRemainingDemand({ calculationDate: calc.calculationDate, fcRegularRows: fcRows, fcTargetRuleRows: tgtRowsW, fcSpecialEventRows: evtRowsW, scope: scope, sku: sku, skuMeta: skuMetaW }) : null;
+var preT1W = (cmrW && cmrW.ready) ? Math.round(cmrW.demand) : null;
+// supply facts per member (read only; the KMPA demand figures are not used)
+var siteOpening = 0, openingKnown = true, unknownStock = [], siteIncoming = [], seenIn = {}, memberNodes = [], fwVer = null, asOf = null, opByWh = {};
+for (var mi = 0; mi < members.length; mi++) {
+var whId = members[mi];
+var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'WAREHOUSE', company: scope.company, country: scope.country, marketplace: scope.marketplace, warehouseId: whId }, { warehouses: whRows });
+if (!nd.ok) return siteBlocked_((nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_WAREHOUSE_INVALID', 'member warehouse ' + whId + ' is not a valid destination');
+memberNodes.push(nd.destination);
+var skuReq = { recommendationType: 'WEEKLY_SHIPPING', company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku, destinationWarehouseId: whId, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, regularForecastByMonthOverride: override[whId], formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf };
+var assembled = KMPA.assembleProductionRecommendationFacts(read, skuReq);
+if (!assembled.ready) { var a0 = (assembled.issues && assembled.issues[0]) || { code: 'RECOMMENDATION_RUNTIME_BLOCKED' }; return siteBlocked_(a0.code, 'member ' + whId + ': ' + (a0.message || '')); }
+var pr = assembled.productionRequest; pr.preReadSnapshots = read.snapshots;
+var src = KMPS.buildProductionRecommendationSource(ss, pr);
+if (src.ready !== true) { var s0 = (src.issues && src.issues[0]) || {}; return siteBlocked_(s0.code || s0.reason || 'RECOMMENDATION_RUNTIME_BLOCKED', 'member ' + whId + ': ' + (s0.reason || s0.message || '')); }
+fwVer = fwVer || src.formulaVersion; asOf = asOf || src.sourceDataAsOf;
+var op = recoWsWarehouseOpeningStock_(src.supplySourceEntries, whId);
+if (op === null) { if (!(shareByWh[whId] && shareByWh[whId].unknown)) { openingKnown = false; unknownStock.push(whId); } } else { opByWh[whId] = op; }
+(src.warehouseQualifiedEvents || []).forEach(function (e) {
+if (recoWsStr_(e.warehouseId) !== whId) return;
+var key = recoWsStr_(e.incomingId) || (whId + '#' + siteIncoming.length);
+if (seenIn[key]) return; seenIn[key] = 1;
+siteIncoming.push({ incomingId: e.incomingId, eta: recoWsEventEtaYmd_(read, e.incomingId, e.eta), qty: e.eligibleQty, sourceType: e.sourceType, warehouseId: whId });   // D5-V3-R5D (D2)
+});
+}
+if (!openingKnown) return siteBlocked_('WAREHOUSE_STOCK_UNKNOWN: ' + unknownStock.sort().join(','), 'no current-stock fact for member warehouse(s) - the site supply is unknown, not 0');
+// D5-V3-R2 (review M3; D1 + D6): a created-but-unconfirmed Shipment (draft / ready_to_ship) bound for a member warehouse is
+// PLANNED supply of this site at its ETA - counted ONCE here (the warehouse source projection does not count pre-dispatch
+// rows; the AI netting no longer nets a plan once it is transferred to a Shipment). Count-once key = the shipment-line
+// lineage (the same key the source projection uses), so a row already in siteIncoming is never added twice. A pre-dispatch
+// shipment without a valid ETA is flagged exactly like the marketplace path (PLANNED_SHIPMENT_ETA_MISSING; Owner decision M2).
+var plannedEtaGap = [], statusByIdW = {}, plannedSkipByWh = {}, plannedUnkByWh = {}, slRawW = null;   // A2-B1: pre-dispatch quantity bound for a share-unknown warehouse
+(recoWsShipmentLineCandidates_(read).candidates || []).forEach(function (e) {
+var c = e && e.candidate || {};
+if (recoWsStr_(c.sku) !== sku) return;
+var whc = recoWsStr_(c.destinationWarehouseId); if (members.indexOf(whc) === -1) return;
+if (shareByWh[whc] && shareByWh[whc].unknown) {   // D5-V3-R5: that warehouse's part is not counted at all; A2-B1: its pre-dispatch quantity is remembered (the site is BLOCKED below)
+var stU = recoWsStr_(c.status).toLowerCase(), qU = recoWsNum_(c.quantityRemaining);
+var rfU = Array.isArray(c.reviewFlags) ? c.reviewFlags : [], badU = rfU.indexOf('INVALID_QUANTITY') !== -1 || rfU.indexOf('INVALID_RECEIVED_QUANTITY') !== -1 || rfU.indexOf('RECEIVED_EXCEEDS_SHIPPED') !== -1;
+if (!slRawW) { slRawW = {}; recoWsRows_(read, 'shipmentLines').forEach(function (r7) { var i7 = recoWsStr_(r7.shipment_line_id); if (i7) slRawW[i7] = r7; }); }
+var r7r = slRawW[recoWsStr_(c.linkedShipmentLineId)]; if (r7r && recoWsStr_(r7r.shipment_qty) === '' && recoWsStr_(r7r.qty) === '') badU = true;   // blank shipped qty = unknown
+if ((stU === 'draft' || stU === 'ready_to_ship') && !(recoWsStr_(c.company) && recoWsStr_(c.company) !== recoWsStr_(scope.company))) { if (badU || qU === null || !isFinite(qU) || qU < 0) plannedUnkByWh[whc] = (plannedUnkByWh[whc] || 0) + 1; else if (qU > 0) plannedSkipByWh[whc] = (plannedSkipByWh[whc] || 0) + qU; }   // r4 (m-1): unreadable remaining qty = unknown, not 0
+return; }
+if (recoWsStr_(c.company) && recoWsStr_(c.company) !== recoWsStr_(scope.company)) return;
+var lk = recoWsStr_(c.lineageKey); if (lk) statusByIdW[lk] = c.status;
+var st = recoWsStr_(c.status).toLowerCase(); if (st !== 'draft' && st !== 'ready_to_ship') return;
+var q = recoWsNum_(c.quantityRemaining); if (q === null || q <= 0) return;
+var eta = recoWsYmd_(c.eta);   // D5-V3-R5C (F-1): Date cell / 'YYYY/MM/DD' text normalised first
+if (!(/^\d{4}-\d{2}-\d{2}$/.test(eta) && !isNaN(Date.parse(eta + 'T00:00:00Z')))) { var sid = recoWsStr_(c.linkedShipmentId) || lk || '?'; if (plannedEtaGap.indexOf(sid) === -1) plannedEtaGap.push(sid); return; }
+if (lk && seenIn[lk]) return;
+if (lk) seenIn[lk] = 1;
+siteIncoming.push({ incomingId: lk || ('PLN#' + siteIncoming.length), eta: eta, qty: q, sourceType: 'PLANNED_SHIPMENT', warehouseId: whc });
+});
+// D5-V3-R5E (Owner lineage rule): a SHIPPED line bound for a member warehouse whose receiver lineage cannot be resolved is an
+// unattributable remainder. The source projection does not carry it, so it is added here - same company only (header), dated by
+// its normalised ETA, once per lineage key - and the attribution then splits it by the ratio (shared warehouse) or keeps it
+// whole (warehouse of this site only). Without an ETA it is flagged SHIPPED_ETA_MISSING and never dated by guess.
+(recoWsShipmentLineCandidates_(read).candidates || []).forEach(function (e8) { var c8 = (e8 && e8.candidate) || {};
+if (recoWsStr_(c8.sku) !== sku) return; var w8 = recoWsStr_(c8.destinationWarehouseId); if (members.indexOf(w8) === -1) return;
+if (recoWsStr_(c8.receiverResolutionStatus).toUpperCase() === 'RESOLVED') return;
+if (!RECO_WS_SHIPPED_ST_[recoWsStr_(c8.status).toLowerCase()]) return;
+var xco8 = recoWsStr_(e8.headerScope && e8.headerScope.company) !== recoWsStr_(scope.company);   // D5-V3-R5F (m-6): flagged, never counted
+var q8 = recoWsNum_(c8.quantityRemaining); if (q8 === null || q8 <= 0) return;
+var eta8 = recoWsYmd_(c8.eta); if (!xco8 && !recoWsValidYmd_(eta8)) return;
+var lk8 = recoWsStr_(c8.lineageKey); if (lk8 && seenIn[lk8]) return; if (lk8) seenIn[lk8] = 1;
+siteIncoming.push({ incomingId: lk8 || ('UNATTR#' + siteIncoming.length), eta: recoWsValidYmd_(eta8) ? eta8 : null, qty: q8, sourceType: 'UNATTRIBUTED_SHIPMENT', warehouseId: w8, crossCompanyHeader: xco8 }); });
+var _dupW = recoWsDupTouch_(read, ((recoWsShipmentLineCandidates_(read).candidates) || []).map(function (e6) { return (e6 && e6.candidate) || {}; }).filter(function (c6) { return recoWsStr_(c6.sku) === sku; }), scope.marketplace, members, mySiteKey);   // D5-V3-R5E
+if (_dupW.conflicts.length) return siteBlocked_('SHIPMENT_DUPLICATE_CONFLICT: ' + _dupW.conflicts.map(function (x) { return x.id; }).join(','), RECO_WS_DUP_CONFLICT_LABEL_ + ': ' + _dupW.conflicts.map(function (x) { return x.table + ' ' + x.id + ' (' + x.fields.join(', ') + ')'; }).join('; '), { shipmentDuplicates: { conflicts: _dupW.conflicts, identical: _dupW.identical } });
+if (plannedEtaGap.length) return siteBlocked_('PLANNED_SHIPMENT_ETA_MISSING: ' + plannedEtaGap.sort().join(','), 'pre-dispatch shipment(s) ' + plannedEtaGap.join(', ') + ' hold stock for this site but have no valid ETA and no plan date. ' + RECO_WS_ARRIVAL_UNDETERMINED_LABEL_,
+{ arrivalUndetermined: plannedEtaGap.map(function (id) { return { shipmentId: id, dateSource: 'UNDETERMINED', reason: 'NO_ETA_NO_PLAN_DATE', label: RECO_WS_ARRIVAL_UNDETERMINED_LABEL_ }; }) });
+// D5-V3-R5 (Owner M4 = (a)+(c), 2026-11-18): each member's part = its available pool x inventory_share(W, this site),
+// rounded DOWN to whole units, so the parts of all sites never exceed the pool (sum of floors <= pool). The pool is
+// wh_available_stock (already net of reservations - nothing is deducted a second time) plus the warehouse's incoming,
+// each event scaled the same way. A warehouse whose share is unknown contributes NOTHING and is flagged; the rest of
+// the site is still calculated. Never normalised, never weighted by demand (KMMSA is not used), never guessed.
+var shareApplied = [], shareUnknown = [], shareRecon = [], incomingAttribution = [];
+siteOpening = 0;
+var linMap = recoWsLineageByKey_(read), newIncoming = [];
+members.forEach(function (wid2) {
+var sh = shareByWh[wid2] || { factor: 1, bp: 10000, source: 'SOLE_SITE_FULL', bpBySite: {}, linkedKeys: [mySiteKey] }, op2 = (opByWh[wid2] === undefined) ? null : opByWh[wid2];
+// STOCK: pool x share (exact); a pool that is not a whole number cannot be split exactly -> not counted (never guessed)
+var stockSh = sh;
+if (!sh.unknown && sh.bp !== 10000 && op2 !== null && recoWsShareSplit_(op2, sh.bp) === null) { stockSh = {}; for (var k7 in sh) { if (Object.prototype.hasOwnProperty.call(sh, k7)) stockSh[k7] = sh[k7]; } stockSh.unknown = { reason: recoWsQtyUnsplittable_(op2, 'WAREHOUSE_POOL'), poolQty: op2 }; stockSh.warehouseLevel = true; }
+// INCOMING: lineage first; only an unattributable remainder of a shared warehouse uses the ratio
+var evs = siteIncoming.filter(function (e) { return recoWsStr_(e.warehouseId) === wid2; });
+var att = recoWsIncomingAttribute_(evs, sh, mySiteKey, recoWsStr_(scope.company), linMap, recoWsIntransitRatio_(sh, wid2, sh.linkedKeys || [mySiteKey], fcRatioByWh));
+att.events.forEach(function (ev) { var e0 = ev.__src; delete ev.__src; if (!(ev.countedForThisSite > 0)) return;
+var o4 = {}; for (var k4 in e0) { if (Object.prototype.hasOwnProperty.call(e0, k4)) o4[k4] = e0[k4]; }
+if (ev.countedForThisSite !== ev.qty) o4.poolQty = ev.qty; o4.qty = ev.countedForThisSite; o4.attribution = ev.mode; newIncoming.push(o4); });
+incomingAttribution = incomingAttribution.concat(att.events.map(function (ev) { var o = { warehouseId: wid2 }; for (var k8 in ev) { if (Object.prototype.hasOwnProperty.call(ev, k8)) o[k8] = ev[k8]; } return o; }));
+shareRecon.push({ warehouseId: wid2, linkedSites: (sh.linkedKeys || []).length || 1, shareSource: sh.source || null, shareBp: (sh.bp === undefined ? null : sh.bp),
+unknownReason: stockSh.unknown ? stockSh.unknown.reason : null, warehouseLevelUnknown: !!stockSh.warehouseLevel,
+stock: (op2 === null) ? null : recoWsShareReconcile_(op2, stockSh, mySiteKey), incoming: att });
+if (stockSh.unknown) { shareUnknown.push({ warehouseId: wid2, reason: stockSh.unknown.reason, detail: stockSh.unknown, linkedSites: (sh.linkedKeys || []).length, excludedStockQty: op2, excludedIncomingQty: att.notCountedQty, counted: false }); return; }
+if (op2 === null) return;
+var cnt = recoWsShareSplit_(op2, stockSh.bp);
+siteOpening += cnt;
+if (stockSh.source === 'INVENTORY_SHARE') shareApplied.push({ warehouseId: wid2, inventoryShare: stockSh.factor, inventoryShareBp: stockSh.bp, poolStockQty: op2, countedStockQty: cnt, linkedSites: (sh.linkedKeys || []).length });
+});
+// A2-B1 (Owner A0 conditions 2026-11-19; supersedes SPEC_R5 C5 / M4(c) 'the row is not blocked'): stock or incoming of a
+// shared warehouse whose share is unknown is NOT this site's stock 0. The site is BLOCKED - no gap, no suggestion, no plan,
+// no order - and the line keeps the warning detail (inventoryShareUnknown / reconciliation / attribution). A part with
+// exactly 0 stock, nothing excluded in transit and no pre-dispatch shipment holds nothing to allocate: 0 x any share = 0
+// is a fact, not a guess, so that part alone does not block (it stays flagged).
+// In transit, the excluded part is what the attribution did not give to a known site: not counted + unassigned (RATIO_UNKNOWN).
+var unasgInW = {}; shareRecon.forEach(function (x) { unasgInW[x.warehouseId] = Number((x.incoming && x.incoming.unassignedQty) || 0); });
+var shareBlockW = shareUnknown.filter(function (u) { var inc = Number(u.excludedIncomingQty || 0) + (unasgInW[u.warehouseId] || 0); return u.excludedStockQty !== 0 || !(inc === 0) || (plannedSkipByWh[u.warehouseId] || 0) > 0 || (plannedUnkByWh[u.warehouseId] || 0) > 0; });
+if (shareBlockW.length) { var sbCodeW = shareBlockW.map(function (u) { return u.warehouseId + '=' + u.reason; }).sort();
+return siteBlocked_('WAREHOUSE_SHARE_UNKNOWN: ' + sbCodeW.join(','), 'allocation of shared warehouse stock is unknown (' + sbCodeW.join(', ') + ') - it is NOT 0; no suggestion, plan or order until the share is set',
+recoWsWarnDefaults_({ inventoryShares: shareApplied, inventoryShareUnknown: shareUnknown, inventoryShareReconciliation: shareRecon, incomingAttribution: incomingAttribution, memberWarehouses: members.slice().sort(), crossCompanyLinks: crossCoLinks,
+shareBlockedParts: shareBlockW.map(function (u) { return { warehouseId: u.warehouseId, reason: u.reason, excludedStockQty: u.excludedStockQty, excludedIncomingQty: u.excludedIncomingQty, unassignedIncomingQty: unasgInW[u.warehouseId] || 0, excludedPlannedShipmentQty: plannedUnkByWh[u.warehouseId] ? null : (plannedSkipByWh[u.warehouseId] || 0), plannedShipmentQtyUnknownRows: plannedUnkByWh[u.warehouseId] || 0 }; }) })); }
+siteIncoming = newIncoming.concat(siteIncoming.filter(function (e) { return members.indexOf(recoWsStr_(e.warehouseId)) === -1; }));
+var single = memberNodes.length === 1;
+var lineDest = single ? memberNodes[0] : siteDest;
+var inQty = 0; siteIncoming.forEach(function (e) { var q = recoWsNum_(e.qty); if (q !== null) inQty += q; });
+var siteLine = KMDR.buildRecommendationLine({
+destination: lineDest, recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku,
+allocatedForecastQty: haveAllW ? demandQtyW : (demandQtyW > 0 ? demandQtyW : null), currentStockQty: siteOpening, qualifiedIncomingQty: inQty, incomingCompleteness: 'COMPLETE',
+calculatedGap: null, allocatedSupplyQty: null, recommendedQty: null, residualShortageQty: null, blocked: false, blockedReason: null,
+formulaVersion: fwVer || vmeta.formulaVersion, sourceDataAsOf: asOf || vmeta.sourceDataAsOf,
+diagnostics: { issues: single ? [] : [{ code: 'DESTINATION_WAREHOUSE_USER_CHOICE', message: 'several valid destination warehouses (' + members.slice().sort().join(', ') + ') - the user chooses one; the quantity is not split' }] }
+});
+siteLine.siteLevel = true;
+siteLine.supplyBreakdown = recoWsSupplyBreakdown_(siteIncoming, statusByIdW);
+siteLine.memberWarehouses = members.slice().sort();
+siteLine.inventoryShares = shareApplied;   // D5-V3-R5: the parts counted by share (pool x share, floored)
+siteLine.inventoryShareUnknown = shareUnknown;   // the parts NOT counted (share missing / invalid / precision / sum > 100% / pool not whole)
+siteLine.inventoryShareReconciliation = shareRecon;   // D5-V3-R5E: per warehouse, pool = counted + rounding + unassigned + not counted
+siteLine.incomingAttribution = incomingAttribution;   // D5-V3-R5E: every incoming event of a member warehouse with its lineage-first mode
+(function () { var iss = []; shareRecon.forEach(function (x) { var shared = x.linkedSites > 1, showStock = shared || x.shareSource === 'INVENTORY_SHARE' || !!x.unknownReason;
+['stock', 'incoming'].forEach(function (part) { var r = x[part]; if (!r) return; if (part === 'stock' && !showStock) return;
+if (part === 'incoming' && (!(r.events && r.events.length) || (!shared && !r.notCountedQty))) return;
+var nc = r.notCountedReason ? ' [' + r.notCountedReason + ']' : ((r.notCountedByReason && Object.keys(r.notCountedByReason).length) ? ' [' + Object.keys(r.notCountedByReason).map(function (k) { return k + ' ' + r.notCountedByReason[k]; }).join(', ') + ']' : '');
+iss.push({ code: 'WAREHOUSE_SHARE_RECONCILIATION', message: x.warehouseId + ' ' + part + ': pool ' + r.poolQty + ' = counted ' + r.countedQty + ' (' + r.perSite.map(function (p) { return p.siteKey + ' ' + p.countedQty; }).join('; ') + ') + rounding ' + r.roundingRemainderQty + ' + unassigned ' + r.unassignedQty + ' + not counted ' + r.notCountedQty + nc + (r.reconciled ? '' : ' [NOT RECONCILED]') }); }); });
+if (iss.length) { siteLine.diagnostics = siteLine.diagnostics || { issues: [] }; siteLine.diagnostics.issues = (siteLine.diagnostics.issues || []).concat(iss); } })();
+if (shareUnknown.length) { siteLine.diagnostics = siteLine.diagnostics || { issues: [] }; siteLine.diagnostics.issues = (siteLine.diagnostics.issues || []).concat([{ code: 'WAREHOUSE_SHARE_UNKNOWN',
+message: 'inventory share unknown for ' + shareUnknown.map(function (u) { return u.warehouseId + ' (' + u.reason + ')'; }).join(', ') + ' - that warehouse part is NOT counted; the rest is calculated' }]); }
+var _cntW = {}; siteIncoming.forEach(function (ev) { var id = recoWsStr_(ev && ev.incomingId); if (id) _cntW[id] = 1; });   // D5-V3-R5E: same definition
+siteLine.incomingDateSources = recoWsIncomingDateSources_(read, siteIncoming.map(function (e) { return { lineageKey: e.incomingId, shipmentId: null, qty: e.qty }; }), _cntW, recoWsHorizonEnd_(calc), _cntW, recoWsMonthsEnd_(months));   // D5-V3-R5F (m-3): same supply set, T4 horizon
+if (_dupW.identical.length) { siteLine.shipmentDuplicates = { conflicts: [], identical: _dupW.identical }; siteLine.diagnostics = siteLine.diagnostics || { issues: [] }; siteLine.diagnostics.issues = (siteLine.diagnostics.issues || []).concat([{ code: 'SHIPMENT_DUPLICATE_ROWS', message: RECO_WS_DUP_IDENTICAL_LABEL_ + ': ' + _dupW.identical.map(function (x) { return x.table + ' ' + x.id + ' x' + x.rows; }).join('; ') }]); }
+var _shW = []; (recoWsShipmentLineCandidates_(read).candidates || []).forEach(function (e5) { var c5 = (e5 && e5.candidate) || {}; if (recoWsStr_(c5.sku) !== sku) return;
+if (members.indexOf(recoWsStr_(c5.destinationWarehouseId)) === -1) return; var m5 = (read.__etaSourceByLineage || {})[recoWsStr_(c5.lineageKey)];
+if (m5 && m5.dateSource === 'ETA_MISSING') _shW.push({ shipmentId: m5.shipmentId, lineageKey: recoWsStr_(c5.lineageKey), qty: recoWsNum_(c5.quantityRemaining), dateSource: 'ETA_MISSING', counted: false, countedInventory: false, countedOrderPlanning: false, label: m5.label }); });   // D5-V3-R5G
+if (_shW.length) { siteLine.shippedEtaMissing = _shW; siteLine.incomingDateSources = siteLine.incomingDateSources.concat(_shW); siteLine.diagnostics = siteLine.diagnostics || { issues: [] }; siteLine.diagnostics.issues = (siteLine.diagnostics.issues || []).concat([{ code: 'SHIPPED_ETA_MISSING', message: RECO_WS_SHIPPED_ETA_MISSING_LABEL_ + ': ' + _shW.map(function (d) { return d.shipmentId || d.lineageKey; }).join(', ') }]); }   // D5-V3-R5
+if (crossCoLinks.length) { siteLine.crossCompanyLinks = crossCoLinks; siteLine.diagnostics = siteLine.diagnostics || { issues: [] }; siteLine.diagnostics.issues = (siteLine.diagnostics.issues || []).concat([{ code: 'WAREHOUSE_CROSS_COMPANY_LINK_IGNORED', message: 'not counted as sharing (another company; warehouses.company decides): ' + crossCoLinks.map(function (x) { return x.warehouseId + ' <- ' + x.siteKey; }).join(', ') }]); }   // A2-B2
+recoWsWarnDefaults_(siteLine);   // D5-V3-R5E
+siteLine.destinationChoiceRequired = !single;
+siteLine.destinationCandidates = single ? [] : members.slice().sort();
+var wProj = recoWsBuildMonthlyProjection_(months, siteOpening, (haveAllW ? demandByMonthW : null), siteIncoming, upc, lineDest, preT1W, preT1W !== null ? cmrW.requiredByDate : null);
+if (wProj) siteLine.monthlyProjection = wProj;
+if (preT1W !== null) siteLine.currentMonthRemaining = { requiredByDate: cmrW.requiredByDate, month: cmrW.ym, remainingDays: cmrW.remainingDays, demandQty: preT1W };
+var wHz = (whPlanModel === 'sales_driven' && whSalesRate === null) ? null
+: recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, siteOpening, siteIncoming, upc, lineDest, whPlanModel, whSalesRate);
+if (wHz) siteLine.horizons = wHz;
+else siteLine.horizonsBlockedReason = whSalesReason || 'HORIZON_PROJECTION_UNAVAILABLE';
+if (wHz) { var gW = recoWsAiGateEvents_(evtRowsW, scope, sku, calc); if (gW.gated.length) { siteLine.aiGatedEvents = gW.gated;   // D5-V3-R3 (m5)
+siteLine.aiHorizons = recoWsBuildHorizons_(calc, fcRows, tgtRowsW, gW.rows, skuMetaW, scope, sku, siteOpening, siteIncoming, upc, lineDest, whPlanModel, whSalesRate) || null; } }
+lines.push(siteLine);
+return whReturn_(lines);
 }
 
 function recoWsFilterLines_(lines, filters) {
-  return lines.filter(function (l) {
-    if (filters.sku && l.sku !== filters.sku) return false;
-    if (filters.siteSku && l.siteSku !== filters.siteSku) return false;
-    return true;
-  });
+return lines.filter(function (l) {
+if (filters.sku && l.sku !== filters.sku) return false;
+if (filters.siteSku && l.siteSku !== filters.siteSku) return false;
+return true;
+});
 }
-// Stable canonical tie-break: company → country → marketplace → sku → siteSku → destinationWarehouseId.
+
 function recoWsSortLines_(lines, scope) {
-  var copy = lines.slice();
-  copy.sort(function (a, b) {
-    return recoWsCmp_(scope.company, scope.company) || recoWsCmp_(scope.country, scope.country) || recoWsCmp_(scope.marketplace, scope.marketplace) ||
-      recoWsCmp_(a.sku, b.sku) || recoWsCmp_(a.siteSku, b.siteSku) || recoWsCmp_(a.destinationWarehouseId, b.destinationWarehouseId);
-  });
-  return copy;
+var copy = lines.slice();
+copy.sort(function (a, b) {
+return recoWsCmp_(scope.company, scope.company) || recoWsCmp_(scope.country, scope.country) || recoWsCmp_(scope.marketplace, scope.marketplace) ||
+recoWsCmp_(a.sku, b.sku) || recoWsCmp_(a.siteSku, b.siteSku) || recoWsCmp_(a.destinationWarehouseId, b.destinationWarehouseId);
+});
+return copy;
 }
 function recoWsCmp_(a, b) { a = recoWsStr_(a); b = recoWsStr_(b); return a < b ? -1 : a > b ? 1 : 0; }
 function recoWsPaginate_(rows, page, size) {
-  var total = rows.length, totalPages = size > 0 ? Math.ceil(total / size) : 0, start = (page - 1) * size;
-  return { items: (start >= 0 && start < total) ? rows.slice(start, start + size) : [], page: page, size: size, total: total, totalPages: totalPages };
+var total = rows.length, totalPages = size > 0 ? Math.ceil(total / size) : 0, start = (page - 1) * size;
+return { items: (start >= 0 && start < total) ? rows.slice(start, start + size) : [], page: page, size: size, total: total, totalPages: totalPages };
 }
 
-// PURE — distinct SKUs in scope from the marketplace_skus snapshot ({headers, rows}); optional exact SKU filter.
-// The recommendation runtime is per-SKU (the shipment lifecycle scope carries one masterSku), so the endpoint
-// resolves the SKU set here and runs the runtime once per SKU (ONE request, an internal loop — never per-SKU HTTP).
+
+
+
 function recoWsScopeSkus_(mskSnapshot, scope, skuFilter) {
-  if (!recoWsIsObj_(mskSnapshot) || !Array.isArray(mskSnapshot.headers) || !Array.isArray(mskSnapshot.rows)) return [];
-  var h = mskSnapshot.headers.map(function (x) { return recoWsStr_(x); });
-  var iSku = h.indexOf('sku'), iCo = h.indexOf('company'), iCn = h.indexOf('country'), iMk = h.indexOf('marketplace');
-  if (iSku < 0) return [];
-  var seen = {}, out = [];
-  mskSnapshot.rows.forEach(function (r) {
-    if (iCo >= 0 && recoWsStr_(r[iCo]) !== scope.company) return;
-    if (iCn >= 0 && recoWsStr_(r[iCn]) !== scope.country) return;
-    if (iMk >= 0 && recoWsStr_(r[iMk]) !== scope.marketplace) return;
-    var sku = recoWsStr_(r[iSku]); if (!sku) return;
-    if (skuFilter && sku !== skuFilter) return;
-    if (!seen[sku]) { seen[sku] = 1; out.push(sku); }
-  });
-  out.sort(recoWsCmp_);
-  return out;
+if (!recoWsIsObj_(mskSnapshot) || !Array.isArray(mskSnapshot.headers) || !Array.isArray(mskSnapshot.rows)) return [];
+var h = mskSnapshot.headers.map(function (x) { return recoWsStr_(x); });
+var iSku = h.indexOf('sku'), iCo = h.indexOf('company'), iCn = h.indexOf('country'), iMk = h.indexOf('marketplace');
+if (iSku < 0) return [];
+var seen = {}, out = [];
+mskSnapshot.rows.forEach(function (r) {
+if (iCo >= 0 && recoWsStr_(r[iCo]) !== scope.company) return;
+if (iCn >= 0 && recoWsStr_(r[iCn]) !== scope.country) return;
+if (iMk >= 0 && recoWsStr_(r[iMk]) !== scope.marketplace) return;
+var sku = recoWsStr_(r[iSku]); if (!sku) return;
+if (skuFilter && sku !== skuFilter) return;
+if (!seen[sku]) { seen[sku] = 1; out.push(sku); }
+});
+out.sort(recoWsCmp_);
+return out;
 }
 
-// PURE View-Model builder: validated request + canonical destination lines → bounded page-oriented response.
-// Stable sort by recommendationMode → sku → siteSku → destinationKey (never row index / array position / label).
+
+
 function recommendationWorkspaceBuild_(v, calc, lines) {
-  var filtered = recoWsFilterLines_(lines, v.filters);
-  var sorted = filtered.slice().sort(function (a, b) {
-    return recoWsCmp_(a.recommendationMode, b.recommendationMode) || recoWsCmp_(a.sku, b.sku) || recoWsCmp_(a.siteSku, b.siteSku) || recoWsCmp_(a.destinationKey, b.destinationKey);
-  });
-  var pageRes = recoWsPaginate_(sorted, v.page, v.size);
-  return {
-    scope: { company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle },
-    lines: pageRes.items,
-    pagination: { page: pageRes.page, size: pageRes.size, total: pageRes.total, totalPages: pageRes.totalPages },
-    dataVersion: { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf }
-  };
+var filtered = recoWsFilterLines_(lines, v.filters);
+var sorted = filtered.slice().sort(function (a, b) {
+return recoWsCmp_(a.recommendationMode, b.recommendationMode) || recoWsCmp_(a.sku, b.sku) || recoWsCmp_(a.siteSku, b.siteSku) || recoWsCmp_(a.destinationKey, b.destinationKey);
+});
+var pageRes = recoWsPaginate_(sorted, v.page, v.size);
+return {
+scope: { company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle },
+lines: pageRes.items,
+pagination: { page: pageRes.page, size: pageRes.size, total: pageRes.total, totalPages: pageRes.totalPages },
+dataVersion: { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf }
+};
 }
 
-// ============================================================================================================
-// CP2V - THE CANONICAL READ, IN TWO REMOTE CALLS INSTEAD OF TWENTY-ONE.
-//
-// The cost is the SHEET COUNT, not the rows; 60_ measured it here at R44 (13 tables, 22,006 -> 2,265 ms),
-// and this handler pays ONCE PER SITE.
-//
-// A SPLIT, NOT A SWEEP. Under UNFORMATTED_VALUE + SERIAL_NUMBER a date and a number are the same wire
-// value, so only tables already in 60_'s proven SIR_B1_DATE_MAP_ are batched and the rest keep the
-// per-sheet reader, unchanged by construction. THIS FILE DECLARES NO DATE COLUMNS: promoting one means
-// adding it to 60_'s map, under its drift detector, after a live census. Membership is ASKED at runtime.
-// Every prerequisite is checked, and anything missing routes back to today's read, naming which.
-// ============================================================================================================
 
-// Transient-only, the same list 60_ uses. A 403 or schema fault must NOT fall back: that turns a
-// deployment error into a permanent silent slow path.
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 var RECO_WS_CANON_FALLBACK_ = ['SHEETS_QUOTA_EXCEEDED', 'SHEETS_SERVICE_ERROR', 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE'];
 
-// ONE fallback per execution, never quiet. It pays for the failed batch AND the full read, so such a
-// request is SLOWER than without this reader - right for a transient fault, wrong for a standing one,
-// hence a CAP. `fallback.batchMsWasted` reports that loss.
+
+
+
 var RECO_WS_CANON_MAX_FALLBACK_ = 1;
 var RECO_WS_CANON_FALLBACKS_ = 0;
 
-// A refusal the handler can NAME: the generic catch reads `apiCode`, so this reaches the envelope as
-// itself rather than as INTERNAL_ERROR.
+
+
 function recoWsCanonError_(code, detail) {
-  var e = new Error(code + (detail ? ': ' + detail : ''));
-  e.apiCode = code; e.safetyToken = code; e.canonicalReadFault = true;
-  return e;
+var e = new Error(code + (detail ? ': ' + detail : ''));
+e.apiCode = code; e.safetyToken = code; e.canonicalReadFault = true;
+return e;
 }
 
-// THE RULE BOTH VALIDATORS ENFORCE: "I could not read the reply" must never share a branch with a fact
-// about the data - else a malformed valueRange becomes an EMPTY TABLE, and an unreadable Call-1 catalogue
-// condemns all twelve batched tables as SOURCE_NOT_AVAILABLE. Both answer from a source nobody read. A
-// real spreadsheet has at least one sheet, so an empty catalogue is malformed.
+
+
+
+
 function recoWsCanonValidMeta_(meta) {
-  if (!meta || typeof meta !== 'object') return 'reply is not an object';
-  if (!Array.isArray(meta.sheets)) return 'sheets is not an array';
-  if (!meta.sheets.length) return 'sheets is empty';
-  for (var i = 0; i < meta.sheets.length; i++) {
-    var e = meta.sheets[i];
-    if (!e || typeof e !== 'object' || !e.properties || typeof e.properties !== 'object') return 'sheets[' + i + '] has no properties';
-    if (typeof e.properties.title !== 'string' || e.properties.title === '') return 'sheets[' + i + '] has no title';
-  }
-  return null;
+if (!meta || typeof meta !== 'object') return 'reply is not an object';
+if (!Array.isArray(meta.sheets)) return 'sheets is not an array';
+if (!meta.sheets.length) return 'sheets is empty';
+for (var i = 0; i < meta.sheets.length; i++) {
+var e = meta.sheets[i];
+if (!e || typeof e !== 'object' || !e.properties || typeof e.properties !== 'object') return 'sheets[' + i + '] has no properties';
+if (typeof e.properties.title !== 'string' || e.properties.title === '') return 'sheets[' + i + '] has no title';
+}
+return null;
 }
 
 function recoWsCanonValidRange_(vr) {
-  if (vr === null || vr === undefined) return 'entry is null';
-  if (typeof vr !== 'object' || Array.isArray(vr)) return 'entry is not an object';
-  if (!Object.prototype.hasOwnProperty.call(vr, 'values')) return null;      // legitimately empty range
-  var v = vr.values;
-  if (v === null || v === undefined) return null;                            // also legitimately empty
-  if (!Array.isArray(v)) return 'values is ' + (typeof v) + ', not an array';
-  for (var i = 0; i < v.length; i++) { if (!Array.isArray(v[i])) return 'row ' + i + ' is not an array'; }
-  return null;
+if (vr === null || vr === undefined) return 'entry is null';
+if (typeof vr !== 'object' || Array.isArray(vr)) return 'entry is not an object';
+if (!Object.prototype.hasOwnProperty.call(vr, 'values')) return null;
+var v = vr.values;
+if (v === null || v === undefined) return null;
+if (!Array.isArray(v)) return 'values is ' + (typeof v) + ', not an array';
+for (var i = 0; i < v.length; i++) { if (!Array.isArray(v[i])) return 'row ' + i + ' is not an array'; }
+return null;
 }
 
-// Registry order holds on both sides, so the merged object is key-for-key what the old reader built.
+
 function recoWsCanonSplit_() {
-  var reg = (typeof KMPS !== 'undefined' && KMPS && KMPS.CANONICAL_TABLES) || [];
-  var batch = [], rest = [];
-  for (var i = 0; i < reg.length; i++) {
-    if (sirWsIsB1Table_(reg[i].sheet)) batch.push(reg[i]); else rest.push(reg[i]);
-  }
-  return { batch: batch, rest: rest };
+var reg = (typeof KMPS !== 'undefined' && KMPS && KMPS.CANONICAL_TABLES) || [];
+var batch = [], rest = [];
+for (var i = 0; i < reg.length; i++) {
+if (sirWsIsB1Table_(reg[i].sheet)) batch.push(reg[i]); else rest.push(reg[i]);
+}
+return { batch: batch, rest: rest };
 }
 
-// Rebuild getDataRange()'s rectangle. batchGet omits trailing empty cells PER ROW, so the width is the
-// WIDEST ROW, not the header length - data past the last populated header cell is still in the rectangle.
+
+
 function recoWsCanonRect_(values) {
-  var w = 0, i;
-  for (i = 0; i < values.length; i++) { var r = values[i]; if (r && r.length > w) w = r.length; }
-  return sirWsPadRows_(values, w);
+var w = 0, i;
+for (i = 0; i < values.length; i++) { var r = values[i]; if (r && r.length > w) w = r.length; }
+return sirWsPadRows_(values, w);
 }
 
-/**
- * { snapshots, issues } - the SAME shape, keys and issue vocabulary as KMPS.readCanonicalSnapshots(ss, null).
- * SOURCE_NOT_AVAILABLE = no such sheet; MISSING_SNAPSHOT = it exists and holds nothing. Two different facts,
- * kept apart here because the per-sheet reader keeps them apart.
- */
+
+
+
+
+
 function recoWsCanonicalRead_(ss, nowFn) {
-  var now = (typeof nowFn === 'function') ? nowFn : function () { return Date.now(); };
-  var t0 = now();
-  var canFull = (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots === 'function');
-  if (!canFull) return { snapshots: {}, issues: [], profile: recoWsCanonProfile_('UNAVAILABLE', 0, 0, 0, 0, 0, null, 'KMPS_READER_ABSENT') };
+var now = (typeof nowFn === 'function') ? nowFn : function () { return Date.now(); };
+var t0 = now();
+var canFull = (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots === 'function');
+if (!canFull) return { snapshots: {}, issues: [], profile: recoWsCanonProfile_('UNAVAILABLE', 0, 0, 0, 0, 0, null, 'KMPS_READER_ABSENT') };
 
-  var full = function (mode, reason, wasted, startedAt, why) {
-    var fr = now();
-    var r = KMPS.readCanonicalSnapshots(ss, null);
-    var nTables = Object.keys(r.snapshots || {}).length;
-    r.profile = recoWsCanonProfile_(mode, 0, nTables, nTables, (now() - (startedAt === undefined ? fr : startedAt)), 0,
-      reason ? { count: RECO_WS_CANON_FALLBACKS_, max: RECO_WS_CANON_MAX_FALLBACK_, reason: reason,
-        batchMsWasted: wasted || 0 } : null, why || null);
-    return r;
-  };
+var full = function (mode, reason, wasted, startedAt, why) {
+var fr = now();
+var r = KMPS.readCanonicalSnapshots(ss, null);
+var nTables = Object.keys(r.snapshots || {}).length;
+r.profile = recoWsCanonProfile_(mode, 0, nTables, nTables, (now() - (startedAt === undefined ? fr : startedAt)), 0,
+reason ? { count: RECO_WS_CANON_FALLBACKS_, max: RECO_WS_CANON_MAX_FALLBACK_, reason: reason,
+batchMsWasted: wasted || 0 } : null, why || null);
+return r;
+};
 
-  // Every prerequisite is checked before anything is attempted and each names ITSELF in `why`: a missing
-  // advanced service, a pre-CP2V bundle and a spreadsheet with no timezone are three different repairs
-  // that a bare "PER_SHEET" cannot tell apart, and a stopwatch cannot either.
-  if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
-    return full('PER_SHEET', null, 0, t0, 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE');
-  }
-  if (typeof sirWsIsB1Table_ !== 'function' || typeof sirWsApplyDateMap_ !== 'function'
-    || typeof sirWsPadRows_ !== 'function' || typeof sirWsColumnLetter_ !== 'function') {
-    return full('PER_SHEET', null, 0, t0, 'DATE_MAP_HELPERS_ABSENT');
-  }
 
-  // HALF A DEPLOYMENT: beside a PRE-CP2V 90_, `config.only` is ignored and the twelve tables just fetched
-  // in bulk are re-read by hand - correct, but SLOWER than before. One pure call turns that into the
-  // ordinary slow path; the bundle hash only tells a person afterwards.
-  if (!(function () {
-    try { return KMPS.tablesFor({ only: [] }).length === 0; } catch (e) { return false; }
-  })()) return full('PER_SHEET', null, 0, t0, 'BUNDLE_SUBSET_READ_UNSUPPORTED');
 
-  var split = recoWsCanonSplit_();
-  if (!split.batch.length) return full('PER_SHEET', null, 0, t0, 'NO_PROVEN_DATE_MAP_TABLES');
 
-  var snapshots = {}, issues = [], id = ss.getId(), emptyBack = [], probeReads = 0;
-  var tz = (typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : null;
-  if (!tz) return full('PER_SHEET', null, 0, t0, 'SPREADSHEET_TIMEZONE_UNAVAILABLE');
-  var remoteCalls = 0, normalizeMs = 0;
-
-  try {
-    // CALL 1 - existence and width, metadata only. It cannot be range-filtered: naming a missing sheet
-    // throws, and "missing" is the state SOURCE_NOT_AVAILABLE has to report.
-    remoteCalls++;
-    var meta = Sheets.Spreadsheets.get(id, { fields: 'sheets.properties(title,gridProperties(columnCount))' });
-    var badMeta = recoWsCanonValidMeta_(meta);
-    if (badMeta) throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_METADATA', badMeta);
-    var width = {}, present = {}, sh = meta.sheets, m;
-    for (m = 0; m < sh.length; m++) {
-      var pr = sh[m].properties || {};
-      if (!pr.title) continue;
-      present[String(pr.title)] = true;
-      width[String(pr.title)] = Number((pr.gridProperties && pr.gridProperties.columnCount) || 0);
-    }
-
-    // Only EXISTING sheets become ranges: batchGet rejects the WHOLE request over one missing sheet.
-    var ranges = [], ordered = [], i;
-    for (i = 0; i < split.batch.length; i++) {
-      var e = split.batch[i];
-      if (!present[e.sheet]) { issues.push({ sourceType: e.key, sheetName: e.sheet, reason: 'SOURCE_NOT_AVAILABLE' }); continue; }
-      var cols = width[e.sheet] > 0 ? width[e.sheet] : 1;
-      // Column-bounded, ROW-OPEN: rowCount is the ALLOCATED grid, so bounding on it asks for a thousand
-      // empty rows and makes an empty sheet look full.
-      ranges.push("'" + e.sheet.replace(/'/g, "''") + "'!A:" + sirWsColumnLetter_(cols));
-      ordered.push(e);
-    }
-
-    if (ranges.length) {
-      // CALL 2 - the values. UNFORMATTED_VALUE is required for IDENTITY as much as arithmetic: sku columns
-      // are mixed number/string and a formatted render would change row identity.
-      remoteCalls++;
-      var resp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: ranges,
-        valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
-      var vrs = (resp && resp.valueRanges) || [];
-      // A range with no data has no `values` KEY, which differs from the ENTRY being absent.
-      if (vrs.length !== ordered.length) {
-        throw recoWsCanonError_('CANONICAL_BATCH_PARTIAL_RESPONSE',
-          'requested ' + ordered.length + ' ranges, received ' + vrs.length);
-      }
-      // SHAPE FIRST, FOR EVERY ENTRY, BEFORE ANY IS USED: validating as we go leaves a partial read that
-      // looks complete.
-      for (i = 0; i < ordered.length; i++) {
-        var bad = recoWsCanonValidRange_(vrs[i]);
-        if (bad) {
-          throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_RESPONSE',
-            'range ' + i + ' [' + ordered[i].sheet + '] ' + bad);
-        }
-      }
-      var tN = now();
-      for (i = 0; i < ordered.length; i++) {
-        var sp = ordered[i], vrv = vrs[i].values;
-        var vals = (vrv && vrv.length) ? vrv : null;
-        if (!vals) { emptyBack.push(sp); continue; }      // resolved below, not assumed here
-        var rect = recoWsCanonRect_(vals);
-        sirWsApplyDateMap_(sp.sheet, rect, tz);          // declared columns only, and type-gated inside
-        var headers = rect[0].map(function (h) { return recoWsStr_(h); });
-        snapshots[sp.key] = { headers: headers, rows: rect.slice(1) };
-      }
-      normalizeMs += (now() - tN);
-
-    }
-  } catch (eB) {
-    // A fault about the RESPONSE is never transient - re-reading slowly cannot make the first reply
-    // correct - so it fails closed, by name.
-    if (eB && eB.canonicalReadFault) throw eB;
-    var cls = (typeof sirWsClassifySheetsError_ === 'function') ? sirWsClassifySheetsError_(eB) : '';
-    if (RECO_WS_CANON_FALLBACK_.indexOf(cls) === -1) throw eB;   // 403 / schema faults fail closed
-    if (RECO_WS_CANON_FALLBACKS_ >= RECO_WS_CANON_MAX_FALLBACK_) {
-      throw recoWsCanonError_('CANONICAL_BATCH_FALLBACK_EXHAUSTED',
-        'already fell back ' + RECO_WS_CANON_FALLBACKS_ + ' time(s) in this execution; last class ' + cls);
-    }
-    RECO_WS_CANON_FALLBACKS_++;
-    return full('FALLBACK', cls, now() - t0, t0);         // transient only, once, and never silently
-  }
-
-  // ONE delegated read for everything the batch did not settle, through the UNCHANGED per-sheet reader:
-  // the nine tables with no proven date map, plus any batched range that came back EMPTY. The second is
-  // there because an empty range is TWO different sheets and only one is missing - a sheet whose only
-  // used row is blank (empty cells, or formulas returning '') has no `values` on the wire, yet
-  // getDataRange() returns a PRESENT table raising NO issue, against MISSING_SNAPSHOT which a consumer
-  // fails closed on. That reader already draws the line, and its Dates arrive as Dates. BOUNDED: a
-  // healthy read adds none.
-  var restKeys = [];
-  for (var k = 0; k < split.rest.length; k++) {
-    var rk = split.rest[k];
-    // The Script-Property blob below replaces this snapshot before anything reads it, so reading the
-    // retired Sheet buys a read and discards it. Guarded on the SAME condition as the override.
-    if (rk.key === 'replenishmentDemandAllocationRules' && typeof warehouseAllocationSnapshot_ === 'function') continue;
-    restKeys.push(rk.key);
-  }
-  var perSheet = restKeys.length;
-  probeReads = emptyBack.length;
-  for (var e2 = 0; e2 < emptyBack.length; e2++) restKeys.push(emptyBack[e2].key);
-  if (restKeys.length) {
-    var r2 = KMPS.readCanonicalSnapshots(ss, { only: restKeys });
-    var sn = r2.snapshots || {};
-    for (var key in sn) { if (Object.prototype.hasOwnProperty.call(sn, key)) snapshots[key] = sn[key]; }
-    issues = issues.concat(r2.issues || []);
-  }
-  return { snapshots: snapshots, issues: issues,
-    profile: recoWsCanonProfile_('BATCH', remoteCalls, perSheet + probeReads, Object.keys(snapshots).length,
-      (now() - t0), normalizeMs, null) };
+if (typeof Sheets === 'undefined' || !Sheets || !Sheets.Spreadsheets || !Sheets.Spreadsheets.Values) {
+return full('PER_SHEET', null, 0, t0, 'ADVANCED_SHEETS_SERVICE_UNAVAILABLE');
+}
+if (typeof sirWsIsB1Table_ !== 'function' || typeof sirWsApplyDateMap_ !== 'function'
+|| typeof sirWsPadRows_ !== 'function' || typeof sirWsColumnLetter_ !== 'function') {
+return full('PER_SHEET', null, 0, t0, 'DATE_MAP_HELPERS_ABSENT');
 }
 
-// A BOUNDED diagnostic: fixed keys, numbers, short tokens - no table names, no row counts, nothing that
-// grows with the registry. `readMs` covers obtaining the bytes, normalizeMs INSIDE it.
+
+
+
+if (!(function () {
+try { return KMPS.tablesFor({ only: [] }).length === 0; } catch (e) { return false; }
+})()) return full('PER_SHEET', null, 0, t0, 'BUNDLE_SUBSET_READ_UNSUPPORTED');
+
+var split = recoWsCanonSplit_();
+if (!split.batch.length) return full('PER_SHEET', null, 0, t0, 'NO_PROVEN_DATE_MAP_TABLES');
+
+var snapshots = {}, issues = [], id = ss.getId(), emptyBack = [], probeReads = 0;
+var tz = (typeof ss.getSpreadsheetTimeZone === 'function') ? ss.getSpreadsheetTimeZone() : null;
+if (!tz) return full('PER_SHEET', null, 0, t0, 'SPREADSHEET_TIMEZONE_UNAVAILABLE');
+var remoteCalls = 0, normalizeMs = 0;
+
+try {
+
+
+remoteCalls++;
+var meta = Sheets.Spreadsheets.get(id, { fields: 'sheets.properties(title,gridProperties(columnCount))' });
+var badMeta = recoWsCanonValidMeta_(meta);
+if (badMeta) throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_METADATA', badMeta);
+var width = {}, present = {}, sh = meta.sheets, m;
+for (m = 0; m < sh.length; m++) {
+var pr = sh[m].properties || {};
+if (!pr.title) continue;
+present[String(pr.title)] = true;
+width[String(pr.title)] = Number((pr.gridProperties && pr.gridProperties.columnCount) || 0);
+}
+
+
+var ranges = [], ordered = [], i;
+for (i = 0; i < split.batch.length; i++) {
+var e = split.batch[i];
+if (!present[e.sheet]) { issues.push({ sourceType: e.key, sheetName: e.sheet, reason: 'SOURCE_NOT_AVAILABLE' }); continue; }
+var cols = width[e.sheet] > 0 ? width[e.sheet] : 1;
+
+
+ranges.push("'" + e.sheet.replace(/'/g, "''") + "'!A:" + sirWsColumnLetter_(cols));
+ordered.push(e);
+}
+
+if (ranges.length) {
+
+
+remoteCalls++;
+var resp = Sheets.Spreadsheets.Values.batchGet(id, { ranges: ranges,
+valueRenderOption: 'UNFORMATTED_VALUE', dateTimeRenderOption: 'SERIAL_NUMBER' });
+var vrs = (resp && resp.valueRanges) || [];
+
+if (vrs.length !== ordered.length) {
+throw recoWsCanonError_('CANONICAL_BATCH_PARTIAL_RESPONSE',
+'requested ' + ordered.length + ' ranges, received ' + vrs.length);
+}
+
+
+for (i = 0; i < ordered.length; i++) {
+var bad = recoWsCanonValidRange_(vrs[i]);
+if (bad) {
+throw recoWsCanonError_('CANONICAL_BATCH_MALFORMED_RESPONSE',
+'range ' + i + ' [' + ordered[i].sheet + '] ' + bad);
+}
+}
+var tN = now();
+for (i = 0; i < ordered.length; i++) {
+var sp = ordered[i], vrv = vrs[i].values;
+var vals = (vrv && vrv.length) ? vrv : null;
+if (!vals) { emptyBack.push(sp); continue; }
+var rect = recoWsCanonRect_(vals);
+sirWsApplyDateMap_(sp.sheet, rect, tz);
+var headers = rect[0].map(function (h) { return recoWsStr_(h); });
+snapshots[sp.key] = { headers: headers, rows: rect.slice(1) };
+}
+normalizeMs += (now() - tN);
+
+}
+} catch (eB) {
+
+
+if (eB && eB.canonicalReadFault) throw eB;
+var cls = (typeof sirWsClassifySheetsError_ === 'function') ? sirWsClassifySheetsError_(eB) : '';
+if (RECO_WS_CANON_FALLBACK_.indexOf(cls) === -1) throw eB;
+if (RECO_WS_CANON_FALLBACKS_ >= RECO_WS_CANON_MAX_FALLBACK_) {
+throw recoWsCanonError_('CANONICAL_BATCH_FALLBACK_EXHAUSTED',
+'already fell back ' + RECO_WS_CANON_FALLBACKS_ + ' time(s) in this execution; last class ' + cls);
+}
+RECO_WS_CANON_FALLBACKS_++;
+return full('FALLBACK', cls, now() - t0, t0);
+}
+
+
+
+
+
+
+
+
+var restKeys = [];
+for (var k = 0; k < split.rest.length; k++) {
+var rk = split.rest[k];
+
+
+if (rk.key === 'replenishmentDemandAllocationRules' && typeof warehouseAllocationSnapshot_ === 'function') continue;
+restKeys.push(rk.key);
+}
+var perSheet = restKeys.length;
+probeReads = emptyBack.length;
+for (var e2 = 0; e2 < emptyBack.length; e2++) restKeys.push(emptyBack[e2].key);
+if (restKeys.length) {
+var r2 = KMPS.readCanonicalSnapshots(ss, { only: restKeys });
+var sn = r2.snapshots || {};
+for (var key in sn) { if (Object.prototype.hasOwnProperty.call(sn, key)) snapshots[key] = sn[key]; }
+issues = issues.concat(r2.issues || []);
+}
+return { snapshots: snapshots, issues: issues,
+profile: recoWsCanonProfile_('BATCH', remoteCalls, perSheet + probeReads, Object.keys(snapshots).length,
+(now() - t0), normalizeMs, null) };
+}
+
+
+
 function recoWsCanonProfile_(mode, remoteCalls, perSheetReads, tables, readMs, normalizeMs, fallback, notBatchedReason) {
-  return { mode: mode, remoteCalls: remoteCalls, perSheetReads: perSheetReads, tables: tables,
-    readMs: readMs, normalizeMs: normalizeMs, fallback: fallback || null,
-    notBatchedReason: notBatchedReason || null };
+return { mode: mode, remoteCalls: remoteCalls, perSheetReads: perSheetReads, tables: tables,
+readMs: readMs, normalizeMs: normalizeMs, fallback: fallback || null,
+notBatchedReason: notBatchedReason || null };
 }
 
-// CP2V-R3 - `afterReadMs`, NOT `computeMs`. It is serverDurationMs minus the canonical read, so EVERY
-// other thing lands in it: Script Property lookups, openTarget, the allocation config blob, the per-SKU
-// expansion. "compute" would invite a reader to blame the calculation for what may be another I/O; the
-// honest claim is WHEN it was spent, not on what. An injected pre-read has no profile, hence INJECTED.
+
+
+
+
 function recoWsCanonMeta_(profile, serverMs) {
-  if (!profile) return { mode: 'INJECTED', remoteCalls: 0, perSheetReads: 0, tables: null,
-    readMs: null, normalizeMs: null, afterReadMs: null, fallback: null, notBatchedReason: 'PRE_READ_INJECTED' };
-  var rm = (typeof profile.readMs === 'number') ? profile.readMs : null;
-  return { mode: profile.mode, remoteCalls: profile.remoteCalls, perSheetReads: profile.perSheetReads,
-    tables: profile.tables, readMs: rm, normalizeMs: profile.normalizeMs,
-    afterReadMs: (rm === null || typeof serverMs !== 'number') ? null : (serverMs - rm),
-    fallback: profile.fallback, notBatchedReason: profile.notBatchedReason || null };
+if (!profile) return { mode: 'INJECTED', remoteCalls: 0, perSheetReads: 0, tables: null,
+readMs: null, normalizeMs: null, afterReadMs: null, fallback: null, notBatchedReason: 'PRE_READ_INJECTED' };
+var rm = (typeof profile.readMs === 'number') ? profile.readMs : null;
+return { mode: profile.mode, remoteCalls: profile.remoteCalls, perSheetReads: profile.perSheetReads,
+tables: profile.tables, readMs: rm, normalizeMs: profile.normalizeMs,
+afterReadMs: (rm === null || typeof serverMs !== 'number') ? null : (serverMs - rm),
+fallback: profile.fallback, notBatchedReason: profile.notBatchedReason || null };
 }
 
-// --------------------------------------------------------------------------------------------------------
-// IMPURE orchestrator — injectable io (default = live Apps Script). NEVER calls getOperationDb / never writes.
-// --------------------------------------------------------------------------------------------------------
+
+
+
+function recoWsDailyInventoryContext_() {
+// Use the existing INVENTORY date authority in both installed environment profiles.
+var sandbox = typeof RTR_SANDBOX_GATE_ !== 'undefined' && RTR_SANDBOX_GATE_ && RTR_SANDBOX_GATE_.env === 'KM_SANDBOX';
+var production = typeof RTR_PRODUCTION_PROFILE_ !== 'undefined' && RTR_PRODUCTION_PROFILE_ && RTR_PRODUCTION_PROFILE_.environment === 'KM_PRODUCTION';
+if (!sandbox && !production) return null;
+if (typeof gapCalcResolveContext_ !== 'function') throw new Error('RECOMMENDATION_DAILY_CONTEXT_UNAVAILABLE');
+var context = gapCalcResolveContext_('INVENTORY', Date.now());
+if (!context || !context.ok) throw new Error('RECOMMENDATION_DAILY_CONTEXT_INVALID');
+return context;
+}
 function recommendationWorkspaceDefaultIo_() {
-  return {
-    now: function () { return Date.now(); },                            // API diagnostic layer only
-    nextSeq: function () { RECO_WS_SEQ_++; return RECO_WS_SEQ_; },
-    // F1-4B-FM1-T calculation-month configuration authority (Script Property; NO clock). Injectable in tests.
-    configMonth: function () { try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_MONTH'); } catch (e) { return null; } },
-    // F1-4B-FM4a calculation-DATE authority for day horizons (Script Property; NO clock). Injectable in tests.
-    configDate: function () { try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_DATE'); } catch (e) { return null; } },
-    openTarget: function () {
-      var id = prodExpectedDbId_();
-      if (!id) throw prodSchemaError_('WRONG_SPREADSHEET_TARGET', '', null);
-      var ss = SpreadsheetApp.openById(id);
-      prodAssertDbTarget_(ss, id);                                       // exact-ID gate (fail closed) before any read
-      return ss;
-    },
-    // CP2V-R1 - the seam at the read site is UNCHANGED (`io.readCanonicalSnapshots ? ... : KMPS...`); what
-    // changed is that the DEFAULT io now answers it. An injected io - the Gap batch's shared pre-read -
-    // still wins, because it replaces this whole object.
-    readCanonicalSnapshots: function (ss) { return recoWsCanonicalRead_(ss, function () { return Date.now(); }); }
-  };
+var dailyContext = recoWsDailyInventoryContext_();
+return {
+now: function () { return Date.now(); },
+nextSeq: function () { RECO_WS_SEQ_++; return RECO_WS_SEQ_; },
+
+configMonth: function () { if (dailyContext) return dailyContext.calculationMonth; try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_MONTH'); } catch (e) { return null; } },
+
+configDate: function () { if (dailyContext) return dailyContext.calculationDate; try { return PropertiesService.getScriptProperties().getProperty('RECOMMENDATION_CALCULATION_DATE'); } catch (e) { return null; } },
+openTarget: function () {
+var id = prodExpectedDbId_();
+if (!id) throw prodSchemaError_('WRONG_SPREADSHEET_TARGET', '', null);
+var ss = SpreadsheetApp.openById(id);
+prodAssertDbTarget_(ss, id);
+return ss;
+},
+
+
+
+readCanonicalSnapshots: function (ss) { return recoWsCanonicalRead_(ss, function () { return Date.now(); }); }
+};
 }
 
+var RECO_WS_SRC_REV_ = null;
 function handleRecommendationWorkspaceGet_(body, io) {
-  io = io || recommendationWorkspaceDefaultIo_();
-  var t0 = io.now();
-  var reqId = recoWsRequestId_(body && body.requestId, io);
-  try {
-    if (typeof KMPA === 'undefined' || typeof KMPS === 'undefined' || typeof KMDR === 'undefined' || typeof KMDA === 'undefined') {
-      return recoWsEnvelope_(false, null, [recoWsErr_('RECOMMENDATION_RUNTIME_BLOCKED', 'recommendation runtime bundle (KMPA/KMPS/KMDR/KMDA) not present')], { requestId: reqId, serverDurationMs: (io.now() - t0) });
-    }
-    var v = validateRecommendationWorkspaceRequest_(body && body.payload);   // scope-only; fails BEFORE any read
-    if (!v.ok) return recoWsEnvelope_(false, null, [v.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0 });
-    var calc = recoWsResolveCalcContext_(io);                                // server-owned month/cycle (no clock)
-    if (!calc.ok) return recoWsEnvelope_(false, null, [calc.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0, calculationMonth: null, planningCycle: null });
-    var cdRes = recoWsResolveCalcDate_(io);                                   // F1-4B-FM4a day-horizon anchor (ADDITIVE; absent → line.horizons omitted, OP unaffected)
-    calc.calculationDate = cdRes.ok ? cdRes.calculationDate : null;
-
-    var ss = io.openTarget();                                                // exact-ID validated / fail closed
-    // F1-7M-E-43 — injectable canonical-snapshot read seam. The Gap batch drives this handler ONCE PER SCOPE and every
-    // call re-ran KMPS.readCanonicalSnapshots(ss,null) — the reader takes NO scope, so every scope re-read the SAME raw
-    // snapshot rows (scope filtering happens later, in memory). When the batch has already read them once for the whole
-    // job it injects io.readCanonicalSnapshots(ss) → the immutable pre-read is reused (byte-identical content). Default
-    // io has no such method → the canonical per-request read is UNCHANGED.
-    var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);   // ONE targeted read (never getOperationDb)
-    var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
-    // CP2V-R2 - WHICH TRANSPORT ANSWERED, IN THE RESPONSE ITSELF. A deployment missing the advanced
-    // service, or falling back on every request, would otherwise look exactly like one that is simply
-    // slow. `canonicalRead.mode` names it (BATCH / PER_SHEET / FALLBACK / INJECTED) and `fallback.reason`
-    // says why. computeMs = serverDurationMs - readMs, which is what says whether the remaining cost is
-    // transport or calculation.
-    var readProfile = (read && read.profile) || null;
-    var snaps = read.snapshots || (read.snapshots = {});
-    // F1-7N-D-2k-R1 — Warehouse Allocation demand rules are the KM_WAREHOUSE_ALLOCATION_CONFIG Script-Property blob
-    // (owner 50_api_v1_warehouse_allocation_config.gs), NOT the `replenishment_demand_allocation_rules` Sheet tab.
-    // Override the allocation-rule snapshot with the config-materialized rows at THIS single read boundary — this
-    // handler is the SOLE caller of recoWsExpandWarehouse_, so every planning path (workspace GET, Gap batch, and the
-    // headless scheduled Weekly AI Plan) reads the identical config with no browser session, and there is exactly ONE
-    // planning authority (the retired Sheet snapshot is discarded, never read). The expander stays storage-agnostic.
-    // Guarded so the isolated pure-fn test harness (which does not load 50_) keeps using its injected fixture snapshot.
-    if (typeof warehouseAllocationSnapshot_ === 'function') snaps.replenishmentDemandAllocationRules = warehouseAllocationSnapshot_();
-
-    var scopeSkus = recoWsScopeSkus_(snaps.marketplaceSkus, v.scope, v.scope.sku || null);
-    if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
-    var siteSkuBySku = recoWsSiteSkuBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope);
-    var ful = recoWsResolveFulfillment_(recoWsToRowObjects_(snaps.marketplaces), v.scope);
-    var vmeta = { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf };
-    // F1-7N-D-2f-R2: additive canonical fulfillment_model projection onto each response line. recoWsResolveFulfillment_
-    // is the ONE owner that already resolved marketplaces.fulfillment_model for this scope; carry that same value
-    // verbatim (never re-read, never inferred from marketplace name). '' when no marketplaces row (fail-closed).
-    var scopeFulfillmentModel = recoWsStr_(ful && ful.row ? ful.row.fulfillment_model : '');
-    // F1-7N-D-2h: HYBRID marketplace destination is resolved PER SKU (supersedes the D-F1-4B-FM5-R2b hybrid fail-close,
-    // per USER authority). Only a marketplace-level 'hybrid' triggers per-SKU resolution; every non-hybrid marketplace
-    // keeps ful.mode + scopeFulfillmentModel byte-for-byte (no behavior change for self_fulfilled / platform_fulfilled).
-    var isHybridMarketplace = scopeFulfillmentModel.toLowerCase() === 'hybrid';
-    var fulfillmentBySku = isHybridMarketplace ? recoWsFulfillmentModelBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope) : null;
-
-    // Server destination expansion → unified runtime per SKU × destination. Dedup by stable line identity.
-    var lines = [], seen = {}, issues = [];
-    for (var i = 0; i < scopeSkus.length; i++) {
-      var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
-      // Effective destination mode + fulfillment model for THIS SKU. Non-hybrid: unchanged. Hybrid: per-SKU
-      // marketplace_skus.fulfillment_model (self_fulfilled→WAREHOUSE, platform_fulfilled→MARKETPLACE, else fail-closed;
-      // a genuinely both-lane / blank / unknown SKU is NEVER guessed — DESTINATION_AUTHORITY_UNRESOLVED).
-      var effectiveMode = ful.mode, effectiveModel = scopeFulfillmentModel;
-      if (isHybridMarketplace) {
-        var skuFm = recoWsStr_(fulfillmentBySku[sku]).toLowerCase();
-        effectiveModel = skuFm;
-        effectiveMode = (skuFm === 'platform_fulfilled') ? 'MARKETPLACE' : (skuFm === 'self_fulfilled') ? 'WAREHOUSE' : null;
-      }
-      if (effectiveMode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta, v.supplyAllocationByReceiver)];
-      else if (effectiveMode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
-      else produced = [KMDR.buildRecommendationLine({ destination: { destinationType: null, company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'UNRESOLVED||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku }, recommendationMode: 'UNRESOLVED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'DESTINATION_AUTHORITY_UNRESOLVED', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })];
-      for (var p = 0; p < produced.length; p++) {
-        var ln = produced[p]; if (!ln) continue;
-        if (seen[ln.recommendationLineId]) { issues.push(recoWsErr_('RECOMMENDATION_LINE_IDENTITY_CONFLICT', 'duplicate recommendation line identity: ' + ln.recommendationLineId)); continue; }
-        ln.fulfillmentModel = effectiveModel;   // F1-7N-D-2f-R2 projection; D-2h per-SKU effective model for hybrid
-        seen[ln.recommendationLineId] = 1; lines.push(ln);
-      }
-    }
-    if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
-
-    var vm = recommendationWorkspaceBuild_(v, calc, lines);
-    return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
-  } catch (e) {
-    var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
-    return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });
-  }
+RECO_WS_SRC_REV_ = (typeof kmSrcRevGet_ === 'function') ? kmSrcRevGet_() : null;
+io = io || recommendationWorkspaceDefaultIo_();
+var t0 = io.now();
+var reqId = recoWsRequestId_(body && body.requestId, io);
+try {
+if (typeof KMPA === 'undefined' || typeof KMPS === 'undefined' || typeof KMDR === 'undefined' || typeof KMDA === 'undefined') {
+return recoWsEnvelope_(false, null, [recoWsErr_('RECOMMENDATION_RUNTIME_BLOCKED', 'recommendation runtime bundle (KMPA/KMPS/KMDR/KMDA) not present')], { requestId: reqId, serverDurationMs: (io.now() - t0) });
 }
+var v = validateRecommendationWorkspaceRequest_(body && body.payload);
+if (!v.ok) return recoWsEnvelope_(false, null, [v.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0 });
+var calc = recoWsResolveCalcContext_(io);
+if (!calc.ok) return recoWsEnvelope_(false, null, [calc.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0, calculationMonth: null, planningCycle: null });
+var cdRes = recoWsResolveCalcDate_(io);
+calc.calculationDate = cdRes.ok ? cdRes.calculationDate : null;
+
+var ss = io.openTarget();
+
+
+
+
+
+var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);
+if (read && !read.__poHeaderSs) read.__poHeaderSs = ss;
+var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
+
+
+
+
+
+var readProfile = (read && read.profile) || null;
+var snaps = read.snapshots || (read.snapshots = {});
+
+
+
+
+
+
+
+if (typeof warehouseAllocationSnapshot_ === 'function') snaps.replenishmentDemandAllocationRules = warehouseAllocationSnapshot_();
+read.__inventoryShares = recoWsReadInventoryShares_();   // D5-V3-R5 (Owner M4 (a)): same Script Property, read-only
+// D5-V3-R5F (M-1): the duplicate scan runs ONCE per shared snapshot set (43_ hands every scope a NEW read object over the SAME
+// snapshots map), cached by that map. The shared map and its row objects are never modified: the scan works on a private copy,
+// and this request's read gets its own map whose two shipment entries are the de-duplicated views.
+var _dc = RECO_WS_DUP_CACHE_ ? RECO_WS_DUP_CACHE_.get(snaps) : null;
+if (!_dc) { var _tmp = Object.assign({}, snaps); _dc = { scan: { shipments: recoWsDupScan_(_tmp, 'shipments', 'shipment_id'), lines: recoWsDupScan_(_tmp, 'shipmentLines', 'shipment_line_id') }, views: { shipments: _tmp.shipments, shipmentLines: _tmp.shipmentLines } }; if (RECO_WS_DUP_CACHE_) RECO_WS_DUP_CACHE_.set(snaps, _dc); }
+read.__dupScan = _dc.scan;
+if (_dc.views.shipments !== snaps.shipments || _dc.views.shipmentLines !== snaps.shipmentLines) { var _own = Object.assign({}, snaps); if (_dc.views.shipments) _own.shipments = _dc.views.shipments; if (_dc.views.shipmentLines) _own.shipmentLines = _dc.views.shipmentLines; read.snapshots = snaps = _own; }
+
+var scopeSkus = recoWsScopeSkus_(snaps.marketplaceSkus, v.scope, v.scope.sku || null);
+if (!scopeSkus.length) return recoWsEnvelope_(false, null, [recoWsErr_('MISSING_SKU_MAPPING', 'no marketplace_skus row for the scope (company/country/marketplace)')], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
+var siteSkuBySku = recoWsSiteSkuBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope);
+var ful = recoWsResolveFulfillment_(recoWsToRowObjects_(snaps.marketplaces), v.scope);
+var vmeta = { formulaVersion: v.formulaVersion, sourceDataAsOf: v.sourceDataAsOf };
+
+
+
+var scopeFulfillmentModel = recoWsStr_(ful && ful.row ? ful.row.fulfillment_model : '');
+
+
+
+var isHybridMarketplace = scopeFulfillmentModel.toLowerCase() === 'hybrid';
+var fulfillmentBySku = isHybridMarketplace ? recoWsFulfillmentModelBySku_(recoWsToRowObjects_(snaps.marketplaceSkus), v.scope) : null;
+
+
+var lines = [], seen = {}, issues = [];
+for (var i = 0; i < scopeSkus.length; i++) {
+var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
+
+
+
+var effectiveMode = ful.mode, effectiveModel = scopeFulfillmentModel;
+if (isHybridMarketplace) {
+var skuFm = recoWsStr_(fulfillmentBySku[sku]).toLowerCase();
+effectiveModel = skuFm;
+effectiveMode = (skuFm === 'platform_fulfilled') ? 'MARKETPLACE' : (skuFm === 'self_fulfilled') ? 'WAREHOUSE' : null;
+}
+if (effectiveMode === 'MARKETPLACE') produced = [recoWsExpandMarketplace_(read, v.scope, sku, siteSku, calc, vmeta, v.supplyAllocationByReceiver)];
+else if (effectiveMode === 'WAREHOUSE') produced = recoWsExpandWarehouse_(read, ss, v.scope, sku, siteSku, calc, vmeta).lines;
+else produced = [KMDR.buildRecommendationLine({ destination: { destinationType: null, company: v.scope.company, country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'UNRESOLVED||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku }, recommendationMode: 'UNRESOLVED', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'DESTINATION_AUTHORITY_UNRESOLVED', formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })];
+for (var p = 0; p < produced.length; p++) {
+var ln = produced[p]; if (!ln) continue;
+if (seen[ln.recommendationLineId]) { issues.push(recoWsErr_('RECOMMENDATION_LINE_IDENTITY_CONFLICT', 'duplicate recommendation line identity: ' + ln.recommendationLineId)); continue; }
+ln.fulfillmentModel = effectiveModel;
+seen[ln.recommendationLineId] = 1; lines.push(ln);
+}
+}
+if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
+
+var vm = recommendationWorkspaceBuild_(v, calc, lines);
+return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
+} catch (e) {
+var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
+return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });
+}
+}
+
+// XCO-R15G (42_): the server recommendation path passes the same ever-merged link counts.
+// XCO-R15G-42 (xco-r15g-impl): patched
+// R15G-STAMPS (final candidate): patched

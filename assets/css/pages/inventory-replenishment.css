@@ -2365,3 +2365,13 @@
    do not change width when the value does, which is what stops the column shivering on every update. */
 #ops-section .replen-avg-cell,
 #ops-section .replen-dos-cell { font-variant-numeric: tabular-nums; }
+
+/* A-delta1 C5 (Owner 2026-11-21) - From cell: the From picker plus its availability line (the proven available quantity the Shipment Draft
+   reservation binds on, or the reason the warehouse cannot be used). Wraps normally; never changes the row height of a row without a line. */
+#ops-section .replen-card__from-cell { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+#ops-section .replen-card__from-cell > .replen-card__select { width: 100%; }
+#ops-section .ir-exec-plan__grid .replen-card__from-cell { align-self: center; }
+#ops-section .exec-from-check { font-size: 11px; line-height: 1.3; color: #475569; white-space: normal; overflow-wrap: anywhere; }
+#ops-section .exec-from-check:empty { display: none; }
+#ops-section .exec-from-check--short { color: #B45309; }
+#ops-section .exec-from-check--unusable { color: #B91C1C; }

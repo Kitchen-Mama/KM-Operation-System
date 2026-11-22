@@ -151,6 +151,16 @@
     };
   }
 
+  // AD3 C round 3 (review F1): ONE active rule for a carrier_lead_times row - the same as 12_ shipLtActive_ (and 11_): status
+  // inactive / disabled -> not active; is_active false / 0 / no / n -> not active; blank or absent -> active. A normalized DTO (no
+  // is_active / status) reads as active, so a caller must filter the RAW rows. Used by leadDays and KMMR.serviceProfiles.
+  function leadTimeActive(raw) {
+    if (!isObj(raw)) return true;
+    var st = low(raw.status); if (st === 'inactive' || st === 'disabled') return false;
+    var a = raw.is_active !== undefined ? raw.is_active : raw.isActive;
+    if (a === false) return false;
+    var t = low(a); return !(t === 'false' || t === '0' || t === 'no' || t === 'n');
+  }
   function rateCardUsable(card, asOfOrdinal) {
     var dto = card && card.__kmra ? card : normalizeRateCard(card);
     return statusActive(dto.status) && inEffectiveWindow(dto.effectiveFrom, dto.effectiveTo, asOfOrdinal);
@@ -232,7 +242,7 @@
     query = query || {}; opts = opts || {};
     var key = canonicalMethodKey(method); if (!key) return { days: null, source: null };
     if (planningSetMembers(query.destinationCountry)) return { days: null, source: 'REGION_DESTINATION_NOT_CHOSEN' };   // R15C-EU: never a set-wide transit
-    var rows = (leadTimes || []).map(normalizeLeadTime).filter(function (lt) {
+    var rows = (leadTimes || []).filter(leadTimeActive).map(normalizeLeadTime).filter(function (lt) {   // AD3 C round 3: inactive rows are no transit authority
       return lt.methodKey === key
         && axisOk(lt.originCountry, query.originCountry)
         && axisOk(lt.destinationCountry, query.destinationCountry)
@@ -316,7 +326,7 @@
     // method alias authority
     METHOD_ALIAS_RULES: METHOD_ALIAS_RULES, canonicalMethodKey: canonicalMethodKey,
     // DTO
-    normalizeRateCard: normalizeRateCard, normalizeLeadTime: normalizeLeadTime, rateCardUsable: rateCardUsable,
+    normalizeRateCard: normalizeRateCard, normalizeLeadTime: normalizeLeadTime, leadTimeActive: leadTimeActive, rateCardUsable: rateCardUsable,
     // shared candidate authority (EP parity)
     axisOk: axisOk, cardMatchesRoute: cardMatchesRoute, destinationOk: destinationOk, planningSetMembers: planningSetMembers, laneCards: laneCards, eligibleMethods: eligibleMethods,
     // shared transit-day authority

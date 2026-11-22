@@ -170,11 +170,25 @@
     return !!str(lt.shippingMethod);
   }
 
+  // AD3 C round 3 (review F1): the carrier_lead_times active rule, identical to KMRA.leadTimeActive / 12_ shipLtActive_ (status inactive /
+  // disabled -> excluded; is_active false / 0 / no / n -> excluded; blank or absent -> active). Rows here are the db-api adapted records,
+  // which keep the sheet row in `.raw`; a plain raw row is read as is. KMRA's rule is used when loaded, else this identical local copy
+  // (never fail-open by skipping the check). Every lead-time reader in this file (both resolve() branches) goes through serviceProfilesForRoute.
+  function leadTimeActive(lt) {
+    var r = (lt && lt.raw && typeof lt.raw === 'object') ? lt.raw : lt;
+    var K = (root && root.KMRA && typeof root.KMRA.leadTimeActive === 'function') ? root.KMRA : null;
+    if (K) return K.leadTimeActive(r);
+    if (!r || typeof r !== 'object') return true;
+    if (/^(inactive|disabled)$/i.test(String(r.status == null ? '' : r.status).trim())) return false;
+    var a = r.is_active !== undefined ? r.is_active : r.isActive; if (a === false) return false;
+    return !/^(false|0|no|n)$/i.test(String(a == null ? '' : a).trim());
+  }
+
   // Distinct service profiles for one lane, conservatively folded. Sorted deterministically — never row order.
   function serviceProfilesForRoute(leadTimes, route) {
     var byKey = {}, order = [], set15e = setMembers15e(route && route.destinationCountry);   // R15C-EU
     (leadTimes || []).forEach(function (lt) {
-      if (!lt || !leadTimeOnLane(lt, route)) return;
+      if (!lt || !leadTimeActive(lt) || !leadTimeOnLane(lt, route)) return;   // AD3 C round 3 (review F1): an inactive row is no method / transit authority
       var method = str(lt.shippingMethod);
       var lastMile = str(lt.lastMileDelivery);
       var k = method.toLowerCase() + '|' + lastMile.toLowerCase();

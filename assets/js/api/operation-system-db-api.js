@@ -1280,6 +1280,9 @@ function normalizeShipmentRecord(raw) {
         shippedBy: String(r.shipped_by || '').trim(),
         hiddenFromDraftAt: String(r.hidden_from_draft_at || '').trim(),
         hiddenFromDraftBy: String(r.hidden_from_draft_by || '').trim(),
+        recordOrigin: String(r.record_origin || '').trim(),   // SHIP-OPEN: IMPORT_HISTORICAL = opening record
+        openingAsOf: String(r.opening_as_of || '').trim(),
+        openingSupplyMode: String(r.opening_supply_mode || '').trim().toUpperCase(),   // SHIP-OPEN R4: DISPLAY_ONLY = Amazon opening (never supply)
         sourceCompanies: Array.isArray(r.consolidation_companies) ? r.consolidation_companies.slice() : [],
         note: _kmScNote13_(r.note),
         createdBy: String(r.created_by || '').trim(),
@@ -1306,6 +1309,9 @@ function normalizeShipmentLineRecord(raw) {
         // qty (live DB column; blank/null historical rows normalize to 0). remainingQty is runtime-derived
         // = max(shipmentQty - received, 0) and is NEVER persisted. shipment_qty stays immutable.
         shipmentReceivedQty: (r.shipment_received_qty === '' || r.shipment_received_qty == null) ? 0 : (parseFloat(r.shipment_received_qty) || 0),
+        // A final3 (tracking completion B): read-only facts for the map's active-tracking predicate (nothing is written; 31_ stays the authority)
+        qtyInvalid: (function () { var bad = function (v) { if (v === '' || v == null) return false; var n = parseFloat(v); return !(isFinite(n) && n >= 0); }; return bad((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || bad(r.shipment_received_qty); })(),
+        lineRemoved: String(r.line_status == null ? '' : r.line_status).trim() === 'removed' || /(?:^|\n)\[SC13_REMOVED:/.test(String(r.note == null ? '' : r.note)),   // = 12_ sc13LineRemoved_ (31_ skips these lines)
         remainingQty: (function () {
             var shipped = parseFloat((r.shipment_qty === '' || r.shipment_qty == null) ? r.qty : r.shipment_qty) || 0;
             var recv = (r.shipment_received_qty === '' || r.shipment_received_qty == null) ? 0 : (parseFloat(r.shipment_received_qty) || 0);
@@ -4187,6 +4193,8 @@ window.KM.DB.openGeneratedDocument = function(res) {
 // REVIEW-FIX7-MS-NEXT (R7-x, candidate) — the rate cards the engine accepts for a Shipment Draft's lane today, and the user's
 // choice of ONE card at the version shown (the backend re-checks everything; nothing here decides)
 // R15d (SH-8B2637CC-5): READ ONLY - the pre-dispatch document value gate for ONE shipment (01_ / 39_ shipment.documentValues.check). Never a source writer.
+// A final4 P0: READ ONLY - the receipt diagnostic of ONE shipment of ONE company (01_ / 31_ shipment.receipt.diagnose). Never a writer.
+window.KM.DB.getShipmentReceiptDiagnostic = function(shipmentId, company) { return _kmDocumentAction('shipment.receipt.diagnose', { shipment_id: String(shipmentId || '').trim(), company: String(company || '').trim() }); };
 window.KM.DB.checkShipmentDocumentValues = function(shipmentId) { return _kmDocumentAction('shipment.documentValues.check', { shipment_id: String(shipmentId || '').trim() }); };
 window.KM.DB.getShipmentRateCardOptions = function(shipmentId, opts) { var b = { shipment_id: String(shipmentId || '').trim() }; if (opts && opts.all_methods === true) b.all_methods = true; return _kmDocumentAction('shipment.rateCardOptions', b); };   // R71-FE-11: all_methods = carrier -> method
 // R71-FE-11: the Weekly plan's carrier -> method -> server price (SANDBOX-GATE-1f)
@@ -4213,7 +4221,7 @@ window.KM.DB.selectShippingPlanRateCardWithCustoms = function(planId, option, ex
     if (!pid || (!serviceOnly && (!id || !v))) return Promise.resolve({ success: false, error: 'RATE_CARD_SELECTION_INCOMPLETE', code: 'RATE_CARD_SELECTION_INCOMPLETE' });
     if (_kmPlanRcInFlight_[pid]) return _kmPlanRcInFlight_[pid];   // a second click joins the save already running
     var body = { shipping_plan_id: pid, rate_card_id: id, rate_card_version: v, expected_current_carrier_id: String(expectedCarrier || ''), actor: 'operation-system' };
-    if (serviceOnly) { delete body.rate_card_id; delete body.rate_card_version; body.service_only = true; body.carrier_id = option.carrier_id; body.shipping_method = option.shipping_method; body.last_mile_delivery = option.last_mile_delivery; }
+    if (serviceOnly) { delete body.rate_card_id; delete body.rate_card_version; body.service_only = true; body.carrier_id = option.carrier_id; body.shipping_method = option.shipping_method; body.last_mile_delivery = option.last_mile_delivery; if (option.explicit_service === true) body.explicit_service = true; if (option.delivery_type) body.delivery_type = String(option.delivery_type); }   // AD3 D r2 (Author B 5)
     var cx = String(customsType == null ? '' : customsType).trim(); if (cx) body.customs_type = cx;
     if (expectedUpdatedAt) body.expected_updated_at = expectedUpdatedAt;
     var p = _kmDocumentAction('shippingPlan.selectRateCard', body)
@@ -4239,10 +4247,26 @@ window.KM.DB.approveShipmentUnpriced = function(payload) {
     if (_kmRcInFlight_[sid]) return _kmRcInFlight_[sid];
     var body = { shipment_id: sid, unpriced_release: true, acknowledge_unpriced: true, reason: payload.reason, actor: payload.actor, carrier_id: payload.carrier_id,
         recover_unpriced: payload.recover_unpriced === true, expected_updated_at: payload.expected_updated_at, expected_rate_card_version: payload.expected_rate_card_version, expected_current_rate_card_id: payload.expected_current_rate_card_id };
+    if (payload.operation_id) body.operation_id = String(payload.operation_id);   // AD3 D r4 (B 15)
     if (payload.unpriced_mode === 'card_not_applied') { body.unpriced_mode = 'card_not_applied'; body.acknowledge_card_not_applied = payload.acknowledge_card_not_applied === true; body.listed_card_ids = Array.isArray(payload.listed_card_ids) ? payload.listed_card_ids.map(String) : []; }   // R15e (4)
     return (_kmRcInFlight_[sid] = _kmDocumentAction('shipment.selectRateCard', body).then(function(r) {
         delete _kmRcInFlight_[sid]; return r || { success: false, code: 'NO_RESULT' };
     }, function() { delete _kmRcInFlight_[sid]; return { success: false, code: 'HTTP_TRANSPORT_ERROR' }; }));
+};
+// AD3 D r2 (Author B contract 4): fill a BLANK carrier later - shipment.assignCarrier { shipment_id, carrier_id, reason, expected_updated_at, actor }.
+// A registered source writer (planning / exposure). A second click joins the request already running; a transport failure comes back as
+// stage 'network' (the page treats it as UNKNOWN and re-reads, never resends).
+var _kmAssignInFlight_ = {};
+window.KM.DB.assignShipmentCarrier = function(payload) {
+    var sid = String((payload && payload.shipment_id) || '').trim(), cid = String((payload && payload.carrier_id) || '').trim(), why = String((payload && payload.reason) || '').trim();
+    if (!sid || !cid || !why) return Promise.resolve({ success: false, code: 'ASSIGN_CARRIER_INCOMPLETE', zero_write: true });
+    if (_kmAssignInFlight_[sid]) return _kmAssignInFlight_[sid];
+    var body = { shipment_id: sid, carrier_id: cid, reason: why, actor: String((payload && payload.actor) || 'operation-system') };
+    if (payload && payload.expected_updated_at) body.expected_updated_at = String(payload.expected_updated_at);
+    if (payload && payload.company != null) body.company = String(payload.company);   // r4 (B 12 v2): company + operation_id
+    if (payload && payload.operation_id) body.operation_id = String(payload.operation_id);
+    return (_kmAssignInFlight_[sid] = _kmDocumentAction('shipment.assignCarrier', body).then(function (r) { delete _kmAssignInFlight_[sid]; return r || { success: false, stage: 'network', error: 'NO_RESPONSE' }; },
+        function (e) { delete _kmAssignInFlight_[sid]; return { success: false, stage: 'network', error: String((e && e.message) || e) }; }));
 };
 window.KM.DB.selectShipmentRateCard = function(shipmentId, option, expectedCurrent, opts) {   // R71-FE-11: opts.allow_method_change
     var sid = String(shipmentId || '').trim(), id = String((option && option.rate_card_id) || '').trim(), v = String((option && option.rate_card_version) || '').trim();
@@ -6874,6 +6898,22 @@ window.KM.DB.updatePurchaseOrderHeader = async function(payload) {
 // Per line completed_qty += receive_qty (clamped to remaining), remaining_qty = ordered − completed;
 // PO order_status recomputed to completed / partial_completed. Writes purchase_orders /
 // purchase_order_lines ONLY (never request orders / shipments / inventory / factory stock).
+// PG12R3 (M-C / m-5): the receipt precondition READ - 13_ receivePurchaseOrderLines with mode 'preconditions' (zero writes) answers each line of one
+// PO with the state a receipt must quote back. The Receive modal uses ONLY this, in Workspace and Legacy (kill-switch) mode alike. Nothing is
+// written, so no post-write reconcile runs. A refusal is the server's answer (kmServerAnswered), as for the receipt itself.
+window.KM.DB.getPurchaseOrderReceiptPreconditions = async function(purchaseOrderId) {
+    if (!isOperationDbApiConfigured()) throw new Error('API not configured');
+    var resp = await _kmFetchBounded_(OP_DB_API_BASE_URL, {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'text/plain' },
+        body: JSON.stringify({ action: 'receivePurchaseOrderLines', mode: 'preconditions', purchase_order_id: purchaseOrderId })
+    }, 'write', 'receivePurchaseOrderLines');
+    if (!resp.ok) throw new Error('API returned ' + resp.status);
+    var json = await resp.json();
+    if (!json.success) { var pe = new Error(json.error || 'Receipt precondition read failed'); pe.kmServerAnswered = true; pe.code = json.code || null; throw pe; }
+    return (json.data && typeof json.data === 'object') ? json.data : {};
+};
 window.KM.DB.receivePurchaseOrderLines = async function(payload) {
     if (!isOperationDbApiConfigured()) {
         console.warn('[KM.DB] API not configured, receivePurchaseOrderLines skipped');
@@ -7412,10 +7452,12 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     selectShippingPlanCarrier: ['planning', 'exposure'], combineShippingPlans: ['planning', 'exposure'],
     uncombineShippingPlans: ['planning', 'exposure'], createShipmentFromPlan: ['planning', 'exposure'],
     cancelShipmentDraft: ['planning', 'exposure'], updateShipment: ['planning', 'exposure'],
+    assignShipmentCarrier: ['planning', 'exposure'],   // AD3 D r2: shipment.assignCarrier writes shipments.carrier_id
     approveShipmentUnpriced: ['planning', 'exposure'], selectShipmentRateCard: ['planning', 'exposure'], selectShippingPlanRateCard: ['planning', 'exposure'], selectShippingPlanRateCardWithCustoms: ['planning', 'exposure'], saveShippingPlanCustoms: ['planning', 'exposure'],   // WK1 r2/r3: the Weekly unified Save + customs-only Save   // R71-FE-11: the plan's carrier, method and estimated cost   // O1-C7: the rate-card choice writes the shipment's carrier and estimated cost, as updateShipment does
     confirmShipmentAndDispatch: ['planning', 'exposure'], generateShipmentLineAllocations: ['planning', 'exposure'],
     updateShipmentReceipt: ['planning', 'exposure'], advanceShipmentRoutePoint: ['planning', 'exposure'],
     updateShipmentEta: ['planning', 'exposure'], reconcileShipmentEta: ['planning', 'exposure'],
+    importCommit: ['planning', 'exposure'],   // A final3 (B): an import commit writes shipments / lines / stock - planning and exposure caches re-read
     submitAllocationDraftsToShippingPlans: ['planning', 'exposure'], submitShippingAllocationDrafts: ['planning', 'exposure'],
     // allocation drafts: read by the Execution panel, by neither 42_ nor 60_'s first layer
     upsertShippingAllocationDraft: ['exposure'], upsertShippingAllocationDraftLines: ['exposure'],

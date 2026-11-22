@@ -2092,3 +2092,8 @@ body.is-fullscreen .psb-page .scn-drawer { display: none; }
 @media print {
   .psb-page .demo-ctl .btn-sm, .psb-page .demo-comp-form, .psb-page .chip-btn { display: none; }
 }
+
+/* A-delta1 C5 (Owner 2026-11-21, approved: min-height only, no redesign) - a Board .btn keeps its normal single-line size (--btn-height)
+   but may grow when a long label wraps at a narrow width / zoom, instead of clipping the second line (c3/c4 L-7 N125 long-label FAIL).
+   The fixed-height variants (.btn-sm, the filter command row) keep their own heights: they are more specific. */
+.psb-page .btn { height: auto; min-height: var(--btn-height); }

@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R34';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -120,6 +120,8 @@ function shippingPlanUpcMap_(ss) {
 }
 
 function shippingPlanNum_(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+// SANDBOX-GATE-1e: a Decision-Snapshot measure that was not supplied is UNKNOWN (blank), never a measured 0
+function shippingPlanNumOrBlank_(v) { var t = String(v == null ? '' : v).trim(); if (t === '') return ''; var n = parseFloat(t); return isNaN(n) ? '' : n; }
 
 function shippingPlanRound_(v, d) { var f = Math.pow(10, d); return Math.round((parseFloat(v) || 0) * f) / f; }
 
@@ -184,9 +186,11 @@ function shippingPlanLineLogistics_(logi, approvedQty, cartonQty) {
  * Returns { bySku: { 'country||marketplace||sku': company }, byMarket: { 'country||marketplace': company } }.
  */
 function shippingPlanCompanyMaps_(ss) {
+  // SANDBOX-GATE-1d: EVERY company per key, never the first row. A site is company + country + marketplace (the marketplaces row /
+  // marketplace_id); one country + marketplace may be served by several companies, so a key maps to the SET of its companies.
   var bySku = {}, byMarket = {};
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
-
+  function add(map, key, comp) { var l = map[key] || (map[key] = []); for (var a = 0; a < l.length; a++) if (lc(l[a]) === lc(comp)) return; l.push(comp); }
   var mpSku = ss.getSheetByName('marketplace_skus');
   if (mpSku) {
     var d = mpSku.getDataRange().getValues();
@@ -197,12 +201,11 @@ function shippingPlanCompanyMaps_(ss) {
         for (var i = 1; i < d.length; i++) {
           var comp = String(d[i][cCol] || '').trim();
           if (!comp) continue;
-          bySku[lc(d[i][coCol]) + '||' + lc(d[i][mCol]) + '||' + lc(d[i][sCol])] = comp;
+          add(bySku, lc(d[i][coCol]) + '||' + lc(d[i][mCol]) + '||' + lc(d[i][sCol]), comp);
         }
       }
     }
   }
-
   var mp = ss.getSheetByName('marketplaces');
   if (mp) {
     var d2 = mp.getDataRange().getValues();
@@ -213,8 +216,7 @@ function shippingPlanCompanyMaps_(ss) {
         for (var k = 1; k < d2.length; k++) {
           var comp2 = String(d2[k][cCol2] || '').trim();
           if (!comp2) continue;
-          var key2 = lc(d2[k][coCol2]) + '||' + lc(d2[k][mCol2]);
-          if (!byMarket[key2]) byMarket[key2] = comp2;
+          add(byMarket, lc(d2[k][coCol2]) + '||' + lc(d2[k][mCol2]), comp2);
         }
       }
     }
@@ -222,42 +224,55 @@ function shippingPlanCompanyMaps_(ss) {
   return { bySku: bySku, byMarket: byMarket };
 }
 
-/** country||marketplace||sku -> site_sku from marketplace_skus (blank when unavailable). */
+/** company||country||marketplace||sku -> site_sku (rows carrying a company); country||marketplace||sku only for company-less rows.
+ *  A key with two different site_sku values resolves to none (never the first row). Blank when unavailable. */
 function shippingPlanSiteSkuMap_(ss) {
-  var map = {};
+  var map = {}, bad = {};
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var sh = ss.getSheetByName('marketplace_skus');
   if (!sh) return map;
   var d = sh.getDataRange().getValues();
   if (d.length < 2) return map;
   var h = d[0].map(function (x) { return String(x).trim().toLowerCase(); });
-  var cCo = h.indexOf('country'), cMk = h.indexOf('marketplace'), cSku = h.indexOf('sku'), cSite = h.indexOf('site_sku');
+  var cCo = h.indexOf('country'), cMk = h.indexOf('marketplace'), cSku = h.indexOf('sku'), cSite = h.indexOf('site_sku'), cComp = h.indexOf('company');
   if (cSku === -1 || cSite === -1) return map;
   for (var i = 1; i < d.length; i++) {
     var site = String(d[i][cSite] || '').trim();
     if (!site) continue;
-    var key = (cCo === -1 ? '' : lc(d[i][cCo])) + '||' + (cMk === -1 ? '' : lc(d[i][cMk])) + '||' + lc(d[i][cSku]);
-    if (!map[key]) map[key] = site;
+    var comp = cComp === -1 ? '' : lc(d[i][cComp]);
+    var key = (comp ? comp + '||' : '') + (cCo === -1 ? '' : lc(d[i][cCo])) + '||' + (cMk === -1 ? '' : lc(d[i][cMk])) + '||' + lc(d[i][cSku]);
+    if (bad[key]) continue;
+    if (map[key] && map[key] !== site) { delete map[key]; bad[key] = 1; continue; }
+    map[key] = site;
   }
   return map;
 }
+/** SANDBOX-GATE-1d: the site_sku of ONE site - its own company first; a company-less master row only as the legacy fallback. */
+function shippingPlanSiteSkuFor_(map, company, country, marketplace, sku) {
+  function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  var tail = lc(country) + '||' + lc(marketplace) + '||' + lc(sku);
+  return (lc(company) && map[lc(company) + '||' + tail]) || map[tail] || '';
+}
 
-/** Resolve a line's company per spec §3.3 priority (marketplaces → marketplace_skus → payload → blank). */
+/** SANDBOX-GATE-1d: resolve a line's company. The line company (16_: the PERSISTED draft header company) is the authority and is
+ *  VALIDATED against master data; with none, master data decides only when it names exactly one company. Never the first row.
+ *  Returns { ok, company } or { ok:false, code, companies }. */
 function shippingPlanResolveCompany_(maps, country, marketplace, sku, payloadCompany) {
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var pc = String(payloadCompany == null ? '' : payloadCompany).trim();
   if (pc === '--') pc = '';
-  // 1) marketplaces by country+marketplace (PRIMARY — company is marketplace-level ownership)
-  var m = maps.byMarket[lc(country) + '||' + lc(marketplace)];
-  if (m) return m;
-  // 2) marketplace_skus by country+marketplace+sku (fallback)
-  var s = maps.bySku[lc(country) + '||' + lc(marketplace) + '||' + lc(sku)];
-  if (s) return s;
-  // 3) payload company if already resolved by the frontend
-  if (pc) return pc;
-  // 4) blank — log a warning so the unresolved gap is visible
+  var mk = maps.byMarket[lc(country) + '||' + lc(marketplace)] || [];
+  var sk = maps.bySku[lc(country) + '||' + lc(marketplace) + '||' + lc(sku)] || [];
+  var master = mk.length ? mk : sk;
+  if (pc) {
+    if (!master.length) return { ok: true, company: pc, basis: 'LINE_COMPANY_NO_MASTER_ROW' };
+    for (var i = 0; i < master.length; i++) if (lc(master[i]) === lc(pc)) return { ok: true, company: master[i], basis: mk.length ? 'LINE_COMPANY_MARKETPLACES' : 'LINE_COMPANY_MARKETPLACE_SKUS' };
+    return { ok: false, code: 'PLAN_COMPANY_NOT_A_SITE', company: pc, companies: master.slice(0, 10) };
+  }
+  if (master.length === 1) return { ok: true, company: master[0], basis: mk.length ? 'MARKETPLACES_UNIQUE' : 'MARKETPLACE_SKUS_UNIQUE' };
+  if (master.length > 1) return { ok: false, code: 'PLAN_COMPANY_AMBIGUOUS', company: '', companies: master.slice(0, 10) };
   Logger.log('[createShippingPlansBatch] company unresolved for country=' + country + ' marketplace=' + marketplace + ' sku=' + sku);
-  return '';
+  return { ok: true, company: '', basis: 'UNRESOLVED_BLANK' };
 }
 
 // ---- R6E1 idempotency + canonical snapshot helpers (PURE where possible) ------------------------------------
@@ -630,6 +645,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     'import_duty_treatment', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee',
     'estimated_total_cost', 'currency', 'rejected_comment']);
 
+  var readStageS2 = shipWriteReadStage_(ss, ['sku_details', 'warehouses', 'marketplace_skus', 'sites', 'carrier_rate_cards', 'tax_referral_rates']); ss = readStageS2.ss; // CODEX-S2: caller owns lock
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
@@ -664,7 +680,9 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     var sku = String(ln.sku || '').trim();
     if (!sku) continue;
     // Resolve company from marketplace context (never leave it blank when a source exists).
-    var company = shippingPlanResolveCompany_(companyMaps, country, marketplace, sku, ln.company);
+    var _coR = shippingPlanResolveCompany_(companyMaps, country, marketplace, sku, ln.company);   // SANDBOX-GATE-1d
+    if (!_coR.ok) return { success: false, error: _coR.code + ' - the company of this line is not determinable from the site master data (country ' + country + ', marketplace ' + marketplace + '); nothing was written.', code: _coR.code, stage: 'company', zero_write: true, data: { line_company: String(ln.company || ''), country: country, marketplace: marketplace, sku: sku, master_companies: _coR.companies || [] } };
+    var company = _coR.company;
     var key = shippingPlanRouteGroupKey_(ln, company);
     if (!groups[key]) {
       groups[key] = { meta: {
@@ -726,7 +744,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
       carrier_rate_type: quote.carrier_rate_type,
       import_duty_treatment: quote.import_duty_treatment,
       estimated_freight_cost: quote.estimated_freight_cost,
-      estimated_duty: quote.estimated_duty,
+      estimated_duty: quote.estimated_duty, estimated_duty_currency: quote.estimated_duty_currency,
       estimated_customs_fee: quote.estimated_customs_fee,
       estimated_total_cost: quote.estimated_total_cost,
       currency: quote.currency,
@@ -751,7 +769,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
       var approved = requested;
       var carton = (upc > 0) ? Math.ceil(approved / upc) : 0;
       var logi = shippingPlanLineLogistics_(logisticsMap[sku2], approved, carton);
-      var siteSku = String(l.site_sku || '').trim() || siteSkuMap[lc(l.country) + '||' + lc(lineMk) + '||' + lc(sku2)] || '';
+      var siteSku = String(l.site_sku || '').trim() || shippingPlanSiteSkuFor_(siteSkuMap, meta.company, l.country, lineMk, sku2);   // SANDBOX-GATE-1d: the plan's own site
 
       derivedLineObjs.push({
         shipping_plan_line_id: 'SPL-' + Utilities.getUuid().substring(0, 10).toUpperCase(),
@@ -777,11 +795,11 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
         note: '',
         created_at: now,
         updated_at: now,
-        snapshot_current_stock: shippingPlanNum_(l.snapshot_current_stock),
-        snapshot_avg_sales_per_day: shippingPlanNum_(l.snapshot_avg_sales_per_day),
+        snapshot_current_stock: shippingPlanNumOrBlank_(l.snapshot_current_stock),   // SANDBOX-GATE-1e: unknown stays blank
+        snapshot_avg_sales_per_day: shippingPlanNumOrBlank_(l.snapshot_avg_sales_per_day),
         snapshot_days_of_supply: (l.snapshot_days_of_supply === '' || l.snapshot_days_of_supply == null) ? '' : l.snapshot_days_of_supply,
-        snapshot_suggested_qty: shippingPlanNum_(l.snapshot_suggested_qty),
-        snapshot_target_days: shippingPlanNum_(l.snapshot_target_days),
+        snapshot_suggested_qty: shippingPlanNumOrBlank_(l.snapshot_suggested_qty),
+        snapshot_target_days: shippingPlanNumOrBlank_(l.snapshot_target_days),
         // R6E1 (F): canonical serialization — an object/array context becomes canonical JSON, never "[object Object]".
         snapshot_fc_context: shippingPlanSnapshotValue_(l.snapshot_fc_context),
         snapshot_event_context: shippingPlanSnapshotValue_(l.snapshot_event_context)
@@ -827,6 +845,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     // state === 'CREATE' → no header carries this key yet → proceed to write exactly one batch under it.
   }
 
+  readStageS2.close(); ss = readStageS2.real; // CODEX-S2: BEFORE journal and every write
   // G — DURABLE rollback evidence bound BEFORE the first business mutation: execution key + canonical payload
   // fingerprint + intended plan ids + intended plan-line ids (+ any caller draft/before-state via ctx.journalExtra) +
   // an integrity checksum. Persisted to a Script Property so a mid-write crash in a later execution is still
@@ -882,7 +901,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
 function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
   var blank = { carrier_id: String(meta.carrier_id || '').trim(), carrier_unit_rate: '', carrier_rate_type: '',
     import_duty_treatment: '', customs_type: String(meta.customs_type || '').trim(),
-    estimated_freight_cost: '', estimated_duty: '', estimated_customs_fee: '',
+    estimated_freight_cost: '', estimated_duty: '', estimated_duty_currency: '', estimated_customs_fee: '',
     estimated_total_cost: '', currency: '' };
   try {
     var carrierId = String(meta.carrier_id || '').trim();
@@ -897,7 +916,7 @@ function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
     var rc = candidates[0];
     // Measures from the plan lines (approved_qty = requested at submit). gross weight in kg.
     var upcMap = shippingPlanUpcMap_(ss), logisticsMap = shippingPlanSkuLogisticsMap_(ss);
-    var totCartons = 0, totCbm = 0, totGross = 0, dutyLines = [];
+    var totCartons = 0, totCbm = 0, totGross = 0, dutyLines = [], rqU = {};   // R15C-AGL
     groupLines.forEach(function (l) {
       var sku = String(l.sku || '').trim();
       var qty = shippingPlanNum_(l.requested_qty);
@@ -905,15 +924,17 @@ function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
       var carton = upc > 0 ? Math.ceil(qty / upc) : 0;
       var logi = shippingPlanLineLogistics_(logisticsMap[sku], qty, carton);
       totCartons += carton;
-      totCbm += shippingPlanNum_(logi.cbm);
-      totGross += shippingPlanNum_(logi.gross_weight);
+      if (shippingMeasureKnown_(logi.cbm)) totCbm += shippingPlanNum_(logi.cbm); else rqU.cbm = 1;   // R15C-AGL
+      if (shippingMeasureKnown_(logi.gross_weight)) totGross += shippingPlanNum_(logi.gross_weight); else rqU.gw = 1;
       dutyLines.push({ sku: sku, qty: qty });
     });
-    var freight = shippingFreight_(rc, { grossWeightKg: totGross, cbm: totCbm, cartons: totCartons });
+    var freight = shippingFreight_(rc, { grossWeightKg: rqU.gw ? '' : totGross, cbm: rqU.cbm ? '' : totCbm, cartons: totCartons });
+    if (freight.freight === '') return blank;   // R15C-AGL: unknown rate -> Not Applied (never 0)
     var customsFee = shippingCustomsFee_(rc);
     var treat = String(rc.import_duty_treatment || '').trim();
-    var duty = shippingDuty_(ss, dutyLines, treat, meta.country, today);
-    var total = freight.freight + customsFee + (duty === '' ? 0 : duty);
+    var tax = shippingTaxQuote_(ss, dutyLines, treat, meta.country, today, { originCountry: rc.origin_country, freightCurrency: rc.currency, includePortTax: true });
+    var duty = tax.known ? tax.amount : '';
+    var total = !tax.known || tax.currency !== String(rc.currency || '').trim().toUpperCase() ? '' : freight.freight + customsFee + duty;   // R15C-AGL
     return {
       carrier_id: carrierId,
       carrier_unit_rate: shippingPlanNum_(rc.unit_rate),
@@ -921,9 +942,9 @@ function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
       import_duty_treatment: treat,
       customs_type: String(meta.customs_type || rc.customs_type || '').trim(),
       estimated_freight_cost: freight.freight,
-      estimated_duty: duty,
+      estimated_duty: duty, estimated_duty_currency: tax.currency,
       estimated_customs_fee: customsFee,
-      estimated_total_cost: shippingPlanRound_(total, 2),
+      estimated_total_cost: total === '' ? '' : shippingPlanRound_(total, 2),
       currency: String(rc.currency || '').trim()
     };
   } catch (e) {
@@ -1028,7 +1049,7 @@ function spApprovedCancelEligibility_(ss, planId, transferredId, transferredAt) 
 }
 // __SP_APPROVED_CANCEL_ELIGIBILITY_END__
 
-function handleUpdateShippingPlanStatus_(body) {
+function handleUpdateShippingPlanStatus_(body) { if (typeof editP1Gate15f2_ !== 'function' || typeof editTokWritten15f2_ !== 'function') return jsonResponse_({ success: false, zero_write: true, code: 'DEPLOYMENT_HALF_SYNCED', error: 'This deployment is half updated (11_ needs the R15F2 12_). Nothing was written. Ask the Owner to finish the update.' });   /* R15F2 H-2 */
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var lock = LockService.getScriptLock(), locked = false;
   try { locked = lock.tryLock(30000); }
@@ -1042,7 +1063,8 @@ function handleUpdateShippingPlanStatus_(body) {
         + 'transition that timed out waiting for the lock is indeterminate, not failed.',
       data: { shipping_plan_id: String((body && body.shipping_plan_id) || '').trim() } });
   }
-  try { return spUpdateShippingPlanStatusCore_(ss, body); }
+  SHIP_EDIT_TOKEN_IGNORED_ = '';
+  try { return editTagIgnored_(spUpdateShippingPlanStatusCore_(ss, body)); }   // r8: token_ignored reported
   finally { try { lock.releaseLock(); } catch (eRl) { /* best-effort */ } }
 }
 
@@ -1085,6 +1107,24 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
   if (targetRow === -1) return jsonResponse_({ success: false, error: 'Shipping plan not found: ' + planId });
 
   var curStatus = col('status') !== -1 ? String(rowVals[col('status')]).trim() : '';
+  if(typeof wdlBeforeStatus_==='function'){var wdlStatusCode=wdlBeforeStatus_(ss,planId,col('note')<0?'':rowVals[col('note')],transition);if(wdlStatusCode)return wdlNo_(wdlStatusCode,'Reload and verify the Weekly SKU edit before changing status.');}
+  // INT-CAND9 r7 (edit conflict): an optional expected_updated_at on a transition (Submit sends it) against the plan row read under the lock
+  var p1s_ = editP1Gate15f2_(col('updated_at') === -1 ? undefined : rowVals[col('updated_at')], body && body.expected_updated_at); if (p1s_) return jsonResponse_({ success: false, zero_write: true, code: p1s_.code, stage: 'edit_conflict', error: p1s_.error, data: { shipping_plan_id: planId, transition: transition, current_updated_at: p1s_.data.current_updated_at, current_status: curStatus } });   /* R15F2 P1 */ if (body && body.expected_updated_at != null && String(body.expected_updated_at).trim() !== '' && col('updated_at') !== -1 && editTokSame_(rowVals[col('updated_at')], body.expected_updated_at) === 'DIFF') {   /* r8 (CH8-1) */
+    var pCur_ = col('updated_at') !== -1 ? editTok_(rowVals[col('updated_at')]) : '';
+    return jsonResponse_({ success: false, zero_write: true, code: 'EDIT_CONFLICT', stage: 'edit_conflict', data: { shipping_plan_id: planId, transition: transition, expected_updated_at: editTok_(body.expected_updated_at), current_updated_at: pCur_, current_status: curStatus },
+      error: 'EDIT_CONFLICT: this plan was changed by someone else (now ' + curStatus + ', saved ' + (pCur_ || '?') + ') since you opened it. Nothing was written. Reload the plan, then decide again.' }); }
+  // SANDBOX-GATE-1g (review MINOR-1): a carrier / method choice that did not finish is never submitted or approved
+  if ((transition === 'submit' || transition === 'approve') && col('carrier_rate_type') !== -1 && String(rowVals[col('carrier_rate_type')]).trim().indexOf(SP_RC_PENDING_1G_) === 0)
+    return jsonResponse_({ success: false, zero_write: true, code: 'RATE_CARD_SELECTION_PENDING', stage: 'validation', data: { shipping_plan_id: planId, transition: transition },
+      error: 'RATE_CARD_SELECTION_PENDING: the carrier / method choice on this plan did not finish. Nothing was written. Choose the carrier and method again on the Draft.' });
+  // AD3-B (Author C request, Owner decisions 2 / 12): a plan whose warehouse To Confirm would refuse (logical WFS row, another platform, 3PL -> 3PL
+  // outside C's branch) is not submitted / approved - so no Shipment Draft reserves stock for it. Zero write. The 22_ rules decide (12_ gate).
+  if ((transition === 'submit' || transition === 'approve') && typeof shipDestinationDraftGate_ === 'function') {
+    var pvAd3_ = function (n) { var c = col(n); return c === -1 ? '' : rowVals[c]; };
+    var dgAd3_ = shipDestinationDraftGate_(ss, { company: pvAd3_('company'), country: pvAd3_('country'), marketplace: pvAd3_('marketplace'), source_warehouse_id: pvAd3_('source_warehouse_id'), destination_warehouse_id: pvAd3_('destination_warehouse_id') });
+    if (dgAd3_) return jsonResponse_({ success: false, zero_write: true, code: dgAd3_.code, stage: 'validation', data: { shipping_plan_id: planId, transition: transition, reason: dgAd3_.reason, overseas_transfer_check: dgAd3_.check || null },
+      error: dgAd3_.reason + ': the plan To cannot be shipped from this From (Confirm would refuse it). Nothing was written; no stock was reserved.' });
+  }
   var now = shippingPlanTimestamp_();
   // ============================================================================================================
   // R6-R7-R5-R1 §B — EVERY CELL THIS FUNCTION WRITES IS JOURNALLED, SO IT CAN BE PUT BACK.
@@ -1196,14 +1236,41 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
       // computed from the authoritative rows, so a re-click can never duplicate the approval and can never
       // duplicate the shipment either. Nothing is written on this path.
       if (curStatus === 'approved') {
-        var existingShipmentId = (typeof shipmentFindForPlan_ === 'function') ? shipmentFindForPlan_(ss, planId) : '';
+        // INT-CAND9 (local candidate): the same derivation as the first answer, from the rows. A live draft the plan row names is the healthy
+        // case (unchanged answer); a live draft the plan row does not name needs review (R1); no live row: a second click knows no cause, so
+        // the outcome is UNKNOWN - never 'not created / nothing reserved / retrying is safe' (R2; also after an I1 books refusal, F-I1-6).
+        // Round 3 (review INT9 F3 / F5 / F7): one read (spPlanShipmentEvidence_) also gives the cancelled ids (R3) and legacy-only links; the
+        // cause names what was seen; retry_effect is this path's own; one guidance text. Nothing is written here.
+        var spEv2 = spPlanShipmentEvidence_(ss, planId), spLive2 = spEv2.live;
+        var spMark2 = col('transferred_shipment_id') !== -1 ? String(rowVals[col('transferred_shipment_id')] == null ? '' : rowVals[col('transferred_shipment_id')]).trim() : '';
+        var existingShipmentId = spLive2 || '';
+        var spRec2 = null;
+        if (!(spLive2 && spMark2 === spLive2)) {
+          spRec2 = spApprovalRecoveryState_(planId, { reason: 'RESERVATION_OUTCOME_UNKNOWN' }, spLive2);   // the REVIEW shape (retry_idempotent false)
+          spRec2.cause = spLive2 ? 'SHIPMENT_PRESENT_WITHOUT_PLAN_MARKER' : (spLive2 === null ? (spEv2.cause || 'SHIPMENTS_UNREADABLE')
+            : (spEv2.legacy_ids.length ? 'SHIPMENT_LINKED_ONLY_BY_LEGACY_PLAN_COLUMN' : (spEv2.cancelled_ids.length ? 'ONLY_CANCELLED_SHIPMENT_DRAFTS' : 'CREATION_OUTCOME_NOT_RECORDED')));
+          spRec2.basis = 'SECOND_APPROVE_CLICK_READBACK';
+          spRec2.cancelled_shipment_ids = spEv2.cancelled_ids.slice(0, 20);
+          spRec2.legacy_linked_shipment_ids = spEv2.legacy_ids.slice(0, 20); spRec2.legacy_linked_count = spEv2.legacy_ids.length;
+          spRec2.draft_shipment_no = (spLive2 && spEv2.sheet_read && spEv2.sheet_read.col('shipment_no') !== -1) ? String(spEv2.live_row[spEv2.sheet_read.col('shipment_no')] || '').trim() : '';
+          spRec2.retry_effect = spLive2 ? 'RECHECK_ONLY_THE_EXISTING_DRAFT_IS_REUSED_OR_REFUSED' : (spLive2 === null ? 'UNKNOWN_THE_SERVER_RECHECKS' : 'MAY_CREATE_A_NEW_DRAFT_IF_THE_BOOKS_AGREE');
+          spRec2.retry_location = 'Weekly Shipping Plan -- the Approved plan card carries a "Retry Shipment Draft" action';
+          spRec2.message = 'The approval was committed and is kept. ' + (spLive2
+            ? 'A Shipment Draft (' + spLive2 + ') exists for this plan, but the plan row does not record it as created: its creation may not have finished cleanly. Review the draft, its lines and the reservation ledger. '
+            : (spLive2 === null ? (spEv2.cause === 'NO_PLAN_REFERENCE_COLUMN' ? 'The shipments table has no shipping_plan_id column, so whether a Shipment Draft exists is UNKNOWN. ' : 'The shipments table could not be read, so whether a Shipment Draft exists is UNKNOWN. ')
+              : (spEv2.legacy_ids.length ? 'No live Shipment Draft names this plan in shipping_plan_id; ' + spEv2.legacy_ids.length + ' shipment(s) (' + spEv2.legacy_ids.slice(0, 5).join(', ') + ') reference it only through a legacy plan column and are not treated as its draft. '
+                : 'No live Shipment Draft row exists for this plan' + (spEv2.cancelled_ids.length ? ' (only cancelled drafts: ' + spEv2.cancelled_ids.slice(0, 5).join(', ') + ')' : '') + ', and whether an earlier attempt left stock or ledger rows behind cannot be confirmed from the rows alone. '))
+              + 'The Shipment Draft state is UNKNOWN until reviewed. ')
+            + 'Do NOT retry until the owner has reviewed; any retry is re-checked by the server and repairs nothing. The server refuses stock keys whose reservation books disagree.';
+        }
+        if (spRec2 && !spLive2 && !spMark2 && typeof xcoCleanCancelState_ === 'function') { var xcoK11_ = xcoCleanCancelState_(ss, planId, spEv2); if (xcoK11_) spRec2 = xcoK11_; }   // XCO-R15G B1-MINOR-6
         return jsonResponse_({
           success: true,
           data: {
             shipping_plan_id: planId, transition: 'approve', already_approved: true, approval_committed: true,
             shipment: existingShipmentId ? { created: false, reason: 'already_exists', shipment_id: existingShipmentId } : null,
             execution_commit: existingShipmentId ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING',
-            recovery: existingShipmentId ? null : spApprovalRecoveryState_(planId, null),
+            recovery: spRec2,
             note: 'This plan was already approved. Nothing was written; the state above is the current truth.'
           }
         });
@@ -1253,7 +1320,7 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
     }
 
     setCell('updated_by', updatedBy);
-    setCell('updated_at', now);
+    setCell('updated_at', editNextStamp_(now, [col('updated_at') === -1 ? '' : rowVals[col('updated_at')]]));   // R71 (D4): strictly later than the row's
 
     // S6-R5 §8 — THE CANCELLATION IS CLAIMED FROM THE ROW, NOT FROM THE ABSENCE OF AN EXCEPTION.
     //
@@ -1355,7 +1422,7 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
   var shipmentResult = null;
   if (transition === 'approve') {
     try {
-      shipmentResult = createShipmentFromApprovedPlan_(ss, planId, approvedBy);
+      shipmentResult = createShipmentFromApprovedPlan_(ss, planId, approvedBy, { planJustStamped: true });   // R71 small-4: the status core has just stamped this plan row
     } catch (e) {
       shipmentResult = { created: false, error: String(e && e.message ? e.message : e) };
     }
@@ -1373,8 +1440,11 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
     var made = !!(shipmentResult && shipmentResult.created === true);
     var reused = !!(shipmentResult && shipmentResult.created === false && shipmentResult.reason === 'already_exists');
     if (!made && !reused) {
-      commitState = 'APPROVED_SHIPMENT_CREATION_PENDING';
-      recovery = spApprovalRecoveryState_(planId, shipmentResult);
+      // INT-CAND6 (local candidate): derived from the ROWS, as section D requires - a creation that failed can still have left a
+      // draft (quarantined half draft, a reservation outcome kept as UNKNOWN). null = the rows could not be read.
+      var spLive = spLiveShipmentForPlan_(ss, planId);
+      commitState = spLive ? 'SHIPMENT_PRESENT' : 'APPROVED_SHIPMENT_CREATION_PENDING';
+      recovery = spApprovalRecoveryState_(planId, shipmentResult, spLive);
     }
   } else {
     commitState = 'NOT_APPLICABLE';
@@ -1419,11 +1489,111 @@ function spUpdateShippingPlanStatusCore_(ss, body) {
  * two tables already carry, and the one thing every previous round has proved about duplicated state is that
  * it eventually disagrees. Derivation cannot disagree with itself.
  */
-function spApprovalRecoveryState_(planId, shipmentResult) {
+// INT-CAND6 (local candidate): the plan's NON-cancelled shipment id, read-only. '' = none; null = the rows could not be read.
+function spLiveShipmentForPlan_(ss, planId) {
+  try {
+    var scLinked = sc13LinkForPlan_(ss, String(planId || '').trim());
+    if (scLinked) return scLinked;
+    var sh = ss.getSheetByName('shipments');
+    if (!sh) return '';
+    var t = shipmentReadSheet_(sh), idC = t.col('shipment_id'), pC = t.col('shipping_plan_id'), stC = t.col('status');
+    if (pC === -1) return null;
+    for (var r = 1; r < t.rows.length; r++) {
+      if (String(t.rows[r][pC]).trim() !== String(planId || '').trim()) continue;
+      if (stC !== -1 && String(t.rows[r][stC]).trim().toLowerCase() === SHIPMENT_CANCELLED_STATUS_) continue;
+      return idC !== -1 ? (String(t.rows[r][idC]).trim() || 'MATCH') : 'MATCH';
+    }
+    return '';
+  } catch (e) { return null; }
+}
+
+// INT-CAND9 round 3 (local candidate; review INT9 F2 / F5): what the shipments table says about this plan, from ONE read. live = the first
+// non-cancelled row whose shipping_plan_id names the plan (as spLiveShipmentForPlan_ and the create / retry path): '' none, null = unreadable
+// or no shipping_plan_id column (cause says which). cancelled_ids: cancelled rows naming the plan. legacy_ids: non-cancelled rows that name
+// it ONLY through source_shipping_plan_id / plan_id - counted and reported, never treated as this plan's draft. Read-only.
+function spPlanShipmentEvidence_(ss, planId) {
+  var ev = { live: '', live_row: null, live_status: '', sheet_read: null, cause: '', cancelled_ids: [], legacy_ids: [] };
+  planId = String(planId || '').trim();
+  try {
+    var sh = ss.getSheetByName('shipments');
+    if (!sh) return ev;
+    var t = shipmentReadSheet_(sh), idC = t.col('shipment_id'), pC = t.col('shipping_plan_id'), stC = t.col('status');
+    var lc = ['source_shipping_plan_id', 'plan_id'].map(function (n) { return t.col(n); }).filter(function (c) { return c !== -1; });
+    ev.sheet_read = t;
+    for (var r = 1; r < t.rows.length; r++) {
+      var row = t.rows[r], st = stC !== -1 ? String(row[stC]).trim().toLowerCase() : '', id = idC !== -1 ? (String(row[idC]).trim() || 'MATCH') : 'MATCH';
+      var byMain = (pC !== -1 && String(row[pC]).trim() === planId) || sc13LinkForPlan_(ss, planId) === id;
+      var byLegacy = !byMain && (pC === -1 || String(row[pC]).trim() === '') && lc.some(function (c) { return String(row[c]).trim() === planId; });   // round 5 (review CHAIN5 CH5-8): a row naming ANY plan in shipping_plan_id is not legacy-only
+      if (!byMain && !byLegacy) continue;
+      if (st === SHIPMENT_CANCELLED_STATUS_) { ev.cancelled_ids.push(id); continue; }
+      if (byLegacy) { ev.legacy_ids.push(id); continue; }
+      ev.live_count = (ev.live_count || 0) + 1; if (!ev.live) { ev.live = id; ev.live_row = row; ev.live_status = st; }   // round 4: live_count (review R4R3 F-R3-4)
+    }
+    if (pC === -1) { ev.live = null; ev.cause = 'NO_PLAN_REFERENCE_COLUMN'; }
+    return ev;
+  } catch (e) { ev.live = null; ev.cause = 'SHIPMENTS_UNREADABLE'; ev.error = String(e && e.message ? e.message : e); return ev; }
+}
+
+// INT-CAND6: causes after which stock or ledger rows may have changed even when no shipment row is left.
+var SP_RECOVERY_RESIDUE_CAUSES_ = ['RESERVATION_OUTCOME_UNKNOWN', 'RESERVATION_ROLLBACK_UNVERIFIED', 'SHIPMENT_DRAFT_INCOMPLETE', 'SHIPMENT_DRAFT_CHECK_FAILED'];
+
+function spApprovalRecoveryState_(planId, shipmentResult, liveShipmentId) {
   var cause = 'UNKNOWN';
   if (shipmentResult) {
     if (shipmentResult.error) cause = String(shipmentResult.error);
     else if (shipmentResult.reason) cause = String(shipmentResult.reason).toUpperCase();
+  }
+  // INT-CAND6: a draft row present, the rows unreadable, or a cause that can leave residue -> a REVIEW answer that claims nothing
+  // it does not know: no 'not created', no 'nothing reserved', no 'retrying is safe'. Otherwise the previous object, unchanged.
+  var reasonU = shipmentResult && shipmentResult.reason ? String(shipmentResult.reason).toUpperCase() : '';
+  // INT-CAND8 (I1, spec r2 F9): the reservation-books guard refused before any write; a retry is refused the same way until the books agree.
+  // INT-CAND8 r5: the create was refused BEFORE any write because the plan has a live shipment linked only through a legacy plan column, or
+  // its existing shipment's dispatch state is not consistent in the rows. Nothing was written; a retry is refused the same way.
+  if (reasonU === 'LEGACY_LINKED_SHIPMENT_EXISTS' || reasonU === 'DISPATCH_STATE_INCONSISTENT' || reasonU === 'DISPATCH_STATE_UNKNOWN') {   // r6: + UNKNOWN (CH5-6)
+    return {
+      state: 'SHIPMENT_CREATION_REFUSED_REVIEW_REQUIRED', approval_committed: true, shipment_created: false, review_required: true, cause: reasonU,
+      draft_shipment_id: String(shipmentResult.shipment_id || ''), legacy_linked_shipment_ids: shipmentResult.legacy_linked_shipment_ids || [], shipping_plan_id: String(planId || ''),
+      retry_action: 'createShipmentFromPlan', retry_location: 'Weekly Shipping Plan -- the Approved plan card carries a "Retry Shipment Draft" action',
+      retry_idempotent: false, retry_effect: 'REFUSED_UNTIL_REVIEWED',
+      message: 'The approval was committed and is kept. The Shipment Draft was refused before anything was written: '
+        + (reasonU === 'LEGACY_LINKED_SHIPMENT_EXISTS' ? 'a live shipment (' + (shipmentResult.legacy_linked_shipment_ids || []).slice(0, 5).join(', ') + ') is linked to this plan only through a legacy plan column, so a new draft would be a second shipment for the plan'
+          : 'the existing shipment of this plan (' + String(shipmentResult.shipment_id || '') + ') has a dispatch state that could not be confirmed consistent from its rows')
+        + '. Do NOT retry until the owner has reviewed; any retry is re-checked by the server and repairs nothing.'
+    };
+  }
+  if (reasonU === 'RESERVATION_BOOKS_MISMATCH' || reasonU === 'RESERVATION_BOOKS_UNKNOWN') {
+    return {
+      state: 'RESERVATION_BOOKS_REVIEW_REQUIRED', approval_committed: true, shipment_created: false, review_required: true, cause: reasonU,
+      keys_mismatched: shipmentResult.keys_mismatched || [], keys_unknown: shipmentResult.keys_unknown || [], shipping_plan_id: String(planId || ''),
+      retry_action: 'createShipmentFromPlan', retry_location: 'Weekly Shipping Plan -- the Approved plan card carries a "Retry Shipment Draft" action',
+      retry_idempotent: false, retry_effect: 'REFUSED_UNTIL_THE_BOOKS_AGREE',
+      message: 'The approval was committed and is kept. The Shipment Draft was refused before anything was written, because the reservation books of its stock keys '
+        + (reasonU === 'RESERVATION_BOOKS_MISMATCH' ? 'disagree' : 'cannot be confirmed') + '. Do not retry: a retry is refused the same way until the books agree. Review these keys with the read-only reservation reconcile.'
+    };
+  }
+  var residue = SP_RECOVERY_RESIDUE_CAUSES_.indexOf(reasonU) >= 0;
+  if (liveShipmentId === null || liveShipmentId || (liveShipmentId === '' && residue)) {
+    var present = !!liveShipmentId;
+    return {
+      state: present ? 'SHIPMENT_DRAFT_REVIEW_REQUIRED' : 'SHIPMENT_CREATION_OUTCOME_UNKNOWN',
+      approval_committed: true,
+      shipment_created: present ? true : null,
+      draft_shipment_id: present ? String(liveShipmentId) : '',
+      draft_shipment_no: (shipmentResult && shipmentResult.shipment_no) || '',
+      review_required: true,
+      cause: cause,
+      observed: (shipmentResult && (shipmentResult.observed || shipmentResult.gaps || shipmentResult.left)) || null,
+      shortfalls: (shipmentResult && shipmentResult.shortfalls) || null,
+      shipping_plan_id: String(planId || ''),
+      retry_action: 'createShipmentFromPlan',
+      retry_idempotent: false,
+      retry_effect: present ? 'RECHECK_ONLY' : 'MAY_CREATE_A_NEW_DRAFT',
+      message: 'The approval was committed and is kept. ' + (present
+        ? 'A Shipment Draft (' + String(liveShipmentId) + ') exists for this plan, but its creation did not finish cleanly (' + cause + '): it may be incomplete. '
+        : (liveShipmentId === null ? 'The shipments table could not be read, so whether a Shipment Draft exists is UNKNOWN. '
+          : 'No Shipment Draft row is left, but the creation stopped after writes may have landed (' + cause + '): stock or ledger rows may have changed. '))
+        + 'Do not retry: a retry repairs nothing. Review the draft, its lines and the reservation ledger first.'
+    };
   }
   return {
     state: 'APPROVED_SHIPMENT_CREATION_PENDING',
@@ -1447,7 +1617,19 @@ function spApprovalRecoveryState_(planId, shipmentResult) {
  * units_per_carton. Body: { lines: [ { shipping_plan_line_id, approved_qty } ] }.
  * Lines whose parent plan is not Draft are skipped (reported).
  */
-function handleUpdateShippingPlanLineQty_(body) {
+// INT-CAND9 r7 (review CHAIN7 CH7-4 / CH7-14, edit conflict): a plan-line quantity edit runs under the script lock (the status
+// transitions take the same lock), so its 'still Draft' check and its writes cannot interleave with a Submit / approve.
+function handleUpdateShippingPlanLineQty_(body) { if (typeof editP1Gate15f2_ !== 'function' || typeof editTokWritten15f2_ !== 'function') return jsonResponse_({ success: false, zero_write: true, code: 'DEPLOYMENT_HALF_SYNCED', error: 'This deployment is half updated (11_ needs the R15F2 12_). Nothing was written. Ask the Owner to finish the update.' });   /* R15F2 H-2 */
+  if(body && body.line_edits) return typeof handleWeeklyDraftLines_==='function' ? handleWeeklyDraftLines_(body) : jsonResponse_({success:false,zero_write:true,code:'DEPLOYMENT_HALF_SYNCED',error:'Weekly SKU editor is not installed.'});
+  var lock = null, locked = false;
+  try { lock = LockService.getScriptLock(); locked = lock.tryLock(30000); }
+  catch (eLk) { return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_ERROR', stage: 'lock', error: 'Lock error: ' + (eLk && eLk.message ? eLk.message : eLk) }); }
+  if (!locked) return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_UNAVAILABLE', stage: 'lock', error: 'Another change is in progress, so the quantities could not be saved. Nothing was written. Reload the plan, then try again.' });
+  SHIP_EDIT_TOKEN_IGNORED_ = '';
+  try { return editTagIgnored_(spUpdateLineQtyCore_(body)); }   // r8: token_ignored reported
+  finally { try { lock.releaseLock(); } catch (eRl) { /* only the lock taken above */ } }
+}
+function spUpdateLineQtyCore_(body) {
   var reqLines = (body && body.lines) || [];
   if (!reqLines.length) return jsonResponse_({ success: false, error: 'No lines provided' });
 
@@ -1491,11 +1673,44 @@ function handleUpdateShippingPlanLineQty_(body) {
   // sku -> logistics, to recompute the line logistics snapshot on a qty edit (Save).
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
 
+  if(typeof wdlGuard_==='function'){var wdlParent=String(body&&body.shipping_plan_id||'');for(var wdi=1;wdi<planData.length;wdi++)if(String(planData[wdi][pIdCol])===wdlParent){var wdc=wdlGuard_(ss,wdlParent,planHeaders.indexOf('note')<0?'':planData[wdi][planHeaders.indexOf('note')]);if(wdc)return wdlNo_(wdc);}}
   // index line id -> sheet row
   var rowById = {};
   for (var i = 1; i < data.length; i++) rowById[String(data[i][idCol]).trim()] = { row: i + 1, vals: data[i] };
+  if(typeof wdlGuard_==='function'){for(var wqi=0;wqi<reqLines.length;wqi++){var wqref=rowById[String(reqLines[wqi].shipping_plan_line_id||'')];if(!wqref)continue;var wqpid=String(wqref.vals[planIdCol]||'');var wqcode=wdlGuard_(ss,wqpid,'');if(wqcode)return wdlNo_(wqcode);}}
 
+  // INT-CAND9 r7 (edit conflict): optional tokens - expected_plan_updated_at (the plan row) and lines[].expected_updated_at (each line
+  // row), compared with the rows read under the lock, ALL before the first write; a mismatch is EDIT_CONFLICT with zero writes. Absent = unchanged.
+  var qcf_ = [];
+  (function () { var pid = String((body && body.shipping_plan_id) || '').trim(), pu = planHeaders.indexOf('updated_at'), pr = null; for (var i = 1; i < planData.length; i++) if (pIdCol !== -1 && String(planData[i][pIdCol]).trim() === pid) { pr = planData[i]; break; } if (!pr) return; var g = editP1Gate15f2_(pu === -1 ? undefined : pr[pu], body && body.expected_plan_updated_at); if (g) qcf_.push({ shipping_plan_id: pid, reason: g.code, current_updated_at: g.data.current_updated_at }); })();   /* R15F2 P1 */ if (body && body.expected_plan_updated_at != null && String(body.expected_plan_updated_at).trim() !== '') {
+    var qPid_ = String(body.shipping_plan_id || '').trim(), qPu_ = planHeaders.indexOf('updated_at'), qPr_ = null;
+    for (var qp = 1; qp < planData.length; qp++) if (pIdCol !== -1 && String(planData[qp][pIdCol]).trim() === qPid_) { qPr_ = planData[qp]; break; }
+    var qPc_ = qPr_ && qPu_ !== -1 ? editTok_(qPr_[qPu_]) : '';
+    if (!qPr_ || (qPu_ !== -1 && editTokSame_(qPr_[qPu_], body.expected_plan_updated_at) === 'DIFF'))   /* r8 (CH8-1) */ qcf_.push({ shipping_plan_id: qPid_, expected_updated_at: editTok_(body.expected_plan_updated_at), current_updated_at: qPc_, current_status: qPr_ && pStatusCol !== -1 ? String(qPr_[pStatusCol]).trim() : '' });
+  }
+  reqLines.forEach(function (rq) { rq = rq || {}; var p1r_ = rowById[String(rq.shipping_plan_line_id || '').trim()]; if (p1r_) { var p1g_ = editP1Gate15f2_(updatedCol === -1 ? undefined : p1r_.vals[updatedCol], rq.expected_updated_at); if (p1g_) { qcf_.push({ shipping_plan_line_id: String(rq.shipping_plan_line_id || ''), reason: p1g_.code, current_updated_at: p1g_.data.current_updated_at }); return; } }   /* R15F2 P1 */ if (rq.expected_updated_at == null || String(rq.expected_updated_at).trim() === '') return;
+    var qRef_ = rowById[String(rq.shipping_plan_line_id || '').trim()], qCur_ = qRef_ && updatedCol !== -1 ? editTok_(qRef_.vals[updatedCol]) : '';
+    if (!qRef_ || (updatedCol !== -1 && editTokSame_(qRef_.vals[updatedCol], rq.expected_updated_at) === 'DIFF'))   /* r8 (CH8-1) */ qcf_.push({ shipping_plan_line_id: String(rq.shipping_plan_line_id || ''), expected_updated_at: editTok_(rq.expected_updated_at), current_updated_at: qCur_, current_approved_qty: qRef_ && approvedCol !== -1 ? qRef_.vals[approvedCol] : null }); });
+  if (qcf_.length) return jsonResponse_({ success: false, code: 'EDIT_CONFLICT', zero_write: true, data: { conflicts: qcf_ },
+    error: (function () { var isP1 = function (c) { return /^EDIT_(TOKEN|VERSION)_/.test(String(c.reason || '')); }, p1 = qcf_.filter(isP1), other = qcf_.filter(function (c) { return !isP1(c); }); return (p1.length ? 'Not saved: this change carried no readable version for ' + p1.map(function (c) { return (c.shipping_plan_line_id || c.shipping_plan_id) + ' (' + c.reason + ')'; }).join('; ') + ', so it cannot be checked against later changes. ' : '') + (other.length ? 'EDIT_CONFLICT: the plan or its lines were changed by someone else since you opened them (' + other.map(function (c) { return (c.shipping_plan_line_id || c.shipping_plan_id) + (c.current_status ? ' now ' + c.current_status : '') + (c.current_approved_qty != null ? ' qty now ' + c.current_approved_qty : '') + ' saved ' + (c.current_updated_at || '?'); }).join('; ') + '). ' : '') + 'Nothing was saved. Reload the plan to see the current values, then make your change again.'; })() });   // R15F2 step 30 (P1-3)
+  try {
+    var stockEdits={}, stockPlans={}, stockSeen={};
+    reqLines.forEach(function(rq){var id=String(rq.shipping_plan_line_id||'').trim(),ref=rowById[id];if(!ref)return;var pid=String(ref.vals[planIdCol]||'');if(statusById[pid]!=='draft')return;
+      if(stockSeen[id])throw new Error('WEEKLY_LINE_NOT_UNIQUE');stockSeen[id]=true;
+      var qty=Number(rq.approved_qty);if(typeof rq.approved_qty==='boolean'||String(rq.approved_qty==null?'':rq.approved_qty).trim()===''||!isFinite(qty)||Math.floor(qty)!==qty||qty<0||qty>9007199254740991)throw new Error('WEEKLY_QUANTITY_INVALID');
+      var obj={};headers.forEach(function(k,c){obj[k]=ref.vals[c];});(stockEdits[pid]=stockEdits[pid]||[]).push({op:'update',line:obj,values:{approved_qty:qty}});
+    });
+    for(var sp=1;sp<planData.length;sp++){var sid=String(planData[sp][pIdCol]||'');if(stockEdits[sid]){var po={};planHeaders.forEach(function(k,c){po[k]=planData[sp][c];});stockPlans[sid]=po;}}
+    Object.keys(stockEdits).forEach(function(pid){
+      if(typeof wdlCheckStock_!=='function')throw new Error('DEPLOYMENT_HALF_SYNCED');
+      var ls=data.slice(1).filter(function(r){return String(r[planIdCol]||'')===pid;}).map(function(r){var o={};headers.forEach(function(k,c){o[k]=r[c];});return o;});
+      wdlCheckStock_(ss,stockPlans[pid],ls,stockEdits[pid]);
+    });
+  }catch(stockError){return jsonResponse_({success:false,zero_write:true,code:stockError.importCode||String(stockError.message||'WEEKLY_STOCK_UNKNOWN'),error:String(stockError.message||stockError)});}
   var now = shippingPlanTimestamp_();
+  // R71 (D4): one stamp for every line written (it is also the returned token), strictly later than each of their current stamps
+  if (updatedCol !== -1) now = editNextStamp_(now, reqLines.map(function (q0) { var x0 = rowById[String((q0 || {}).shipping_plan_line_id || '').trim()];
+    return x0 && statusById[planIdCol !== -1 ? String(x0.vals[planIdCol]).trim() : ''] === 'draft' ? x0.vals[updatedCol] : ''; }));
   var updated = 0, skipped = 0;
   for (var r = 0; r < reqLines.length; r++) {
     var rq = reqLines[r] || {};
@@ -1520,7 +1735,7 @@ function handleUpdateShippingPlanLineQty_(body) {
     updated++;
   }
 
-  return jsonResponse_({ success: true, data: { updated: updated, skipped: skipped } });
+  (function () { var pid = String((body && body.shipping_plan_id) || '').trim(), pu = planHeaders.indexOf('updated_at'); if (pu === -1 || String(body && body.expected_plan_updated_at == null ? '' : body.expected_plan_updated_at).trim() !== '') return; for (var i = 1; i < planData.length; i++) if (pIdCol !== -1 && String(planData[i][pIdCol]).trim() === pid) { if (!editEpochs_(planData[i][pu]).ok) planSheet.getRange(i + 1, pu + 1).setValue(editNextStamp_(now, [''])); break; } })();   /* R15F2 step 30 (P1-2): a versionless Plan is stamped by its controlled first write */ return jsonResponse_({ success: true, data: { updated: updated, skipped: skipped, updated_at: editTokWritten15f2_(now) } });   // r7: the new line token; R15F2: as a read would return it
 }
 
 // ---- completeShippingPlan (Decision Layer Completion) -------------
@@ -1533,12 +1748,30 @@ function handleUpdateShippingPlanLineQty_(body) {
  *         (transferred_shipment_id OR transferred_to_shipment_at present).
  * Does NOT touch shipments / shipment_lines / Decision Snapshot / Execution Snapshot. No row delete.
  */
+// INT-CAND9 round 6 (Owner-approved night scope 3.3; review F-CC-1 / F-CC-2): Done runs under the existing script lock with the approve
+// wait budget. Everything Done reads and checks is re-read inside the lock, right up to the completion write. A timeout writes nothing.
 function handleCompleteShippingPlan_(body) {
+  var lock = null, locked = false;
+  try { lock = LockService.getScriptLock(); locked = lock.tryLock(30000); }
+  catch (eLk) { return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_ERROR', stage: 'lock', error: 'Lock error: ' + (eLk && eLk.message ? eLk.message : eLk) }); }
+  if (!locked) return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_UNAVAILABLE', stage: 'lock', data: { shipping_plan_id: String((body && body.shipping_plan_id) || '').trim() },
+    error: 'Another change is in progress, so Done could not start. Nothing was written. Read the plan back, then try again.' });
+  try { return spCompleteShippingPlanCore_(body); }
+  finally { try { lock.releaseLock(); } catch (eRl) { /* best-effort; only the lock taken above */ } }
+}
+function spCompleteShippingPlanCore_(body) {
   var planId = String((body && body.shipping_plan_id) || '').trim();
   var actor = String((body && (body.completed_by || body.actor)) || 'system_user').trim();
   if (!planId) return jsonResponse_({ success: false, error: 'Missing shipping_plan_id' });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
+  try {
+    var linked14 = sc13LinkForPlan_(ss, planId);
+    if (linked14) {
+      var linkedShip14 = sc13One_(sc13Read_(ss, 'shipments', []).rows, 'shipment_id', linked14);
+      sc13AssertReady_(linkedShip14); sc13Verify_(ss, linkedShip14);
+    }
+  } catch (e14) { return jsonResponse_({ success: false, zero_write: true, code: 'DONE_CONSOLIDATION_REVIEW_REQUIRED' }); }
   var sheet = ss.getSheetByName('shipping_plans');
   if (!sheet) return jsonResponse_({ success: false, error: 'shipping_plans sheet not found' });
 
@@ -1568,17 +1801,55 @@ function handleCompleteShippingPlan_(body) {
   var now = shippingPlanTimestamp_();
   function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(targetRow, c + 1).setValue(value); }
 
+  // INT-CAND9 round 4 (fail-closed on the next operation; BEFORE any Done write): Done refuses, with zero writes, while the plan's live shipment has reservation books
+  // that disagree on any key it touches, or a dispatch that is not consistent in the rows (status / movement / routes / events / allocations / PO).
+  var dcEv_ = (typeof dnEv !== 'undefined' && dnEv) ? dnEv : spPlanShipmentEvidence_(ss, planId), dcWhy_ = [];
+  if (dcEv_.live === null) dcWhy_.push('SHIPMENT_STATE_UNKNOWN ' + (dcEv_.cause || ''));
+  if ((dcEv_.live_count || 0) > 1) dcWhy_.push('TWO_OR_MORE_LIVE_SHIPMENTS_NAME_THIS_PLAN ' + dcEv_.live_count);   // review R4R3 F-R3-4
+  else if (dcEv_.live) {
+    var dcSc_ = dcEv_.sheet_read.col('source_warehouse_id'), dcBk_ = shipmentCancelBooks_(ss, dcEv_.live, dcSc_ !== -1 ? String(dcEv_.live_row[dcSc_] || '').trim() : '');
+    if (dcBk_.verdict !== 'RECONCILED') dcWhy_.push('RESERVATION_BOOKS ' + dcBk_.verdict + ' ' + dcBk_.mismatched.concat(dcBk_.unknown).slice(0, 5).join('; '));
+    var dcR_ = csdCountRowsFor_(ss, 'shipment_routes', 'shipment_id', dcEv_.live), dcE_ = csdEventExists_(ss, dcEv_.live), dcM_ = csdMovementExists_(ss, dcEv_.live), dcD_ = csdIsDispatchedStatus_(dcEv_.live_status);
+    if (!dcD_ && (dcR_ > 0 || dcE_ || dcM_)) dcWhy_.push('DISPATCH_EVIDENCE_UNDER_STATUS ' + dcEv_.live_status);
+    else if (dcD_) { var dcC_ = csdDispatchConsistency_(ss, dcEv_.live, dcR_, dcE_, dcM_); if (!dcC_.ok) dcWhy_ = dcWhy_.concat(dcC_.why); }
+  }
+  if (dcWhy_.length) return jsonResponse_({ success: false, code: dcEv_.live === null ? 'DONE_SHIPMENT_STATE_UNKNOWN' : 'DONE_SHIPMENT_REVIEW_REQUIRED', shipping_plan_id: planId, data: { shipment_id: dcEv_.live || '', not_consistent: dcWhy_.slice(0, 20) },
+    error: 'Done refused: the plan shipment ' + (dcEv_.live || '') + ' is not consistent (' + dcWhy_.slice(0, 3).join('; ') + '). Nothing was written. The plan stays Approved; review the shipment before marking the plan Done.' });
   // Transfer detection: the plan's own transferred_shipment_id / transferred_to_shipment_at, OR an
   // actual shipments row that references this plan (robust — the transfer metadata may never have
   // persisted). If a shipment exists but the columns are blank, BACKFILL them here.
   var transferredId = col('transferred_shipment_id') !== -1 ? String(rowVals[col('transferred_shipment_id')]).trim() : '';
   var transferredAt = col('transferred_to_shipment_at') !== -1 ? String(rowVals[col('transferred_to_shipment_at')]).trim() : '';
   if (!transferredId && !transferredAt) {
-    var foundShipmentId = shipmentFindForPlan_(ss, planId);
-    if (foundShipmentId) {
-      transferredId = foundShipmentId;
+    // INT-CAND9 round 3 (local candidate; review INT9 F2): the backfill writes the plan marker only for a LIVE draft that names this plan in
+    // shipping_plan_id and is proven: dispatched, or complete (shipmentDraftGaps_, the check the retry uses) with reservation books that
+    // agree for every key it holds (shipmentCancelBooks_, the I1 guard). UNKNOWN, only cancelled / legacy-linked drafts, an incomplete
+    // draft or books that do not agree -> a typed refusal, nothing written. (Plain 'no shipment at all' keeps its old answer below.)
+    var dnEv = spPlanShipmentEvidence_(ss, planId), dnWhy = '', dnObs = null;
+    if (dnEv.live === null) dnWhy = 'DONE_SHIPMENT_STATE_UNKNOWN';
+    else if (!dnEv.live) { if (dnEv.cancelled_ids.length || dnEv.legacy_ids.length) dnWhy = 'DONE_NO_LIVE_SHIPMENT_DRAFT'; }
+    else if (SHIPMENT_DISPATCHED_STATUSES_.indexOf(dnEv.live_status) < 0) {
+      var dnLs = ss.getSheetByName('shipping_plan_lines'), dnGaps;
+      try { dnGaps = dnLs ? shipmentDraftGaps_(ss, planId, dnEv.live, dnEv.live_row, dnEv.sheet_read, dnLs) : ['PLAN_LINES_SHEET_MISSING']; }
+      catch (eDG) { dnGaps = ['DRAFT_CHECK_FAILED: ' + String(eDG && eDG.message ? eDG.message : eDG)]; }
+      if (dnGaps.length) { dnWhy = 'DONE_SHIPMENT_REVIEW_REQUIRED'; dnObs = { gaps: dnGaps.slice(0, 20) }; }
+      else {
+        var dnSc = dnEv.sheet_read.col('source_warehouse_id'), dnBk = shipmentCancelBooks_(ss, dnEv.live, dnSc !== -1 ? String(dnEv.live_row[dnSc] || '').trim() : '');
+        if (dnBk.verdict !== 'RECONCILED') { dnWhy = 'DONE_SHIPMENT_REVIEW_REQUIRED'; dnObs = { books: dnBk.verdict, keys_mismatched: dnBk.mismatched, keys_unknown: dnBk.unknown }; }
+      }
+    }
+    if (dnWhy) {
+      return jsonResponse_({ success: false, code: dnWhy, shipping_plan_id: planId,
+        data: { shipment_id: dnEv.live || '', cause: dnEv.cause || '', cancelled_shipment_ids: dnEv.cancelled_ids.slice(0, 20), legacy_linked_shipment_ids: dnEv.legacy_ids.slice(0, 20), observed: dnObs },
+        error: 'Done refused: ' + (dnWhy === 'DONE_SHIPMENT_STATE_UNKNOWN' ? 'whether this plan has a Shipment Draft is UNKNOWN (' + (dnEv.cause || 'SHIPMENTS_UNREADABLE') + ').'
+          : dnWhy === 'DONE_NO_LIVE_SHIPMENT_DRAFT' ? 'this plan has no live Shipment Draft (cancelled: ' + (dnEv.cancelled_ids.join(', ') || 'none') + '; linked only through a legacy plan column: ' + (dnEv.legacy_ids.join(', ') || 'none') + ').'
+          : 'Shipment Draft ' + dnEv.live + ' is not recorded on the plan and could not be proven complete with agreeing reservation books.')
+          + ' Nothing was written. The plan stays Approved; review it before marking it Done.' });
+    }
+    if (dnEv.live) {
+      transferredId = dnEv.live;
       transferredAt = now;
-      setCell('transferred_shipment_id', foundShipmentId);
+      setCell('transferred_shipment_id', dnEv.live);
       setCell('transferred_to_shipment_at', now);
     }
   }
@@ -1589,7 +1860,7 @@ function handleCompleteShippingPlan_(body) {
   setCell('completed_at', now);
   setCell('completed_by', actor);
   setCell('updated_by', actor);
-  setCell('updated_at', now);
+  setCell('updated_at', editNextStamp_(now, [col('updated_at') === -1 ? '' : rowVals[col('updated_at')]]));   // R71 small-3 (review m1)
 
   return jsonResponse_({ success: true, data: { shipping_plan_id: planId, completed_at: now, completed_by: actor, transferred_shipment_id: transferredId } });
 }
@@ -1601,7 +1872,16 @@ function handleCompleteShippingPlan_(body) {
  * - Preserves all existing notes (never overwrites).
  * - Never touches rejected_reason (that remains the formal rejection field).
  */
+// INT-CAND9 r8 (CH8-5): the note append under the script lock (a reject writes note from the row it read under the same lock)
 function handleAppendShippingPlanNote_(body) {
+  var lock = null, locked = false;
+  try { lock = LockService.getScriptLock(); locked = lock.tryLock(30000); }
+  catch (eLk) { return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_ERROR', stage: 'lock', error: 'Lock error: ' + (eLk && eLk.message ? eLk.message : eLk) }); }
+  if (!locked) return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_UNAVAILABLE', stage: 'lock', error: 'Another change is in progress, so the note could not be added. Nothing was written. Try again.' });
+  try { return spAppendShippingPlanNoteCore_(body); }
+  finally { try { lock.releaseLock(); } catch (eRl) { /* only the lock taken above */ } }
+}
+function spAppendShippingPlanNoteCore_(body) {
   var planId = String((body && body.shipping_plan_id) || '').trim();
   var note = String((body && body.note) || '').trim();
   var actor = String((body && body.actor) || 'operation-system').trim();
@@ -1631,7 +1911,353 @@ function handleAppendShippingPlanNote_(body) {
   var existing = String(rowVals[noteCol] || '').trim();
   var appended = '[NOTE @' + now + ' by ' + actor + '] ' + note;
   sheet.getRange(targetRow, noteCol + 1).setValue(existing ? (existing + '\n' + appended) : appended);
-  if (updatedCol !== -1) sheet.getRange(targetRow, updatedCol + 1).setValue(now);
+  if (updatedCol !== -1) sheet.getRange(targetRow, updatedCol + 1).setValue(editNextStamp_(now, [rowVals[updatedCol]]));   // R71 small-4 (re-review m1b)
 
   return jsonResponse_({ success: true, data: { shipping_plan_id: planId } });
 }
+
+
+// ============================================================================================================
+// SANDBOX-GATE-1f — WEEKLY PLAN RATE CARD (carrier -> method -> server price). Draft only. The plan's REAL lane: destination country,
+// marketplace (MULTI -> whole-plan cards), destination warehouse code (a warehouse destination), customs type, battery class of its SKUs,
+// validity today. Pricing is shipmentExactRateAndCost_ over the plan's own totals (gross weight / CBM / cartons / qty) - the same engine
+// the Shipment uses. Persisted into the plan header's existing columns; nothing is invented, nothing is shown that the server did not price.
+// ============================================================================================================
+function spRcStr_(v) { return String(v == null ? '' : v).trim(); }
+function spRcPlanRow_(ss, planId) {
+  var sh = ss.getSheetByName('shipping_plans'); if (!sh) return null;
+  var d = sh.getDataRange().getValues(), h = d[0].map(function (x) { return spRcStr_(x); }), c = h.indexOf('shipping_plan_id'), hit = null;
+  for (var i = 1; i < d.length; i++) if (spRcStr_(d[i][c]) === planId) { if (hit) return { dup: true }; var o = {}; h.forEach(function (k, j) { o[k] = d[i][j]; }); hit = { row: i + 1, sheet: sh, headers: h, v: o }; }
+  return hit;
+}
+function spRcPlanLines_(ss, planId) {
+  var sh = ss.getSheetByName('shipping_plan_lines'); if (!sh) return [];
+  return shippingPlanReadObjects_(sh).filter(function (l) { return spRcStr_(l.shipping_plan_id) === planId; });
+}
+function spRcDestCode_(ss, p) {
+  var wid = spRcStr_(p.destination_warehouse_id); if (!wid) return '';
+  var sh = ss.getSheetByName('warehouses'); if (!sh) return '';
+  var rows = shippingPlanReadObjects_(sh).filter(function (w) { return spRcStr_(w.warehouse_id).toLowerCase() === wid.toLowerCase(); });
+  return rows.length === 1 ? spRcStr_(rows[0].warehouse_code) : '';
+}
+function spRcTotals_(lines) {
+  var t = { gw: 0, cbm: 0, cartons: 0, qty: 0, items: [] }, unk = {};   // R15C-AGL: one blank line makes that total unknown (''), never 0
+  var add = function (k, v) { if (shippingMeasureKnown_(v)) t[k] += shippingPlanNum_(v); else unk[k] = 1; };
+  lines.forEach(function (l) {
+    var q = shippingPlanNum_(spRcStr_(l.approved_qty) !== '' ? l.approved_qty : l.requested_qty);
+    add('gw', l.gross_weight); add('cbm', l.cbm); add('cartons', spRcStr_(l.plan_carton_qty) !== '' ? l.plan_carton_qty : l.carton_qty); t.qty += q;
+    t.items.push({ sku: spRcStr_(l.sku), qty: q });
+  });
+  Object.keys(unk).forEach(function (k) { t[k] = ''; });
+  return t;
+}
+function spRcLaneCards_(ss, p, lines, day) {   // WK1 r3 (D-6): + the plan's origin country (its From warehouse); unresolved -> nothing listed or priced
+  var org = spRcOrigin15_(ss, p);
+  if (!org) return { cards: [], unclassified: [], origin: '', originUnresolved: true };
+  var bc = shipBatteryClass_(ss, lines.map(function (l) { return spRcStr_(l.sku); }));
+  if (bc.unclassified.length) return { cards: [], unclassified: bc.unclassified };
+  var mk = spRcStr_(p.marketplace), multi = mk.toUpperCase() === 'MULTI';
+  var c = shippingMatchRateCards_(ss, { originCountry: org, destinationCountry: p.country, shippingMethod: '', lastMile: '', customsType: spRcStr_(p.customs_type),
+    marketplace: multi ? 'MULTI' : mk, destinationWarehouseCode: shipRateDestination_(ss, p).code,
+    destinationCity: shipRateDestination_(ss, p).city, destinationPostalCode: shipRateDestination_(ss, p).postal, batteryType: bc.cls, quoteDate: day }, true);
+  return { cards: multi ? c.filter(function (x) { return spRcStr_(x.marketplace) === ''; }) : c, unclassified: [], origin: org };
+}
+function spRcQuote_(ss, p, rc, lines, tot, day, org) {   // WK1 r3 (D-6): priced only with the plan's origin; no origin -> not priced
+  if (!spRcStr_(org)) return { rateCardId: '', currency: '', estimatedFreightCost: '', estimatedDuty: '', estimatedCustomsFee: '', estimatedTotalCost: '', estimatedUnitCost: '' };
+  return shipmentExactRateAndCost_(ss, { originCountry: spRcStr_(org), planRateCardId: spRcStr_(rc.rate_card_id), carrierId: spRcStr_(rc.carrier_id), country: p.country, marketplace: p.marketplace,
+    shippingMethod: spRcStr_(rc.shipping_method), lastMile: spRcStr_(rc.last_mile_delivery), importDutyTreatment: spRcStr_(rc.import_duty_treatment) /* R15F2 duty (i): the card's own value only */,
+    destinationWarehouseCode: shipRateDestination_(ss, p).code, destinationCity: shipRateDestination_(ss, p).city,
+    destinationPostalCode: shipRateDestination_(ss, p).postal, quoteDate: day, grossWeightKg: tot.gw, cbm: tot.cbm, cartons: tot.cartons, totalQty: tot.qty, lines: tot.items });
+}
+// WK1 (Weekly unified Save): the customs a request asks for, validated against the lane customs list (12_ sc13PlanLaneOptions_, i.e. the
+// carrier_rate_cards customs codes); returns { plan } = the plan row as it would be priced with that customs (a COPY - nothing is written).
+function spRcWk1Customs_(ss, p, body) {
+  if (!body || !Object.prototype.hasOwnProperty.call(body, 'customs_type')) return { ok: true, plan: p, asked: false };
+  var cx = spRcStr_(body.customs_type);
+  var na4 = (typeof shipCustomsApplicability_ === 'function') ? shipCustomsApplicability_(ss, p) : { applicable: true };   // AD4: a proven domestic overseas transfer has no customs
+  if (na4.applicable === false) { if (!cx || cx === spRcStr_(p.customs_type)) return { ok: true, plan: p, asked: false, customs_type: spRcStr_(p.customs_type), label: spRcStr_(p.customs_type), customs_not_applicable: true }; return { ok: false, code: 'PLAN_CUSTOMS_NOT_APPLICABLE' }; }   // Preserve old stored values, including on the explicit-service save path.
+  if (!cx) return { ok: false, code: 'PLAN_CUSTOMS_REQUIRED' };
+  var list = (typeof sc13PlanLaneOptions_ === 'function') ? (sc13PlanLaneOptions_(ss, p).customs || []) : null;
+  if (!list) return { ok: false, code: 'PLAN_CUSTOMS_LIST_UNAVAILABLE' };
+  var hit = list.filter(function (o) { return o.id === cx; }); if (hit.length !== 1) return { ok: false, code: 'PLAN_CUSTOMS_NOT_VALID' };
+  return { ok: true, plan: Object.assign({}, p, { customs_type: cx }), asked: true, customs_type: cx, label: hit[0].label };
+}
+function spRcWk1CardCheck_(ss, p0, curOpt, org) {   // WK1 r3 (review R2-M1 + Owner card identity): never picks a card; reports what is known
+  var low = function (v) { return spRcStr_(v).toLowerCase(); };
+  var same = function (a, b) { a = spRcStr_(a); b = spRcStr_(b); return a === b || (a !== '' && b !== '' && isFinite(Number(a)) && isFinite(Number(b)) && Number(a) === Number(b)); };
+  var terms = function (c) { return spRcStr_(c.carrier_id) === spRcStr_(p0.carrier_id) && low(c.shipping_method) === low(p0.shipping_method) && low(c.last_mile_delivery) === low(p0.last_mile_delivery)
+    && same(c.unit_rate, p0.carrier_unit_rate) && spRcStr_(c.charge_type) === spRcStr_(p0.carrier_rate_type) && (low(c.customs_type) === '' || low(c.customs_type) === low(p0.customs_type))
+    && (spRcStr_(c.currency) === '' || spRcStr_(c.currency) === spRcStr_(p0.currency)) && (spRcStr_(c.destination_country) === '' || low(c.destination_country) === low(p0.country)) && (spRcStr_(c.origin_country) === '' || low(c.origin_country) === low(org)); };
+  var table = shippingReadRateCards_(ss).filter(terms);   // every card with the saved terms - any status / validity / destination code / battery / threshold
+  var live = curOpt.filter(terms);   // the ones that apply to this plan today
+  var splitRep = function (o) { return o.quote && o.quote.priced && o.quote.split_currency && spRcStr_(p0.estimated_total_cost) === '' && spRcStr_(p0.estimated_duty_currency) === o.quote.duty_currency && same(p0.estimated_duty, o.quote.duty) && same(p0.estimated_freight_cost, o.quote.freight) && same(p0.estimated_customs_fee, o.quote.customs_fee) && spRcStr_(p0.currency) === o.quote.currency; };
+  var rep = live.filter(function (o) { if (splitRep(o)) return true; return o.quote && o.quote.priced && spRcStr_(p0.estimated_total_cost) !== '' && isFinite(Number(spRcStr_(p0.estimated_total_cost))) && Math.round(Number(spRcStr_(p0.estimated_total_cost)) * 100) === Math.round(shippingPlanNum_(o.quote.total) * 100) && spRcStr_(p0.currency) === o.quote.currency; });
+  var status = !live.length ? 'NO_CURRENT_CARD' : table.length > 1 ? 'AMBIGUOUS' : 'UNIQUE';
+  return { status: status, basis: 'SAVED_TERMS_NO_CARD_ID', cards_with_saved_terms: table.length, applicable_with_saved_terms: live.length, cost_reproduced: rep.length > 0,
+    rate_card_id: (status === 'UNIQUE' && rep.length === 1) ? spRcStr_(rep[0].rate_card_id) : '' };
+}
+// WK1 r3 (Owner): a customs-only change SAVES and re-validates the quote in one lock. The current carrier / method / last mile is re-matched
+// under the new customs: exactly one applicable card -> re-priced with it; none or several -> the cost fields are cleared (explicitly UNPRICED,
+// the old cost is never kept as valid; several = the user must choose - never the first card). Never writes destination_* (no warehouse).
+function spRcWk1CustomsOnly_(body) { if (typeof editP1Gate15f2_ !== 'function' || typeof editTokWritten15f2_ !== 'function' || typeof shipWriteReadStage_ !== 'function') return jsonResponse_({ success: false, zero_write: true, code: 'DEPLOYMENT_HALF_SYNCED', error: 'This deployment is half updated (11_ needs the R15F2 12_). Nothing was written. Ask the Owner to finish the update.' });   /* R15F2 H-2 */
+  var planId = spRcStr_(body.shipping_plan_id), actor = spRcStr_(body.actor || body.updated_by) || 'operation-system';
+  if (!planId || !Object.prototype.hasOwnProperty.call(body, 'expected_current_carrier_id')) return spRcNo_('CUSTOMS_SAVE_INCOMPLETE');
+  if (spRcStr_(body.rate_card_id) !== '') return spRcNo_('CUSTOMS_SAVE_WITH_CARD', { correction: 'a card choice is saved by the unified Save' });
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return spRcNo_('LOCK_TIMEOUT', { retryable: true }); } catch (e) { return spRcNo_('LOCK_TIMEOUT', { retryable: true }); }
+  try {
+    var readStageS2 = shipWriteReadStage_(SpreadsheetApp.getActiveSpreadsheet(), ['shipping_plans', 'shipping_plan_lines', 'sku_details', 'warehouses', 'carrier_rate_cards', 'carrier_lead_times', 'tax_referral_rates', 'tax_rate_components']); // CODEX-S2: after lock
+    var ss = readStageS2.ss, r = spRcPlanRow_(ss, planId), day = shippingPlanToday_();
+    if (!r || r.dup) return spRcNo_(r ? 'SHIPPING_PLAN_DUPLICATED' : 'SHIPPING_PLAN_NOT_FOUND');
+    if (r.headers.indexOf('estimated_duty_currency') < 0) return spRcNo_('DUTY_CURRENCY_COLUMN_REQUIRED', { needs: 'shipping_plans.estimated_duty_currency' });
+    var p0 = r.v, st = spRcStr_(p0.status).toLowerCase();
+    if (st !== 'draft') return spRcNo_('SHIPPING_PLAN_NOT_EDITABLE', { status: st });
+    if (r.headers.indexOf('updated_at') !== -1 && spRcStr_(body.expected_updated_at) === '') return spRcNo_('EXPECTED_UPDATED_AT_REQUIRED', { correction: 're-read the plan, then choose again' });
+    if (spRcStr_(body.expected_updated_at) !== '' && r.headers.indexOf('updated_at') !== -1 && editTokSame_(p0.updated_at, body.expected_updated_at) !== 'SAME')
+      return spRcNo_('EDIT_CONFLICT', { stage: 'edit_conflict', data: { shipping_plan_id: planId, current_updated_at: editTok_(p0.updated_at) } });
+    if (spRcStr_(body.expected_current_carrier_id) !== spRcStr_(p0.carrier_id)) return spRcNo_('RATE_CARD_SELECTION_CONFLICT', { current_carrier_id: spRcStr_(p0.carrier_id) });
+    // The real client omits blank customs. Waive it only after reading the saved lane inside the lock.
+    if (!Object.prototype.hasOwnProperty.call(body, 'customs_type')) {
+      if (body.service_only !== true || typeof shipCustomsApplicability_ !== 'function' || shipCustomsApplicability_(ss, p0).applicable !== false) return spRcNo_('CUSTOMS_SAVE_INCOMPLETE');
+      body = Object.assign({}, body, { customs_type: '' });
+    }
+    var exp15 = body.service_only === true && body.explicit_service === true;   // AD3-B (Owner 10): an explicit service, not derived from cards
+    var cxs = (exp15 && spRcStr_(body.customs_type) === spRcStr_(p0.customs_type)) ? { ok: true, plan: p0, asked: true, customs_type: spRcStr_(p0.customs_type), label: spRcStr_(p0.customs_type) } : spRcWk1Customs_(ss, p0, body); if (!cxs.ok) return spRcNo_(cxs.code);
+    var p = cxs.plan, curC = spRcStr_(p0.carrier_id), curM = spRcStr_(p0.shipping_method).toLowerCase(), curL = spRcStr_(p0.last_mile_delivery).toLowerCase();
+    if (body.service_only === true) { curC = spRcStr_(body.carrier_id); curM = spRcStr_(body.shipping_method).toLowerCase(); curL = spRcStr_(body.last_mile_delivery).toLowerCase(); }
+    if (exp15) { var ex15 = spRcExplicitService_(ss, p0, body); if (ex15.code) return spRcNo_(ex15.code, ex15.more); curC = ex15.c; curM = ex15.m; curL = ex15.l; }
+    var lines = spRcPlanLines_(ss, planId), tot = spRcTotals_(lines), lane = spRcLaneCards_(ss, p, lines, day);
+    if (lane.originUnresolved) return spRcNo_('PLAN_ORIGIN_COUNTRY_UNRESOLVED', { correction: 'the plan From warehouse has no country - no rate card is listed or priced' });
+    if (lane.unclassified.length && exp15) lane = { cards: [], unclassified: [], origin: lane.origin };   // AD3-B: battery unknown -> the explicit service stays, only the quote is undecidable (unpriced)
+  if (lane.unclassified.length) return spRcNo_('RATE_CARD_BATTERY_UNCLASSIFIED');
+    if (body.service_only === true && !exp15 && !spRcServiceAllowed15_(ss, p, lines, lane, day, curC, curM, curL)) return spRcNo_('PLAN_SERVICE_NOT_APPLICABLE');
+    var fit = curC ? lane.cards.filter(function (c) { return spRcStr_(c.carrier_id) === curC && spRcStr_(c.shipping_method).toLowerCase() === curM && spRcStr_(c.last_mile_delivery).toLowerCase() === curL; }) : [];
+    var rc = null, q = null, why = !curC ? 'NO_CARRIER' : !fit.length ? 'NO_APPLICABLE_CARD' : fit.length > 1 ? 'CARD_CHOICE_REQUIRED' : '';
+    if (!why) { rc = fit[0]; q = spRcStr_(rc.shipping_method_label) ? spRcQuote_(ss, p, rc, lines, tot, day, lane.origin) : null;
+      if (!q || q.rateCardId !== spRcStr_(rc.rate_card_id) || !shippingQuoteComplete_(q)) { why = q ? 'RATE_CARD_COST_UNRESOLVED' : 'RATE_CARD_LABEL_BLANK'; rc = null; q = null; } }
+    var w = rc ? { carrier_unit_rate: (rc.unit_rate === '' || rc.unit_rate == null) ? '' : rc.unit_rate, carrier_rate_type: spRcStr_(rc.charge_type), currency: q.currency,
+        estimated_freight_cost: q.estimatedFreightCost, estimated_duty: q.estimatedDuty, estimated_duty_currency: q.estimatedDutyCurrency, estimated_customs_fee: q.estimatedCustomsFee, estimated_total_cost: q.estimatedTotalCost }
+      : { carrier_unit_rate: '', carrier_rate_type: '', estimated_freight_cost: '', estimated_duty: '', estimated_duty_currency: '', estimated_customs_fee: '', estimated_total_cost: '' };   // explicitly UNPRICED
+    if (body.service_only === true) { w.carrier_id = curC; w.shipping_method = curM; w.last_mile_delivery = curL; }
+    w.customs_type = cxs.customs_type; w.updated_by = actor; w.updated_at = editNextStamp_(shippingPlanTimestamp_(), [p0.updated_at]);
+    var miss = Object.keys(w).filter(function (k) { return r.headers.indexOf(k) === -1 && k !== 'updated_by'; });
+    if (miss.length) return spRcNo_('SHIPPING_PLAN_COLUMNS_MISSING', { columns: miss });
+    readStageS2.close(); // CODEX-S2: BEFORE PENDING, writes and readback
+    var n = 0;
+    try {   // the same PENDING flow as the unified Save: mark, write, clear the mark, read back
+      var cRt = r.headers.indexOf('carrier_rate_type');
+      r.sheet.getRange(r.row, cRt + 1).setValue(SP_RC_PENDING_1G_ + 'CUSTOMS'); n++;
+      Object.keys(w).forEach(function (k) { if (k === 'carrier_rate_type') return; var c = r.headers.indexOf(k); if (c !== -1) { n++; r.sheet.getRange(r.row, c + 1).setValue(w[k]); } });
+      r.sheet.getRange(r.row, cRt + 1).setValue(w.carrier_rate_type); n++;
+      SpreadsheetApp.flush();
+      var b = spRcPlanRow_(ss, planId).v;
+      var bad = ['customs_type', 'estimated_duty_currency', 'estimated_duty', 'estimated_freight_cost', 'estimated_customs_fee', 'estimated_total_cost', 'carrier_rate_type'].concat(body.service_only === true ? ['carrier_id', 'shipping_method', 'last_mile_delivery'] : []).concat(rc ? ['currency'] : []).filter(function (k) { return shipRcCanon_(b[k]) !== shipRcCanon_(w[k]); });
+      if (bad.length) return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_UNVERIFIED', error: 'RATE_CARD_SELECTION_UNVERIFIED', zero_write: false, writes: n, data: { fields: bad } });
+    } catch (eW) { return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_INTERRUPTED', error: 'RATE_CARD_SELECTION_INTERRUPTED', zero_write: n === 0, writes: n }); }
+    return jsonResponse_({ success: true, verified: true, customs_only: true, explicit_service: exp15, quote_state: rc ? 'PRICED' : 'COST_PENDING', shipping_plan_id: planId, customs_type: cxs.customs_type, customs_type_label: cxs.label, carrier_id: curC,
+      shipping_method: curM, last_mile_delivery: curL, priced: !!rc, unpriced_reason: why, rate_card_id: rc ? spRcStr_(rc.rate_card_id) : '', shipping_method_label: rc ? spRcStr_(rc.shipping_method_label) : '', currency: rc ? q.currency : '',
+      estimated_total_cost: w.estimated_total_cost, updated_at: editTokWritten15f2_(w.updated_at), writes: n });   // R15F2: as a read would return it
+  } finally { try { lock.releaseLock(); } catch (e2) {} }
+}
+function spRcOrigin15_(ss, plan) {
+  var id = spRcStr_(plan.source_warehouse_id || plan.ship_from), sh = ss.getSheetByName('warehouses');
+  if (!id || !sh) return '';
+  var rows = shippingPlanReadObjects_(sh).filter(function(w) { return spRcStr_(w.warehouse_id) === id; });
+  return rows.length === 1 ? spRcStr_(rows[0].country) : '';
+}
+function spRcMethod15_(value) {
+  var s = spRcStr_(value).toLowerCase();
+  return ({ 'sea express': 'sea_express', 'sea_express': 'sea_express', 'sea': 'sea', 'air freight': 'air', 'air': 'air', 'express': 'express', 'truck': 'truck', 'rail': 'rail' })[s] || s;
+}
+function spRcServices15_(ss, p, lines, lane, day) {
+  var low = function (v) { return spRcStr_(v).toLowerCase(); }, names = {}, out = [], seen = {};
+  var cs = ss.getSheetByName('carriers');
+  if (!cs) throw new Error('CARRIER_TABLE_UNAVAILABLE');
+  shippingPlanReadObjects_(cs).forEach(function (c) { if (!/^(inactive|disabled|false|0)$/i.test(spRcStr_(c.status || c.is_active))) names[low(c.carrier_id)] = { id: spRcStr_(c.carrier_id), name: spRcStr_(c.carrier_name) }; });
+  var set15e = spRcSetMembers15e_(p.country), byKey15e = {};   // R15C-EU: the plan country is a planning set -> the member countries' union
+  function add(c, m, l, label, ct) {
+    m = spRcMethod15_(m);
+    var car = names[low(c)]; if (!car || !spRcStr_(m)) return;
+    var key = JSON.stringify([low(c),low(m),low(l)]);
+    if (set15e) { ct = spRcStr_(ct).toUpperCase(); var o0 = byKey15e[key]; if (o0) { if (ct && o0.destination_countries.indexOf(ct) === -1) { o0.destination_countries.push(ct); o0.destination_countries.sort(); o0.lead_time.by_country[ct] = shipLt1g_(ss,car.id,m,l,lane.origin,ct); } return; } }
+    if(seen[key]) return; seen[key]=true;
+    var o15e = { service_only:true, rate_card_id:'', rate_card_version:'', carrier_id:car.id, carrier_name:car.name,
+      shipping_method:spRcStr_(m), shipping_method_label:spRcStr_(label)||spRcStr_(m), last_mile_delivery:spRcStr_(l),
+      quote:{priced:false}, lead_time: set15e ? { state:'REGION_UNDETERMINED', reason:'the destination is a planning set; the transit time is the chosen warehouse country\'s', by_country:{} } : shipLt1g_(ss,car.id,m,l,lane.origin,p.country) };
+    if (set15e) { o15e.destination_set = spRcStr_(p.country).toUpperCase(); o15e.destination_countries = ct ? [ct] : []; o15e.quote.reason = 'NOT_PRICED_UNTIL_WAREHOUSE'; if (ct) o15e.lead_time.by_country[ct] = shipLt1g_(ss,car.id,m,l,lane.origin,ct); byKey15e[key] = o15e; }
+    out.push(o15e);
+  }
+  // Broad service discovery is NOT pricing: exact warehouse/city/postal constraints remain in lane.cards and in Save.
+  var bc = shipBatteryClass_(ss,lines.map(function(l){return spRcStr_(l.sku);}));
+  if (bc.unclassified.length || !lane.origin) return [];
+  (set15e || [p.country]).forEach(function (dc15e) { shippingRateMatch_(ss,{mode:'rough',originCountry:lane.origin,destinationCountry:dc15e,customsType:spRcStr_(p.customs_type),batteryType:bc.cls,quoteDate:day}).forEach(function(c){
+    if (spRcStr_(c.marketplace) && low(c.marketplace)!==low(p.marketplace)) return;
+    add(c.carrier_id,c.shipping_method,c.last_mile_delivery,c.shipping_method_label,dc15e);
+  }); });   // R15C-EU: one rough match per member country (the card keeps its own country; nothing is priced here)
+  var ls=ss.getSheetByName('carrier_lead_times');
+  if(ls) shippingPlanReadObjects_(ls).forEach(function(l){
+    if(low(l.origin_country)!==low(lane.origin)||(set15e ? set15e.indexOf(spRcStr_(l.destination_country).toUpperCase())===-1 : low(l.destination_country)!==low(p.country))||/^(inactive|disabled|false|0)$/i.test(spRcStr_(l.status))||(typeof shipLtActive_==='function'&&!shipLtActive_(l))) return;   // R15C-EU; AD3-B: is_active FALSE (e.g. Codex's owner_estimate drafts) is never a service option
+    if(![l.avg_days,l.min_days,l.max_days].some(function(v){return spRcStr_(v)!==''&&isFinite(Number(v))&&Number(v)>0;})) return;
+    add(l.carrier_id,l.shipping_method,l.last_mile_delivery,l.shipping_method_label,l.destination_country);
+  });
+  return out;
+}
+function spRcDisplayOptions15_(ss,p,lines,lane,day,priced,names) {
+  var key=function(o){return JSON.stringify([spRcStr_(o.carrier_id).toLowerCase(),spRcStr_(o.shipping_method).toLowerCase(),spRcStr_(o.last_mile_delivery).toLowerCase()]);};
+  var have={}; priced.forEach(function(o){have[key(o)]=true;});
+  return priced.concat(spRcServices15_(ss,p,lines,lane,day).filter(function(o){return !have[key(o)];}));
+}
+function spRcServiceAllowed15_(ss,p,lines,lane,day,c,m,l) {
+  var low=function(v){return spRcStr_(v).toLowerCase();};
+  return spRcServices15_(ss,p,lines,lane,day).some(function(o){return low(o.carrier_id)===low(c)&&low(o.shipping_method)===low(m)&&low(o.last_mile_delivery)===low(l);});
+}
+
+function spRcNo_(code, more) { return jsonResponse_(Object.assign({ success: false, code: code, error: code, zero_write: true }, more || {})); }
+function handleShippingPlanRateCardOptions_(body) {
+  var planId = spRcStr_(body && body.shipping_plan_id); if (!planId) return spRcNo_('SHIPPING_PLAN_ID_REQUIRED');
+  var ss = shipRateReadView_(SpreadsheetApp.getActiveSpreadsheet()), r = spRcPlanRow_(ss, planId), day = shippingPlanToday_();
+  if (!r || r.dup) return spRcNo_(r ? 'SHIPPING_PLAN_DUPLICATED' : 'SHIPPING_PLAN_NOT_FOUND');
+  var p0 = r.v, cxv = spRcWk1Customs_(ss, p0, body); if (!cxv.ok) return spRcNo_(cxv.code);   // WK1: optional read-only customs preview
+  var p = cxv.plan, lines = spRcPlanLines_(ss, planId), tot = spRcTotals_(lines), lane = spRcLaneCards_(ss, p, lines, day);
+  if (lane.originUnresolved) return spRcNo_('PLAN_ORIGIN_COUNTRY_UNRESOLVED', { correction: 'the plan From warehouse has no country - no rate card is listed or priced' });
+  if (lane.unclassified.length) return spRcNo_('RATE_CARD_BATTERY_UNCLASSIFIED', { lines: lane.unclassified.length });
+  var names = {}, cs = ss.getSheetByName('carriers'); if (cs) shippingPlanReadObjects_(cs).forEach(function (c) { names[spRcStr_(c.carrier_id)] = spRcStr_(c.carrier_name); });
+  var org1g = shipOriginCountry1g_(ss, p.source_warehouse_id || p.ship_from);   // SANDBOX-GATE-1g
+  var opts = lane.cards.map(function (c) {
+    var q = spRcQuote_(ss, p, c, lines, tot, day, lane.origin);
+    return { rate_card_id: spRcStr_(c.rate_card_id), rate_card_version: shipRateCardVersion_(c), carrier_id: spRcStr_(c.carrier_id), carrier_name: names[spRcStr_(c.carrier_id)] || '',
+      shipping_method: spRcStr_(c.shipping_method), shipping_method_label: spRcStr_(c.shipping_method_label), last_mile_delivery: spRcStr_(c.last_mile_delivery), customs_type: spRcStr_(c.customs_type),
+      charge_type: spRcStr_(c.charge_type), unit_rate: c.unit_rate, effective_from: spRcStr_(c.effective_from), effective_to: spRcStr_(c.effective_to),
+      quote: { cost_unknown: q.costUnknown || '', priced: q.rateCardId === spRcStr_(c.rate_card_id) && shippingQuoteComplete_(q), duty_currency: q.estimatedDutyCurrency || '', split_currency: !!q.splitCurrency, tax_reason: q.taxReason || '', currency: q.currency, freight: q.estimatedFreightCost, duty: q.estimatedDuty, customs_fee: q.estimatedCustomsFee, total: q.estimatedTotalCost, unit_cost: q.estimatedUnitCost },
+      lead_time: shipLt1g_(ss, c.carrier_id, c.shipping_method, c.last_mile_delivery, org1g, p.country) };
+  });
+  var curC = spRcStr_(p0.carrier_id), curM = spRcStr_(p0.shipping_method), curL = spRcStr_(p0.last_mile_delivery);
+  var curOpt = opts.filter(function (o) { return o.carrier_id === curC && o.shipping_method.toLowerCase() === curM.toLowerCase() && o.last_mile_delivery === curL; });
+  var stored = { carrier_id: curC, shipping_method: curM, last_mile_delivery: curL, currency: spRcStr_(p0.currency), freight: p0.estimated_freight_cost, duty: p0.estimated_duty, duty_currency: spRcStr_(p0.estimated_duty_currency),
+    customs_fee: p0.estimated_customs_fee, total: p0.estimated_total_cost, carrier_unit_rate: p0.carrier_unit_rate, carrier_rate_type: spRcStr_(p0.carrier_rate_type), customs_type: spRcStr_(p0.customs_type) };
+  var priced = curC && spRcStr_(p0.estimated_duty_currency) !== '' && shippingTaxNumber_(p0.estimated_duty) !== null && shippingTaxNumber_(p0.estimated_freight_cost) !== null;
+  var cc = (curC && priced && curOpt.length) ? spRcWk1CardCheck_(ss, p0, curOpt, lane.origin) : null;   // WK1 r3: what is known about the saved card
+  var available15 = spRcDisplayOptions15_(ss, p, lines, lane, day, opts, names);
+  var hasService15 = available15.some(function(o) { return o.carrier_id === curC && o.shipping_method === curM && o.last_mile_delivery === curL; });
+  var preview = cxv.asked && cxv.customs_type !== spRcStr_(p0.customs_type);   // WK1: a customs that is not the stored one is a PREVIEW
+  var state = (spRcStr_(p0.carrier_rate_type).indexOf(SP_RC_PENDING_1G_) === 0) ? 'PENDING' : preview ? 'PREVIEW_CUSTOMS' : !curC ? 'NONE' : (!priced && hasService15) ? 'NOT_PRICED' : !curOpt.length ? 'NOT_APPLICABLE' : !priced ? 'NOT_PRICED'
+    : !cc.cost_reproduced ? 'NEEDS_REPRICING' : cc.status === 'UNIQUE' ? 'PRICED' : 'COST_SAVED_CARD_UNVERIFIED';   // WK1 r3: never PRICED through a card that is not provably the saved one
+  return jsonResponse_({ success: true, shipping_plan_id: planId, quote_date: day, status: spRcStr_(p0.status), editable: spRcStr_(p0.status).toLowerCase() === 'draft',
+    service_vocabulary: (typeof shipServiceVocabulary_ === 'function') ? shipServiceVocabulary_(ss) : null,   // AD3-B: explicit service choices (carriers master + server vocabulary), never derived from cards
+    preview_customs_type: cxv.asked ? cxv.customs_type : null, lane: sc13PlanLaneOptions_(ss, p0), totals: { gross_weight: tot.gw, cbm: tot.cbm, cartons: tot.cartons, qty: tot.qty }, current: Object.assign({ state: state, lead_time: shipLt1g_(ss, curC, curM, curL, org1g, p.country), cost_saved: !!priced, card_check: cc || { status: 'NOT_CHECKED', basis: 'SAVED_TERMS_NO_CARD_ID' } }, stored), options: available15 });
+}
+function handleShippingPlanSelectRateCard_(body) { if (typeof editP1Gate15f2_ !== 'function' || typeof editTokWritten15f2_ !== 'function' || typeof shipWriteReadStage_ !== 'function') return jsonResponse_({ success: false, zero_write: true, code: 'DEPLOYMENT_HALF_SYNCED', error: 'This deployment is half updated (11_ needs the R15F2 12_). Nothing was written. Ask the Owner to finish the update.' });   /* R15F2 H-2 */
+  if (body && body.save_lane === true) return spRcNo_('PLAN_SAVE_ROUTE_RETIRED', { correction: 'the Weekly Save route is retired; the To is never written from Weekly and the actual warehouse is chosen in Shipment Draft' });   // WK1 r2 (review M-2)
+  if (body && (body.customs_only === true || body.service_only === true)) return spRcWk1CustomsOnly_(body);   // WK1 r3 (Owner): a customs-only change saves and re-validates the quote
+  var planId = spRcStr_(body && body.shipping_plan_id), id = spRcStr_(body && body.rate_card_id), ver = spRcStr_(body && body.rate_card_version), actor = spRcStr_(body && (body.actor || body.updated_by)) || 'operation-system';
+  if (!planId || !id || !ver || !body.hasOwnProperty('expected_current_carrier_id')) return spRcNo_('RATE_CARD_SELECTION_INCOMPLETE');
+  var lock = LockService.getScriptLock();
+  try { if (!lock.tryLock(30000)) return spRcNo_('LOCK_TIMEOUT', { retryable: true }); } catch (e) { return spRcNo_('LOCK_TIMEOUT', { retryable: true }); }
+  try {
+    var readStageS2 = shipWriteReadStage_(SpreadsheetApp.getActiveSpreadsheet(), ['shipping_plans', 'shipping_plan_lines', 'sku_details', 'warehouses', 'carrier_rate_cards', 'carrier_lead_times', 'tax_referral_rates', 'tax_rate_components']); // CODEX-S2: after lock
+    var ss = readStageS2.ss, r = spRcPlanRow_(ss, planId), day = shippingPlanToday_();
+    if (!r || r.dup) return spRcNo_(r ? 'SHIPPING_PLAN_DUPLICATED' : 'SHIPPING_PLAN_NOT_FOUND');
+    if (r.headers.indexOf('estimated_duty_currency') < 0) return spRcNo_('DUTY_CURRENCY_COLUMN_REQUIRED', { needs: 'shipping_plans.estimated_duty_currency' });
+    var p = r.v, st = spRcStr_(p.status).toLowerCase();
+    if (st !== 'draft') return spRcNo_('SHIPPING_PLAN_NOT_EDITABLE', { status: st });
+    if (r.headers.indexOf('updated_at') !== -1 && spRcStr_(body.expected_updated_at) === '') return spRcNo_('EXPECTED_UPDATED_AT_REQUIRED', { correction: 're-read the plan, then choose again' });   // SANDBOX-GATE-1g (review MINOR-2)
+    if (body.expected_updated_at != null && spRcStr_(body.expected_updated_at) !== '' && r.headers.indexOf('updated_at') !== -1 && editTokSame_(p.updated_at, body.expected_updated_at) !== 'SAME')
+      return spRcNo_('EDIT_CONFLICT', { stage: 'edit_conflict', data: { shipping_plan_id: planId, current_updated_at: editTok_(p.updated_at) } });
+    if (spRcStr_(body.expected_current_carrier_id) !== spRcStr_(p.carrier_id)) return spRcNo_('RATE_CARD_SELECTION_CONFLICT', { current_carrier_id: spRcStr_(p.carrier_id) });
+    var rows = shippingReadRateCards_(ss).filter(function (x) { return spRcStr_(x.rate_card_id) === id; });
+    if (rows.length !== 1) return spRcNo_(rows.length ? 'RATE_CARD_DUPLICATED' : 'RATE_CARD_NOT_FOUND');
+    var rc = rows[0];
+    if (shipRateCardVersion_(rc) !== ver) return spRcNo_('RATE_CARD_CHANGED', { correction: 'reload the options and choose again' });
+    var cxs = spRcWk1Customs_(ss, p, body); if (!cxs.ok) return spRcNo_(cxs.code);   // WK1: validated INSIDE the lock
+    var p0 = p; p = cxs.plan;   // from here on the rate card applicability and the quote use the requested customs
+    if (!spRcStr_(rc.shipping_method_label)) return spRcNo_('RATE_CARD_LABEL_BLANK');
+    var lines = spRcPlanLines_(ss, planId), tot = spRcTotals_(lines), lane = spRcLaneCards_(ss, p, lines, day);
+    if (lane.originUnresolved) return spRcNo_('PLAN_ORIGIN_COUNTRY_UNRESOLVED', { correction: 'the plan From warehouse has no country - no rate card is listed or priced' });
+  if (lane.unclassified.length) return spRcNo_('RATE_CARD_BATTERY_UNCLASSIFIED');
+    if (!lane.cards.some(function (x) { return spRcStr_(x.rate_card_id) === id; })) return spRcNo_('RATE_CARD_NOT_APPLICABLE');
+    var q = spRcQuote_(ss, p, rc, lines, tot, day, lane.origin);
+    if (q.rateCardId !== id || !shippingQuoteComplete_(q)) return spRcNo_('RATE_CARD_COST_UNRESOLVED');
+    var w = { carrier_id: spRcStr_(rc.carrier_id), shipping_method: spRcStr_(rc.shipping_method), last_mile_delivery: spRcStr_(rc.last_mile_delivery),
+      carrier_unit_rate: (rc.unit_rate === '' || rc.unit_rate == null) ? '' : rc.unit_rate, carrier_rate_type: spRcStr_(rc.charge_type), currency: q.currency,
+      estimated_freight_cost: q.estimatedFreightCost, estimated_duty: q.estimatedDuty, estimated_duty_currency: q.estimatedDutyCurrency, estimated_customs_fee: q.estimatedCustomsFee, estimated_total_cost: q.estimatedTotalCost,
+      updated_by: actor, updated_at: editNextStamp_(shippingPlanTimestamp_(), [p0.updated_at]) };
+    if (cxs.asked) w.customs_type = cxs.customs_type;   // WK1: the customs is written with the cost it was priced with - never destination_* fields
+    var miss = Object.keys(w).filter(function (k) { return r.headers.indexOf(k) === -1 && k !== 'updated_by'; });
+    if (miss.length) return spRcNo_('SHIPPING_PLAN_COLUMNS_MISSING', { columns: miss });
+    readStageS2.close(); // CODEX-S2: BEFORE PENDING, writes and readback
+    var n = 0;
+    try {
+      // SANDBOX-GATE-1g (review MINOR-1): phase 1 marks the row PENDING, phase 2 writes the choice and its cost, phase 3 clears the mark.
+      // An interruption leaves PENDING_SELECTION: the options read says PENDING and Submit / Approve refuse the plan.
+      var cRt = r.headers.indexOf('carrier_rate_type');
+      r.sheet.getRange(r.row, cRt + 1).setValue(SP_RC_PENDING_1G_ + id); n++;
+      Object.keys(w).forEach(function (k) { if (k === 'carrier_rate_type') return; var c = r.headers.indexOf(k); if (c !== -1) { n++; r.sheet.getRange(r.row, c + 1).setValue(w[k]); } });
+      r.sheet.getRange(r.row, cRt + 1).setValue(w.carrier_rate_type); n++;
+      SpreadsheetApp.flush();
+      var b = spRcPlanRow_(ss, planId).v;
+      var bad = ['carrier_id', 'shipping_method', 'currency', 'estimated_duty_currency', 'estimated_duty', 'estimated_freight_cost', 'estimated_customs_fee', 'estimated_total_cost', 'carrier_rate_type'].concat(cxs.asked ? ['customs_type'] : []).filter(function (k) { return shipRcCanon_(b[k]) !== shipRcCanon_(w[k]); });
+      if (bad.length) return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_UNVERIFIED', error: 'RATE_CARD_SELECTION_UNVERIFIED', zero_write: false, writes: n, data: { fields: bad } });
+    } catch (eW) { return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_INTERRUPTED', error: 'RATE_CARD_SELECTION_INTERRUPTED', zero_write: n === 0, writes: n }); }
+    return jsonResponse_({ success: true, verified: true, shipping_plan_id: planId, rate_card_id: id, carrier_id: w.carrier_id, shipping_method: w.shipping_method,
+      shipping_method_label: spRcStr_(rc.shipping_method_label), last_mile_delivery: w.last_mile_delivery, currency: w.currency, estimated_freight_cost: w.estimated_freight_cost,
+      estimated_duty: w.estimated_duty, estimated_duty_currency: w.estimated_duty_currency, estimated_customs_fee: w.estimated_customs_fee, estimated_total_cost: w.estimated_total_cost, estimated_unit_cost: q.estimatedUnitCost,
+      customs_type: spRcStr_(p.customs_type), customs_type_label: cxs.asked ? cxs.label : '',
+      updated_at: editTokWritten15f2_(w.updated_at), writes: n });   // R15F2: as a read would return it
+  } finally { try { lock.releaseLock(); } catch (e2) {} }
+}
+
+var SP_RC_PENDING_1G_ = 'PENDING_SELECTION:';   // SANDBOX-GATE-1g (review MINOR-1)
+// AD3-B (Owner 8 / 9 / 10): the explicit service of a Weekly plan - carrier from the carriers master (exists once, active), method / last mile from the
+// server vocabulary (12_ shipServiceVocabulary_), or a DOMESTIC delivery type SPD / LTL. -> { c, m, l } | { code, more }. Never derived from rate cards.
+function spRcExplicitService_(ss, p, body) {
+  if (typeof shipServiceVocabulary_ !== 'function' || typeof shipCarrierCheck_ !== 'function') return { code: 'DEPLOYMENT_HALF_SYNCED', more: { correction: '11_ needs the AD3 12_ (service vocabulary)' } };
+  var c = spRcStr_(body.carrier_id), m = spRcStr_(body.shipping_method), l = spRcStr_(body.last_mile_delivery), dt = spRcStr_(body.delivery_type).toUpperCase(), V = shipServiceVocabulary_(ss);
+  var cc = shipCarrierCheck_(ss, c); if (!cc.ok) return { code: c ? cc.code : 'CARRIER_REQUIRED', more: { carrier_id: c, carrier_state: cc.state } };
+  if (dt) {
+    var d = V.delivery_type.filter(function (x) { return x.value === dt; })[0]; if (!d) return { code: 'DELIVERY_TYPE_UNKNOWN' };
+    var oc = spRcOrigin15_(ss, p).toUpperCase(), dw = spRcStr_(p.destination_warehouse_id), dc = (dw ? spRcStr_(shipOriginCountry1g_(ss, dw)) : spRcStr_(p.country)).toUpperCase();
+    if (!oc || !dc) return { code: 'DELIVERY_TYPE_COUNTRY_UNKNOWN', more: { missing_field: !oc ? 'source_warehouse_id.country' : 'destination country' } };
+    if (oc !== dc) return { code: 'DELIVERY_TYPE_DOMESTIC_ONLY', more: { origin_country: oc, destination_country: dc } };
+    if ((m && m !== d.shipping_method) || (l && l !== d.last_mile_delivery)) return { code: 'DELIVERY_TYPE_CONFLICT' };
+    m = d.shipping_method; l = d.last_mile_delivery;
+  }
+  if (!shipSvcInVocab_(V, 'shipping_method', m)) return { code: 'SHIPPING_METHOD_NOT_IN_VOCABULARY', more: { value: m } };
+  if (!shipSvcInVocab_(V, 'last_mile_delivery', l)) return { code: 'LAST_MILE_NOT_IN_VOCABULARY', more: { value: l } };
+  var dw2 = spRcStr_(p.destination_warehouse_id), cap = shipSvcCapabilityCheck_(ss, c, m, l, spRcOrigin15_(ss, p), dw2 ? spRcStr_(shipOriginCountry1g_(ss, dw2)) : spRcStr_(p.country));   // AD3-B (Owner supplement 1)
+  if (cap) return { code: cap.code, more: { message: cap.message, allowed: cap.allowed } };
+  return { c: c, m: m.toLowerCase(), l: l.toLowerCase() };
+}
+
+// R15F-11 (sbx-r15f): patched
+// R15F2-11 (sbx-r15f2 step 22): patched
+// R15F2-P1-11 (sbx-r15f2 step 26): patched
+// R15F2-P1B-11 (sbx-r15f2 step 30): patched
+// R15F2-STAMPS (sbx-r15f2 step 23): patched
+
+// R15C-EU-11 (sbx-r15c-eu): patched
+// R15C-EU: the members of a planning set from the ONE server definition (KMCID, the 90_ bundle); null = not a set (or a bundle without it).
+function spRcSetMembers15e_(code) { try { return (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.planningSetMembers === 'function') ? KMCID.planningSetMembers(code) : null; } catch (e) { return null; } }
+
+// XCO-R15G B1-MINOR-6: a cleanly cancelled plan (H1 proven) is a KNOWN state, not "outcome unknown". -> recovery object | null (keep today's answer)
+function xcoCleanCancelState_(ss, planId, ev) {
+  try {
+    if (!ev || ev.live !== '' || (ev.legacy_ids || []).length) return null;
+    if (typeof sc13Read_ !== 'function' || !ss.getSheetByName('shipment_plan_links')) return null;
+    var pid = sc13Str_(planId), ships = sc13ShipIndex_(ss);
+    var rows = sc13Read_(ss, 'shipment_plan_links', SC13_LINK_HEADERS_).rows.filter(function (r) { return sc13Str_(r.shipping_plan_id) === pid; });
+    if (!rows.length || rows.some(function (r) { return !sc13LinkEnded_(ships[sc13Str_(r.shipment_id)], pid, r); })) return null;
+    var cids = []; rows.forEach(function (r) { var k = sc13Str_(r.shipment_id), s0 = ships[k]; if (s0 && sc13Str_(s0.status).toLowerCase() === 'cancelled' && cids.indexOf(k) < 0) cids.push(k); });
+    var proven = cids.some(function (sid) { var s = ships[sc13Str_(sid)], n = s ? sc13Str_(s.note) : '';
+      return (n.match(/\[SC13_CANCELLED:[^\]\r\n]*\]/g) || []).some(function (m) { return m.slice(m.lastIndexOf(':') + 1, -1).split(',').indexOf(pid) >= 0; }); });
+    if (!proven) return null;
+    return { state: 'APPROVED_NO_SHIPMENT_AFTER_CANCEL', approval_committed: true, shipment_created: false, review_required: false, cause: 'SHIPMENT_DRAFT_CANCELLED_CLEANLY',
+      basis: 'SECOND_APPROVE_CLICK_READBACK', cancelled_shipment_ids: cids.slice(0, 20), shipping_plan_id: pid,
+      next_action: 'createShipmentFromPlan', retry_action: 'createShipmentFromPlan', retry_idempotent: true, retry_effect: 'CREATES_A_NEW_DRAFT_IF_THE_BOOKS_AGREE',
+      retry_location: 'Weekly Shipping Plan -- the Approved plan card carries a "Retry Shipment Draft" action',
+      message: 'The approval is kept. Its Shipment Draft was cancelled cleanly (the cancel recorded this plan and released its reservation), so no draft exists now. Create a new Shipment Draft with Retry Shipment Draft.' };
+  } catch (e) { return null; }
+}
+// XCO-R15G-11 (xco-r15g-impl): patched
+// R15G-STAMPS (final candidate): patched
+
+// CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.

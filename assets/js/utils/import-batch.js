@@ -22,7 +22,7 @@
 (function () {
     'use strict';
     window.KM = window.KM || {};
-    var MAX_FILE_BYTES = 10 * 1024 * 1024, ID_SEP = ' | ';
+    var MAX_FILE_BYTES = 10 * 1024 * 1024, ID_SEP = ' | ', OPTIONS_TIMEOUT_MS = 60000;   // SHIP-OPEN 2a: an option read never shows "Loading…" forever
     var state = null;
 
     function esc(v) { return String(v == null ? '' : v).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
@@ -143,6 +143,14 @@
         try { savedScope = JSON.parse(data.scope || '{}'); } catch (e) { throw new Error('Invalid template scope.'); }
         var wh = savedScope && savedScope.warehouse_id, selected = scope().warehouse_id;
         if (wh && selected && wh !== selected) throw new Error('This file belongs to another warehouse. Select its warehouse first.');
+        // SHIP-OPEN 2a: every other chosen scope value (company, opening cut-off ...) the file was downloaded for must be the one chosen
+        // now; a posting-date field (type 'date') is a per-run choice and is not compared. The server compares again (file_meta).
+        var now = scope();
+        (state.adapter.scopeFields || []).forEach(function (f) {
+            if (f.key === 'warehouse_id' || f.type === 'date' || !savedScope || savedScope[f.key] == null || savedScope[f.key] === '' || !now[f.key]) return;
+            var a0 = String(savedScope[f.key]).replace('T', ' ').slice(0, 16), b0 = String(now[f.key]).replace('T', ' ').slice(0, 16);
+            if (a0 !== b0) throw new Error('This file was downloaded for ' + (f.label || f.key) + ' ' + savedScope[f.key] + ', not ' + now[f.key] + '. Choose the same value or download a new template.');
+        });
         return data;
     }
 
@@ -155,10 +163,11 @@
                 // R4 (2026-10-29): the cell format follows the server's field type - a date column shows and stores days; an identifier / code /
                 // list column is plain TEXT (@), so a value TYPED into it keeps its leading zeros (Excel would make "000123" the number 123)
                 var fmt = c.type === 'date' ? 'yyyy-mm-dd' : (c.type === 'text' || c.type === 'enum' || c.type === 'ref') ? '@' : undefined;
-                return { key: c.key, header: c.header || c.key, kind: c.kind || 'editable', comment: c.comment || '', hidden: !!c.hidden, dropdown: list, dropdownSource: list ? 'auto' : undefined, numFmt: fmt };
+                return { key: c.key, header: c.header || c.key, kind: c.kind || 'editable', comment: c.comment || '', hidden: !!c.hidden, dropdown: list, dropdownSource: list ? 'auto' : undefined, numFmt: fmt, unlockIfRowFlag: c.unlock_if_row_flag || undefined };   // A fix2: the server names the per-row unlock flag (opt-in)
             }));
-            return { sheetName: ts.name, instructionRow: (k === 0 ? (t.scope_label ? 'Scope: ' + t.scope_label + ' · ' : '') + (withData ? 'Exported ' + (t.exported_at || '') + ' · ' + JSON.stringify(t.row_counts || {}) + ' rows · ' : '') : '') + (ts.instruction || ''),
-                columns: cols, rows: withData ? (ts.rows || []) : [], exampleRow: withData ? null : (ts.example || null), blankInputRows: withData ? 20 : 50 };
+            return { sheetName: ts.name, instructionRow: (k === 0 ? (t.scope_label ? 'Scope: ' + t.scope_label + ' · ' : '') + (withData ? '匯出 ' + (t.exported_at || '') + ' · ' : '') : '') + (ts.instruction || ''),
+                columns: cols, rows: withData ? (ts.rows || []).map(function (r, i) {   // A fix2 b2: the server's row_flags { flag: [row index] } go onto a COPY of the row (template-only)
+                    var fl = ts.row_flags || {}, add = null; Object.keys(fl).forEach(function (f) { if (/^__[a-z0-9_]+$/.test(f) && Array.isArray(fl[f]) && fl[f].indexOf(i) >= 0) { add = add || {}; add[f] = true; } });   /* A final (REVIEW_FIX2 MINOR-3): only __-prefixed template flags, never a data column name */ return add ? Object.assign({}, r, add) : r; }) : [], exampleRow: withData ? null : (ts.example || null), blankInputRows: withData ? 20 : 50 };
         });
         return { filename: adapter.domain + '_' + (withData ? 'update_' : 'new_') + mode.toLowerCase() + '_' + stamp(), sheets: sheets, systemExtra: true,
             system: { template_id: 'KM_IMPORT_' + adapter.domain.toUpperCase(), template_version: t.schema_version, module: adapter.domain, generated_at: t.exported_at, export_mode: withData ? 'UPDATE_EXPORT' : 'BLANK',
@@ -175,8 +184,25 @@
     }
     // the domains describe a preview row their own way; one reading: a key, an action, and either changes (before -> after)
     // or the row's own business fields - every value shown as the server sent it, nothing computed here
-    var PREVIEW_META = { row: 1, sheet: 1, key: 1, action: 1, status: 1, entity: 1, id: 1, changes: 1, warnings: 1, mode: 1, __row: 1 };
+    var PREVIEW_META = { row: 1, sheet: 1, key: 1, action: 1, status: 1, entity: 1, id: 1, changes: 1, warnings: 1, mode: 1, __row: 1, route: 1, route_status: 1, quote_status: 1, quote_reason: 1, quote_label: 1, transport: 1 };   // STAGE 2: route = the position picker's data (rendered by routePickerHtml); A-delta2: route / quote / transport rendered by stateLines
     function flat(v) { if (v == null || v === '') return '∅'; if (typeof v !== 'object') return String(v); return Object.keys(v).map(function (k) { return k + '=' + flat(v[k]); }).join(', '); }
+    // A-delta2 (Owner 2026-11-21): the server's TWO separate states of a Shipment row, never merged into one "no route": 路線／追蹤 (route / tracking:
+    // the template, the route error, or a service that did not resolve) and 報價 (quote: applicable, or 缺報價 with its reason). An Update row's
+    // logistics change (Carrier + label) is listed with its route impact or the code that keeps it. Text only, as the server sent it.
+    function stateLines(r) {
+        var out = [];
+        if (r.route_status) out.push('<strong>路線／追蹤</strong>: ' + esc(/^SHIPPING_SERVICE_UNRESOLVED/.test(r.route_status) ? '服務未識別（' + r.route_status.replace(/^SHIPPING_SERVICE_UNRESOLVED:\s*/, '') + '），未評估路線' : r.route_status));
+        if (r.quote_label) out.push('<strong>報價</strong>: ' + esc(r.quote_label));
+        var mr0 = r.method_resolution;   // AD3-B: an explicit service (method token + last mile typed; no rate card needed) is named as such
+        if (mr0 && typeof mr0 === 'object' && /^EXPLICIT_SERVICE_V1/.test(String(mr0.rule || ''))) out.push('<strong>服務</strong>: 明確服務（不需報價卡）' + esc(String(mr0.shipping_method || '') + ' + ' + String(mr0.last_mile_delivery || '')));
+        var t = r.transport;
+        if (t && typeof t === 'object') {
+            out.push('<strong>物流變更</strong>: ' + esc(t.requested || '') + (t.resolved ? ' → ' + esc([t.resolved.carrier_id, t.resolved.shipping_method, t.resolved.last_mile_delivery].join(' / ')) : '') + (t.blocked ? '<br><span class="km-imb-issues">未套用：' + esc(t.blocked) + '</span>' : '') + (t.error ? '<br><span class="km-imb-issues">' + esc(t.error) + '</span>' : ''));
+            if (t.route_impact) out.push('<strong>路線影響</strong>: ' + esc(t.route_impact));
+            if (t.quote_label) out.push('<strong>報價</strong>: ' + esc(t.quote_label));
+        }
+        return out.join('<br>');
+    }
     function previewHtml(p) {
         var rows = (p && p.rows) || [];
         if (!rows.length) return '';
@@ -186,15 +212,64 @@
                 var ch = Array.isArray(r.changes) && r.changes.length ? r.changes.map(function (c) { return esc(c.field || c.key || c.column || '') + ': ' + esc(flat(c.before)) + ' → ' + esc(flat(c.after)); }).join('<br>')
                     : Object.keys(r).filter(function (k) { return !PREVIEW_META[k] && r[k] !== '' && r[k] != null; }).map(function (k) { return esc(k) + ': ' + esc(flat(r[k])); }).join('<br>');
                 var warn = (r.warnings || []).map(function (w) { return esc(typeof w === 'object' ? (w.code || '') + ' ' + (w.message || '') : w); }).join('<br>');
-                return '<tr class="st-' + esc(action) + '"><td>' + esc(r.sheet || 'Stock') + '</td><td>' + esc(r.row || '') + '</td><td>' + esc(key) + '</td><td>' + esc(action) + '</td><td>' + (ch || esc(r.note || '')) + (warn ? '<br><span class="km-imb-issues">' + warn + '</span>' : '') + '</td></tr>';
+                var st2 = stateLines(r);   // A-delta2
+                return '<tr class="st-' + esc(action) + '"><td>' + esc(r.sheet || 'Stock') + '</td><td>' + esc(r.row || '') + '</td><td>' + esc(key) + '</td><td>' + esc(action) + '</td><td>' + (st2 ? st2 + '<br>' : '') + (ch || esc(r.note || '')) + (warn ? '<br><span class="km-imb-issues">' + warn + '</span>' : '') + '</td></tr>';
             }).join('') + '</tbody></table></div>' + (rows.length > 500 ? '<p class="km-imb-note">' + (rows.length - 500) + ' more rows not shown.</p>' : '');
     }
-    function impactsHtml(p) { var im = p && p.impacts; if (!im) return ''; return '<p class="km-imb-note"><strong>Impact:</strong><br>' + Object.keys(im).map(function (k) { return '<strong>' + esc(k) + '</strong>: ' + esc(flat(im[k])); }).join('<br>') + '</p>'; }
+    function impactsHtml(p) { var im = p && p.impacts; if (!im) return ''; return '<p class="km-imb-note"><strong>Impact:</strong><br>' + Object.keys(im).filter(function (k) { return k !== 'unreconciled'; }).map(   /* A final2 (REVIEW_AFINAL MINOR-1): the per-key unreconciled list is not rendered; the single reconciliation status says it (display only) */function (k) { return '<strong>' + esc(k) + '</strong>: ' + esc(flat(im[k])); }).join('<br>') + '</p>'; }
+    // ===== STAGE 2 entry A (route2, LOCAL): Current Position chosen in the Shipment Add New PREVIEW =====
+    // The server lists, per Header row, the applicable route templates and their nodes (80_/87_ preview.rows[].route). A choice is written
+    // into that Header row as the five position keys and the file is validated again; the server re-checks applicability, node ownership
+    // and the template digest at Validate AND Apply. No choice = the shipment is imported without a route (map entry B can add it later).
+    var RTI_KEYS = ['route_template_id', 'route_template_node_id', 'route_template_digest', 'position_as_of', 'position_source'];
+    function rtiRows(v) { return (state.adapter.domain === 'shipment' && state.mode === 'ADD_NEW') ? (((v && v.preview && v.preview.rows) || []).filter(function (r) { return r.sheet === 'Header' && r.route; })) : []; }
+    function rtiHeader(row) { var hs = (state.parsed && state.parsed.sheets && state.parsed.sheets.Header) || []; return hs.filter(function (h) { return String(h.__row) === String(row); })[0] || null; }
+    function routePickerHtml(v) {
+        var rows = rtiRows(v); if (!rows.length) return '';
+        var h = '<h4>目前位置（選填）</h4><p class="km-imb-note">位置在這裡選：清單由伺服器依來源工廠、目的倉、carrier、shipping method 算出，驗證與套用時會重新核對。Excel 檔不提供位置下拉（無法保證可用）。不選 = 只建立在途單，之後可在地圖「建立追蹤路線」。</p>' +
+            '<div class="km-imb-wrap"><table class="km-imb-table"><thead><tr><th>Row</th><th>出貨單號</th><th>路線</th><th>目前節點</th><th>回報時間（系統時區；不可晚於現在、不可早於 ETD）</th><th>位置來源</th></tr></thead><tbody>';
+        h += rows.map(function (r) {
+            var rt = r.route, hd = rtiHeader(r.row) || {}, cs = rt.candidates || [];
+            if (!cs.length) return '<tr><td>' + esc(r.row) + '</td><td>' + esc(r.key || '') + '</td><td colspan="4">' + (/^SHIPPING_SERVICE_UNRESOLVED/.test(String(rt.reason || '')) ? '服務未識別，未評估路線（' + esc(String(rt.reason).replace(/^SHIPPING_SERVICE_UNRESOLVED:\s*/, '')) + '）' : '無可用路線（' + esc(rt.reason || rt.status) + '）') + (r.quote_label ? '<br><small>報價：' + esc(r.quote_label) + '（與路線無關）</small>' : '') + '</td></tr>';   // A-delta2: service error / route error / quote shown apart
+            var tpl = hd.route_template_id || (cs.length === 1 ? cs[0].route_template_id : '');   // A-delta1 B: ONE applicable route is preselected (the route only, never the position / time / source)
+            var c = cs.filter(function (x) { return x.route_template_id === tpl; })[0];
+            var at = String(hd.position_as_of || '').replace(' ', 'T');
+            return '<tr><td>' + esc(r.row) + '</td><td>' + esc(r.key || '') + '</td><td><select data-rti-tpl="' + esc(r.row) + '"><option value="">不設定位置</option>' +
+                cs.map(function (x) { return '<option value="' + esc(x.route_template_id) + '"' + (x.route_template_id === tpl ? ' selected' : '') + '>' + esc(x.template_name || x.route_template_id) + ' (' + esc(x.route_template_id) + ')</option>'; }).join('') + '</select>' + (cs.length > 1 ? '<br><small>' + cs.map(function (x) { return esc(x.template_name || x.route_template_id) + '：' + (x.nodes || []).map(function (n) { return esc(n.label) + (n.country ? '(' + esc(n.country) + ')' : ''); }).join(' → '); }).join('<br>') + '</small>' : '') + (cs.length > 1 ? '<br><small>' + cs.length + ' 個適用，請明確選擇</small>' : '') + ((rt.origin_undeclared || []).length ? '<br><small data-rti-skipped="1">已略過 ' + rt.origin_undeclared.length + ' 個起點國家未填的模板（' + rt.origin_undeclared.slice(0, 5).map(esc).join(', ') + '）</small>' : '') + '</td>' +
+                '<td><select data-rti-node="' + esc(r.row) + '">' + rtiNodeOptions(c, hd.route_template_node_id) + '</select></td>' +
+                '<td><input type="datetime-local" data-rti-at="' + esc(r.row) + '" value="' + esc(at) + '"></td><td><input type="text" maxlength="200" data-rti-src="' + esc(r.row) + '" value="' + esc(hd.position_source || '') + '"></td></tr>';
+        }).join('') + '</tbody></table></div><div class="km-imb-row"><button type="button" class="btn btn-secondary" id="km-imb-rti-apply">套用位置並重新驗證</button></div>';
+        return h;
+    }
+    function rtiNodeOptions(c, sel) { return '<option value=""' + (sel ? '' : ' selected') + '>請選目前位置</option>' + (c ? c.nodes.map(function (n) { return '<option value="' + esc(n.route_template_node_id) + '"' + (n.route_template_node_id === sel ? ' selected' : '') + '>#' + esc(n.sequence_no) + ' ' + esc(n.label) + (n.country ? ' · ' + esc(n.country) : '') + (n.coordinates === 'PENDING' ? ' · 座標待補' : '') + '</option>'; }).join('') : ''); }
+    function wireRoutePicker() {
+        var v = state.validated, rows = rtiRows(v); if (!rows.length) return;
+        var q = function (attr, row) { return document.querySelector('#km-imb-modal [' + attr + '="' + row + '"]'); };
+        rows.forEach(function (r) { var t = q('data-rti-tpl', r.row), n = q('data-rti-node', r.row); if (!t || !n) return;
+            t.onchange = function () { var c = (r.route.candidates || []).filter(function (x) { return x.route_template_id === t.value; })[0]; n.innerHTML = rtiNodeOptions(c, ''); }; });
+        var b = el('km-imb-rti-apply'); if (!b) return;
+        b.onclick = function () {
+            if (state.busy || state.uncertain || state.committed || !state.parsed) return;
+            var bad = [];
+            rows.forEach(function (r) {
+                var hd = rtiHeader(r.row), t = q('data-rti-tpl', r.row); if (!hd || !t) return;
+                RTI_KEYS.forEach(function (k) { delete hd[k]; });
+                if (!t.value) return;
+                var c = (r.route.candidates || []).filter(function (x) { return x.route_template_id === t.value; })[0];
+                var node = (q('data-rti-node', r.row) || {}).value || '', at = String((q('data-rti-at', r.row) || {}).value || '').replace('T', ' ').slice(0, 16), src = String((q('data-rti-src', r.row) || {}).value || '').trim();
+                if (!node && !at && !src) return;   // A-delta1 B (+ b3 M-2: reachable now that the node starts blank): nothing reported -> no ROUTE_INIT keys at all
+                if (!c || !node || !at || !src) { bad.push(r.row + '（缺：' + [!c ? '路線' : '', !node ? '目前節點' : '', !at ? '回報時間' : '', !src ? '位置來源' : ''].filter(Boolean).join('、') + '）'); return; }   // b3 M-2: name what is missing
+                hd.route_template_id = c.route_template_id; hd.route_template_node_id = node; hd.route_template_digest = c.template_digest; hd.position_as_of = at; hd.position_source = src;
+            });
+            if (bad.length) { view('bad', 'Row ' + bad.map(esc).join(', ') + '：目前位置要三項一起填（節點、回報時間、位置來源）；只想建立在途單，請把這三項都留空，或把路線改為「不設定位置」。尚未驗證、未寫入。', validationHtml(v)); wireRoutePicker(); return; }
+            state.validated = null; state.canApply = false; validate();   // a read-only re-validation of the edited rows; Apply needs its new preview
+        };
+    }
     function validationHtml(v) {
         var p = v.preview || {}, c = p.counts || {};
         if (state.adapter.domain !== 'overseas_inventory') {
             var warnings = (p.warnings || []).map(function (w) { return '<p class="km-imb-status km-imb-status--warn">' + esc(w.sku || '') + ': ' + esc(w.message || w.code) + '</p>'; }).join('');
-            return counts(c) + warnings + issuesHtml(v.issues) + previewHtml(p) + '<details class="km-imb-note"><summary>Technical details</summary>' + impactsHtml(p) + '</details>';
+            return counts(c) + warnings + routePickerHtml(v) + issuesHtml(v.issues) + previewHtml(p) + '<details class="km-imb-note"><summary>Technical details</summary>' + impactsHtml(p) + '</details>';
         }
         var labels = { create: 'New SKUs', update: 'Updated SKUs', unchanged: 'Unchanged', reject: 'Needs attention', skipped: 'Skipped SKUs' };
         var h = '<div class="km-imb-counts">' + Object.keys(labels).map(function (k) { return '<span class="km-imb-badge km-imb-badge--' + k + '">' + labels[k] + ': ' + esc(c[k] || 0) + '</span>'; }).join('') + '</div>';
@@ -234,6 +309,7 @@
         else Array.prototype.forEach.call(controls, function (x) { if (x.dataset.imbWasDisabled !== undefined) { x.disabled = x.dataset.imbWasDisabled === '1'; delete x.dataset.imbWasDisabled; } });
         ['km-imb-validate', 'km-imb-apply', 'km-imb-file', 'km-imb-dl-blank', 'km-imb-dl-update'].forEach(function (id) { var x = el(id); if (x) x.disabled = !!b || (id === 'km-imb-apply' && !state.canApply); }); if (label) setStatus('info', esc(label));
         ['km-imb-validate','km-imb-apply','km-imb-dl-blank','km-imb-dl-update','km-imb-check'].forEach(function (id) { var x = el(id); if (!x) return; if (b && id === actionId) { if (!x.dataset.imbText) x.dataset.imbText = x.textContent; x.style.minWidth = Math.max(x.getBoundingClientRect().width, 110) + 'px'; x.style.minHeight = Math.max(x.getBoundingClientRect().height, 30) + 'px'; x.textContent = busyText; x.setAttribute('aria-busy','true'); } else if (!b && x.dataset.imbText) { x.textContent = x.dataset.imbText; delete x.dataset.imbText; x.setAttribute('aria-busy','false'); } });
+        lockGate();
     }
 
     function render() {
@@ -266,6 +342,7 @@
         else if (state.lastView) { setStatus(state.lastView.tone, state.lastView.html); el('km-imb-preview').innerHTML = state.lastView.preview || ''; if (state.lastView.confirm) el('km-imb-confirm-wrap').hidden = false; }
         if (el('km-imb-validate')) el('km-imb-validate').disabled = !(state.parsed && !state.committed);
         if (el('km-imb-apply')) el('km-imb-apply').disabled = !state.canApply;
+        lockGate();
     }
     // a scope field: { key, label, type: 'select' (default) | 'date', options: [..] | function -> Promise<[..]>, required, modes: [..] (only then) }
     function scopeFields() { return (state.adapter.scopeFields || []).filter(function (f) { return !f.modes || f.modes.indexOf(state.mode) >= 0; }); }
@@ -274,6 +351,7 @@
     function scope() {   // only the fields of the chosen mode are sent (a server's scope keys are a whitelist)
         var o = Object.assign({}, state.adapter.scope ? state.adapter.scope() : {});
         scopeFields().forEach(function (f) { if (state.scopeVals[f.key]) o[f.key] = state.scopeVals[f.key]; });
+        if (state.serverScope && state.serverScope.batchId && state.serverScope.batchId === state.batchId) Object.keys(state.serverScope.values).forEach(function (k) { o[k] = state.serverScope.values[k]; });   // A final3 (2A): the server-fixed values (import time) of THIS batch id
         return o;
     }
     function scopeHtml() {
@@ -281,6 +359,7 @@
         return '<div class="km-imb-row">' + scopeFields().map(function (f) {
             var lab = '<label for="km-imb-scope-' + esc(f.key) + '" style="font-weight:600">' + esc(f.label) + (f.required ? ' *' : '') + '</label>', dis = state.committed ? ' disabled' : '';
             if (f.type === 'date') return lab + '<input type="date" id="km-imb-scope-' + esc(f.key) + '" data-key="' + esc(f.key) + '" value="' + esc(state.scopeVals[f.key] || '') + '"' + dis + '>';
+            if (f.type === 'datetime') return lab + '<input type="datetime-local" id="km-imb-scope-' + esc(f.key) + '" data-key="' + esc(f.key) + '" value="' + esc(state.scopeVals[f.key] || '') + '"' + dis + '>';   // SHIP-OPEN: the opening cut-off (date + time)
             var opts = state.options[f.key] || [];
             return lab + '<select id="km-imb-scope-' + esc(f.key) + '" data-key="' + esc(f.key) + '"' + dis + '><option value="">' + (state.optionsLoading ? 'Loading…' : (f.required ? 'Select…' : 'All')) + '</option>' +
                 opts.map(function (o) { return '<option value="' + esc(o.value) + '"' + (state.scopeVals[f.key] === o.value ? ' selected' : '') + '>' + esc(o.label || o.value) + '</option>'; }).join('') + '</select>';
@@ -292,8 +371,26 @@
         if (!fs.length) return;
         state.optionsLoading = true;
         var owner = state, failures = [];
-        Promise.all(fs.map(function (f) { return Promise.resolve().then(f.options).then(function (o) { if (state === owner) owner.options[f.key] = o || []; }, function () { if (state === owner) { owner.options[f.key] = []; failures.push(f.label || f.key); } }); }))
-            .then(function () { if (state !== owner) return; owner.optionsLoading = false; render(); if (failures.length) view('bad', 'Could not load ' + esc(failures.join(', ')) + '. This import may be disabled in this environment. No data was changed.'); });
+        // SHIP-OPEN 2a: every option read has a time limit and keeps its reason code; ANY failure locks Download, file choice, Validate and
+        // Apply with the reason on screen. No default / fallback option is ever substituted (no company, factory or warehouse is guessed).
+        var limit = state.adapter.optionsTimeoutMs || OPTIONS_TIMEOUT_MS;
+        Promise.all(fs.map(function (f) {
+            var timer = null, timeout = new Promise(function (res, rej) { timer = setTimeout(function () { var e = new Error('OPTIONS_TIMEOUT'); e.code = 'OPTIONS_TIMEOUT'; rej(e); }, limit); });
+            return Promise.race([Promise.resolve().then(f.options), timeout]).then(function (o) { clearTimeout(timer); if (state === owner) owner.options[f.key] = o || []; },
+                function (e) { clearTimeout(timer); if (state === owner) { owner.options[f.key] = []; failures.push({ label: f.label || f.key, reason: reasonOf(e) }); } });
+        }))
+            .then(function () { if (state !== owner) return; owner.optionsLoading = false;
+                if (failures.length) { owner.optionsFailed = failures; owner.optionsFailedHtml = 'Could not load ' + failures.map(function (x) { return esc(x.label) + ' (' + esc(x.reason) + ')'; }).join(', ') + '. Download, file choice, Validate and Apply are locked; no default is used and no data was changed. Close and reopen this dialog to try again.'; }
+                render();
+                if (failures.length) view('bad', owner.optionsFailedHtml); });
+    }
+    function reasonOf(e) { var c = e && (e.code || e.apiCode); if (c) return String(c); var m = String(e && e.message || e || 'UNKNOWN'); return m.slice(0, 160); }
+    // SHIP-OPEN 2a: the option-failure lock, applied after every render and every busy change (setBusy(false) re-enables controls)
+    function lockGate() {
+        if (!state || !state.optionsFailed) return;
+        ['km-imb-download', 'km-imb-dl-blank', 'km-imb-dl-update', 'km-imb-file', 'km-imb-validate', 'km-imb-apply'].forEach(function (id) { var x = el(id); if (x) x.disabled = true; });
+        state.canApply = false;
+        if (!state.lastView && state.optionsFailedHtml) setStatus('bad', state.optionsFailedHtml);   // the reason stays on screen after a mode change
     }
     function view(tone, html, preview, confirm) { state.lastView = { tone: tone, html: html, preview: preview || '', confirm: !!confirm }; setStatus(tone, html); var p = el('km-imb-preview'); if (p) p.innerHTML = preview || ''; var cw = el('km-imb-confirm-wrap'); if (cw) cw.hidden = !confirm; }
 
@@ -315,9 +412,13 @@
         el('km-imb-file').onchange = function () { chooseFile(this.files && this.files[0]); };
         el('km-imb-validate').onclick = validate;
         el('km-imb-apply').onclick = apply;
+        wireRoutePicker();   // STAGE 2 entry A: the picker survives a re-render (render() restores the last preview HTML)
         var cb = el('km-imb-confirm'); if (cb) cb.onchange = function () { state.canApply = !!(!state.busy && !state.uncertain && cb.checked && state.validated && state.validated.valid && !state.committed); el('km-imb-apply').disabled = !state.canApply; };
     }
-    function resetFile() { state.parsed = null; state.batchId = ''; state.fileName = ''; state.validated = null; state.canApply = false; state.lastView = null; }
+    function resetFile() { state.serverScope = null; state.parsed = null; state.batchId = ''; state.fileName = ''; state.fileMeta = null; state.validated = null; state.canApply = false; state.lastView = null; }
+    // A final3 (Owner item a): the shared XLSX readiness (template-export owns it) and the details block for a failure
+    function _imbXlsxReady_() { var te = window.KM && window.KM.templateExport; if (te && typeof te.ready === 'function') return te.ready(); if (window.ExcelJS && window.ExcelJS.Workbook) return Promise.resolve(window.ExcelJS); var e = new Error('XLSX engine unavailable'); e.code = 'XLSX_ENGINE_UNAVAILABLE'; return Promise.reject(e); }
+    function _imbDiagHtml_(e) { var d = (e && e.kmDiag) || {}; return '<details class="km-imb-note"><summary>詳細資訊</summary><p>' + esc(String((e && e.code) || '') + ' ' + String((e && e.message) || e || '')) + (d.cdn ? ' · cdn ' + esc(d.cdn) + ' · local ' + esc(d.fallback) : '') + '</p></details>'; }
     function resumeFile() { var f = state.sourceFile; resetFile(); render(); if (f) chooseFile(f); }
     function selectMode(mode) { if (state.busy || state.uncertain || state.committed) return; state.mode = mode; resumeFile(); }
 
@@ -329,21 +430,27 @@
         });
     }
     function download(withData) {
-        if (state.busy || !ready()) return;
+        if (state.busy || !ready() || state.optionsFailed) return;
         setBusy(true, withData ? 'Exporting the current data of this scope…' : 'Preparing the template…', withData ? 'km-imb-dl-update' : 'km-imb-dl-blank', 'Exporting...');
         templateFor(withData).then(function (t) {
             var spec = exportSpec(t, state.adapter, state.mode, withData);
             return window.KM.templateExport.buildAndDownload(spec).then(function (res) {
                 setBusy(false);
                 var warnings = t.export_warnings || [];
+                // A final3 (Owner item b): short business language; technical facts only in the details section; unknown-company rows stay blocked in the file
+                var n3 = ((t.sheets && t.sheets[0] && t.sheets[0].rows) || []).length;
+                var msg3 = withData ? ('已下載 ' + n3 + ' 筆' + (warnings.length ? '，其中 ' + warnings.length + ' 筆缺少公司資料，暫不可更新。請查看檔案中的標示。' : '資料。') + '<br>匯出的是所選範圍的全部資料，不是目前畫面的一頁。') : '已下載空白模板。';
+                if (res.droppedDropdowns) msg3 += '<br>部分欄位未加入下拉選單。';
+                view(res.droppedDropdowns || warnings.length ? 'warn' : 'ok', msg3, '<details class="km-imb-note"><summary>詳細資訊</summary><p>' + esc(t.scope_label || '') + (t.exported_at ? ' · ' + esc(t.exported_at) : '') + (withData ? ' · ' + esc(JSON.stringify(t.row_counts || {})) : '') + (res.droppedDropdowns ? ' · dropdown not added: ' + esc(res.droppedDropdowns.join(', ')) : '') + '</p></details>');
+                return;
                 view(res.droppedDropdowns || warnings.length ? 'warn' : 'ok', (withData ? 'Exported ' + esc(JSON.stringify(t.row_counts || {})) + ' rows of ' + esc(t.scope_label || 'this scope') + ' at ' + esc(t.exported_at || '') + ' — the complete scope, not the visible page.' : 'Template downloaded.') +
                     (warnings.length ? ' ' + warnings.length + ' rows have unknown company; they remain in the file with a blocked note and cannot be updated. Other valid rows can be imported separately.' : '') +
                     (res.droppedDropdowns ? ' Dropdown not added: ' + esc(res.droppedDropdowns.join(', ')) + '.' : ''));
             });
-        }).catch(function (e) { setBusy(false); view('bad', 'Could not prepare the file: ' + esc(e && e.message || e) + '. Nothing was changed.'); });
+        }).catch(function (e) { setBusy(false); view('bad', '暫時無法下載，請重新整理後再試。資料未變更。', _imbDiagHtml_(e)); });   // A final3 (Owner item a): a download never writes; the reason goes to the details section
     }
     function chooseFile(f) {
-        if (state.busy || state.uncertain || state.committed) return;
+        if (state.busy || state.uncertain || state.committed || state.optionsFailed) return;
         resetFile();
         state.sourceFile = f || null;
         if (!f) { render(); return; }
@@ -352,12 +459,12 @@
         state.batchId = newBatchId(state.adapter.domain); state.fileName = f.name;
         var owner = state;
         setBusy(true, 'Reading ' + f.name + '…');
-        var wb = new window.ExcelJS.Workbook();
-        f.arrayBuffer().then(function (buf) { return wb.xlsx.load(buf); }).then(function () {
+        var wb = null;   // A final3 (Owner item a): the shared, awaitable XLSX readiness (never a timer)
+        _imbXlsxReady_().then(function (X) { wb = new X.Workbook(); return f.arrayBuffer(); }).then(function (buf) { return wb.xlsx.load(buf); }).then(function () {
             if (state !== owner) return null;
             var meta = fileMode(wb);
-            if (meta) state.mode = meta.mode;
-            if (!ready()) { setBusy(false); render(); view('warn', 'File selected. Choose its import mode and warehouse to continue. Nothing was written.'); return null; }
+            if (meta) { state.mode = meta.mode; state.fileMeta = { template_id: meta.template_id, template_version: meta.template_version, module: meta.module, mode: meta.mode, scope: meta.scope }; }
+            if (!ready()) { setBusy(false); render(); view('warn', 'File selected. Choose its import mode and the required fields above to continue. Nothing was written.'); return null; }
             return templateFor(false).then(function (t) {
                 if (state !== owner) return null;
                 if (meta && String(meta.template_version) !== String(t.schema_version)) throw new Error('This template version is no longer supported. Download a current template.');
@@ -376,17 +483,18 @@
             render(); view('info', esc(state.mode) + ': ' + esc(n) + ' data rows read (' + Object.keys(p.sheets).map(function (k) { return esc(k) + ' ' + p.sheets[k].length; }).join(', ') + '). Validate to see the preview — nothing is written yet.');
             el('km-imb-validate').disabled = false;
             });
-        }).catch(function (e) { if (state !== owner) return; setBusy(false); render(); view('bad', 'The file could not be read: ' + esc(e && e.message || e)); });
+        }).catch(function (e) { if (state !== owner) return; setBusy(false); render(); if (e && /^XLSX_ENGINE_/.test(String(e.code || ''))) { view('bad', '暫時無法讀取檔案，請重新整理後再試。資料未變更。', _imbDiagHtml_(e)); return; } view('bad', 'The file could not be read: ' + esc(e && e.message || e)); });   // A final3 (Owner item a)
     }
     function payload() {
         var a = state.adapter;
-        return { domain: a.domain, mode: state.mode, schema_version: state.template && state.template.schema_version, import_batch_id: state.batchId, scope: scope(), sheets: state.parsed.sheets, file: { name: state.fileName }, actor: a.actor ? a.actor() : '' };
+        return { domain: a.domain, mode: state.mode, schema_version: state.template && state.template.schema_version, import_batch_id: state.batchId, scope: scope(), sheets: state.parsed.sheets, file: { name: state.fileName }, file_meta: state.fileMeta || null, actor: a.actor ? a.actor() : '' };
     }
     function validate() {
-        if (state.busy || state.uncertain || !state.parsed) return;
+        if (state.busy || state.uncertain || !state.parsed || state.optionsFailed) return;
         setBusy(true, 'Validating on the server…', 'km-imb-validate', 'Validating...');
         window.KM.DB.importValidate(payload()).then(function (v) {
             setBusy(false); state.validated = v; state.canApply = false;
+            if (v && v.success !== false && v.preview && v.preview.server_scope && typeof v.preview.server_scope === 'object' && state.batchId && !(state.serverScope && state.serverScope.batchId === state.batchId)) state.serverScope = { batchId: state.batchId, values: v.preview.server_scope };   // A final3 (2A): kept from the FIRST validate of this batch, never replaced
             if (!v || v.success === false) { view('bad', esc((v && v.code) || 'VALIDATION_FAILED') + ' — ' + esc(v && v.error) + '. Nothing was written.', issuesHtml(v && v.issues)); return; }
             var c = (v.preview && v.preview.counts) || {}, receipt = v.receipt;
             if (receipt && receipt.same_content && receipt.status === 'COMMITTED') {
@@ -398,10 +506,11 @@
                 (receipt ? (receipt.same_content ? ' This exact batch already has a receipt (' + esc(receipt.status) + ').' : ' This batch id was used with another file — choose the file again to start a new batch.') : '') +
                 (v.schema_ready === false ? ' The import receipt tables are not provisioned in this deployment: applying will be refused.' : '');
             view(v.valid ? 'ok' : 'bad', head, validationHtml(v), v.valid && !(receipt && !receipt.same_content));
+            wireRoutePicker();   // STAGE 2 entry A
         }).catch(function (e) { setBusy(false); view('bad', 'The server could not be reached (' + esc(e && e.message || e) + '). Nothing was written — validate again.'); });
     }
     function apply() {
-        if (state.busy || state.uncertain || !state.canApply || state.committed) return;
+        if (state.busy || state.uncertain || !state.canApply || state.committed || state.optionsFailed) return;
         state.canApply = false; setBusy(true, 'Importing...', 'km-imb-apply', 'Importing...');
         var body = Object.assign(payload(), { preview_digest: state.validated.preview_digest });
         Promise.resolve().then(function () { return window.KM.DB.importCommit(body); }).then(function (r) { setBusy(false); result(r); })
@@ -418,7 +527,7 @@
             setBusy(false);
             if (r && r.success && r.receipt && r.receipt.status === 'COMMITTED') { result({ success: true, status: 'COMMITTED', import_batch_id: state.batchId, result: JSON.parse(r.receipt.result_json || '{}'), from_receipt: true, replayed: replayed === true }); return; }
             if (r && r.code === 'IMPORT_BATCH_NOT_FOUND' && replayed !== true) { state.uncertain = false; state.canApply = true; el('km-imb-apply').disabled = false; view('info', 'No receipt: the batch was not applied. You can apply it again (the same batch id).'); return; }
-            receiptRetry('Receipt status: ' + esc(r && r.receipt ? r.receipt.status : (r && r.code) || 'unknown') + '. Nothing is retried automatically.');
+            receiptRetry('Receipt status: ' + esc(r && r.receipt ? r.receipt.status : (r && r.code) || 'unknown') + '.' + reconcileText(r && r.reconcile) + ' Nothing is retried automatically.');
         }).catch(function (e) { setBusy(false); receiptRetry('The receipt could not be read (' + esc(e && e.message || e) + ').'); });
         function receiptRetry(message) {
             state.uncertain = true;
@@ -426,6 +535,8 @@
             el('km-imb-check').onclick = function () { checkReceipt(replayed === true); };
         }
     }
+    // SHIP-OPEN 2a: the server's read-only reconcile of a batch that is not COMMITTED (what its id left in the rows) - shown, never acted on
+    function reconcileText(x) { if (!x) return ''; return ' Read-only reconcile: ' + esc(x.verdict || '') + (x.shipment_rows != null ? ' (' + esc(x.shipment_rows) + ' shipment rows, ' + esc(x.line_rows) + ' line rows; expected ' + esc(x.expected_shipments == null ? '?' : x.expected_shipments) + ' / ' + esc(x.expected_lines == null ? '?' : x.expected_lines) + ')' : '') + (x.update_rows_marked ? ' (' + esc(x.update_rows_marked.length) + ' shipments carry the update mark of this batch)' : '') + '. This batch is NOT shown as applied and is not re-added; the Owner decides from this evidence.'; }
     function result(r) {
         if (r && r.success && (r.status === 'COMMITTED' || r.replayed)) {
             state.uncertain = false; state.committed = true; state.canApply = false;
@@ -480,5 +591,5 @@
         return { close: close };
     }
 
-    window.KM.importBatch = { open: open, close: close, _parseWorkbook: parseWorkbook, _exportSpec: exportSpec, _newBatchId: newBatchId, MAX_FILE_BYTES: MAX_FILE_BYTES };
+    window.KM.importBatch = { open: open, close: close, _parseWorkbook: parseWorkbook, _exportSpec: exportSpec, _previewHtml: previewHtml, _newBatchId: newBatchId, MAX_FILE_BYTES: MAX_FILE_BYTES };
 })();

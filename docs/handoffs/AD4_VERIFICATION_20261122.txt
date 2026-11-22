@@ -1,0 +1,64 @@
+AD4 本機修復與驗證紀錄 / 2026-11-22
+===================================
+唯一交付：output/ad4-codex-20261122/release-final / r6.7-ad4-codex-c3。
+基底：Claude frozen joint-afinal-ad3-install-c2，INSTALL.sha256.txt 檔案摘要 500385013d7795cd99cb88c493633397ccaed7fd9fa1b4d95ebaf12be30d3184。
+不改原包，不改 DB，不部署、不推送。不合併 joint-b8。
+
+修復範圍（相對 c2）
+- 11_: 同國海外倉服務可省略空白 Customs；在鎖內由已存 Plan 及主檔重判，不信前端標記。保留舊 Customs，不寫 undefined。
+- 12_: 計算 Customs 適用性；更換目的倉用新目的地重判。US 同公司 3PL->3PL 仍只使用原啟用分支。
+- shipping-plan.js: 有卡/零卡共用 Customs 控制項。NA 不強制選單；國際/未證明國內的零卡路徑仍畫出必要選單。
+- 63_: 更新實際改動模組的版本釘選。
+- Production 01_: 更新模組釘選及 router stamp，從 profile 真實內容重算 policy_sha256。
+- Production production-config.js: 與 server 的 public profile 完全一致；index 對設定檔、Plan 頁更新 cache token。
+- Sandbox 01_ 與 Sandbox allowlist 不變。兩環境沒有新增 action。
+- 90_ 逐位元沿用 c2，沒有手改 bundle。既有 F1/F2/F3/F4、文件、PO/庫存修復維持原檔。
+
+本次實際執行（最終 c3 位元）
+node assets/tests/ad4/t-ad4-server.cjs Sandbox       35 PASS / 0 FAIL
+node assets/tests/ad4/t-ad4-server.cjs Production    35 PASS / 0 FAIL
+node assets/tests/ad4/t-ad4-plan.cjs ad4              7 PASS / 0 FAIL
+node assets/tests/ad4/t-ad4-browser.cjs              12 PASS / 0 FAIL
+node assets/tools/verify-ad4-release.cjs             860 檔摘要一致；Production policy mirror / public stamps 正確；實際 router target gate 4/0；health checker 2/0
+release-final/launcher/serve-ad4.cjs --verify-only    361 檔通過；NOT_STARTED；BACKEND_NOT_VERIFIED
+release-final/launcher/serve-ad4.cjs --self-test      23 PASS / 0 FAIL / 2 NOT_RUN（Windows 無 symlink 權限）
+release-final/tools/check-sbx-health-ad4.cjs --self-test 12 PASS / 0 FAIL
+capture-ad4.ps1                                     PowerShell AST parse 通過；互動剪貼簿讀回待 Owner
+git diff --check                                    通過
+
+測試保真限制
+- server 測試執行實際 11_/12_ + c2 22_，Sheets、lock、部分報價依賴是標記清楚的記憶體 adapter。
+- real service writer 測到「真正省略 customs_type」的 request、舊值保存、pending 金額空白、lane save 的讀回；不只是呼叫 helper。
+- 瀏覽器測試是真正 Chrome DOM，1440/820 兩寬度；使用實際頁面函式與實際 DB API wrapper。transport 與 command runner 是 stub，不發遠端交易。
+- 瀏覽器圖：output/ad4-codex-20261122/browser-1440.png、browser-820.png，已檢視。
+- Production target gate 測的是實際函式；未讀取的 config/密碼模組使用具名測試替身，不能視為密碼安全審核。
+- Production checker 沒有 --self-test CLI；直接呼叫它匯出的 check/load 驗證正向 capture 及錯誤 policy 拒絕。最早試 --self-test 的 SUMMARY_UNREADABLE 是不支援參數，不是 live health 結果。
+- AD4-c1、c2 是未交付中間版。第一個遺漏省略 Customs 的真實 transport 合約；第二個尚未更新 Production router 的 stamp pins。均未用於 live。
+
+未執行 / 不可冒稱通過
+- 本次沒有重跑 c2 的全部 183 項整鏈與全部舊作者套件，亦未另開作者/獨立複核者；沿用 c2 原有已審核基底，新增部分由本次聚焦測試覆蓋。
+- 新版尚未在 Sandbox/Production 更新、health 尚未 live 驗證。
+- 實際 Shipment Details 檔產生/下載/開啟、實際 Confirm/到達/部分和全部收貨、庫存對帳，均由 Owner 依操作單補實測。
+- U1/U2/U3/U4/U5/U7 仍待 Owner；P0 與 U6 僅記 Owner 先前回報 PASS，不等於本次重新驗過。
+- 真 WFS FC、跨國 3PL、未完成 B8 未交付。
+
+Production schema 唯讀讀回
+- shipping_plan_lines A1:AD1：30 欄，新增 7 欄順序正確。
+- shipment_final_output_snapshots A1:BR1：70 欄，新增 9 欄順序正確。
+- shipment_final_output_lines A1:AR1：44 欄，新增 17 欄順序正確。
+- shipments A1:BU1：73 欄，BU=final_output_validated_digest，符合 Production 12_ 已知 layout。
+- shipment_lines A1:AI1：35 欄，符合 Production 12_ 已知 layout。
+- shipment_routes A1:X1 / shipment_events A1:T1：24 / 20 欄已讀回。
+- shipment_plan_links A1:G1：link_status 保留。
+- 不需要新增 AD4 欄位。本輪沒有查所有資料格/回填狀態，未驗證與舊備份全部 prefix 逐格相同。
+
+Git 交付
+- 本機分支 codex/ad4-customs-go-live-20261122；main/origin 不直接修改。
+- 本機更新是「累積 A c2 + 本次 AD4」：26 個 Production GS 同步路徑、32 個 Production 前端檔；部分相同規範化內容不產生 Git diff。
+- 其餘 GS 未擴大替換；既有未追蹤 PHASE2 roadmap/Claude handoff 未納入。
+- 唯讀 Administration guard/fx-rate-book 保留。
+- APPS_SCRIPT_SYNC_REQUIRED：Production 26（若完整 c2 經讀回證實，AD4 增量 4）；Sandbox 3。
+- FRONTEND_GITHUB_PAGES_REQUIRED：YES，Owner 手動 merge/push。
+- BUNDLE_REBUILD_REQUIRED：NO for AD4；90_ 的變更是累積 c2 已完成的 bundle。
+- DB_SCHEMA_CHANGE_REQUIRED：NO for AD4。
+- NOT_PUSHED / NOT_DEPLOYED / OWNER_UAT_PENDING。

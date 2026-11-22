@@ -42,7 +42,7 @@
 // reported a healthy deployment while the writer resolved FB4G and the lifecycle resolved nothing.
 // Set to the round this file last changed. Bumping it to the CURRENT round would be worse than leaving
 // it stale: it would assert a sync that never happened.
-var AIPL_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1';
+var AIPL_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R1-V3B3';
 var AIPL_CONTRACT_VERSION_ = '1';
 var AIPL_SOURCE_PAGE_ = 'inventory_replenishment';
 var AIPL_EXPIRATION_REASON_ = 'SUPERSEDED_BY_NEW_AI_PLAN';
@@ -427,6 +427,18 @@ function aiplManualPrecedence_(activeRows, proposed, keyOf) {
  * A user-edited row that is still an AI-sourced `draft` IS expired — that is the business decision recorded in
  * §D — and its quantities, override flags and notes are preserved untouched; only the lifecycle columns move.
  */
+// D5-V3 (approved D6 / C-4): the AI drafts THIS generation replaces = same AI Plan business scope + AI provenance + status
+// exactly `draft` (the rows a regeneration supersedes). They are left OUT of the commitment netting of that same run, so a
+// recommendation never nets against itself and cannot oscillate to zero. Pure; rows are never modified.
+function aiplReplacementSetOf_(rows, ctx) {
+  ctx = ctx || {};
+  var ids = {};
+  (rows || []).forEach(function (r) {
+    if (aiplSameScope_(r, ctx) && aiplIsAiGenerated_(r) && aiplLo_(r.status) === 'draft') ids[aiplStr_(r.allocation_draft_id)] = 1;
+  });
+  return ids;
+}
+
 function aiplExpirationCandidates_(rows, ctx) {
   ctx = ctx || {};
   var runId = aiplStr_(ctx.generation_run_id);
@@ -595,6 +607,18 @@ function aiplExpireSupersededDrafts_(ss, input, io) {
   var scope = (input && input.scope) || {};
   var runId = aiplStr_(input && input.generation_run_id);
   var actor = aiplStr_(input && input.actor) || 'inventory-ai-plan';
+  // D5-V3-R3 (P5 contract, backend version batch): the caller (61_) holds the SCRIPT lock for the whole expiration and
+  // passes it as input.lock; without a held lock nothing is read for writing and nothing is written. Each expired draft's
+  // version advances through the shared integer helper owned by 16_ (BV1): sadNextDraftVersion_(currentDraftVersion) ->
+  // the next positive integer (> current). A missing helper or an invalid answer is a typed refusal, never a local guess.
+  var lk = input && input.lock;
+  if (!(lk && typeof lk.hasLock === 'function' && lk.hasLock() === true)) {
+    return { ok: false, stage: 'PRECONDITION', blockers: [{ code: 'EXPIRE_LOCK_NOT_HELD' }], manifest: null, expired_headers: 0, expired_lines: 0, version_advanced: [] };
+  }
+  if (typeof sadNextDraftVersion_ !== 'function') {
+    return { ok: false, stage: 'PRECONDITION', blockers: [{ code: 'DRAFT_VERSION_HELPER_MISSING' }], manifest: null, expired_headers: 0, expired_lines: 0, version_advanced: [] };
+  }
+  var versionAdvanced = [];
 
   var hSheet = io.headerSheet();
   var hRead = io.readRows(hSheet);
@@ -616,7 +640,17 @@ function aiplExpireSupersededDrafts_(ss, input, io) {
     if (!row) { failures.push({ allocation_draft_id: e.allocation_draft_id, code: 'ROW_DISAPPEARED_BEFORE_WRITE' }); return; }
     // REVALIDATE immediately before writing: the row must still be the draft we decided about.
     if (aiplLo_(row.status) !== 'draft') { failures.push({ allocation_draft_id: e.allocation_draft_id, code: 'STATUS_CHANGED_BEFORE_WRITE', found: aiplLo_(row.status) }); return; }
+    // D5-V3-R3 (P5): the next version is resolved BEFORE the first cell of this header is written.
+    if (hRead.headers.indexOf('draft_version') === -1) { failures.push({ allocation_draft_id: e.allocation_draft_id, code: 'DRAFT_VERSION_COLUMN_MISSING' }); return; }
+    var curV = row.draft_version, nextV = null;
+    try { nextV = sadNextDraftVersion_(curV); } catch (eNv) { nextV = null; }
+    var nNext = Number(nextV), nCur = (curV === '' || curV === null || curV === undefined) ? null : Number(curV);
+    if (nextV === null || nextV === undefined || nextV === '' || !isFinite(nNext) || Math.floor(nNext) !== nNext || nNext <= 0 || (nCur !== null && isFinite(nCur) && nNext <= nCur)) {
+      failures.push({ allocation_draft_id: e.allocation_draft_id, code: 'DRAFT_VERSION_NEXT_INVALID', current: curV === undefined ? null : curV, got: nextV === undefined ? null : nextV }); return;
+    }
     io.setCell(hSheet, row.__row, hRead.headers, 'status', 'expired');
+    io.setCell(hSheet, row.__row, hRead.headers, 'draft_version', nextV);
+    versionAdvanced.push({ allocation_draft_id: e.allocation_draft_id, from: curV === undefined ? null : curV, to: nextV });
     io.setCell(hSheet, row.__row, hRead.headers, 'expired_at', now);
     io.setCell(hSheet, row.__row, hRead.headers, 'expired_by_run_id', runId);
     io.setCell(hSheet, row.__row, hRead.headers, 'expiration_reason', AIPL_EXPIRATION_REASON_);
@@ -660,6 +694,7 @@ function aiplExpireSupersededDrafts_(ss, input, io) {
     manifest: prep.manifest,
     expired_headers: expiredHeaders,
     expired_lines: expiredLines,
+    version_advanced: versionAdvanced,
     failures: failures,
     verification: {
       old_ai_drafts_still_active: stillActiveOldAi,

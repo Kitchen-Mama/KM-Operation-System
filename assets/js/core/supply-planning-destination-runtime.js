@@ -63,8 +63,12 @@
   // R4 (2026-10-29): partially_received (the 31_ writer's value) / partial_received (its legacy spelling) = ONE partial arrival whose
   // remainder is in flight. KNOWN_NOT_INCOMING is the rest of the vocabulary; a token in neither is UNKNOWN_STATUS (Qualified Incoming
   // REVIEW, named) - never filed with the known exclusions as if it were one.
-  var ACTIVE_INCOMING_STATUS = { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1, partially_received: 1, partial_received: 1 };
-  var KNOWN_NOT_INCOMING_STATUS = { draft: 1, pending_approval: 1, cancelled: 1, canceled: 1, received: 1, closed: 1, completed: 1, delivered: 1, stuck: 1, planned: 1 };
+  // D5-V3 (Owner OD-3 + D1, 2026-11-13): a created-but-unconfirmed Shipment (draft) already HOLDS its reservation (12_ acquires the
+  // hold when it is created). The factory pool is now current - reserved (43_), so the reserved units are counted ONCE - here, as
+  // planned supply of the Shipment's own receiver at its ETA - exactly like ready_to_ship. A draft without a valid ETA stays a
+  // KMQI REVIEW item (visible, non-covering): never dated by guess.
+  var ACTIVE_INCOMING_STATUS = { draft: 1, shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1, approved: 1, partially_received: 1, partial_received: 1 };
+  var KNOWN_NOT_INCOMING_STATUS = { pending_approval: 1, cancelled: 1, canceled: 1, received: 1, closed: 1, completed: 1, delivered: 1, stuck: 1, planned: 1 };
 
   // ================================ §3 destination normalizer (single owner, re-exported) ====================
   function normalizeRecommendationDestination(input, authorities) {

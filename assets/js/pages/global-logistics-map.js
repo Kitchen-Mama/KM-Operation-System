@@ -38,7 +38,7 @@
     { id: 'exception', label: 'Exceptions', tone: 'danger' },
     { id: 'arrivingSoon', label: 'Arriving Soon', tone: 'good' },
     { id: 'delayed', label: 'Delayed', tone: 'danger' },
-    { id: 'deliveredToday', label: 'Delivered Today', tone: 'done' }
+    { id: 'deliveredToday', label: 'Received Today', tone: 'done' }
   ];
 
   // ==========================================================================================================
@@ -158,14 +158,16 @@
   // legacy partial_received), Received (received/completed/delivered). Any status outside the known vocabulary
   // falls into Other (surfaced with its raw status list, never silently reclassified). Pure; input never mutated.
   var GLM_STATUS_BUCKETS_ = [
-    { key: 'inTransit', label: 'In Transit', match: { shipped: 1, in_transit: 1, arrived: 1, ready_to_ship: 1 } },
+    { key: 'inTransit', label: 'In Transit', match: { shipped: 1, in_transit: 1, ready_to_ship: 1 } },
+    { key: 'arrived', label: 'Delivered · 已送達（待收貨）', match: { arrived: 1 } },   // A-DELTA1 P0-1: persisted arrival at the true destination, not received
     { key: 'partiallyReceived', label: 'Partially Received', match: { partially_received: 1, partial_received: 1 } },
     { key: 'received', label: 'Received', match: { received: 1, completed: 1, delivered: 1 } }
   ];
   function glmStatusSummary(vms) {
-    var counts = { inTransit: 0, partiallyReceived: 0, received: 0, other: 0 }, otherStatuses = {};
+    var counts = { inTransit: 0, arrived: 0, partiallyReceived: 0, received: 0, other: 0 }, otherStatuses = {};
     (vms || []).forEach(function (v) {
       var st = String(v && v.status != null ? v.status : '').trim().toLowerCase(), placed = false;
+      if (v && v.display && v.display.key === 'arrived') st = 'arrived';   // A-DELTA1 C2 item 1: a proven arrival is never counted In Transit
       for (var i = 0; i < GLM_STATUS_BUCKETS_.length; i++) { if (GLM_STATUS_BUCKETS_[i].match[st]) { counts[GLM_STATUS_BUCKETS_[i].key]++; placed = true; break; } }
       if (!placed) { counts.other++; if (st) otherStatuses[st] = (otherStatuses[st] || 0) + 1; }
     });
@@ -207,9 +209,11 @@
   function glmShipmentIssues(facts) {
     facts = facts || {};
     var types = [];
-    if (!facts.nodeCount) types.push({ code: 'NO_ROUTE_NODES', label: 'Route Issue', detail: 'Route history incomplete — no route nodes are currently available for this shipment.' });
+    // SHIP-OPEN (Owner Q7): an opening record has no route history by design - it is labelled, not flagged, and nothing is fabricated
+    if (!facts.nodeCount && facts.opening) types.push({ code: 'OPENING_NO_ROUTE_HISTORY', label: '無路線資料', detail: '此單沒有路線節點；系統不補造路線或事件。' + (facts.displayOnly ? ' 僅顯示：不計入供給、不收貨 · 資料時間 ' + (facts.asOf || '未提供') + '。' : '') });   // A final3 (Owner item 1): code kept, text short
+    else if (!facts.nodeCount) types.push({ code: 'NO_ROUTE_NODES', label: 'Route Issue', detail: 'Route history incomplete — no route nodes are currently available for this shipment.' });
     if (facts.placementKind === 'pending') types.push({ code: 'COORDINATE_PENDING', label: 'Coordinate Pending', detail: 'No map coordinates are available yet, so this shipment cannot be plotted. It stays listed and selectable.' });
-    return { hasIssue: types.length > 0, types: types };
+    return { hasIssue: types.some(function (t) { return t.code !== 'OPENING_NO_ROUTE_HISTORY'; }), types: types };
   }
 
   // ---------- data ----------
@@ -278,6 +282,241 @@
     return out;
   }
 
+  // ---------- A final3 (Owner 2026-11-20 items 2 / 4): origin + position lineage, read-only, pure where possible ----------
+  // ORIGIN. Order: (1) the shipment route snapshot's first node country (the existing explicit source, unchanged); (2) the EXACT source
+  // warehouse master row (shipments.source_warehouse_id -> warehouses.warehouse_id, exactly one row) and its country. Both present and
+  // different -> ORIGIN_CONFLICT: the route value is kept and the conflict is shown, never silently replaced. Countries are legal 2-letter
+  // codes (trimmed, upper-cased); anything else is not a country. Never from an id string, a name, the company or a free-text address.
+  // Missing -> '' + the reason + the master field to fill (shown as 待補資料). The cross-company factory rule is not touched here.
+  function glmLegalCountry_(v) { var s = String(v == null ? '' : v).trim().toUpperCase(); return /^[A-Z]{2}$/.test(s) ? s : ''; }
+  function glmOriginOf_(s, nodes, whRowsById) {
+    var routeRaw = nodes && nodes[0] ? String(nodes[0].country == null ? '' : nodes[0].country).trim() : '', route = glmLegalCountry_(routeRaw);
+    var sid = String((s && s.sourceWarehouseId) || '').trim(), rows = sid ? ((whRowsById || {})[sid] || []) : [];
+    var w = rows.length === 1 ? rows[0] : null, masterRaw = w ? String(w.country == null ? '' : w.country).trim() : '', master = glmLegalCountry_(masterRaw);
+    var out = { country: '', source: '', issue: '', route: route, master: master, missing_field: '' };
+    if (route && master && route !== master) { out.country = route; out.source = 'ROUTE'; out.issue = 'ORIGIN_CONFLICT'; return out; }
+    if (route) { out.country = route; out.source = 'ROUTE'; return out; }
+    if (master) { out.country = master; out.source = 'SOURCE_WAREHOUSE_MASTER'; return out; }
+    if (!sid) { out.issue = 'SOURCE_WAREHOUSE_MISSING'; out.missing_field = 'shipments.source_warehouse_id'; }
+    else if (rows.length > 1) { out.issue = 'SOURCE_WAREHOUSE_AMBIGUOUS'; out.missing_field = 'warehouses.warehouse_id ' + sid + ' (more than one row)'; }
+    else if (!w) { out.issue = 'SOURCE_WAREHOUSE_NOT_IN_MASTER'; out.missing_field = 'warehouses row ' + sid; }
+    else { out.issue = masterRaw ? 'SOURCE_WAREHOUSE_COUNTRY_INVALID' : 'SOURCE_WAREHOUSE_COUNTRY_MISSING'; out.missing_field = 'warehouses.country (' + sid + ')'; }
+    if (routeRaw && !route) out.issue += '+ROUTE_COUNTRY_INVALID';
+    return out;
+  }
+  function glmOriginText_(v) {
+    var o = v && v.origin;
+    if (o && o.issue === 'ORIGIN_CONFLICT') return '衝突：路線 ' + o.route + ' / 主檔 ' + o.master;
+    return (v && v.originCountry) || '待補資料';
+  }
+  // POSITION LINEAGE of one route node (exact only): a typed location reference (logistics_location / warehouse / factory - exactly ONE
+  // logistics_locations row), else the route row's own template node (route_template_node_id, exactly one row) and its coordinate or
+  // logistics_location_id. Returns { coord } | { loc, via } | { miss: '<the master field that is missing>' }. Never 0,0, never a centroid,
+  // never an ETD / ETA interpolation, never a name match.
+  function glmNodeLocation_(n, idx) {
+    idx = idx || {};
+    if (!n) return { miss: 'shipment_routes (no node)' };
+    var locById = idx.locById || {}, owners = idx.locRowsByOwner || { warehouse: {}, factory: {} }, tpl = idx.tplNodeRows || {};
+    if (n.locationRefId) {
+      var t = String(n.locationRefType || '').trim().toLowerCase();
+      if (!t || t === 'logistics_location') { var l = locById[n.locationRefId]; return l ? { loc: l, via: 'LOCATION_REF' } : { miss: 'logistics_locations.logistics_location_id = ' + n.locationRefId }; }
+      if (t === 'warehouse' || t === 'factory') { var m = (owners[t] || {})[n.locationRefId] || [];
+        return m.length === 1 ? { loc: m[0], via: 'LOCATION_REF_' + t.toUpperCase() } : { miss: m.length ? 'logistics_locations: more than one row for ' + t + ' ' + n.locationRefId : 'logistics_locations.' + t + '_id = ' + n.locationRefId }; }
+      return { miss: 'shipment_routes.location_ref_type (' + t + ' is not a known type)' };
+    }
+    if (n.routeTemplateNodeId) {
+      var tn = tpl[n.routeTemplateNodeId] || [];
+      if (tn.length !== 1) return { miss: tn.length ? 'shipment_route_template_nodes: more than one row ' + n.routeTemplateNodeId : 'shipment_route_template_nodes row ' + n.routeTemplateNodeId };
+      if (validCoord(tn[0].latitude, tn[0].longitude)) return { coord: { lat: tn[0].latitude, lng: tn[0].longitude }, via: 'TEMPLATE_NODE' };
+      if (tn[0].logisticsLocationId) { var l2 = locById[tn[0].logisticsLocationId]; return l2 ? { loc: l2, via: 'TEMPLATE_NODE_LOCATION' } : { miss: 'logistics_locations.logistics_location_id = ' + tn[0].logisticsLocationId }; }
+      return { miss: 'shipment_route_template_nodes.logistics_location_id / latitude / longitude (template node ' + n.routeTemplateNodeId + ')' };
+    }
+    return { miss: 'shipment_routes.location_ref_id (and no route_template_node_id)' };
+  }
+  // A-delta2 R (Owner rule 4) = 31_ shipArrivalPlaceholder_: a route terminal with NO reference of its own whose route_template_node_id is ONE template
+  // row flagged is_destination_placeholder resolves to THIS shipment's destination only when that row has no reference of its own, is not a gateway,
+  // is its template's ONLY placeholder and the single maximum of positive sequences, and the destination is exactly one logistics_locations row
+  // (or, with none, exactly one warehouses row). Two location rows refuse. Never a name or a label.
+  function glmPlaceholderLoc_(t, dest, idx) {
+    idx = idx || {}; var tplRows = idx.tplNodeRows || {}, s0 = function (v) { return String(v == null ? '' : v).trim(); };
+    if (!t || s0(t.locationRefId) || !t.routeTemplateNodeId) return { ok: false };
+    var tn = tplRows[t.routeTemplateNodeId] || []; if (tn.length !== 1) return { ok: false };
+    var x = tn[0], id = s0(x.routeTemplateNodeId);
+    if (x.isDestinationPlaceholder !== true) return { ok: false };
+    if (s0(x.logisticsLocationId) || s0(x.locationRefId)) return { ok: false, miss: 'shipment_route_template_nodes ' + id + ' carries its own reference' };
+    if (isGatewayNode(x)) return { ok: false, miss: 'shipment_route_template_nodes ' + id + ' is a transit gateway' };
+    var tid = s0(x.routeTemplateId); if (!tid) return { ok: false, miss: 'shipment_route_template_nodes.route_template_id (' + id + ')' };
+    var maxSeq = -Infinity, cnt = 0, phN = 0, bad = false;
+    Object.keys(tplRows).forEach(function (k) { (tplRows[k] || []).forEach(function (r) { if (s0(r.routeTemplateId) !== tid) return;
+      var q = r.nodeSequence; if (typeof q !== 'number' || !isFinite(q) || q <= 0) { bad = true; return; }
+      if (q > maxSeq) { maxSeq = q; cnt = 1; } else if (q === maxSeq) cnt++;
+      if (r.isDestinationPlaceholder === true) phN++; }); });
+    if (bad || cnt !== 1 || x.nodeSequence !== maxSeq) return { ok: false, miss: 'shipment_route_template_nodes: ' + id + ' is not the single last node of ' + tid };
+    if (phN !== 1) return { ok: false, miss: 'shipment_route_template_nodes: ' + tid + ' has ' + phN + ' destination placeholders' };
+    if (!dest) return { ok: false, miss: 'shipments.destination_warehouse_id' };
+    var m = ((idx.locRowsByOwner || {}).warehouse || {})[dest] || [];
+    if (m.length > 1) return { ok: false, miss: 'logistics_locations: more than one row for warehouse ' + dest };
+    if (m.length === 1) return { ok: true, loc: m[0] };
+    var w = (idx.whRowsById || {})[dest] || [];
+    return w.length === 1 ? { ok: true, loc: null } : { ok: false, miss: w.length > 1 ? 'warehouses: more than one row ' + dest : 'logistics_locations.warehouse_id / warehouses row = ' + dest };
+  }
+  // ONE lineage test for the arrival, the destination node and the diagnostic chain: { ok, mapped, via, miss }
+  function glmTerminalLineage_(t, dest, idx) {
+    var tp = low(t.locationRefType), ref = String(t.locationRefId || '').trim(), r = glmNodeLocation_(t, idx || {});
+    var mapped = (tp === 'warehouse' && ref) ? ref : (r.loc ? String(r.loc.warehouseId || '').trim() : '');
+    var ok = !!dest && ((tp === 'warehouse' && ref === dest) || (!!r.loc && String(r.loc.warehouseId || '').trim() === dest));
+    if (ok) return { ok: true, mapped: mapped, via: r.via || '', miss: '' };
+    if (!r.loc && !ref) { var tn = ((idx || {}).tplNodeRows || {})[t.routeTemplateNodeId] || [];
+      if (tn.length === 1 && !String(tn[0].logisticsLocationId || '').trim()) { var ph = glmPlaceholderLoc_(t, dest, idx);
+        if (ph.ok) return { ok: true, mapped: dest, via: 'TEMPLATE_DESTINATION_PLACEHOLDER', miss: '', loc: ph.loc };
+        if (ph.miss) return { ok: false, mapped: mapped, via: r.via || '', miss: ph.miss }; } }
+    return { ok: false, mapped: mapped, via: r.via || '', miss: r.miss || '' };
+  }
+  // CLASSIFICATION of one shipment (coordinate-free): DRAWABLE / NO_ROUTE / NO_CURRENT_POSITION / UNMATCHED_LOCATION /
+  // LOCATION_WITHOUT_VALID_COORDS / RENDER_FAILURE / RENDER_UNAVAILABLE, with the master field that is missing.
+  function glmPositionClass_(vm, idx, pos, render) {
+    render = render || {};
+    if (pos && pos.drawable) {
+      if (render.globe === false) return { cls: 'RENDER_UNAVAILABLE', source: pos.source, missing_field: '' };
+      if (render.expected && !render.rendered) return { cls: 'RENDER_FAILURE', source: pos.source, missing_field: '', render_error: render.error || '' };
+      return { cls: 'DRAWABLE', source: pos.source, missing_field: '' };
+    }
+    if (!vm.nodes || !vm.nodes.length) return { cls: 'NO_ROUTE', missing_field: 'shipment_routes (no route node for this shipment)' };
+    var ref = vm.currentNode || vm.lastCompleted;
+    if (!ref) return { cls: 'NO_CURRENT_POSITION', missing_field: 'shipment_routes.status (no node is current or completed)' };
+    var r = glmNodeLocation_(ref, idx), base = { node_sequence: ref.sequenceNo, node_status: String(ref.status || ''), location_ref_type: ref.locationRefType || '', location_ref_id: ref.locationRefId || '', route_template_node_id: ref.routeTemplateNodeId || '' };
+    if (r.loc) return Object.assign(base, { cls: 'LOCATION_WITHOUT_VALID_COORDS', missing_field: 'logistics_locations.latitude / longitude (' + (r.loc.logisticsLocationId || r.loc.locationCode || '') + ')' });
+    return Object.assign(base, { cls: 'UNMATCHED_LOCATION', missing_field: r.miss || '' });
+  }
+  // READ-ONLY export of the classification of EVERY loaded shipment (no coordinates, no URL, no payload) - for the Owner to hand back.
+  // A-DELTA1 P0-1: the minimum arrival chain of one shipment for the read-only position diagnostic (no token, URL, address or raw payload):
+  // terminal node id / sequence / status / location_ref_type / location_ref_id / mapped warehouse_id, the shipment's destination warehouse,
+  // the arrival reason code and the data version (shipments.updated_at this page read).
+  function glmArrivalChain_(v) {
+    var nodes = (v && v.nodes) || [], t = null, maxSeq = -Infinity;
+    nodes.forEach(function (n) { var sq = n.sequenceNo; if (typeof sq === 'number' && isFinite(sq) && sq > maxSeq) { maxSeq = sq; t = n; } });
+    var dch_ = String((v && (v.destCanonWarehouseId || v.destWarehouseId)) || '').trim(), x = t ? glmTerminalLineage_(t, dch_, state.idx) : null;   // A-delta2 R: same lineage as the arrival
+    return { terminal_node: t ? { node_id: nodeIdentity(t), sequence_no: t.sequenceNo, status: String(t.status || ''), location_ref_type: t.locationRefType || '', location_ref_id: t.locationRefId || '',
+        mapped_warehouse_id: x ? x.mapped : '', resolved_via: x ? (x.via || '') : '', missing_field: x ? (x.miss || '') : '' } : null,
+      route_nodes: nodes.length, manual_route: !!nodes.length && nodes.every(function (n) { return String((n && n.routeTemplateId) || '').trim() === 'MANUAL'; }), shipment_destination_warehouse_id: (v && (v.destCanonWarehouseId || v.destWarehouseId)) || '', shipment_status: (v && v.status) || '',
+      arrival_code: (v && v.arrival && v.arrival.code) || '', arrival_basis: (v && v.arrival && v.arrival.basis) || (v && v.arrival && v.arrival.arrived ? 'route' : ''), data_version: (v && v.rowVersion) || '' };
+  }
+  function glmPositionDiagExport_() {
+    var fv = {}; try { filteredVms().forEach(function (v) { fv[v.shipmentId] = 1; }); } catch (e) { fv = {}; }
+    var rendered = state.renderedIds || null, counts = {};
+    var rows = allVms().map(function (v) {
+      var pos = resolveCurrentPosition(v), pl = resolveShipmentPlacement(v);
+      var c = glmPositionClass_(v, state.idx, pos, { globe: !!state.globe, expected: !!rendered && state.mode === 'runtime' && !state.selectedShipmentId && !!fv[v.shipmentId], rendered: !!(rendered && rendered[v.shipmentId]), error: state.renderError || '' });
+      counts[c.cls] = (counts[c.cls] || 0) + 1;
+      return { shipment_no: v.displayNo, shipment_id: v.shipmentId, company: v.company, status: v.status, map_placement: pl.kind, active_tracking: v.track ? { active: v.track.active, code: v.track.code, receipt: v.track.receipt, diag: v.track.diag } : null, arrival: v.arrival || null, arrival_chain: glmArrivalChain_(v),
+        origin: { country: v.origin ? v.origin.country : v.originCountry, source: v.origin ? v.origin.source : '', issue: v.origin ? v.origin.issue : '', missing_field: v.origin ? v.origin.missing_field : '' },
+        position: c };
+    });
+    var out = { kind: 'KM_MAP_POSITION_DIAG_V1', captured_at: new Date().toISOString(), map_mode: state.mode, globe_ready: !!state.globe, render_error: state.renderError || '', shipments_loaded: rows.length, counts: counts, shipments: rows,
+      note: 'Read-only classification of the loaded shipments. No coordinates, addresses or URLs are included. DRAWABLE = a reported node / location coordinate exists.' };
+    var text = JSON.stringify(out, null, 2), name = 'km-map-position-diag-' + new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-') + '.json';
+    try { var blob = new Blob([text], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click(); setTimeout(function () { try { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); } catch (e2) {} }, 1500); } catch (e3) {}
+    return { name: name, text: text };
+  }
+  // ---------- A final3 (Owner 2026-11-20 "Shipment 到目的地、全數收貨與追蹤退場"): three separate facts, read-only ----------
+  // (1) LOGISTICS ARRIVAL - glmArrival_: the shipment's route is verifiably ordered (every sequence_no a positive number, ONE maximum), its
+  //     terminal node is current or completed, it is not a transit gateway, and its exact lineage reaches THIS shipment's destination
+  //     warehouse (location_ref_type warehouse = shipments.warehouse_id, or the referenced / template logistics location's warehouse_id).
+  //     Never a label, a node name or an event text. Arrival writes nothing and never touches quantities, stock, supply mode or the ledger.
+  // (2) RECEIPT PROGRESS - glmReceiptFacts_: the display mirror of 31_ shipDeriveReceiptStatus_ over the shipment's lines (removed lines
+  //     skipped as 31_ does); an unreadable quantity or no line read is NOT "remaining 0". Multi-SKU never nets: every line must be full.
+  // (3) ACTIVE-TRACKING VISIBILITY - glmTrackingOf_: ONE predicate for map icons, route arcs / endpoints, Coordinate Pending, the left
+  //     Shipment cards and the counts. A shipment leaves active tracking ONLY on authoritative full receipt: every line full, the server-
+  //     written status received / completed, the server's 'received' lifecycle event present (31_ writes it last; a receipt that stopped part
+  //     way has none), and no receipt of this page still held (unanswered / incomplete). Anything else stays visible with its reason code.
+  //     IMPORT_HISTORICAL + DISPLAY_ONLY is never received by the system: it stays visible (DISPLAY_ONLY_NO_RECEIPT_HOLD - Owner decision open).
+  // r8b: a recorded shipments.delivered_date (an explicit, Owner-typed logistics date - the r5.2 Owner decision H9 item 2) also counts as
+  // arrival when the route cannot prove it (route-less imports: route initialisation is not in final3). It is still NOT a receipt and it never
+  // gives a position. A label, a node name, a status word or an event text never does.
+  // AD3 A (Owner rule 6): a MANUAL logistics snapshot = every route row of the shipment has route_template_id MANUAL (22_ Confirm route_mode MANUAL /
+  // 87_ ROUTE_INIT route_mode MANUAL): origin bound to the source warehouse, destination bound to the saved destination, no intermediate node.
+  // Arrival, position, Coordinate Pending and receipt visibility use the SAME rules as any route (glmArrivalNode_ / resolveCurrentPosition);
+  // only the stage text says it is manual. Its position is reported with the manual report, never with the route-node selector.
+  function glmIsManualRoute_(nodes) { return !!(nodes && nodes.length) && nodes.every(function (n) { return String((n && n.routeTemplateId) || '').trim() === 'MANUAL'; }); }
+  function glmManualStage_(v) {
+    var a = v && v.arrival && v.arrival.arrived;
+    return 'Manual logistics / 手動物流 · ' + (a ? 'Arrived at destination warehouse / 已到目的倉' : (low(v && v.status) === 'in_transit' ? 'In transit / 運送中' : 'Shipped / 已出貨')) + ' (no route template)';
+  }
+  function glmArrival_(vm, idx) {
+    var r = glmArrivalNode_(vm, idx);
+    // TEXTURE-3-R17 (AD3): manual logistics / ROUTE_INIT manual / one manual-position channel (Authors A + D) - this round's change to global-logistics-map.js (round marker, comment only)
+    // TEXTURE-3-R16 (AD2): destination placeholder lineage (Author R) - this round's change to global-logistics-map.js (round marker, comment only)
+    // TEXTURE-3-R15 (AD1b): REVIEW_AD1 fixes by Author C (c3) - this round's change to global-logistics-map.js (round marker, comment only)
+    // TEXTURE-3-R14 (A delta 1 / AD1): persisted arrival + arrival projection - this round's change to global-logistics-map.js (round marker, comment only)
+    if (!r.arrived && low(vm && vm.status) === 'arrived') return { arrived: true, at_last: r.at_last, code: 'STATUS_ARRIVED', node_code: r.code, basis: 'shipments.status' };   // A-DELTA1 P0-1: the server persisted it from a verified destination
+    if (!r.arrived && String((vm && vm.deliveredDate) || '').trim()) return { arrived: true, at_last: r.at_last, code: 'DELIVERED_DATE_RECORDED', node_code: r.code, basis: 'shipments.delivered_date' };
+    return r;
+  }
+  function glmArrivalNode_(vm, idx) {
+    var nodes = (vm && vm.nodes) || [], dest = String((vm && vm.destWarehouseId) || '').trim();
+    if (!nodes.length) return { arrived: false, at_last: false, code: 'NO_ROUTE' };
+    var maxSeq = -Infinity, cnt = 0, t = null;
+    for (var i = 0; i < nodes.length; i++) { var sq = nodes[i].sequenceNo;
+      if (typeof sq !== 'number' || !isFinite(sq) || sq <= 0) return { arrived: false, at_last: false, code: 'ROUTE_ORDER_UNVERIFIED' };
+      if (sq > maxSeq) { maxSeq = sq; cnt = 1; t = nodes[i]; } else if (sq === maxSeq) cnt++; }
+    if (cnt !== 1) return { arrived: false, at_last: false, code: 'ROUTE_ORDER_UNVERIFIED' };
+    var ts = nodeStatusClass(t.status), nid = nodeIdentity(t);
+    if (ts !== 'current' && ts !== 'completed') return { arrived: false, at_last: false, code: 'NOT_AT_LAST_NODE', node_id: nid };
+    if (isGatewayNode(t)) return { arrived: false, at_last: true, code: 'LAST_NODE_IS_GATEWAY', node_id: nid };
+    if (!dest) return { arrived: false, at_last: true, code: 'DESTINATION_WAREHOUSE_MISSING', node_id: nid, missing_field: 'shipments.warehouse_id' };
+    var r = glmTerminalLineage_(t, dest, idx || {});   // A-delta2 R: + the template destination placeholder (= 31_ shipArrivalVerdict_)
+    if (!r.ok) return { arrived: false, at_last: true, code: 'LAST_NODE_NOT_DESTINATION', node_id: nid, missing_field: r.miss || ('logistics_locations.warehouse_id = ' + dest + ' for the last route node') };
+    return r.via === 'TEMPLATE_DESTINATION_PLACEHOLDER' ? { arrived: true, at_last: true, code: 'AT_DESTINATION', node_id: nid, resolved_via: r.via } : { arrived: true, at_last: true, code: 'AT_DESTINATION', node_id: nid };
+  }
+  function glmReceiptFacts_(lines) {
+    var L = (lines || []).filter(function (l) { return !l.lineRemoved; });
+    if (!L.length) return { status: '', code: 'NO_LINES_READ', lines: 0 };
+    if (L.some(function (l) { return !!l.qtyInvalid; })) return { status: '', code: 'LINE_QTY_INVALID', lines: L.length };
+    var any = false, all = true;
+    L.forEach(function (l) { var s = Number(l.shipmentQty) || 0, q = Number(l.shipmentReceivedQty) || 0; if (q > 0) any = true; if (q < s) all = false; });
+    if (!any) return { status: '', code: 'NONE_RECEIVED', lines: L.length };
+    return all ? { status: 'received', code: 'ALL_LINES_FULL', lines: L.length } : { status: 'partially_received', code: 'PARTIAL', lines: L.length };
+  }
+  function glmTrackingOf_(vm, lines, held) {
+    var st = low(vm.status), rf = glmReceiptFacts_(lines);
+    var out = { active: true, receipt: rf.status === 'received' ? 'full' : (rf.status ? 'partial' : 'none'), code: rf.code, diag: '' };
+    if (vm.openingDisplayOnly) { out.code = 'DISPLAY_ONLY_NO_RECEIPT_HOLD'; return out; }
+    if (held) { out.code = held.incomplete ? 'RECEIPT_INCOMPLETE_HELD' : 'RECEIPT_UNCONFIRMED_HELD'; return out; }
+    if (rf.status === 'received') {
+      if (st !== 'received' && st !== 'completed') { out.code = 'RECEIPT_STATUS_NOT_CONFIRMED'; return out; }
+      var ev = (vm.events || []).some(function (e) { return low(e.eventType) === 'received' && low(e.eventStatus) === 'received'; });
+      if (!ev) { out.code = 'RECEIPT_EVENT_MISSING'; return out; }
+      out.active = false; out.code = 'FULLY_RECEIVED';
+      if (vm.arrival && !vm.arrival.arrived) out.diag = 'FULL_RECEIPT_BEFORE_DESTINATION_NODE (' + vm.arrival.code + ')';   // diagnostic only: no logistics history is made up
+      return out;
+    }
+    if ((st === 'received' || st === 'completed') && (rf.code === 'NONE_RECEIVED' || rf.code === 'PARTIAL')) out.code = 'STATUS_LINES_CONFLICT';   // the status says done, the lines do not: never hidden (an unread / unreadable line keeps its own reason)
+    return out;
+  }
+  // "Received Today" is counted on its own from the server's 'received' lifecycle event (never from a logistics arrival), over EVERY loaded
+  // shipment - the active-tracking filter does not turn it into 0.
+  function glmReceivedToday_(vm, todayMs) {
+    if (!vm.track || vm.track.code !== 'FULLY_RECEIVED') return false;
+    return (vm.events || []).some(function (e) { return low(e.eventType) === 'received' && low(e.eventStatus) === 'received' && parseDate(e.eventTime) === todayMs; });
+  }
+  // A-DELTA1 C2 item 1: the ONE status mapping (shipping-history.js KMLogisticsArrival, loaded by index.html), fed with THIS page's own arrival
+  // verdict (glmArrival_: same rule). Projection only. Fallback (shared module absent: half-synced site) = the same mapping, inline.
+  function glmDisplayState_(v) {
+    var A = (typeof window !== 'undefined' && window.KMLogisticsArrival) || null, ship = { status: v.status, displayOnly: !!v.openingDisplayOnly };
+    if (A && typeof A.stateFromVerdict === 'function') return A.stateFromVerdict(ship, v.arrival || null, null);
+    var st = low(v.status);
+    if (st === 'arrived') return { key: 'arrived', label: 'Delivered / 已送達（待收貨）', projected: false };
+    if ((st === 'shipped' || st === 'in_transit') && v.arrival && v.arrival.arrived) return { key: 'arrived', label: v.openingDisplayOnly ? 'Delivered / 已送達（僅顯示，不在本系統收貨）' : 'Delivered / 已送達（待收貨）', projected: true, display_only: !!v.openingDisplayOnly };
+    return { key: st, label: v.status || '—', projected: false };
+  }
+  function glmTrackBadge_(v) {
+    var t = v.track || {}, a = v.arrival || {};
+    if (t.code === 'STATUS_LINES_CONFLICT' || t.code === 'RECEIPT_STATUS_NOT_CONFIRMED' || t.code === 'RECEIPT_EVENT_MISSING' || t.code === 'LINE_QTY_INVALID')
+      return '<span class="glm-badge glm-badge--issue" title="' + esc(t.code) + '">收貨待確認</span>';
+    if (t.receipt === 'partial') return '<span class="glm-badge glm-badge--neutral">部分收貨</span>';
+    if (a.arrived) return '<span class="glm-badge glm-badge--good">已送達（待收貨）</span>';
+    return '';
+  }
   function buildReadModel() {
     var db = window.KM.DB;
     // F1-7F: source from the scoped shipment workspace read-model when canonical; else the Legacy broad-cache getters.
@@ -303,6 +542,10 @@
       if (l.factoryId && validCoord(l.latitude, l.longitude) && !locByFactory[l.factoryId]) locByFactory[l.factoryId] = l;
     });
     var whById = {}; rm.warehouses.forEach(function (w) { if (w.warehouseId) whById[w.warehouseId] = w; });
+    // A final3 (Owner items 2 / 4): exact-lineage indexes - every row per id (a duplicated id is ambiguous, never a pick)
+    var whRowsById = {}; rm.warehouses.forEach(function (w) { if (w.warehouseId) (whRowsById[w.warehouseId] = whRowsById[w.warehouseId] || []).push(w); });
+    var tplNodeRows = {}; (rm.routeTemplateNodes || []).forEach(function (n) { if (n.routeTemplateNodeId) (tplNodeRows[n.routeTemplateNodeId] = tplNodeRows[n.routeTemplateNodeId] || []).push(n); });
+    var locRowsByOwner = { warehouse: {}, factory: {} }; rm.locations.forEach(function (l) { if (l.warehouseId) (locRowsByOwner.warehouse[l.warehouseId] = locRowsByOwner.warehouse[l.warehouseId] || []).push(l); if (l.factoryId) (locRowsByOwner.factory[l.factoryId] = locRowsByOwner.factory[l.factoryId] || []).push(l); });
     // TEXTURE-3-R11 — the carrier master, held as the ARRAY the shared resolver takes rather than as an index,
     // so null (unread) survives the trip. An index would turn "not read" into an empty object, which reads as
     // "no carrier matches" and is the one answer this must never invent.
@@ -313,7 +556,7 @@
     Object.keys(nodesByShip).forEach(function (k) { nodesByShip[k].sort(function (a, b) { return a.sequenceNo - b.sequenceNo; }); });
     var linesByShip = {}; rm.shipmentLines.forEach(function (l) { (linesByShip[l.shipmentId] = linesByShip[l.shipmentId] || []).push(l); });
     state.rm = rm;
-    state.idx = { locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, carriers: carriersRm, eventsByShip: eventsByShip, nodesByShip: nodesByShip, linesByShip: linesByShip };
+    state.idx = { whRowsById: whRowsById, tplNodeRows: tplNodeRows, locRowsByOwner: locRowsByOwner, locById: locById, locByWh: locByWh, locByFactory: locByFactory, whById: whById, carriers: carriersRm, eventsByShip: eventsByShip, nodesByShip: nodesByShip, linesByShip: linesByShip };
     state.vms = buildShipmentViewModels();
     var missing = [];
     if (!rm.shipmentRoutes.length) missing.push('shipment_routes');
@@ -338,30 +581,33 @@
       var latestEvent = events.length ? events[events.length - 1] : null;
       var currentNode = null, lastCompleted = null;
       nodes.forEach(function (n) { var c = nodeStatusClass(n.status); if (c === 'current' && !currentNode) currentNode = n; if (c === 'completed') lastCompleted = n; });
-      var delivered = !!DELIVERED_SET[status] || !!s.deliveredDate || (latestEvent && /deliver|received/.test(low(latestEvent.eventType) + ' ' + low(latestEvent.eventStatus)));
+      var arrival = glmArrival_({ nodes: nodes, destWarehouseId: s.destinationWarehouseId || s.warehouseId || '', deliveredDate: s.deliveredDate, status: s.status }, idx), delivered = arrival.arrived;   // A final3 (TC-A): logistics arrival = the verified destination node; was DELIVERED_SET[status] || deliveredDate || /deliver|received/ on the latest event (partially_received matched it)
       var etaMs = parseDate(s.eta);
       var stage = currentNode ? (currentNode.nodeType || currentNode.nodeCode || 'In Transit')
         : (lastCompleted ? ('After ' + (lastCompleted.nodeType || lastCompleted.nodeCode)) : (latestEvent ? (latestEvent.eventType || latestEvent.eventStatus || 'In Transit') : (s.status || 'Unknown')));
       var custHay = low((currentNode && currentNode.nodeType) || '') + ' ' + low((latestEvent && latestEvent.eventType) || '') + ' ' + low((latestEvent && latestEvent.eventStatus) || '');
       var excHay = low(s.status) + ' ' + (nodes.some(function (n) { return nodeStatusClass(n.status) === 'exception'; }) ? 'exception ' : '') + low((latestEvent && latestEvent.eventType) || '') + ' ' + low((latestEvent && latestEvent.eventStatus) || '') + ' ' + low((latestEvent && latestEvent.rawStatus) || '');
       var deliveredMs = parseDate(s.deliveredDate) || parseDate(s.actualArrivalDate) || (delivered && latestEvent ? parseDate(latestEvent.eventTime) : null);
-      var originCountry = (nodes[0] && nodes[0].country) || '';
+      var origin = glmOriginOf_(s, nodes, idx.whRowsById), originCountry = origin.country;   // A final3 (Owner item 2): was nodes[0].country only ('?' for every route-less import)
       var vm = {
         shipmentId: s.shipmentId, shipmentNo: s.shipmentNo || s.shipmentId, company: s.company || '',
         // FE-EXT-1 — what a person reads is the external shipment number; shipmentId stays the key for
         // selection, indexes, route/event joins and every payload. originalNo keeps shipment_no searchable.
         externalShipmentId: glmTrim_(s.externalShipmentId), originalNo: glmTrim_(s.shipmentNo), displayNo: glmDisplayNo_(s),
+        opening: glmTrim_(s.recordOrigin) === 'IMPORT_HISTORICAL' && glmTrim_(s.openingSupplyMode) !== '',   // SHIP-OPEN; r5.4: a blank mode = legacy row = base display (no opening label, base Route Issue flag)
+        openingDisplayOnly: glmTrim_(s.recordOrigin) === 'IMPORT_HISTORICAL' && glmTrim_(s.openingSupplyMode).toUpperCase() === 'DISPLAY_ONLY', openingAsOf: glmTrim_(s.openingAsOf),
         // TEXTURE-3-R11 — `carrier` REMAINS the carrier_id: it is the filter key and the join key, and
         // filteredVms compares it. carrierLabel is what a person reads; it falls back to the id, never to a
         // blank, so an unresolved carrier is still identified.
         carrier: s.carrierId || '', carrierLabel: glmCarrierLabel_(s.carrierId, idx.carriers),
         method: s.shippingMethodDisplay || s.shippingMethod || '',
-        originCountry: originCountry, destCountry: s.country || '', destWarehouseId: s.warehouseId || '',
+        originCountry: originCountry, origin: origin, destCountry: s.country || '', destWarehouseId: s.warehouseId || '',
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',
         tracking: s.trackingNumber || '', container: s.containerNo || '', eta: s.eta || '', etaMs: etaMs,
         delivered: delivered, events: events, latestEvent: latestEvent,
         latestUpdated: (latestEvent && latestEvent.eventTime) || s.updatedAt || s.createdAt || '',
+        rowVersion: String(s.updatedAt == null ? '' : s.updatedAt).trim(),   // N1: the shipments.updated_at this page read - the receipt's version token
         nodes: nodes, currentNode: currentNode, lastCompleted: lastCompleted,
         routeTemplateId: (nodes.filter(function (n) { return n.routeTemplateId; })[0] || {}).routeTemplateId || '',
         stage: stage,
@@ -374,6 +620,11 @@
           deliveredToday: delivered && deliveredMs != null && deliveredMs === today
         }
       };
+      vm.destCanonWarehouseId = s.destinationWarehouseId || s.warehouseId || '';   // A final4
+      vm.arrival = arrival; vm.track = glmTrackingOf_(vm, idx.linesByShip ? (idx.linesByShip[s.shipmentId] || []) : [], glmRcvHeld_(s.shipmentId)); vm.flags.deliveredToday = glmReceivedToday_(vm, today);   // A final3 (TC-B/C)
+      vm.display = glmDisplayState_(vm);   // A-DELTA1 C2 item 1
+      vm.manualRoute = glmIsManualRoute_(nodes);   // AD3 A: manual logistics snapshot (route_template_id MANUAL) - same arrival / position rules, own stage text
+      if (vm.manualRoute) vm.stage = glmManualStage_(vm);
       out[s.shipmentId] = vm;
     });
     // FE-EXT-1 — an external number can repeat across shipments; a shared one also names the internal id,
@@ -387,16 +638,21 @@
 
   // ---------- position resolution ----------
   function resolveCurrentPosition(vm) {
-    for (var i = vm.events.length - 1; i >= 0; i--) { var e = vm.events[i]; if (validCoord(e.latitude, e.longitude)) return { lat: e.latitude, lng: e.longitude, source: 'LATEST_EVENT', drawable: true, at: String(e.eventTime || '').trim() }; }
+    // A final3 (TC-A): after a Current Position update the icon follows THAT saved node; a coordinate event older than it is never used
+    var k8_ = -1; for (var j8_ = vm.events.length - 1; j8_ >= 0; j8_--) { if (low(vm.events[j8_].eventType) === 'route_node_reached') { k8_ = j8_; break; } }
+    for (var i = vm.events.length - 1; i >= Math.max(k8_, 0); i--) { var e = vm.events[i]; if (validCoord(e.latitude, e.longitude)) return { lat: e.latitude, lng: e.longitude, source: 'LATEST_EVENT', drawable: true, at: String(e.eventTime || '').trim() }; }
+    if (k8_ >= 0 && vm.currentNode) { var c8_ = resolveNodeCoord(vm.currentNode); return c8_.drawable ? { lat: c8_.lat, lng: c8_.lng, source: 'CURRENT_NODE' + (c8_.src === 'NODE' ? '' : '_' + c8_.src), drawable: true, at: String(vm.currentNode.actualArrivalDate || '').trim() } : { lat: null, lng: null, source: 'COORDINATE_PENDING', drawable: false, reason: 'CURRENT_NODE_NO_COORD' }; }
     if (vm.currentNode && validCoord(vm.currentNode.latitude, vm.currentNode.longitude)) return { lat: vm.currentNode.latitude, lng: vm.currentNode.longitude, source: 'CURRENT_NODE', drawable: true, at: String(vm.currentNode.actualArrivalDate || '').trim() };
     if (vm.lastCompleted && validCoord(vm.lastCompleted.latitude, vm.lastCompleted.longitude)) return { lat: vm.lastCompleted.latitude, lng: vm.lastCompleted.longitude, source: 'LAST_COMPLETED_NODE', drawable: true, at: String(vm.lastCompleted.actualArrivalDate || '').trim() };
     var refNode = vm.currentNode || vm.lastCompleted;
     if (refNode && refNode.locationRefId) { var loc = state.idx.locById[refNode.locationRefId]; if (loc && validCoord(loc.latitude, loc.longitude)) return { lat: loc.latitude, lng: loc.longitude, source: 'LOCATION_REF', drawable: true, at: String(refNode.actualArrivalDate || '').trim() }; }
+    if (refNode) { var r3 = glmNodeLocation_(refNode, state.idx), c3 = r3.coord || (r3.loc && validCoord(r3.loc.latitude, r3.loc.longitude) ? { lat: r3.loc.latitude, lng: r3.loc.longitude } : null); if (c3) return { lat: c3.lat, lng: c3.lng, source: r3.via, drawable: true, at: String(refNode.actualArrivalDate || '').trim() }; }   // A final3 (Owner item 4): exact lineage only
     return { lat: null, lng: null, source: 'COORDINATE_PENDING', drawable: false };
   }
   function resolveNodeCoord(n) {
     if (validCoord(n.latitude, n.longitude)) return { lat: n.latitude, lng: n.longitude, drawable: true, src: 'NODE' };
     if (n.locationRefId) { var loc = state.idx.locById[n.locationRefId]; if (loc && validCoord(loc.latitude, loc.longitude)) return { lat: loc.latitude, lng: loc.longitude, drawable: true, src: 'LOCATION_REF' }; }
+    var r4 = glmNodeLocation_(n, state.idx), c4 = r4.coord || (r4.loc && validCoord(r4.loc.latitude, r4.loc.longitude) ? { lat: r4.loc.latitude, lng: r4.loc.longitude } : null); if (c4) return { lat: c4.lat, lng: c4.lng, drawable: true, src: r4.via };   // A final3 (Owner item 4)
     return { lat: null, lng: null, drawable: false, src: 'PENDING' };
   }
   // Route nodes that are recognized TRANSIT GATEWAYS are never a destination facility. This is a recognized-INCOMPATIBLE
@@ -456,7 +712,7 @@
   }
 
   // ---------- KPIs / filters ----------
-  function computeKpis() { var vms = allVms(); return KPIS.map(function (k) { return { id: k.id, label: k.label, tone: k.tone, value: vms.filter(function (v) { return v.flags[k.id]; }).length }; }); }
+  function computeKpis() { var all = allVms(), vms = all.filter(function (v) { return !v.track || v.track.active; }); return KPIS.map(function (k) { return { id: k.id, label: k.label, tone: k.tone, value: (k.id === 'deliveredToday' ? all : vms).filter(function (v) { return v.flags[k.id]; }).length }; }); }   // A final3 (TC-C): counts = active tracking; Received Today counted on its own
   function optSet(vms, fn) { var s = {}; vms.forEach(function (v) { var x = (fn(v) || '').toString().trim(); if (x) s[x] = 1; }); return Object.keys(s).sort(); }
   // TEXTURE-3-R11 — options whose VALUE and LABEL differ, for a field whose identity is not its display text.
   // Values stay unique; the label of the first vm carrying a value wins (they agree, both deriving from the
@@ -487,6 +743,7 @@
   function filteredVms() {
     var f = state.filters, q = f.search.trim().toLowerCase();
     return allVms().filter(function (v) {
+      if (v.track && !v.track.active && f.kpi !== 'deliveredToday') return false;   // A final3 (TC-C): ONE active-tracking predicate; 'Received Today' is the one named view of exited shipments
       if (f.kpi && !v.flags[f.kpi]) return false;
       if (q) { var hay = glmSearchHay_(v); if (hay.indexOf(q) < 0) return false; }
       if (f.company && v.company !== f.company) return false;
@@ -495,7 +752,7 @@
       if (f.destWarehouse && v.destWarehouse !== f.destWarehouse) return false;
       if (f.carrier && v.carrier !== f.carrier) return false;
       if (f.method && v.method !== f.method) return false;
-      if (f.status && v.status !== f.status) return false;
+      if (f.status && low((v.display && v.display.key) || v.status) !== low(f.status)) return false;   // A-DELTA1 C2 item 1: the same key as the summary
       if (f.stage && v.stage !== f.stage) return false;
       if (f.routeTemplateId && v.routeTemplateId !== f.routeTemplateId) return false;
       if (f.etaFrom && (v.etaMs == null || v.etaMs < parseDate(f.etaFrom))) return false;
@@ -543,7 +800,7 @@
     var r = root(); var meta = r.querySelector('[data-glm="meta"]');
     if (state.loading) { b.innerHTML = '<div class="glm-state"><div class="glm-spinner"></div><p>Loading shipment runtime…</p></div>'; return; }
     if (state.error) { b.innerHTML = '<div class="glm-state glm-state--error"><p class="glm-state__title">Could not load data</p><p class="glm-state__msg">' + esc(state.error) + '</p><button type="button" class="glm-btn" data-act="retry">Retry</button></div>'; var rb = r.querySelector('[data-act="retry"]'); if (rb) rb.onclick = function () { boot(true); }; return; }
-    if (meta) { var vms = allVms(); meta.textContent = vms.length + ' shipments · ' + state.rm.shipmentRoutes.length + ' route nodes · ' + state.rm.shipmentEvents.length + ' events · ' + state.rm.locations.length + ' logistics locations.'; }
+    if (meta) { var vms = allVms(); meta.textContent = vms.filter(function (v) { return !v.track || v.track.active; }).length + ' active of ' + vms.length + ' shipments · ' + state.rm.shipmentRoutes.length + ' route nodes · ' + state.rm.shipmentEvents.length + ' events · ' + state.rm.locations.length + ' logistics locations.'; }
 
     // Phase-1 frozen IA (F1-SHIPMENT-MAP-R8B): Title → compact Filter Bar → Status Summary → Main Workspace
     // (LEFT shipment cards start at the top; RIGHT world map). Filters no longer sit in the left column above
@@ -688,7 +945,8 @@
     // §12 legend RELOCATED into the panel — reuse the SAME legendHtml() renderer (no duplicate, no second legend).
     var legend = '<div class="glm-mcp__sec"><span class="glm-mcp__lbl">Legend</span><div class="glm-mcp__legend">' + legendHtml() + '</div></div>';
     return '<div class="glm-mcp" data-glm="map-panel">' + head +
-      '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + labelModeCtl + filters + layers + legend + '</div></div>';
+      '<div class="glm-mcp__body" id="glm-mcp-body">' + mapView + labelModeCtl + filters + layers + legend +
+      '<div class="glm-mcp__sec"><button type="button" class="glm-btn glm-btn--small" data-act="pos-diag-export">下載位置診斷 JSON（唯讀）</button></div>' + '</div></div>';   // A final3 (Owner item 4)
   }
   // A two-state segmented control with real radiogroup semantics: ONE tab stop for the group (roving tabindex),
   // arrows to move between options, Space/Enter to choose, aria-checked carrying the state and an aria-label
@@ -967,8 +1225,8 @@
     var vms = filteredVms();
     vms.sort(function (a, b) { return (b.flags.exception - a.flags.exception) || (b.flags.delayed - a.flags.delayed) || ((a.etaMs || Infinity) - (b.etaMs || Infinity)); });
     if (!vms.length) {
-      var anyUniverse = allVms().length;
-      return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (0)</h3><p class="glm-muted">' +
+      var anyUniverse = allVms().filter(function (v) { return !v.track || v.track.active; }).length;   // A final3 (TC-C)
+      return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (0)</h3>' + (state.doneNotice ? '<p class="glm-muted" role="status">' + esc(state.doneNotice) + '</p>' : '') + '<p class="glm-muted">' +
         (anyUniverse ? 'No shipments match the current filters.' : 'No shipments are on the way yet. This is a formal empty state — no demo shipment is drawn.') + '</p></div>';
     }
     var rows = vms.map(function (v) {
@@ -977,22 +1235,24 @@
       var posBadge = pl.kind === 'pending' ? '<span class="glm-badge glm-badge--pending">Coord Pending</span>' : (pl.kind !== 'current' ? '<span class="glm-badge glm-badge--neutral">' + esc(pl.kind) + '</span>' : '');
       // §12/§13 — restrained per-shipment issue pill (route history incomplete). Coordinate-pending keeps its own
       // Coord Pending badge (above); this pill flags the route-data gap so the user sees WHICH shipment has it.
-      var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind });
-      var issueBadge = issues.types.some(function (t) { return t.code === 'NO_ROUTE_NODES'; }) ? '<span class="glm-badge glm-badge--issue" title="Route history incomplete">⚠ Route Issue</span>' : '';
+      var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind, opening: v.opening, displayOnly: v.openingDisplayOnly, asOf: v.openingAsOf });
+      var issueBadge = issues.types.some(function (t) { return t.code === 'NO_ROUTE_NODES'; }) ? '<span class="glm-badge glm-badge--issue" title="Route history incomplete">⚠ Route Issue</span>'
+        : (issues.types.some(function (t) { return t.code === 'OPENING_NO_ROUTE_HISTORY'; }) ? '<span class="glm-badge glm-badge--neutral" title="No route data">' + (v.openingDisplayOnly ? '僅顯示 · 資料時間 ' + esc(v.openingAsOf || '未提供') : '無路線資料') + '</span>' : '');   // A final3
       // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
       var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
-      var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '">' + esc(v.status || '—') + '</span>';
+      if (v.display && v.display.key === 'arrived') stCls = 'arrived';   // A-DELTA1 C2 item 1
+      var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '"' + (v.display && v.display.projected ? ' title="依路線判定（狀態欄未寫入）"' : '') + '>' + esc((v.display && v.display.key === 'arrived') ? v.display.label : (v.status || '—')) + '</span>';
       // R11 §9/§12 — ROW 1: Shipment ID alone (full card width). ROW 2: compact badges (status · flags · issue ·
       // coord pending) — never competing with the ID width. ROW 3+: route / method / stage · ETA.
       return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="' + esc(glmAccessibleName_(v)) + '">' +
         '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.displayNo) + '</span>' + (v.displayNoShared ? ' <span class="glm-muted">· ' + esc(v.shipmentId) + '</span>' : '') + '</div>' +
-        '<div class="glm-ship__badges">' + statusPill + flag + issueBadge + posBadge + '</div>' +
-        '<div class="glm-ship__route">' + esc(v.originCountry || v.shipFrom || '?') + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
+        '<div class="glm-ship__badges">' + statusPill + flag + glmTrackBadge_(v) + issueBadge + posBadge + '</div>' +
+        '<div class="glm-ship__route">' + esc(glmOriginText_(v)) + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
-        '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || '—') + '</div>' +
+        '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || (v.opening ? '未知 (unknown)' : '—')) + '</div>' +
         '</div>';
     }).join('');
-    return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (' + vms.length + ')</h3><div class="glm-shiplist">' + rows + '</div></div>';
+    return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (' + vms.length + ')</h3>' + (state.doneNotice ? '<p class="glm-muted" role="status">' + esc(state.doneNotice) + '</p>' : '') + '<div class="glm-shiplist">' + rows + '</div></div>';   // A final3 (TC-C)
   }
 
   // ---------- map shell (persistent WebGL globe host) ----------
@@ -1095,10 +1355,12 @@
       // runtime
       if (state.showReference) state.rm.locations.forEach(function (l) { if (validCoord(l.latitude, l.longitude)) markers.push({ id: 'loc:' + (l.logisticsLocationId || l.locationCode), lat: l.latitude, lng: l.longitude, color: COL.ref, size: 6, elev: 1.006 }); });
       var sel = state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null;
+      if (sel && sel.track && !sel.track.active) sel = null;   // A final3 (TC-C): an exited shipment is never drawn as the selection
       if (sel) { buildSelectedShipment(sel, markers, arcs, focusPts); }
       else {
+        state.renderedIds = {};   // A final3 (Owner item 4): which shipments were handed to the globe (render-failure classification)
         filteredVms().forEach(function (v) {
-          var pl = resolveShipmentPlacement(v); if (pl.kind === 'pending') return;
+          var pl = resolveShipmentPlacement(v); if (pl.kind === 'pending') return; state.renderedIds[v.shipmentId] = true;
           var isCur = pl.kind === 'current';
           var color = v.flags.exception || v.flags.delayed ? COL.exc : (isCur ? COL.pos : COL.endpoint);
           markers.push({ id: v.shipmentId, lat: pl.lat, lng: pl.lng, color: color, size: isCur ? 16 : 13, elev: 1.024, ring: false,
@@ -1107,7 +1369,7 @@
         });
       }
     }
-    state.globe.setMarkers(markers);
+    try { state.globe.setMarkers(markers); state.renderError = ''; } catch (eR3_) { state.renderError = String((eR3_ && eR3_.name) || 'Error'); state.renderedIds = {}; throw eR3_; }   // A final3 (Owner item 4)
     state.globe.setArcs(state.showPlannedRoute || state.mode !== 'runtime' ? arcs : []);
     updateCountryLayers();
     // one-time initial framing per data load: focus the primary distribution, else global overview
@@ -1215,7 +1477,7 @@
   function selectShipment(id) {
     var seq = ++state.selectSeq;
     var ae = document.activeElement, cardHadFocus = !!(ae && ae.getAttribute && ae.getAttribute('data-ship') !== null);
-    state.selectedShipmentId = id;
+    state.selectedShipmentId = id; state.doneNotice = '';
     render();
     if (seq !== state.selectSeq) return;
     var vm = state.vms[id], r = root();
@@ -1331,7 +1593,11 @@
     // which the map now ignores) — never a page-level broad reload. Legacy mode rebuilds from the refreshed cache.
     var _rebuild = function () {
       try { buildReadModel(); } catch (e) {}
-      if (state.vms[shipmentId]) selectShipment(shipmentId); else { state.selectedShipmentId = ''; render(); }
+      if (_glmBusy[shipmentId]) _glmBusy[shipmentId].readOk = true;   // A final4: the scoped re-read succeeded
+      if (_glmPosChecks[shipmentId]) _glmPosChecks[shipmentId].readOk = true;   // a3 (REVIEW_A1 MAJOR-1) / a4 (MAJOR-A): only THIS shipment's successful re-read lets ITS position check decide
+      var v8_ = state.vms[shipmentId], sel4_ = !state.selectedShipmentId || state.selectedShipmentId === shipmentId;
+      if (v8_ && v8_.track && !v8_.track.active && sel4_) { state.selectedShipmentId = ''; state.doneNotice = '已全數收貨，可至 Shipment Overview 查看'; if (drawerOpen()) closeDrawer(); render(); }   // A final3 (TC-C): only after the re-read shows the authoritative full receipt
+      else if (v8_ && sel4_) selectShipment(shipmentId); else if (v8_) render(); else { if (sel4_) state.selectedShipmentId = ''; render(); }   // A final4: never switch to the written shipment
     };
     if (_glmEffectiveWorkspace()) {
       // F1-7M-B2-1: bounded post-write readback — re-read ONLY the written shipment (filters.shipmentId; routes+events
@@ -1340,18 +1606,19 @@
       // includes. Server stays authoritative for the shipment's rows. First load (no held model) / any failure / a
       // not-found bounded result → full ensureDb refresh (fresh, never a silent stale).
       if (_glmReadModel) { _glmBoundedReadback_(shipmentId, _rebuild); return; }
-      ensureDb(true, function (ok) { if (ok) _rebuild(); else render(); }); return;
+      ensureDb(true, function (ok) { if (ok) _rebuild(); else glmReadFailed_(shipmentId); }); return;   // a4 (MINOR-A)
     }
+    if (_glmBusy[shipmentId] || _glmPosChecks[shipmentId]) { ensureDb(true, function (ok) { if (ok && !(window._opDbCache && window._opDbCache._apiFailed)) _rebuild(); else glmReadFailed_(shipmentId); }); return; }   // a3 (REVIEW_A1 MAJOR-1): a pending outcome is decided only by a FRESH read (legacy mode too); a4 (MINOR-B): a cache kept after a failed reload is not a read
     _rebuild();
   }
   function _glmBoundedReadback_(shipmentId, rebuild) {
-    if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); return; }
+    if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { ensureDb(true, function (ok) { if (ok) rebuild(); else glmReadFailed_(shipmentId); }); return; }
     var mySeq = ++_glmReadSeq;
     Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: shipmentId }, include: { routes: true, events: true } })).then(function (env) {
       if (mySeq !== _glmReadSeq) return;   // superseded by a newer read
       if (env && env.success && _glmReadModel && _glmMergeShipment_(shipmentId, window.KM.DB.adaptShipmentWorkspace(env.data))) { rebuild(); }
-      else { ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); }   // not-found / miss → fresh full refresh
-    }).catch(function () { if (mySeq !== _glmReadSeq) return; ensureDb(true, function (ok) { if (ok) rebuild(); else render(); }); });
+      else { ensureDb(true, function (ok) { if (ok) rebuild(); else glmReadFailed_(shipmentId); }); }   // not-found / miss → fresh full refresh
+    }).catch(function () { if (mySeq !== _glmReadSeq) return; ensureDb(true, function (ok) { if (ok) rebuild(); else glmReadFailed_(shipmentId); }); });
   }
   // Merge ONE shipment's mutable facts (its shipments row + lines + routes + events) into the held read-model, RETAINING
   // the static reference tables (locations / route templates / nodes / warehouses / carrier rate cards). Returns false if
@@ -1370,11 +1637,13 @@
     return true;   // logisticsLocations / templates / nodes / warehouses / carrierRateCards / carriers → RETAINED
   }
   function receiptMsg(text, tone) {
+    if (_glmMsgFor !== null && _glmMsgFor !== state.selectedShipmentId) return;   // A final4: a late answer never writes into another shipment's panel
     var el = document.querySelector('[data-glm="receipt-msg"]'); if (!el) return;
     el.textContent = text || ''; el.className = 'glm-receipt-msg' + (tone ? ' glm-receipt-msg--' + tone : '');
   }
   // F1-7N-FB-4A §G — ETA status line, rendered at the ETA control itself.
   function etaMsg(text, tone) {
+    if (_glmMsgFor !== null && _glmMsgFor !== state.selectedShipmentId) return;   // A final4
     var el = document.querySelector('[data-glm="eta-msg"]'); if (!el) return;
     el.textContent = text || '';
     el.className = 'glm-eta-msg' + (tone ? ' glm-eta-msg--' + tone : '');
@@ -1384,8 +1653,91 @@
   // message was written into. The outcome is therefore parked here and replayed once the new drawer is wired, so
   // a success state is actually SEEN rather than flashing for one frame.
   var _glmEtaFlash = null;
-  function etaFlash(text, tone) { _glmEtaFlash = text ? { text: text, tone: tone } : null; }
-  function etaFlashReplay() { if (_glmEtaFlash) { etaMsg(_glmEtaFlash.text, _glmEtaFlash.tone); _glmEtaFlash = null; } }
+  function etaFlash(text, tone) { _glmEtaFlash = text ? { text: text, tone: tone, sid: _glmMsgFor } : null; }
+  function etaFlashReplay() { if (_glmEtaFlash && (!_glmEtaFlash.sid || _glmEtaFlash.sid === state.selectedShipmentId)) { etaMsg(_glmEtaFlash.text, _glmEtaFlash.tone); _glmEtaFlash = null; } }
+  // A final3 b9 (REVIEW_AFINAL3 MINOR-1): after a lost route.advance answer the page re-reads the shipment and says what the database holds
+  // ---------- A final4 (Owner 2026-11-20 P1 buttons): ONE write at a time per shipment, unknown outcomes held, late answers scoped ----------
+  // Update ETA / Update Position / Save Receipt share one busy record per shipment, set SYNCHRONOUSLY on click: the clicked button shows
+  // Updating… / Saving… itself (disabled, aria-busy); the other two writes of that shipment are disabled too (no ETA and receipt with the same
+  // version at once). A re-render repaints from the record, so a rebuilt panel cannot re-enable a running write; Enter and double clicks hit
+  // the same guard. Success / an explicit refusal ends it. No answer (or no answer within GLM_WRITE_WAIT_MS_) = UNKNOWN: nothing is resent, the
+  // shipment is re-read (scoped); the re-read decides; if it cannot be read the panel stays blocked with 「結果待確認」 and offers 重新讀取.
+  // The wait only classifies; it never cancels the server write. A late answer never writes into another selected shipment's panel.
+  var GLM_WRITE_WAIT_MS_ = 90000, GLM_UNKNOWN_MSG_ = '結果待確認：沒有收到回應，不會自動重送。正在重新讀取…';
+  var _glmBusy = {}, _glmMsgFor = null, _glmMsgFlash = null, _glmPosChecks = {};   // a4 (REVIEW_A1_A3 MAJOR-A): one pending position check PER SHIPMENT
+  function glmBusyOf_(sid) { return _glmBusy[sid] || null; }
+  function glmBounded_(p) { var t = null; return Promise.race([Promise.resolve(p), new Promise(function (res) { t = setTimeout(function () { res({ success: false, code: 'GLM_NO_ANSWER_IN_TIME', error: 'no answer within ' + (GLM_WRITE_WAIT_MS_ / 1000) + ' s' }); }, GLM_WRITE_WAIT_MS_); })]).then(function (v) { if (t) clearTimeout(t); return v; }); }
+  function glmBusyStart_(sid, kind, btn, intended) { _glmBusy[sid] = { kind: kind, state: 'busy', intended: intended, readOk: false }; _glmMsgFor = sid; glmBusyPaint_(root(), { shipmentId: sid }); }
+  function glmBusyEnd_(sid) { delete _glmBusy[sid]; glmBusyPaint_(root(), { shipmentId: sid }); }
+  function glmBusyUnknown_(sid) { var b = _glmBusy[sid]; if (b) { b.state = 'unknown'; b.readOk = false; } glmBusyPaint_(root(), { shipmentId: sid }); }
+  function glmMsgFlash_(sid, text, tone) { _glmMsgFlash = { sid: sid, text: text, tone: tone }; }
+  var GLM_BTN_ = { eta: ['eta-update', 'Update ETA', 'Updating…'], route: ['route-advance', 'Update Position', 'Updating…'], receipt: ['receipt-save', 'Save Receipt', 'Saving…'], manual: ['manual-report-save', 'Report Position', 'Reporting…'] };   // AD3 A: + manual report
+  var _glmManualOp = {};   // AD3 A: per shipment, the operation id of an unanswered manual report - re-sent unchanged so the server never writes twice
+  function glmBusyPaint_(r, vm) {
+    if (!r || !vm || state.selectedShipmentId !== vm.shipmentId) return;   // the panel on screen belongs to another shipment
+    var b = _glmBusy[vm.shipmentId];
+    Object.keys(GLM_BTN_).forEach(function (k) {
+      var el = r.querySelector('[data-act="' + GLM_BTN_[k][0] + '"]'); if (!el) return;
+      if (b) { if (el.getAttribute('data-glm-was') === null) el.setAttribute('data-glm-was', el.disabled ? '1' : '0'); el.disabled = true; el.setAttribute('aria-busy', b.kind === k ? 'true' : 'false');
+        el.textContent = b.kind === k ? (b.state === 'unknown' ? '結果待確認' : GLM_BTN_[k][2]) : GLM_BTN_[k][1]; el.style.opacity = '0.55'; el.style.cursor = 'not-allowed'; }
+      else { if (el.getAttribute('data-glm-was') !== null) { el.disabled = el.getAttribute('data-glm-was') === '1'; el.removeAttribute('data-glm-was'); } el.removeAttribute('aria-busy'); el.textContent = GLM_BTN_[k][1]; el.style.opacity = ''; el.style.cursor = ''; }
+    });
+    var rr = r.querySelector('[data-act="glm-reread"]');
+    if (b && b.state === 'unknown' && b.readOk === false && b.failed) { if (!rr) { var host = r.querySelector('[data-glm="receipt-msg"]'); if (host && host.parentNode) { rr = document.createElement('button'); rr.type = 'button'; rr.className = 'glm-btn glm-btn--small'; rr.setAttribute('data-act', 'glm-reread'); rr.textContent = '重新讀取'; host.parentNode.insertBefore(rr, host.nextSibling); } }
+      if (rr) rr.onclick = function () { rr.disabled = true; afterShipmentWrite(vm.shipmentId); }; }
+    else if (rr && rr.parentNode) rr.parentNode.removeChild(rr);
+  }
+  // a4 (REVIEW_A1_A3 MINOR-A): a FAILED re-read repaints the open panel: 結果待確認 and an ENABLED 重新讀取 (a fresh wire) for a pending write
+  function glmReadFailed_(sid) {
+    var b = _glmBusy[sid]; if (b) { b.failed = true; b.readOk = false; if (b.state === 'busy') b.state = 'unknown'; }
+    if (b && state.selectedShipmentId === sid && state.vms && state.vms[sid]) selectShipment(sid); else render();
+  }
+  // after a SUCCESSFUL scoped re-read (wireReceiptControls of the rebuilt panel): an unknown ETA / receipt is decided by what the read shows
+  function glmBusyResolveAfterRead_(vm, held) {
+    var b = _glmBusy[vm.shipmentId];
+    if (b && b.awaitRead) { if (b.readOk) { var cd4_ = b.awaitCode; glmBusyEnd_(vm.shipmentId); receiptMsg('收貨未確認（' + (cd4_ || 'POSTING_UNKNOWN') + '）：請勿重新輸入收貨；請 Owner 檢查此單目的倉的庫存。', 'error'); } else { b.state = 'unknown'; b.failed = true; glmBusyPaint_(root(), vm); } return; }   // a3 (REVIEW_A1 MINOR-2): POSTING / BOOKS_UNKNOWN stays locked until the re-read
+    if (!b || b.state !== 'unknown') return;
+    if (!b.readOk) { b.failed = true; return; }
+    if (b.kind === 'eta') { var now = etaInputValue(vm.eta); glmBusyEnd_(vm.shipmentId); etaMsg(now === b.intended ? '已儲存 ETA：' + now + '（重新讀取確認，沒有重送）。' : '未儲存：重新讀取顯示 ETA 仍為 ' + (now || '（空白）') + '。可再按 Update ETA。', now === b.intended ? 'ok' : 'error'); return; }
+    if (b.kind === 'receipt') { glmBusyEnd_(vm.shipmentId); if (held) receiptMsg('未記錄：重新讀取後收貨數量未變。可再按 Save Receipt（送出相同數量，不會重複入庫）。', 'error'); return; }
+  }
+  function glmMsgFlashReplay_(vm) { var f = _glmMsgFlash; if (f && f.sid === vm.shipmentId) { _glmMsgFlash = null; receiptMsg(f.text, f.tone); } }
+  // readable route-node names (the identity stays nodeIdentity(n))
+  function glmNodeName_(n) {
+    if (!n) return '';
+    var r = n.nodeName || n.locationName || '';
+    if (!r) { try { var x = glmNodeLocation_(n, state.idx); r = (x.loc && (x.loc.locationName || x.loc.name || x.loc.locationCode)) || ''; } catch (e) { r = ''; } }
+    return r || n.nodeCode || ('Node ' + n.sequenceNo);
+  }
+  // the shipment's REAL destination node: the unique terminal node whose lineage reaches this shipment's destination warehouse (any status)
+  function glmDestinationNodeOf_(vm) {
+    var nodes = (vm && vm.nodes) || [], dest = String((vm && (vm.destCanonWarehouseId || vm.destWarehouseId)) || '').trim();
+    if (!nodes.length) return { id: '', why: 'NO_ROUTE' };
+    var maxSeq = -Infinity, cnt = 0, t = null;
+    for (var i = 0; i < nodes.length; i++) { var sq = nodes[i].sequenceNo; if (typeof sq !== 'number' || !isFinite(sq) || sq <= 0) return { id: '', why: 'ROUTE_ORDER_UNVERIFIED' }; if (sq > maxSeq) { maxSeq = sq; cnt = 1; t = nodes[i]; } else if (sq === maxSeq) cnt++; }
+    if (cnt !== 1) return { id: '', why: 'ROUTE_ORDER_UNVERIFIED' };
+    if (!dest) return { id: '', why: 'DESTINATION_WAREHOUSE_MISSING' };
+    if (isGatewayNode(t)) return { id: '', why: 'LAST_NODE_IS_GATEWAY' };
+    var ok = glmTerminalLineage_(t, dest, state.idx).ok;   // A-delta2 R: same lineage as glmArrivalNode_
+    return ok ? { id: nodeIdentity(t), node: t } : { id: '', why: 'LAST_NODE_NOT_DESTINATION' };
+  }
+  function glmDownloadJson_(name, obj) {
+    try { var blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+      setTimeout(function () { try { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); } catch (e2) {} }, 1500); return true; } catch (e) { return false; }
+  }
+  var _glmPosCheck = null;
+  function glmPosCheckReplay_(vm) {
+    var c = vm ? _glmPosChecks[vm.shipmentId] : null; if (!c) return;   // a4 (REVIEW_A1_A3 MAJOR-A): per shipment
+    if (!c.readOk) { var b5_ = _glmBusy[vm.shipmentId] || (_glmBusy[vm.shipmentId] = { kind: 'route', state: 'unknown', readOk: false }); b5_.state = 'unknown'; b5_.failed = true; glmBusyPaint_(root(), vm);
+      receiptMsg(c.ok ? '伺服器回覆已更新，但尚未重新讀取到此單的位置：結果待確認。請按「重新讀取」，不要再按 Update Position。' : '結果待確認：尚未重新讀取到此單的位置，不會自動重送。請按「重新讀取」。', 'error'); return; }   // a3 (REVIEW_A1 MAJOR-1)
+    delete _glmPosChecks[vm.shipmentId];
+    var cur = vm.currentNode, at = cur ? ('#' + cur.sequenceNo + ' ' + glmNodeName_(cur)) : '（無目前節點）';
+    if (_glmBusy[vm.shipmentId] && _glmBusy[vm.shipmentId].kind === 'route') glmBusyEnd_(vm.shipmentId);   // A final4: the re-read decided
+    if (cur && nodeIdentity(cur) === c.target && c.arrival && c.arrival.persisted && low(vm.status) !== 'arrived') receiptMsg('位置已更新為 ' + at + '，但重新讀取的 Shipment Status 是 ' + (vm.status || '—') + '：已送達狀態待確認，請按「重新讀取」，不要重送。', 'error');   // A-DELTA1 P0-1: arrival is shown only from the fresh read
+    else if (cur && nodeIdentity(cur) === c.target && c.arrival && (c.arrival.code === 'ARRIVAL_WRITE_FAILED' || c.arrival.reason === 'ARRIVAL_READBACK_MISMATCH')) receiptMsg('位置已更新為 ' + at + '；已送達狀態寫入失敗（' + (c.arrival.code === 'ARRIVAL_WRITE_FAILED' ? 'ARRIVAL_WRITE_FAILED' : 'ARRIVAL_READBACK_MISMATCH') + '）：狀態待確認，請按「重新讀取」。再次更新到同一個目的節點可補寫狀態（不會重複寫入）。', 'error');   // A-delta1 C3 (REVIEW_AD1 L-2)
+    else if (cur && nodeIdentity(cur) === c.target) receiptMsg((c.ok ? '已更新位置：' : '已儲存（重新讀取確認）：') + at + (low(vm.status) === 'arrived' ? '　· 已送達（待收貨）（Shipment Status: arrived）' : (vm.display && vm.display.projected && vm.display.display_only ? '　· 已送達（僅顯示，不在本系統收貨）' : '')) + '。', 'ok');   // C3 L-2: arrival is claimed only from the read-back status (or the labelled display-only projection)
+    else receiptMsg('未儲存：重新讀取顯示目前位置仍為 ' + at + '。可再按 Update Position。', 'error');
+  }
   // The current node's sequence (the one flagged `current` in shipment_routes), else -1.
   function currentNodeSeq(vm) { return vm.currentNode ? vm.currentNode.sequenceNo : -1; }
   // Canonical node identity used for a route advance (template node id preferred; route id fallback).
@@ -1416,15 +1768,26 @@
     var recvCapSeq = receivingCapableSeq(vm);
     // ---- Current Position: canonical route-node selector (forward-only; backend-owned) ----
     var routeSection;
-    if (!nodes.length) {
-      routeSection = '<p class="glm-muted">No route nodes snapshotted for this shipment — position advance is unavailable until the route is created (Confirm & Dispatch).</p>';
+    if (vm.manualRoute) {   // AD3 A: the route-node selector would be refused (ROUTE_MANUAL_REPORT_REQUIRED); the manual report (shipment.route.advance + manual_report) is the only position entry
+      routeSection = '<p class="glm-muted" data-glm="route-manual">手動物流（無路線模板）：起點 ' + esc(glmNodeName_(nodes[0])) + ' → 目的倉 ' + esc(glmNodeName_(nodes[nodes.length - 1])) +
+        '。位置以「手動回報」記錄（運送中 / 已到目的倉），需填回報時間與原因；到倉不會自動收貨。</p>' +
+        '<div data-glm="manual-report"><label class="glm-field"><span>Manual position / 手動回報</span><select data-manual-kind><option value="">—</option><option value="IN_TRANSIT">In transit / 運送中</option>' +
+        (vm.openingDisplayOnly ? '' : '<option value="ARRIVED_AT_DESTINATION">Arrived at destination warehouse / 已到目的倉</option>') + '</select></label>' +
+        '<label class="glm-field"><span>Report time / 回報時間</span><input type="datetime-local" data-manual-time></label>' +
+        '<label class="glm-field"><span>Reason / reference / 原因或依據</span><input type="text" maxlength="200" data-manual-reason></label>' +
+        '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="manual-report-save">Report Position</button></div></div>';
+    } else if (!nodes.length) {
+      routeSection = vm.opening ? glmRtiSectionHtml_(vm)   // A2 entry B: the 建立追蹤路線 helper replaces the A1 wording (imported records only; never Confirm)
+        : '<p class="glm-muted" data-glm="route-none">No route nodes snapshotted for this shipment — position advance is unavailable until the route is created (Confirm & Dispatch).</p>';
     } else {
+      var dst4_ = glmDestinationNodeOf_(vm);   // A final4 P1: the REAL destination node (lineage), not the highest sequence or a label
       var opts = nodes.map(function (n) {
         var backward = n.sequenceNo < curSeq;   // backward moves are blocked by the backend; disable in UI
-        var lbl = '#' + n.sequenceNo + ' · ' + (n.nodeName || n.locationName || n.nodeCode || ('Node ' + n.sequenceNo)) + (n.status ? ' (' + n.status + ')' : '');
+        var lbl = '#' + n.sequenceNo + ' · ' + glmNodeName_(n) + (dst4_.id && nodeIdentity(n) === dst4_.id ? ' · 目的倉' : '') + (n.status ? ' (' + n.status + ')' : '');   // A final4: readable name; the value stays nodeIdentity(n)
         return '<option value="' + esc(nodeIdentity(n)) + '"' + (low(n.status) === 'current' ? ' selected' : '') + (backward ? ' disabled' : '') + '>' + esc(lbl) + '</option>';
       }).join('');
       routeSection = '<label class="glm-field"><span>Current Position (route node)</span><select data-route-select>' + opts + '</select></label>' +
+        (dst4_.id ? '' : '<p class="glm-muted" data-glm="dest-unverified">最後一個節點未驗證為此單的目的倉（' + esc(dst4_.why) + '），到那裡不會顯示已送達。</p>') +
         '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-advance">Update Position</button></div>';
     }
     // ---- ETA: editable canonical shipments.eta; a past date stays valid + visible (overdue) ----
@@ -1468,10 +1831,17 @@
       : '<p class="glm-muted">No shipment lines loaded for this shipment.</p>';
     // Default COLLAPSED; auto-expand when partially received or at/after the receiving-capable node.
     var autoExpand = (derived === 'partially_received') || (recvCapSeq >= 0 && curSeq >= 0 && curSeq >= recvCapSeq);
-    var summaryText = lines.length ? ('Receiving — ' + lines.length + ' SKU' + (lines.length !== 1 ? 's' : '') + ' · ' + num(totalRemaining) + ' units remaining') : 'Receiving';
+    // SHIP-OPEN R5 (Owner item 2): an Amazon opening record is DISPLAY ONLY - its remaining quantity is shown read-only with its 資料時間;
+    // no receipt input or button is offered (31_ refuses it: SHIPMENT_OPENING_DISPLAY_ONLY).
+    if (vm.openingDisplayOnly) {
+      recvSection = '<p class="glm-muted" data-glm="opening-display-only">僅顯示（不計入供給、不收貨）· 資料時間 ' + esc(vm.openingAsOf || '未提供') + '</p>' +
+        (lines.length ? '<table class="glm-recv-table"><thead><tr><th>SKU</th><th class="glm-num">在途中數量（僅顯示）</th></tr></thead><tbody>' + lines.map(function (l) { return '<tr><td>' + esc(l.sku || l.shipmentLineId) + '</td><td class="glm-num">' + num(parseFloat(l.shipmentQty) || 0) + '</td></tr>'; }).join('') + '</tbody></table>' : '<p class="glm-muted">No shipment lines loaded for this shipment.</p>');
+    }
+    var summaryText = vm.openingDisplayOnly ? ('僅顯示 · ' + num(totalRemaining) + ' units · 資料時間 ' + (vm.openingAsOf || '未提供')) : lines.length ? ('Receiving — ' + lines.length + ' SKU' + (lines.length !== 1 ? 's' : '') + ' · ' + num(totalRemaining) + ' units remaining') : 'Receiving';
 
     return '<section class="glm-dsec"><h4>Current Position</h4>' + routeSection + etaSection +
-        kv('Shipment Status', vm.status || '—') +
+        kv('物流狀態', vm.arrival && vm.arrival.arrived ? ('Delivered · 已送達（' + (vm.track && vm.track.receipt === 'partial' ? '部分收貨' : '待收貨') + '）') : (vm.nodes && vm.nodes.length ? 'In Transit · 運送中' : '—')) +   // A final4 P1: display only - shipments.status is never set to delivered
+        kv('Shipment Status', low(vm.status) === 'arrived' ? 'arrived · Delivered / 已送達（待收貨）' : (vm.display && vm.display.projected ? vm.display.label + '（依路線判定；狀態欄未寫入' + (vm.display.display_only ? '：僅顯示的匯入紀錄' : '') + '）' : (vm.status || '—'))) +   // A-DELTA1 P0-1 + C2 item 1
         '<p class="glm-muted">Shipment Status is system-derived (never set directly on the map).</p>' +
       '</section>' +
       '<section class="glm-dsec"><details class="glm-recv"' + (autoExpand ? ' open' : '') + ' data-glm="receiving-details">' +
@@ -1479,11 +1849,16 @@
         '<div class="glm-recv__body">' + recvSection + '</div>' +
       '</details>' +
       '<p class="glm-receipt-msg" data-glm="receipt-msg" role="status" aria-live="polite"></p>' +
+      (vm.openingDisplayOnly ? '' : '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="rcv-diag">收貨診斷（唯讀下載）</button></div>') +   // A final4 P0
       '</section>';
   }
   function wireReceiptControls(vm) {
     var r = root(); if (!r) return;
+    _glmMsgFor = vm.shipmentId;   // a3 (REVIEW_A1 MINOR-1): the panel being wired owns the messages; late answers re-scope themselves
     etaFlashReplay();   // §G — a proven ETA outcome survives the post-write re-render
+    glmPosCheckReplay_(vm);   // A final3 b9: the re-read decides what a lost route.advance answer did
+    glmRtiWire_(r, vm);   // A2 entry B (建立追蹤路線): only on an imported record without route rows
+    glmMsgFlashReplay_(vm);   // A final4
     // live Remaining recompute as the user types (no write)
     r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
       inp.oninput = function () {
@@ -1494,6 +1869,18 @@
       };
     });
     // Receive All — fills every line's DRAFT input to its shipped qty (NO DB write); the user still Saves.
+    var diagBtn = r.querySelector('[data-act="rcv-diag"]');   // A final4 P0: read-only download, nothing written
+    if (diagBtn) diagBtn.onclick = function () {
+      if (!(window.KM.DB && window.KM.DB.getShipmentReceiptDiagnostic)) { receiptMsg('收貨診斷無法使用（沒有讀取功能）。', 'error'); return; }
+      diagBtn.disabled = true; _glmMsgFor = vm.shipmentId;
+      window.KM.DB.getShipmentReceiptDiagnostic(vm.shipmentId, vm.company).then(function (resp) {
+        diagBtn.disabled = false; _glmMsgFor = vm.shipmentId;
+        if (!(resp && resp.success && resp.data)) { receiptMsg('收貨診斷讀取失敗' + (resp && resp.code ? '（' + resp.code + '）' : '') + '。沒有寫入任何資料。', 'error'); return; }
+        var stamp4_ = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+        glmDownloadJson_('km-receipt-diag-' + String(vm.shipmentId).replace(/[^A-Za-z0-9_-]/g, '_') + '-' + stamp4_ + '.json', resp.data);
+        receiptMsg(resp.data.receipt_allowed_by_existing_rules ? '收貨診斷已下載：依現有規則可以收貨。' : ('收貨診斷已下載：目前不能收貨（' + ((resp.data.refusal && resp.data.refusal.code) || '原因見檔案') + '）。'), resp.data.receipt_allowed_by_existing_rules ? 'ok' : 'error');
+      }).catch(function () { diagBtn.disabled = false; _glmMsgFor = vm.shipmentId; receiptMsg('收貨診斷讀取失敗。沒有寫入任何資料。', 'error'); });   // a3 (REVIEW_A1 MINOR-4)
+    };
     var recvAllBtn = r.querySelector('[data-act="receive-all"]');
     if (recvAllBtn) recvAllBtn.onclick = function () {
       r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
@@ -1501,7 +1888,7 @@
         inp.value = parseFloat(inp.getAttribute('data-shipped')) || 0;
         if (typeof inp.oninput === 'function') inp.oninput();   // recompute the Remaining cell
       });
-      receiptMsg('All lines filled to shipped — click Save Receipt to commit.', '');
+      _glmMsgFor = vm.shipmentId; receiptMsg('All lines filled to shipped — click Save Receipt to commit.', '');   // a4 (INFO-1)
     };
     function keepReceivingOpen() { var d = r.querySelector('[data-glm="receiving-details"]'); if (d) d.open = true; }
     var saveBtn = r.querySelector('[data-act="receipt-save"]');
@@ -1513,7 +1900,7 @@
     if (held && saveBtn) {
       // R71-FE-2 (review m-4): a receipt the server reported INCOMPLETE is never settled by a re-read - only the server's answer to the resend ends it
       if (!held.incomplete && held.lines.every(function (hl) { var hi = heldInput(hl); return !!hi && parseFloat(hi.getAttribute('data-prev')) === Number(hl.shipment_received_qty); })) {
-        glmRcvHold_(vm.shipmentId, null); held = null;
+        glmRcvHold_(vm.shipmentId, null); held = null; if (_glmBusy[vm.shipmentId] && _glmBusy[vm.shipmentId].kind === 'receipt') glmBusyEnd_(vm.shipmentId);   // A final4
         // R71-FE-2 (review M-1): equal saved quantities prove the LINES only, never the stock posting (final-cand5 writes the lines before it posts)
         receiptMsg('The earlier receipt that got no answer: the received quantities are saved (this re-read shows them). This page cannot confirm the stock posting - if a receipt error was reported, tell the owner.', '');
       } else {
@@ -1522,7 +1909,10 @@
           'The last receipt got NO ANSWER, so it may already be recorded. Save Receipt resends exactly the same received values (they cannot be counted twice). Reload to see whether it was recorded.', 'error');
       }
     }
+    glmBusyResolveAfterRead_(vm, held);   // A final4: an UNKNOWN write is decided by this re-read
     if (saveBtn) saveBtn.onclick = function () {
+      if (glmBusyOf_(vm.shipmentId)) return;   // A final4: one write per shipment at a time
+      _glmMsgFor = vm.shipmentId;
       if (!(window.KM.DB && window.KM.DB.updateShipmentReceipt)) { receiptMsg('Receipt API unavailable.', 'error'); keepReceivingOpen(); return; }
       var pairs = [];
       r.querySelectorAll('[data-recv-line]').forEach(function (inp) {
@@ -1530,27 +1920,44 @@
       });
       var lines = held ? held.lines.slice() : glmReceiptChangedLines(pairs);   // §9.1 — only changed cumulative values are submitted; R71-FE-1: a held receipt exactly
       if (!lines.length) { receiptMsg('No changes to save.', ''); return; }
-      saveBtn.disabled = true; receiptMsg('Saving receipt…', '');
-      glmRcvHold_(vm.shipmentId, { lines: lines });   // R71-FE-1: held BEFORE dispatch
-      window.KM.DB.updateShipmentReceipt({ shipment_id: vm.shipmentId, lines: lines, actor: glmActor() }).then(function (resp) {
+      glmBusyStart_(vm.shipmentId, 'receipt', saveBtn); receiptMsg('', '');   // A final4: Saving… is on the button
+      // N1 / TEXTURE-3-R13: the version this receipt was entered against travels with it and is HELD with it - a resend sends the SAME token (a recorded
+      // receipt is answered REPLAYED before the version gate; an unrecorded one is checked against the version it was entered on).
+      // N1 r2: a held receipt the server refused for its VERSION while it was INCOMPLETE is re-bound ONLY by this explicit Save after the re-read
+      // (held.rebind): it then carries the version the page has just read. Never automatic; the server checks that version like any other.
+      var rcvTok = held ? (held.rebind ? String(vm.rowVersion || '') : String(held.token || '')) : String(vm.rowVersion || '');
+      glmRcvHold_(vm.shipmentId, { lines: lines, token: rcvTok });   // R71-FE-1: held BEFORE dispatch
+      glmBounded_(window.KM.DB.updateShipmentReceipt({ shipment_id: vm.shipmentId, lines: lines, actor: glmActor(), expected_updated_at: rcvTok || undefined })).then(function (resp) {
+        _glmMsgFor = vm.shipmentId;
         // R71-FE-2 (review m-4): rcv's SHIPMENT_RECEIPT_INCOMPLETE (retry_safe, nothing undone) takes the lost-answer path: held, locked, resent unchanged
         var incomplete = !!resp && resp.code === 'SHIPMENT_RECEIPT_INCOMPLETE', inc_ = incomplete || !!(held && held.incomplete);
-        var unanswered = !resp || resp.code === 'network' || incomplete;   // the db-api answers 'network' for a dropped / failed / non-JSON / timed-out response
+        var unanswered = !resp || resp.code === 'network' || resp.code === 'GLM_NO_ANSWER_IN_TIME' || incomplete;   // the db-api answers 'network' for a dropped / failed / non-JSON / timed-out response
         if (!unanswered) glmRcvHold_(vm.shipmentId, null);   // any other server answer settles the held receipt
-        else glmRcvHold_(vm.shipmentId, { lines: lines, incomplete: inc_ || undefined });
-        if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
+        else glmRcvHold_(vm.shipmentId, { lines: lines, incomplete: inc_ || undefined, token: rcvTok });
+        if (resp && resp.success) { glmBusyEnd_(vm.shipmentId); glmMsgFlash_(vm.shipmentId, '已儲存收貨。', 'ok'); afterShipmentWrite(vm.shipmentId); }
         else if (unanswered) {
-          held = { lines: lines, incomplete: inc_ || undefined }; pinHeld(); saveBtn.disabled = false; keepReceivingOpen();
+          held = { lines: lines, incomplete: inc_ || undefined, token: rcvTok }; pinHeld(); keepReceivingOpen();
+          if (!incomplete) { glmBusyUnknown_(vm.shipmentId); receiptMsg(GLM_UNKNOWN_MSG_, 'error'); afterShipmentWrite(vm.shipmentId); return; }   // A final4: no answer = unknown: scoped re-read, no resend
+          glmBusyEnd_(vm.shipmentId);   // an explicit INCOMPLETE answer: resending the same values completes it
           receiptMsg(incomplete ? ('Receipt STOPPED PART WAY (' + resp.code + (resp.data && resp.data.stage ? ' at ' + resp.data.stage : '') + '). Nothing was undone. Save Receipt resends exactly the same received values to complete it (it never posts twice).') :
             ('Receipt got NO ANSWER (' + ((resp && resp.error) || 'no response') + '), so it may already be recorded. Save Receipt resends exactly the same received values (they cannot be counted twice). Reload to see whether it was recorded.'), 'error');
         }
         else if (resp && (resp.code === 'SHIPMENT_RECEIPT_POSTING_UNKNOWN' || resp.code === 'SHIPMENT_RECEIPT_BOOKS_UNKNOWN')) {
           // FE-RECEIPT-1 (candidate): the server could not prove the stock posting (31_ RCV31): Save stays disabled, the shipment is reloaded
-          receiptMsg('Receipt NOT CONFIRMED - do not re-enter it; ask the owner to review the stock of this shipment at its destination (' + resp.code + ').', 'error');
+          var b7_ = _glmBusy[vm.shipmentId]; if (b7_) { b7_.awaitRead = true; b7_.readOk = false; b7_.awaitCode = resp.code; }   /* a3 (REVIEW_A1 MINOR-2): Save stays locked until the re-read */ receiptMsg('Receipt NOT CONFIRMED - do not re-enter it; ask the owner to review the stock of this shipment at its destination (' + resp.code + ').', 'error');
+          afterShipmentWrite(vm.shipmentId);
+        }
+        else if (resp && /^EDIT_(CONFLICT|TOKEN_REQUIRED|TOKEN_UNREADABLE|VERSION_COLUMN_MISSING)$/.test(String(resp.code || ''))) {
+          // N1: the shipment changed after this receipt was entered (or the page held no version): nothing was written; re-read before re-entering
+          glmBusyEnd_(vm.shipmentId);
+          receiptMsg(inc_ ? ('The receipt that STOPPED PART WAY was not finished - this shipment changed since it started (' + resp.code + '). Nothing more was written. The shipment is being reloaded: check it, then press Save Receipt to finish THE SAME receipt against the current version.') : ('Receipt NOT saved - this shipment changed after it was loaded (' + resp.code + '). Nothing was received or posted. The shipment is being reloaded: check the received quantities, then enter the receipt again.'), 'error');
+          // N1 r2: an INCOMPLETE receipt stays HELD (same lines), marked for re-binding: the next Save, after this re-read, sends the current version
+          if (inc_) glmRcvHold_(vm.shipmentId, { lines: lines, incomplete: true, rebind: true });
           afterShipmentWrite(vm.shipmentId);
         }
         else {
-          saveBtn.disabled = false; keepReceivingOpen();   // §17.L keep expanded + values preserved on validation error
+          glmBusyEnd_(vm.shipmentId); keepReceivingOpen();   // §17.L keep expanded + values preserved on validation error
+          if (/^DISPATCH_STATE_|^SHIPMENT_NOT_DISPATCHED$/.test(String((resp && resp.code) || ''))) { receiptMsg('無法收貨：出貨證據不完整（' + resp.code + '）。這與物流「已送達」是兩件事；請按「收貨診斷（唯讀下載）」查看原因。沒有寫入。', 'error'); return; }   // A final4 P1
           var detail = (resp && resp.invalid_lines && resp.invalid_lines.length) ? (' [' + resp.invalid_lines.map(function (x) { return (x.shipment_line_id || '?') + ':' + x.code; }).join(', ') + ']') : '';
           receiptMsg((resp && resp.error ? resp.error : 'Receipt save failed.') + detail, 'error');
         }
@@ -1564,57 +1971,265 @@
     // happens.
     var etaBtn = r.querySelector('[data-act="eta-update"]');
     if (etaBtn) etaBtn.onclick = function () {
+      if (glmBusyOf_(vm.shipmentId)) return; _glmMsgFor = vm.shipmentId;   // A final4
       if (!(window.KM.DB && window.KM.DB.updateShipmentEta)) { etaMsg('ETA API unavailable — nothing was sent.', 'error'); return; }
       var inp = r.querySelector('[data-eta-input]'); var v = inp ? String(inp.value || '').trim() : '';
       if (!/^\d{4}-\d{2}-\d{2}$/.test(v)) { etaMsg('Enter a valid ETA date (YYYY-MM-DD). Nothing was sent.', 'error'); return; }
-      etaBtn.disabled = true; etaMsg('Updating ETA…', '');
-      window.KM.DB.updateShipmentEta({ shipment_id: vm.shipmentId, eta: v, actor: glmActor() }).then(function (resp) {
+      glmBusyStart_(vm.shipmentId, 'eta', etaBtn, v); etaMsg('', '');   // A final4: Updating… is on the button
+      glmBounded_(window.KM.DB.updateShipmentEta({ shipment_id: vm.shipmentId, eta: v, actor: glmActor(), expected_updated_at: vm.rowVersion || undefined })).then(function (resp) {
+        _glmMsgFor = vm.shipmentId;
         if (resp && resp.success) {
           // The server returns the PERSISTED, re-read value. Show that, never the value that was typed.
           var d = resp.data || {};
           var shown = String(d.eta || v);
-          etaFlash('ETA saved and verified in the database: ' + shown
-            + (d.status_unchanged === false ? ' (WARNING: the shipment status also changed — report this)' : '')
-            + '. Shipment status and current position were not touched.', 'ok');
+          glmBusyEnd_(vm.shipmentId);
+          etaFlash('已儲存 ETA：' + shown + (d.status_unchanged === false ? '（警告：狀態也變了，請回報）' : '') + '。', 'ok');
           afterShipmentWrite(vm.shipmentId);
           return;
         }
         var code = String((resp && resp.code) || '');
-        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' && window.KM.DB.reconcileShipmentEta) {
-          etaMsg('The request timed out and the outcome is UNKNOWN — checking what the database actually holds before doing anything else…', 'error');
+        if (/^EDIT_(CONFLICT|TOKEN_REQUIRED|TOKEN_UNREADABLE|VERSION_COLUMN_MISSING)$/.test(code)) { glmBusyEnd_(vm.shipmentId); etaFlash('未儲存：此單在你開啟後已被修改，沒有寫入。已重新讀取，請確認目前的 ETA 後再改。', 'error'); afterShipmentWrite(vm.shipmentId); return; }   // A final3 b9 (M01): stale -> zero write, re-read
+        if ((!resp || code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'GLM_NO_ANSWER_IN_TIME') && window.KM.DB.reconcileShipmentEta) {   // A final3 b9: a lost answer is UNKNOWN too - reconcile, never resend
+          glmBusyUnknown_(vm.shipmentId); etaMsg(GLM_UNKNOWN_MSG_, 'error');   // A final4
           window.KM.DB.reconcileShipmentEta(vm.shipmentId, v).then(function (rec) {
-            etaBtn.disabled = false;
-            if (rec && rec.success && rec.matches_intended) {
-              etaFlash('The timed-out request had in fact been applied: the database holds ' + rec.persisted_eta + '. No second write was sent.', 'ok');
-              afterShipmentWrite(vm.shipmentId);
-              return;
-            }
-            if (rec && rec.success) {
-              etaMsg('Timed out. The database still holds ' + (rec.persisted_eta || '(no ETA)') + ', not ' + v
-                + '. NOT SAVED — press Update ETA again to retry deliberately.', 'error');
-              return;
-            }
-            etaMsg('Timed out, and the stored ETA could not be re-read, so it is unknown whether the write landed. Re-open this shipment and check the ETA before retrying.', 'error');
+            _glmMsgFor = vm.shipmentId;
+            if (rec && rec.success && rec.matches_intended) { glmBusyEnd_(vm.shipmentId); etaFlash('已儲存 ETA：' + rec.persisted_eta + '（重新讀取確認，沒有重送）。', 'ok'); afterShipmentWrite(vm.shipmentId); return; }
+            if (rec && rec.success) { glmBusyEnd_(vm.shipmentId); etaMsg('未儲存：重新讀取顯示 ETA 仍為 ' + (rec.persisted_eta || '（空白）') + '。可再按 Update ETA。', 'error'); return; }
+            var b4_ = _glmBusy[vm.shipmentId]; if (b4_) { b4_.failed = true; } glmBusyPaint_(root(), vm); etaMsg('結果待確認：無法重新讀取，暫時不能再送出。請按「重新讀取」。', 'error');
           });
           return;
         }
-        etaBtn.disabled = false;
-        var msg = (resp && resp.error) ? resp.error : 'ETA update failed.';
-        etaMsg('NOT SAVED — ' + (code ? '[' + code + '] ' : '') + msg, 'error');
+        glmBusyEnd_(vm.shipmentId);
+        etaMsg('未儲存：' + (code ? '[' + code + '] ' : '') + ((resp && resp.error) ? resp.error : 'ETA 更新失敗。'), 'error');
       });
     };
     var advBtn = r.querySelector('[data-act="route-advance"]');
     if (advBtn) advBtn.onclick = function () {
+      if (glmBusyOf_(vm.shipmentId)) return; _glmMsgFor = vm.shipmentId;   // A final4
       if (!(window.KM.DB && window.KM.DB.advanceShipmentRoutePoint)) { receiptMsg('Route API unavailable.', 'error'); return; }
       var sel = r.querySelector('[data-route-select]'); if (!sel || !sel.value) { receiptMsg('Select a route point.', 'error'); return; }
-      advBtn.disabled = true; receiptMsg('Updating route point…', '');
-      window.KM.DB.advanceShipmentRoutePoint({ shipment_id: vm.shipmentId, route_template_node_id: sel.value, actor: glmActor() }).then(function (resp) {
-        if (resp && resp.success) { afterShipmentWrite(vm.shipmentId); }
-        else { advBtn.disabled = false; receiptMsg((resp && resp.error ? resp.error : 'Route update failed.'), 'error'); }
+      glmBusyStart_(vm.shipmentId, 'route', advBtn, sel.value); receiptMsg('', '');   // A final4: Updating… is on the button
+      glmBounded_(window.KM.DB.advanceShipmentRoutePoint({ shipment_id: vm.shipmentId, route_template_node_id: sel.value, actor: glmActor() })).then(function (resp) {
+        _glmMsgFor = vm.shipmentId;
+        if (resp && resp.success) { var b8_ = _glmBusy[vm.shipmentId]; if (b8_) b8_.readOk = false; _glmPosChecks[vm.shipmentId] = { sid: vm.shipmentId, target: sel.value, ok: true, arrival: (resp.data && resp.data.arrival) || null }; try { if (typeof window.KMLogisticsArrivalInvalidate === 'function') window.KMLogisticsArrivalInvalidate(); } catch (eI3) {}   /* C3 L-4 */ afterShipmentWrite(vm.shipmentId); }   // A final4: the read-back states the current node; a3 (REVIEW_A1 MAJOR-1): the lock ends only when THAT re-read lands
+        else { var c5_ = String((resp && resp.code) || ''); if (!resp || c5_ === 'network' || c5_ === 'HTTP_TRANSPORT_ERROR' || c5_ === 'GLM_NO_ANSWER_IN_TIME' || /INDETERMINATE|OUTCOME_UNKNOWN|UNKNOWN_OUTCOME/.test(c5_)) { glmBusyUnknown_(vm.shipmentId); receiptMsg(GLM_UNKNOWN_MSG_, 'error'); _glmPosChecks[vm.shipmentId] = { sid: vm.shipmentId, target: sel.value }; afterShipmentWrite(vm.shipmentId); return; }   /* A final3 b9 (REVIEW_AFINAL3 MINOR-1): db-api answers 'network' for a lost answer - never NOT SAVED, never a resend */   // A final3 (Owner item A)
+          glmBusyEnd_(vm.shipmentId); receiptMsg('未儲存：' + (c5_ ? '[' + c5_ + '] ' : '') + (resp && resp.error ? resp.error : '位置更新失敗。'), 'error'); }
       });
     };
+    var mBtn = r.querySelector('[data-act="manual-report-save"]');   // AD3 A: manual position report (shipment.route.advance + manual_report)
+    if (mBtn) mBtn.onclick = function () {
+      if (glmBusyOf_(vm.shipmentId)) return; _glmMsgFor = vm.shipmentId;
+      if (!(window.KM.DB && window.KM.DB.advanceShipmentRoutePoint)) { receiptMsg('Route API unavailable.', 'error'); return; }
+      var q = function (s) { var e = r.querySelector(s); return e ? String(e.value == null ? '' : e.value).trim() : ''; };
+      var kind = q('[data-manual-kind]'), t = q('[data-manual-time]').replace('T', ' ').slice(0, 16), why = q('[data-manual-reason]');
+      if (!kind || t.length < 16 || why.length < 2) { receiptMsg('請選擇回報類型、填回報時間與原因（至少 2 字）。', 'error'); return; }
+      var h0 = _glmManualOp[vm.shipmentId];   // an unanswered earlier report: QUERY first (the re-read events) - recorded -> say so, never send again
+      if (h0 && (vm.events || []).some(function (e) { return String(e.sourceEventId || '') === 'manual:' + vm.shipmentId + ':' + h0.op; })) { delete _glmManualOp[vm.shipmentId]; try { if (window.KMManualPositionOp) window.KMManualPositionOp.clear(vm.shipmentId); } catch (eC0) {} receiptMsg('先前的手動回報（' + h0.kind + '）已記錄，未重送。', 'ok'); return; }   // AD3 D r3: + the shared hold
+      var MPO_ = window.KMManualPositionOp || null, mh_ = MPO_ ? MPO_.get(vm.shipmentId) : null;   // AD3 D r2: ONE hold per shipment, shared with the Shipment card
+      if (MPO_ && MPO_.busy(vm.shipmentId)) { receiptMsg('此單的手動位置回報正在送出中（Shipment 卡片），未送出。', 'error'); return; }
+      if (mh_ && mh_.src !== 'map' && !_glmManualOp[vm.shipmentId]) { receiptMsg('Shipment 卡片上有一筆手動位置回報結果待確認（' + String(mh_.kind || '') + '，操作 ' + String(mh_.op || '') + '）。請先在 Shipment Overview 卡片按 Re-check；未送出。', 'error'); return; }
+      var hU_ = _glmManualOp[vm.shipmentId];   // AD3 D r3 (Owner: never a new id after an unknown outcome): an unanswered report is re-sent UNCHANGED or not at all
+      if (hU_ && !(hU_.kind === kind && hU_.t === t && hU_.why === why)) { receiptMsg('先前的手動回報（' + hU_.kind + '，' + hU_.t + '）結果未確認：請以相同內容重送（同一操作編號，伺服器不會重複寫入），或重新讀取後再回報。未送出。', 'error'); return; }
+      var h = _glmManualOp[vm.shipmentId], op = (h && h.kind === kind && h.t === t && h.why === why) ? h.op :('MPR-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase());
+      _glmManualOp[vm.shipmentId] = { op: op, kind: kind, t: t, why: why };
+      if (MPO_) { MPO_.put(vm.shipmentId, { op: op, kind: kind, reason: why, time: t, at: new Date().toISOString(), checked: false, src: 'map' }); MPO_.mapSending(vm.shipmentId, true); }
+      glmBusyStart_(vm.shipmentId, 'manual', mBtn, kind); receiptMsg('', '');
+      glmBounded_(window.KM.DB.advanceShipmentRoutePoint({ shipment_id: vm.shipmentId, manual_report: kind, operation_id: op, report_time: t, reason: why, actor: glmActor(), expected_updated_at: vm.rowVersion })).then(function (resp) {
+        _glmMsgFor = vm.shipmentId; var c6_ = String((resp && resp.code) || '');
+        if (MPO_) { MPO_.mapSending(vm.shipmentId, false); var unk6_ = !resp || c6_ === 'network' || c6_ === 'HTTP_TRANSPORT_ERROR' || c6_ === 'GLM_NO_ANSWER_IN_TIME' || /INDETERMINATE|OUTCOME_UNKNOWN|UNKNOWN_OUTCOME/.test(c6_) || c6_ === 'WRITE'; if (!unk6_) MPO_.clear(vm.shipmentId); }   // AD3 D r2: a definitive answer releases the shared hold; an unknown keeps it
+        if (resp && resp.success) { delete _glmManualOp[vm.shipmentId]; glmBusyEnd_(vm.shipmentId); var a6_ = (resp.data && resp.data.arrival) || {};
+          glmMsgFlash_(vm.shipmentId, kind === 'ARRIVED_AT_DESTINATION' ? (a6_.persisted || a6_.reason === 'ALREADY_ARRIVED' ? '已記錄：已到目的倉（待收貨，不會自動收貨）。' : '已記錄到倉回報；狀態未改為已送達（' + String(a6_.reason || a6_.code || '') + '）。') : '已記錄：運送中。', 'ok');
+          try { if (typeof window.KMLogisticsArrivalInvalidate === 'function') window.KMLogisticsArrivalInvalidate(); } catch (eI6) {}
+          afterShipmentWrite(vm.shipmentId); return; }
+        if (!resp || c6_ === 'network' || c6_ === 'HTTP_TRANSPORT_ERROR' || c6_ === 'GLM_NO_ANSWER_IN_TIME' || /INDETERMINATE|OUTCOME_UNKNOWN|UNKNOWN_OUTCOME/.test(c6_) || c6_ === 'WRITE') {
+          glmBusyEnd_(vm.shipmentId); receiptMsg('結果待確認：沒有收到確定回應。重新讀取中；再按一次會用同一個操作編號送出，伺服器不會重複寫入。', 'error'); afterShipmentWrite(vm.shipmentId); return; }
+        delete _glmManualOp[vm.shipmentId]; glmBusyEnd_(vm.shipmentId); receiptMsg('未儲存：' + (c6_ ? '[' + c6_ + '] ' : '') + ((resp && resp.error) ? resp.error : '手動回報失敗。'), 'error');
+      });
+    };
+    glmBusyPaint_(r, vm);   // A final4: a rebuilt panel shows the running / unknown write of this shipment
   }
-
+  // ===== A2 entry B (a2-route b5): 建立追蹤路線 for an imported shipment without route rows =====
+  // Shown only on an imported (opening) record whose held read model has no route row. Pressing the button first does its OWN scoped
+  // read of this shipment WITH routes; only a successful read whose raw answer carries a shipmentRoutes array with 0 rows for this
+  // shipment counts as "no route" (loading / error / an answer without the routes table never does). Then the import framework's
+  // ROUTE_INIT mode (80_/87_) lists the applicable templates and checks the choice; Preview validates, Create commits with the preview
+  // digest (the server re-checks nodes = 0, template digest and the shipment row under the lock). One batch id per shipment session:
+  // a resend of it is a replay, never a second route. A lost answer is resolved by the batch receipt, never by a blind resend.
+  // b5 (REVIEW_A2 m-2): the state is kept PER SHIPMENT (it survives drawer switches) and a Create in flight / with an unknown outcome is
+  // registered in A1's per-shipment busy layer (kind 'route_init'), so ETA / receipt / position of that shipment wait for it.
+  // b5 (REVIEW_A2 m-3): a definitive refusal (the server answered, or the guard / sign-in refused before anything was sent) is shown with
+  // its reason and needs a fresh Preview; only a lost / unclassifiable answer is 結果待確認.
+  var _glmRtiBy = {};
+  function glmRtiSt_(sid) { return _glmRtiBy[sid] || (_glmRtiBy[sid] = { sid: sid, busy: false, batch: '', facts: null, cand: null, unknown: false, note: '' }); }   // b6: note = the last definitive message of THIS shipment
+  function glmRtiSectionHtml_(vm) {
+    return '<p class="glm-muted" data-glm="route-none">此匯入單尚無追蹤路線。可依既有來源工廠、目的倉、carrier 與 method 建立（只建立追蹤，不扣庫存、不收貨）。</p>' +
+      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-open">建立追蹤路線</button></div>' +
+      '<div data-glm="route-init" aria-live="polite"></div>';
+  }
+  function glmRtiMsg_(r, html) { var p = r.querySelector('[data-glm="route-init"]'); if (p) p.innerHTML = html; }
+  function glmRtiNewBatch_() { return 'RTI-' + Date.now().toString(36).toUpperCase() + '-' + Math.random().toString(36).slice(2, 8).toUpperCase(); }
+  function glmRtiBody_(st, rows) { var f = st.facts; return { domain: 'shipment', mode: 'ROUTE_INIT', schema_version: 'SHIPMENT-IMPORT-2', import_batch_id: st.batch, scope: { company: f.company, source_import_batch_id: f.batch }, sheets: { Header: rows, Lines: [] }, actor: glmActor() }; }
+  function glmRtiUnknownCode_(resp) { var c = String((resp && resp.code) || ''); return !resp || c === 'network' || c === 'HTTP_TRANSPORT_ERROR' || /INDETERMINATE|OUTCOME_UNKNOWN|UNKNOWN_OUTCOME|TIMEOUT/.test(c); }
+  // an exception that proves NOTHING was sent: the Sandbox guard (sandboxCode), sign-in (AUTH_REQUIRED, zero_write), the Production guard (PRODUCTION_*)
+  function glmRtiNotSent_(e) { return !!(e && (e.sandboxCode || (e.apiCode === 'AUTH_REQUIRED' && e.zero_write) || /^PRODUCTION_[A-Z_]+$/.test(String(e.message || '')))); }
+  function glmRtiNotSentCode_(e) { return String((e && (e.sandboxCode || e.apiCode)) || (e && e.message) || 'REFUSED'); }
+  function glmRtiIssues_(v) { return ((v && v.issues) || []).map(function (i) { return '<li>' + esc(i.code || '') + ' — ' + esc(i.message || '') + '</li>'; }).join(''); }
+  function glmRtiSkipped_(rt) { var u = (rt && rt.origin_undeclared) || []; return u.length ? '<p class="glm-muted" data-glm="route-init-skipped">已略過 ' + u.length + ' 個起點國家未填的模板（' + u.slice(0, 5).map(esc).join(', ') + '）：補上 origin_country 後才會列出。</p>' : ''; }   // b5 (REVIEW_A2 m-4)
+  // b6 (REVIEW_A2_B5 n-1): 78_ receipt states are COMMITTING, COMMITTED, FAILED_ROLLED_BACK, UNKNOWN_OUTCOME (IMB_STATUS_). The terminal states
+  // that prove ZERO writes are listed here; COMMITTED is success; everything else (COMMITTING, UNKNOWN_OUTCOME, unrecognised) stays 結果待確認.
+  var GLM_RTI_ZERO_WRITE_ = { FAILED_ROLLED_BACK: 1 };
+  function glmRtiBusyMine_(sid) { var b = typeof glmBusyOf_ === 'function' ? glmBusyOf_(sid) : null; return !!(b && b.kind === 'route_init'); }
+  function glmRtiWire_(r, vm) {
+    var b = r.querySelector('[data-act="route-init-open"]'); if (!b) return;
+    var st = glmRtiSt_(vm.shipmentId);
+    if (st.unknown) { glmRtiUnknownView_(r, vm); return; }
+    if (st.note) glmRtiMsg_(r, st.note);   // b6 (doc nit): a definitive result survives a rebuilt panel
+    b.onclick = function () {
+      if (st.busy || st.unknown) return;
+      st.note = '';
+      if (typeof glmBusyOf_ === 'function' && glmBusyOf_(vm.shipmentId)) { glmRtiMsg_(r, '<p class="glm-muted">此單有其他更新進行中或結果待確認，請等它完成後再建立路線。未寫入。</p>'); return; }   // A1 per-shipment write exclusion respected
+      if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function' && window.KM.DB && window.KM.DB.importValidate && window.KM.DB.importCommit)) { glmRtiMsg_(r, '<p class="glm-muted">無法確認路線狀態（讀取或匯入功能不可用），未建立任何資料。</p>'); return; }
+      st.busy = true; b.disabled = true; b.setAttribute('aria-busy', 'true'); b.textContent = '確認中...';
+      glmRtiMsg_(r, '<p class="glm-muted">讀取此單的最新路線狀態…</p>');
+      var done = function () { st.busy = false; b.disabled = false; b.removeAttribute('aria-busy'); b.textContent = '建立追蹤路線'; };
+      Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: vm.shipmentId }, include: { routes: true, events: true } })).then(function (env) {
+        var d = env && env.success && env.data;
+        if (!d || !Array.isArray(d.shipments) || !Array.isArray(d.shipmentRoutes)) { done(); glmRtiMsg_(r, '<p class="glm-muted">無法確認此單是否已有路線（讀取未完成），未建立任何資料。請稍後再試。</p>'); return; }
+        var raw = (d.shipments.filter(function (s) { var x = (s && s.raw) || s || {}; return String(x.shipment_id || s.shipmentId || '') === String(vm.shipmentId); })[0] || {});
+        raw = raw.raw || raw;
+        var mine = d.shipmentRoutes.filter(function (x) { var y = (x && x.raw) || x || {}; return String(y.shipment_id || y.shipmentId || '') === String(vm.shipmentId); });
+        if (!raw.shipment_id) { done(); glmRtiMsg_(r, '<p class="glm-muted">讀取結果不含此單，未建立任何資料。</p>'); return; }
+        if (mine.length) { done(); glmRtiMsg_(r, '<p class="glm-muted">此單已有路線，改用 Current Position 更新。</p>'); afterShipmentWrite(vm.shipmentId); return; }
+        st.facts = { company: String(raw.company || ''), batch: String(raw.import_batch_id || ''), source: String(raw.source_warehouse_id || ''), dest: String(raw.destination_warehouse_id || raw.warehouse_id || ''), carrier: String(raw.carrier_id || ''), method: String(raw.shipping_method || '') };
+        if (!st.facts.batch) { done(); glmRtiMsg_(r, '<p class="glm-muted">此單沒有匯入批次編號，無法用此入口建立路線。</p>'); return; }
+        st.batch = st.batch || glmRtiNewBatch_();
+        return Promise.resolve(window.KM.DB.importValidate(glmRtiBody_(st, [{ __row: 1, shipment_id: vm.shipmentId }]))).then(function (v) {
+          done();
+          var row = v && v.preview && v.preview.rows && v.preview.rows[0], rt = row && row.route;
+          var other = ((v && v.issues) || []).filter(function (i) { return i.code !== 'ROUTE_INIT_POSITION_REQUIRED'; });
+          if (!v || v.success === false || other.length || !rt) { glmRtiMsg_(r, '<p class="glm-muted">無法建立路線：</p><ul>' + (glmRtiIssues_({ issues: other }) || '<li>' + esc((v && (v.code || v.error)) || '讀取失敗') + '</li>') + '</ul>'); return; }
+          if (!rt.candidates || !rt.candidates.length) {
+            var mv_ = rt.manual || {};
+            if (mv_.available === true) { glmRtiManualOffer_(r, vm, rt); return; }   // AD3 D r2: the explicit manual-logistics choice (A contract 2), never automatic
+            glmRtiMsg_(r, '<p class="glm-muted">沒有適用的路線模板（' + esc(rt.reason || 'NONE') + '）。系統不套用其他模板。' + (mv_.reason ? '人工物流也不可用（' + esc(mv_.reason) + '）。' : '') + '</p>'); return; }
+          st.cand = rt.candidates; glmRtiForm_(r, vm, rt);
+        });
+      }).catch(function (e) { done(); glmRtiMsg_(r, '<p class="glm-muted">' + (glmRtiNotSent_(e) ? '未送出（' + esc(glmRtiNotSentCode_(e)) + '）' : '讀取失敗（' + esc(e && e.message || e) + '）') + '，未建立任何資料。</p>'); });
+    };
+  }
+  function glmRtiForm_(r, vm, rt) {
+    var st = glmRtiSt_(vm.shipmentId), f = st.facts, multi = rt.candidates.length > 1;
+    var tpl = '<select data-rti="tpl">' + (multi ? '<option value="">請選擇路線（' + rt.candidates.length + ' 個適用）</option>' : '') + rt.candidates.map(function (c) { return '<option value="' + esc(c.route_template_id) + '">' + esc(c.template_name || c.route_template_id) + ' (' + esc(c.route_template_id) + ')</option>'; }).join('') + '</select>';
+    glmRtiMsg_(r, '<div class="glm-dsec"><p class="glm-muted">來源 ' + esc(f.source || '—') + ' → 目的倉 ' + esc(f.dest || '—') + ' · carrier ' + esc(f.carrier || '—') + ' · method ' + esc(f.method || '—') + '</p>' + glmRtiSkipped_(rt) +
+      '<label class="glm-field"><span>路線</span>' + tpl + '</label><label class="glm-field"><span>目前位置（節點）</span><select data-rti="node"></select></label>' +
+      '<label class="glm-field"><span>回報時間（以系統時區解讀；不可晚於現在、不可早於 ETD）</span><input type="datetime-local" data-rti="at"></label><label class="glm-field"><span>位置來源（例如貨代通知）</span><input type="text" maxlength="200" data-rti="src"></label>' +
+      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-preview">預覽</button></div><div data-rti="out"></div></div>');
+    var sel = r.querySelector('[data-rti="tpl"]'), node = r.querySelector('[data-rti="node"]');
+    var fill = function () { var c = rt.candidates.filter(function (x) { return x.route_template_id === sel.value; })[0]; node.innerHTML = c ? c.nodes.map(function (n) { return '<option value="' + esc(n.route_template_node_id) + '">#' + esc(n.sequence_no) + ' ' + esc(n.label) + (n.country ? ' · ' + esc(n.country) : '') + (n.coordinates === 'PENDING' ? ' · 座標待補' : '') + '</option>'; }).join('') : ''; };
+    sel.onchange = fill; fill();
+    r.querySelector('[data-act="route-init-preview"]').onclick = function () { glmRtiPreview_(r, vm); };
+  }
+  // AD3 D r2 - ROUTE_INIT MANUAL LOGISTICS (A contract 2): offered only when the preview row says no template applies AND route.manual.available.
+  // The operator presses the button, fills the position time and the reason / reference, previews (no write), then confirms; the row sent is
+  // { shipment_id, route_mode: 'MANUAL', position_as_of, position_source } with no template / node / digest. Create, unknown outcome and replay
+  // use the existing glmRtiCreate_ / receipt check (one batch id per shipment session).
+  function glmRtiManualOffer_(r, vm, rt) {
+    var mv = rt.manual || {};
+    glmRtiMsg_(r, '<div class="glm-dsec" data-glm="route-init-manual-offer"><p class="glm-muted">沒有適用的路線模板（' + esc(rt.reason || 'NONE') + '）。系統不套用其他模板。</p>' +
+      '<p class="glm-muted">可改用「人工物流（無路線範本）」：只記錄真實來源 ' + esc(mv.origin_warehouse_id || '—') + ' 與目的倉 ' + esc(mv.destination_warehouse_id || '—') + '，不虛構沿途節點、掃描、清關或日期；之後由人工回報位置。' +
+      ((mv.coordinates && (mv.coordinates.origin === 'PENDING' || mv.coordinates.destination === 'PENDING')) ? '（倉庫座標待補：地圖顯示 Coordinate Pending）' : '') + '</p>' +
+      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-manual">使用人工物流（無路線）</button></div><div data-rti="out"></div></div>');
+    var b = r.querySelector('[data-act="route-init-manual"]');
+    if (b) b.onclick = function () { glmRtiManualForm_(r, vm, mv); };
+  }
+  function glmRtiManualForm_(r, vm, mv) {
+    glmRtiMsg_(r, '<div class="glm-dsec" data-glm="route-init-manual"><p class="glm-muted">人工物流（無路線範本）：來源 ' + esc(mv.origin_warehouse_id || '—') + ' → 目的倉 ' + esc(mv.destination_warehouse_id || '—') + '。建立時記錄一筆「運送中」人工回報。</p>' +
+      '<label class="glm-field"><span>回報時間（以系統時區解讀；不可晚於現在、不可早於 ETD）</span><input type="datetime-local" data-rti="m-at"></label>' +
+      '<label class="glm-field"><span>原因 / 參考（2-200 字，例如貨代通知）</span><input type="text" maxlength="200" data-rti="m-src"></label>' +
+      '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-manual-preview">預覽</button></div><div data-rti="out"></div></div>');
+    r.querySelector('[data-act="route-init-manual-preview"]').onclick = function () { glmRtiManualPreview_(r, vm); };
+  }
+  function glmRtiManualPreview_(r, vm) {
+    var st = glmRtiSt_(vm.shipmentId); if (st.busy || st.unknown) return;
+    var g = function (k) { var x = r.querySelector('[data-rti="' + k + '"]'); return x ? String(x.value || '').trim() : ''; };
+    var at = g('m-at').replace('T', ' ').slice(0, 16), src = g('m-src'), out = r.querySelector('[data-rti="out"]');
+    if (at.length < 16 || src.length < 2 || src.length > 200) { out.innerHTML = '<p class="glm-muted">請填回報時間與原因 / 參考（2-200 字）。未送出。</p>'; return; }
+    if (!st.batch) st.batch = glmRtiNewBatch_();
+    st.busy = true; out.innerHTML = '<p class="glm-muted">預覽中…（未寫入）</p>';
+    var body = glmRtiBody_(st, [{ __row: 1, shipment_id: vm.shipmentId, route_mode: 'MANUAL', position_as_of: at, position_source: src }]);
+    Promise.resolve(window.KM.DB.importValidate(body)).then(function (v) {
+      st.busy = false;
+      if (!v || v.success === false || !v.valid) { out.innerHTML = '<p class="glm-muted">不能建立（未寫入）：</p><ul>' + (glmRtiIssues_(v) || '<li>' + esc((v && (v.code || v.error)) || '驗證失敗') + '</li>') + '</ul>'; return; }
+      var w = ((v.preview.rows[0] || {}).warnings || []).map(function (x) { return '<li>' + esc(x.message || x.code) + '</li>'; }).join('');
+      out.innerHTML = '<p>將建立人工物流路線（來源、目的倉 2 個節點）與 1 筆「運送中」人工回報（' + esc(at) + '）。不扣庫存、不收貨、不改狀態。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
+        '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-create">確認建立</button></div>';
+      var cb = r.querySelector('[data-act="route-init-create"]');
+      cb.onclick = function () { glmRtiCreate_(r, vm, body, v.preview_digest, cb); };
+    }).catch(function (e) { st.busy = false; out.innerHTML = '<p class="glm-muted">' + (glmRtiNotSent_(e) ? '未送出（' + esc(glmRtiNotSentCode_(e)) + '）' : '預覽失敗（' + esc(e && e.message || e) + '）') + '，未寫入。</p>'; });
+  }
+  function glmRtiChoice_(r, st) {
+    var g = function (k) { var x = r.querySelector('[data-rti="' + k + '"]'); return x ? String(x.value || '').trim() : ''; };
+    var c = (st.cand || []).filter(function (x) { return x.route_template_id === g('tpl'); })[0];
+    return { tpl: g('tpl'), node: g('node'), at: g('at').replace('T', ' ').slice(0, 16), src: g('src'), digest: c ? c.template_digest : '' };
+  }
+  function glmRtiPreview_(r, vm) {
+    var st = glmRtiSt_(vm.shipmentId);
+    if (st.busy || st.unknown) return;
+    var ch = glmRtiChoice_(r, st), out = r.querySelector('[data-rti="out"]');
+    if (!ch.tpl || !ch.node || !ch.at || !ch.src) { out.innerHTML = '<p class="glm-muted">請選擇路線、節點，並填回報時間與來源。</p>'; return; }
+    if (!st.batch) st.batch = glmRtiNewBatch_();   // b6 (n-2): a definitive answer retired the previous id; this Preview starts a NEW batch
+    st.busy = true; out.innerHTML = '<p class="glm-muted">預覽中…（未寫入）</p>';
+    var row = { __row: 1, shipment_id: vm.shipmentId, route_template_id: ch.tpl, route_template_node_id: ch.node, route_template_digest: ch.digest, position_as_of: ch.at, position_source: ch.src };
+    var body = glmRtiBody_(st, [row]);
+    Promise.resolve(window.KM.DB.importValidate(body)).then(function (v) {
+      st.busy = false;
+      if (!v || v.success === false || !v.valid) { out.innerHTML = '<p class="glm-muted">不能建立（未寫入）：</p><ul>' + (glmRtiIssues_(v) || '<li>' + esc((v && (v.code || v.error)) || '驗證失敗') + '</li>') + '</ul>'; return; }
+      var im = (v.preview && v.preview.impacts) || {}, w = ((v.preview.rows[0] || {}).warnings || []).map(function (x) { return '<li>' + esc(x.message || x.code) + '</li>'; }).join('');
+      out.innerHTML = '<p>將建立 ' + esc(im.shipment_routes) + ' 個計畫節點與 1 筆位置回報（' + esc(ch.at) + '）。不扣庫存、不收貨、不改狀態；之前的節點不記錄實際到站時間。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
+        '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-create">確認建立</button></div>';
+      var cb = r.querySelector('[data-act="route-init-create"]');
+      cb.onclick = function () { glmRtiCreate_(r, vm, body, v.preview_digest, cb); };
+    }).catch(function (e) { st.busy = false; out.innerHTML = '<p class="glm-muted">' + (glmRtiNotSent_(e) ? '未送出（' + esc(glmRtiNotSentCode_(e)) + '）' : '預覽失敗（' + esc(e && e.message || e) + '）') + '，未寫入。</p>'; });
+  }
+  function glmRtiCreate_(r, vm, body, digest, btn) {
+    var st = glmRtiSt_(vm.shipmentId), sid = vm.shipmentId;
+    if (st.busy || st.unknown) return;
+    if (typeof glmBusyOf_ === 'function' && glmBusyOf_(sid)) return;   // A1 per-shipment write exclusion respected
+    st.busy = true; btn.disabled = true; btn.setAttribute('aria-busy', 'true'); btn.textContent = '建立中...';
+    if (typeof glmBusyStart_ === 'function') glmBusyStart_(sid, 'route_init', btn, digest);   // b5 (m-2): ETA / receipt / position of THIS shipment wait
+    var refused = function (code, why, issuesHtml, answered) {   // b5 (m-3): definitive - nothing written; the preview digest is spent, a fresh Preview is required
+      st.busy = false; if (glmRtiBusyMine_(sid) && typeof glmBusyEnd_ === 'function') glmBusyEnd_(sid);
+      if (answered) st.batch = '';   // b6 (n-2): the SERVER answered - this id is spent; the next Preview starts a new batch (no IMPORT_BATCH_CONFLICT loop)
+      var html = '<p class="glm-muted" data-glm="route-init-refused">未建立（' + esc(code) + '）：' + esc(why) + '。請重新按「預覽」。</p>' + (issuesHtml ? '<ul>' + issuesHtml + '</ul>' : '');
+      st.note = html;   // b6 (doc nit): kept in the shipment's state, not only in a panel that may be detached
+      var o = r.querySelector('[data-rti="out"]'); if (o) o.innerHTML = html;
+    };
+    Promise.resolve(window.KM.DB.importCommit(Object.assign({}, body, { preview_digest: digest }))).then(function (res) {
+      st.busy = false;
+      if (res && res.success && (res.status === 'COMMITTED' || res.replayed)) { st.batch = ''; if (glmRtiBusyMine_(sid) && typeof glmBusyEnd_ === 'function') glmBusyEnd_(sid); afterShipmentWrite(sid); return; }
+      if (glmRtiUnknownCode_(res)) { st.unknown = true; if (typeof glmBusyUnknown_ === 'function') glmBusyUnknown_(sid); glmRtiUnknownView_(r, vm); return; }
+      refused((res && res.code) || 'REFUSED', (res && res.error) || '伺服器拒絕', glmRtiIssues_(res), true);
+    }).catch(function (e) {
+      if (glmRtiNotSent_(e)) { refused(glmRtiNotSentCode_(e), '沒有送出'); return; }
+      st.busy = false; st.unknown = true; if (typeof glmBusyUnknown_ === 'function') glmBusyUnknown_(sid); glmRtiUnknownView_(r, vm);
+    });
+  }
+  function glmRtiUnknownView_(r, vm, extra) {
+    var st = glmRtiSt_(vm.shipmentId), sid = vm.shipmentId;
+    glmRtiMsg_(r, '<p class="glm-muted">結果待確認：沒有收到建立結果，系統不會自動重送。' + (extra || '') + '</p><div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-check">查詢結果</button></div>');
+    var c = r.querySelector('[data-act="route-init-check"]'); if (!c) return;
+    c.onclick = function () {
+      if (st.busy) return; st.busy = true; c.disabled = true; c.textContent = '查詢中...';
+      Promise.resolve(window.KM.DB.importReceiptGet({ import_batch_id: st.batch, domain: 'shipment' })).then(function (x) {
+        st.busy = false;
+        if (x && x.success && x.receipt && x.receipt.status === 'COMMITTED') { st.unknown = false; st.batch = ''; if (glmRtiBusyMine_(sid) && typeof glmBusyEnd_ === 'function') glmBusyEnd_(sid); afterShipmentWrite(sid); return; }
+        var rs_ = (x && x.success && x.receipt) ? String(x.receipt.status || '') : '';
+        if (GLM_RTI_ZERO_WRITE_[rs_]) { st.unknown = false; st.batch = ''; if (glmRtiBusyMine_(sid) && typeof glmBusyEnd_ === 'function') glmBusyEnd_(sid); st.note = '<p class="glm-muted" data-glm="route-init-refused">確認未建立（批次狀態 ' + esc(rs_) + '，未寫入任何資料）。請重新按「建立追蹤路線」並重新「預覽」。</p>'; glmRtiWire_(r, vm); return; }   // b6 (n-1): definitive zero write - released, new batch next time
+        if (x && x.code === 'IMPORT_BATCH_NOT_FOUND') { st.unknown = false; if (glmRtiBusyMine_(sid) && typeof glmBusyEnd_ === 'function') glmBusyEnd_(sid); st.note = '<p class="glm-muted">確認未建立（無批次紀錄）。可重新按「建立追蹤路線」；同一批次重送不會重複建立。</p>'; glmRtiWire_(r, vm); return; }   // b6: the button is wired again (same id kept)
+        glmRtiUnknownView_(r, vm, '目前批次狀態 ' + esc((x && x.receipt && x.receipt.status) || (x && x.code) || 'unknown') + '（批次 ' + esc(st.batch) + '）；請勿重送，可稍後再查詢或請管理者核對。');
+      }).catch(function () { st.busy = false; c.disabled = false; c.textContent = '查詢結果'; });
+    };
+  }
   function openShipmentDrawer(id) {
     var vm = state.vms[id]; var els = drawerEls(); if (!vm || !els) return;
     openDrawerCommon();
@@ -1622,17 +2237,19 @@
     var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source) + ' · last reported ' + (pos.at ? esc(pos.at) + esc(glmReportedAge_(pos.at)) : 'time unknown'))
       : '尚無位置資訊 · <span class="glm-badge glm-badge--pending">Coordinate Pending</span>' + (pl.kind !== 'pending' ? ' <span class="glm-muted">(shown at ' + esc(pl.kind) + ' endpoint)</span>' : '');
     // §14 — explain the shipment's data/route issues in the drawer (same detector as the card badge; no page banner).
-    var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind });
-    var issueSection = issues.hasIssue
+    var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind, opening: vm.opening, displayOnly: vm.openingDisplayOnly, asOf: vm.openingAsOf });
+    var issueSection = issues.types.length
       ? '<section class="glm-dsec glm-dsec--issue"><h4>⚠ Attention</h4>' + issues.types.map(function (t) { return '<p class="glm-issue__line"><strong>' + esc(t.label) + '</strong><br>' + esc(t.detail) + '</p>'; }).join('') + '</section>'
       : '';
+    var rtiRep_ = (vm.events || []).filter(function (e9) { return String(e9.source || '') === 'import' && String(e9.eventType || '') === 'route_node_reached'; })[0], rtiRepSeq_ = -Infinity;   // A2 b5 (REVIEW_A2 m-1): the node reported at import
+    if (rtiRep_) (vm.nodes || []).forEach(function (x9) { if (String(x9.shipmentRouteId || '') === String(rtiRep_.shipmentRouteId || '')) rtiRepSeq_ = x9.sequenceNo; });
     var routeSteps = vm.nodes.map(function (n) {
       var sc = nodeStatusClass(n.status), c = resolveNodeCoord(n);
       return '<div class="glm-step glm-step--' + sc + '"><div class="glm-step__seq">#' + n.sequenceNo + ' <span class="glm-tag glm-tag--' + sc + '">' + esc(sc) + '</span></div>' +
         '<div class="glm-step__name">' + esc(n.nodeName || n.locationName || n.nodeCode || ('Node ' + n.sequenceNo)) + '</div>' +
         '<div class="glm-step__meta">' + esc(n.nodeType || '') + (n.country ? ' · ' + esc(n.country) : '') + (n.transportMode ? ' · ' + esc(n.transportMode) : '') +
         (n.plannedArrivalDate ? ' · plan arr ' + esc(n.plannedArrivalDate) : '') + (n.actualArrivalDate ? ' · act arr ' + esc(n.actualArrivalDate) : '') +
-        (c.drawable ? '' : ' · <span class="glm-badge glm-badge--pending">coord pending</span>') + '</div></div>';
+        (c.drawable ? '' : ' · <span class="glm-badge glm-badge--pending">coord pending</span>') + (/^SRI-/.test(String(n.shipmentRouteId || '')) && sc === 'completed' && !n.actualArrivalDate && n.sequenceNo < rtiRepSeq_ ? ' · <span class="glm-badge glm-badge--neutral" data-glm="inferred-passed" title="匯入時回報的位置之前的節點：系統推定已經過，不是逐站確認，沒有實際到站時間">依匯入位置推定已經過</span>' : '') + '</div></div>';   // A2 b3 (Owner D3)
     }).join('') || '<p class="glm-muted">No route nodes for this shipment (shipment_routes empty).</p>';
     var timeline = vm.events.length ? vm.events.map(function (e) {
       return '<div class="glm-step"><div class="glm-step__seq">#' + (e.eventSequence || '') + '</div>' +
@@ -1648,7 +2265,7 @@
         kv('Shipment ID (external)', vm.externalShipmentId) + kv('Shipment No.', vm.originalNo) + kv('Internal ID', vm.shipmentId) + kv('Company', vm.company) +
         kv('Carrier', vm.carrierLabel === vm.carrier ? vm.carrier : (vm.carrierLabel + '  ·  ' + vm.carrier)) +
         kv('Shipping Method', vm.method) +
-        kv('Origin → Destination', (vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
+        kv('Origin → Destination', glmOriginText_(vm) + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
         kv('Destination Warehouse', vm.destWarehouse) + kv('Tracking / Container', [vm.tracking, vm.container].filter(Boolean).join(' / ')) +
         kv('Status', vm.status) + kv('Route Template', vm.routeTemplateId) + '</section>' +
       '<section class="glm-dsec"><h4>Live Position</h4>' +
@@ -1791,7 +2408,7 @@
     });
     var acts = {
       'zoom-in': function () { if (state.globe) state.globe.zoomIn(); }, 'zoom-out': function () { if (state.globe) state.globe.zoomOut(); }, 'reset': function () { if (state.globe) state.globe.reset(); },
-      'drawer-close': closeDrawer, 'clear-filters': clearFilters,
+      'drawer-close': closeDrawer, 'clear-filters': clearFilters, 'pos-diag-export': function () { glmPositionDiagExport_(); },   // A final3 (Owner item 4)
       'sel-details': function () { if (state.selectedShipmentId && state.vms[state.selectedShipmentId]) openShipmentDrawer(state.selectedShipmentId); },   // MAP-FOCUS-1
       'sel-route': function () {   // MAP-FOCUS-1: the planned route on request, labelled as NOT a position
         var vm = state.vms[state.selectedShipmentId]; if (!vm || !state.globe) return;

@@ -26,6 +26,7 @@
 //     column.strictDropdown: true -> Excel refuses a value outside the list (the importer still re-validates).
 //     An inline list over the limit is no longer dropped silently: it is reported in the result's droppedDropdowns.
 //   - spec.systemExtra: true -> every other key of spec.system is written to _SYSTEM after the fixed eleven.
+// A fix2 (2026-11-20) - one more OPT-IN: column.unlockIfRowFlag (see writeDataSheet); unused by every other template.
 //   buildWorkbook(spec) returns { wb, filename, rows, columns, droppedDropdowns, lists } without downloading
 //   (buildAndDownload = buildWorkbook + the download).
 // ============================================================
@@ -55,8 +56,37 @@
     function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
     function colLetter(n) { var r = ''; while (n > 0) { var m = (n - 1) % 26; r = String.fromCharCode(65 + m) + r; n = Math.floor((n - 1) / 26); } return r; }
     function inlineList(values) { return '"' + values.map(function (v) { return s(v).replace(/"/g, ''); }).join(',') + '"'; }
+    // A final2 (REVIEW_AFINAL MINOR-3): an inline list cannot carry a value holding ',' (split into fragments), '"' (stripped) or another
+    // double-quote-like character (U+201D / U+FF02 make real Excel REFUSE TO OPEN the whole workbook - joint-a2s-final runs/excel-char-probe).
+    // Such a list goes to the hidden list sheet instead: the VALUES are written unchanged as cells. Lists without these characters are unchanged.
+    function inlineUnsafe(values) { return values.some(function (v) { return /[,"\u201C\u201D\u201E\u201F\u2033\u301D\u301E\u301F\uFF02]/.test(s(v)); }); }
 
     function isExcelJsReady() { return !!(window.ExcelJS && window.ExcelJS.Workbook); }
+    // A final3 (Owner 2026-11-20 item a): ONE awaitable ExcelJS readiness for every XLSX download AND read (template-export + import-batch).
+    // Event-driven, no timer guessing: a deferred <script> has either run or failed before DOMContentLoaded, so after that event the CDN outcome
+    // is final. If the CDN copy (exceljs@4.4.0, SRI sha384) did not arrive - network, CDN, SRI or a blocker - the SAME pinned file is loaded
+    // once from this site (assets/vendor/exceljs-4.4.0.min.js) with the SAME integrity value, so a byte that differs is refused exactly like
+    // the CDN copy. Never a fake XLSX. The reason travels in err.kmDiag (shown only in the details section).
+    var XLSX_SRI = 'sha384-Pqp51FUN2/qzfxZxBCtF0stpc9ONI6MYZpVqmo8m20SoaQCzf+arZvACkLkirlPz', XLSX_LOCAL = 'assets/vendor/exceljs-4.4.0.min.js', _xlsxP = null;
+    function xlsxReady() {
+        if (isExcelJsReady()) return Promise.resolve(window.ExcelJS);
+        if (_xlsxP) return _xlsxP;
+        var diag = { cdn: 'pending', fallback: 'not_tried' };
+        var fail = function (code) { _xlsxP = null; var e = new Error('XLSX engine unavailable (' + code + ')'); e.code = code; e.kmDiag = diag; throw e; };
+        var parsed = (typeof document === 'undefined' || document.readyState !== 'loading') ? Promise.resolve()
+            : new Promise(function (res) { document.addEventListener('DOMContentLoaded', function () { res(); }, { once: true }); });
+        _xlsxP = parsed.then(function () {
+            if (isExcelJsReady()) { diag.cdn = 'ok'; return window.ExcelJS; }
+            diag.cdn = (typeof document !== 'undefined' && document.querySelector('script[src*="exceljs@4.4.0"]')) ? 'not_available' : 'no_cdn_tag';
+            diag.fallback = 'loading';
+            return new Promise(function (res) {
+                var el = document.createElement('script'); el.src = XLSX_LOCAL; el.integrity = XLSX_SRI; el.crossOrigin = 'anonymous';
+                el.addEventListener('load', function () { res('load'); }, { once: true }); el.addEventListener('error', function () { res('error'); }, { once: true });
+                document.head.appendChild(el);
+            }).then(function (r) { diag.fallback = r; return isExcelJsReady() ? window.ExcelJS : fail(r === 'load' ? 'XLSX_ENGINE_LOCAL_NO_GLOBAL' : 'XLSX_ENGINE_UNAVAILABLE'); });
+        });
+        return _xlsxP;
+    }
 
     // One data sheet. listRefs: { <column key>: <range formula> } for this sheet; dropped collects inline lists over the limit.
     function writeDataSheet(wb, sp, isMaster, listRefs, dropped) {
@@ -148,6 +178,9 @@
                     cell.protection = { locked: false };
                 } else {
                     var unlock = (rw.kind !== 'example') && (c.kind === 'editable' || c.kind === 'required' || c.kind === 'business');
+                    // A fix2 (2026-11-20), OPT-IN: a column that names column.unlockIfRowFlag unlocks ONLY the existing data rows whose row object
+                    // carries that flag === true (the server decides the rows it would accept). A spec without unlockIfRowFlag builds exactly as before.
+                    if (!unlock && rw.kind === 'data' && c.unlockIfRowFlag && rw.data && rw.data[c.unlockIfRowFlag] === true) unlock = true;
                     cell.protection = { locked: !unlock };
                 }
 
@@ -176,7 +209,7 @@
             rowsToWrite.slice(0, 60).forEach(function (rw) {
                 var v = rw.data[c.key]; if (v != null) maxLen = Math.max(maxLen, s(v).length);
             });
-            ws.getColumn(i + 1).width = clamp(maxLen + 2, 10, 40);
+            ws.getColumn(i + 1).width = clamp(maxLen + 2, (c.numFmt && /yy/i.test(String(c.numFmt))) ? 12 : 10, 40);   // A final4 Cut B: a date column is at least 12 wide (yyyy-mm-dd never shows #########); values / formats / parser unchanged
             if (c.hidden) ws.getColumn(i + 1).hidden = true;
         });
 
@@ -213,9 +246,7 @@
      * Returns a Promise. Throws (rejects) if ExcelJS is unavailable so the caller can alert.
      */
     function buildWorkbook(spec) {
-        if (!isExcelJsReady()) {
-            return Promise.reject(new Error('XLSX engine (ExcelJS) not loaded — cannot export a formatted template.'));
-        }
+        if (!isExcelJsReady()) return xlsxReady().then(function () { return buildWorkbook(spec); });   // A final3 (Owner item a): wait for the engine (CDN, else the pinned local copy)
         spec = spec || {};
         var sheetSpecs = Array.isArray(spec.sheets) && spec.sheets.length ? spec.sheets : [spec];
         if (sheetSpecs.some(function (sp) { return !(sp.columns || []).length; })) return Promise.reject(new Error('Template spec has no columns.'));
@@ -232,7 +263,7 @@
             (sp.columns || []).forEach(function (c) {
                 if (!(c.dropdown && c.dropdown.length)) return;
                 var src = c.dropdownSource || 'inline';
-                if (src === 'sheet' || (src === 'auto' && inlineList(c.dropdown).length > INLINE_LIST_LIMIT)) {
+                if (src === 'sheet' || (src === 'auto' && inlineList(c.dropdown).length > INLINE_LIST_LIMIT) || inlineUnsafe(c.dropdown)) {   // A final2: unsafe values -> list sheet
                     var n = lists.length + 1, range = "'" + listSheetName + "'!$" + colLetter(n) + '$1:$' + colLetter(n) + '$' + c.dropdown.length;
                     lists.push({ name: 'KM_LIST_' + n, column: n, values: c.dropdown.slice(), range: range, for: (sp.sheetName || 'Template') + '.' + c.key });
                     refs[c.key] = range;
@@ -328,6 +359,7 @@
         buildAndDownload: buildAndDownload,
         buildWorkbook: buildWorkbook,   // R3-IMPORT
         isReady: isExcelJsReady,
+        ready: xlsxReady,   // A final3 (Owner item a): the awaitable readiness for downloads and reads
         STYLE: STYLE
     };
 })();

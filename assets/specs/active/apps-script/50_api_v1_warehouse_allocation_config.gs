@@ -23,6 +23,8 @@
 
 var WAREHOUSE_ALLOCATION_CONFIG_PROP_KEY_ = 'KM_WAREHOUSE_ALLOCATION_CONFIG';   // ONE Script Property; ONE JSON blob
 var WAREHOUSE_ALLOCATION_CONFIG_VERSION_ = 1;
+// D5-V3-R5B layer-50: module stamp of this file (no 01_/63_ pin exists for 50_ today).
+var WAREHOUSE_ALLOCATION_CONFIG_BUILD_VERSION_ = 'F1-7N-D-2k-R1-D5V3R5B-WA1';
 
 function waStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 function waScopeKey_(company, country, marketplace) { return [waStr_(company), waStr_(country), waStr_(marketplace)].join('||'); }
@@ -73,6 +75,8 @@ function warehouseAllocationConfigToRuleRows_(cfg, scope) {
         destination_warehouse_id: whId,
         forecast_allocation_ratio: waNumOrNull_(w.forecast_ratio !== undefined ? w.forecast_ratio : w.forecastRatio),
         sales_allocation_ratio: waNumOrNull_(w.sales_ratio !== undefined ? w.sales_ratio : w.salesRatio),
+        // D5-V3-R5B: the warehouse -> site inventory share, raw as stored (null when absent); validated by its reader (42_)
+        inventory_share: waShareRaw_(w),
         status: 'active', effective_from: '', effective_to: ''
       });
     });
@@ -84,15 +88,37 @@ function warehouseAllocationConfigToRuleRows_(cfg, scope) {
 // `warehouses` = the planner's upserts [{destinationWarehouseId, forecastRatio, salesRatio}]. The scope's warehouse
 // list is REPLACED wholesale (the save is a full-scope reconciliation): warehouses not in `warehouses` are dropped
 // (deactivated). An empty warehouses array is never written here — the writer guards NO_WAREHOUSE_SELECTED upstream.
+// D5-V3-R5B: inventory_share helpers. A VALID explicit value is a finite number in [0, 1] (number or numeric string).
+function waShareRaw_(w) {
+  if (!w) return null;
+  var v = (w.inventory_share !== undefined) ? w.inventory_share : w.inventoryShare;
+  return (v === undefined || v === '') ? null : v;
+}
+function waShareValid_(v) {
+  if (typeof v === 'number') return isFinite(v) && v >= 0 && v <= 1;
+  if (typeof v === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(v)) { var n = Number(v); return n >= 0 && n <= 1; }
+  return false;
+}
 function warehouseAllocationUpsertScope_(cfg, scope, warehouses, actor, stamp) {
   var scopes = (cfg && cfg.scopes && typeof cfg.scopes === 'object') ? cfg.scopes : {};
   var next = {};
   Object.keys(scopes).forEach(function (k) { next[k] = scopes[k]; });   // shallow clone (never mutate input)
   var key = waScopeKey_(scope.company, scope.country, scope.marketplace);
+  // D5-V3-R5B: the shares already stored for this scope, by warehouse - a page save must not wipe them.
+  var prevShare = {};
+  ((scopes[key] && Array.isArray(scopes[key].warehouses)) ? scopes[key].warehouses : []).forEach(function (pw) {
+    var pid = waStr_(pw && (pw.warehouse_id || pw.warehouseId)); var pv = waShareRaw_(pw);
+    if (pid && pv !== null) prevShare[pid] = pv;
+  });
   next[key] = {
     company: waStr_(scope.company), country: waStr_(scope.country), marketplace: waStr_(scope.marketplace),
     warehouses: (warehouses || []).map(function (w) {
-      return { warehouse_id: waStr_(w.destinationWarehouseId || w.warehouse_id || w.warehouseId), forecast_ratio: Number(w.forecastRatio !== undefined ? w.forecastRatio : w.forecast_ratio), sales_ratio: Number(w.salesRatio !== undefined ? w.salesRatio : w.sales_ratio) };
+      var o = { warehouse_id: waStr_(w.destinationWarehouseId || w.warehouse_id || w.warehouseId), forecast_ratio: Number(w.forecastRatio !== undefined ? w.forecastRatio : w.forecast_ratio), sales_ratio: Number(w.salesRatio !== undefined ? w.salesRatio : w.sales_ratio) };
+      // D5-V3-R5B: an explicit VALID share replaces; otherwise (absent or invalid) the stored share is kept as it was.
+      var ex = waShareRaw_(w);
+      if (ex !== null && waShareValid_(ex)) o.inventory_share = Number(ex);
+      else if (Object.prototype.hasOwnProperty.call(prevShare, o.warehouse_id)) o.inventory_share = prevShare[o.warehouse_id];
+      return o;
     }),
     updated_by: waStr_(actor) || 'operation-system', updated_at: waStr_(stamp)
   };
@@ -130,7 +156,7 @@ function handleWarehouseAllocationConfigGet_(body) {
     success: true, data: {
       company: waStr_(scope.company), country: waStr_(scope.country), marketplace: waStr_(scope.marketplace),
       allocations: rows.map(function (r) {
-        return { destination_warehouse_id: r.destination_warehouse_id, forecast_ratio: r.forecast_allocation_ratio, sales_ratio: r.sales_allocation_ratio, status: 'active', allocation_rule_id: r.allocation_rule_id };
+        return { destination_warehouse_id: r.destination_warehouse_id, forecast_ratio: r.forecast_allocation_ratio, sales_ratio: r.sales_allocation_ratio, inventory_share: (r.inventory_share === undefined ? null : r.inventory_share), status: 'active', allocation_rule_id: r.allocation_rule_id };
       })
     }
   });

@@ -508,6 +508,8 @@ var shOverviewFilterState = { country: [], method: [] };
 
 // Create-or-update ONE shared multi-select on its mount (idempotent). onChange writes the selection
 // array back into shOverviewFilterState and re-renders through the existing Overview path.
+// SHIP-OPEN r5.4: a NEW-MODEL opening record = IMPORT_HISTORICAL with a non-blank opening_supply_mode; a blank mode is a legacy row (base display, no badge)
+function _shIsNewOpening(s) { return String(s && s.recordOrigin || '').trim() === 'IMPORT_HISTORICAL' && String(s && s.openingSupplyMode || '').trim() !== ''; }
 function _shMountFilter(key, label, mountId, options) {
     if (!(window.KM && window.KM.ui && window.KM.ui.multiFilter)) return;
     var mount = document.getElementById(mountId);
@@ -694,13 +696,291 @@ function _shNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 
 var SH_STATUS_LABEL = {
     draft: 'Draft', ready_to_ship: 'Ready to Ship', shipped: 'Shipped',
-    in_transit: 'In Transit', arrived: 'Arrived', received: 'Received', closed: 'Closed',
+    in_transit: 'In Transit', arrived: 'Delivered / 已送達（待收貨）', partially_received: 'Partially Received', received: 'Received', closed: 'Closed',
     cancelled: 'Cancelled', stuck: 'Stuck',
     // legacy labels (still displayed if present)
     planned: 'Planned', partial_received: 'Partial Received', delivered: 'Delivered', completed: 'Completed'
 };
 // Execution Layer linear flow (Supply Chain Architecture v1.2 §10). Overview uses this to advance
 // AFTER shipped. Draft-page transitions use the explicit Ready to Ship / Ship buttons.
+// A-DELTA1 C2 item 1 (Owner 2026-11-21): ONE logistics-arrival READ MODEL for the map, its cards / summary / filter and this Overview.
+// A projection only: it never writes a status, never receives, never changes supply eligibility. The rule is the map's glmArrivalNode_ and
+// 31_ shipArrivalVerdict_ (single positive max sequence; last node current / completed; not a transit gateway; exact ID link: location_ref
+// warehouse = destination, or the referenced / template logistics_locations row's warehouse_id = destination). A persisted `arrived` and an
+// Owner-typed delivered_date count as the map counts them. DISPLAY_ONLY imports (never written arrived, never received here) are shown
+// arrived when the route proves it, with their own wording. Loaded by index.html on every page, so the map uses it too (window.KMLogisticsArrival).
+var KMLogisticsArrival = (function () {
+    var GATEWAY = /port|airport|air_?cargo|seaport|harbou?r|vessel|customs|clearance|bonded|border|frontier|rail|railway|truck_?terminal|motor_?carrier|cross_?dock|terminal|hub|transship|tranship|sort_?center|sortation|consolidation|parcel|courier|carrier_?facility|centroid|waypoint|midpoint|transit_?point|gateway/i;
+    var LBL = 'Delivered / 已送達（待收貨）', LBL_DO = 'Delivered / 已送達（僅顯示，不在本系統收貨）';
+    function low(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    function nodeClass(st) { st = low(st); if (/exception|delay|hold|problem|stuck|fail/.test(st)) return 'exception'; if (/current|in_progress|active|transit|ongoing/.test(st)) return 'current'; if (/complete|done|departed|arrived|received|cleared|delivered/.test(st)) return 'completed'; return 'planned'; }
+    function nodeLoc(n, idx) {
+        idx = idx || {}; var locById = idx.locById || {}, owners = idx.locRowsByOwner || { warehouse: {}, factory: {} }, tpl = idx.tplNodeRows || {};
+        if (n.locationRefId) { var t = low(n.locationRefType);
+            if (!t || t === 'logistics_location') { var l = locById[n.locationRefId]; return l ? { loc: l } : { miss: 'logistics_locations.logistics_location_id = ' + n.locationRefId }; }
+            if (t === 'warehouse' || t === 'factory') { var m = (owners[t] || {})[n.locationRefId] || []; return m.length === 1 ? { loc: m[0] } : { miss: m.length ? 'logistics_locations: more than one row for ' + t + ' ' + n.locationRefId : 'logistics_locations.' + t + '_id = ' + n.locationRefId }; }
+            return { miss: 'shipment_routes.location_ref_type (' + t + ' is not a known type)' }; }
+        if (n.routeTemplateNodeId) { var tn = tpl[n.routeTemplateNodeId] || []; if (tn.length !== 1) return { miss: 'shipment_route_template_nodes row ' + n.routeTemplateNodeId };
+            if (tn[0].logisticsLocationId) { var l2 = locById[tn[0].logisticsLocationId]; return l2 ? { loc: l2 } : { miss: 'logistics_locations.logistics_location_id = ' + tn[0].logisticsLocationId }; }
+            return { miss: 'shipment_route_template_nodes.logistics_location_id (template node ' + n.routeTemplateNodeId + ')' }; }
+        return { miss: 'shipment_routes.location_ref_id (and no route_template_node_id)' };
+    }
+    // = glmArrivalNode_ (map) = shipArrivalVerdict_ (31_)
+    function verdict(nodes, dest, idx) {
+        nodes = nodes || []; dest = String(dest == null ? '' : dest).trim();
+        if (!nodes.length) return { arrived: false, code: 'NO_ROUTE' };
+        var maxSeq = -Infinity, cnt = 0, t = null;
+        for (var i = 0; i < nodes.length; i++) { var sq = nodes[i].sequenceNo; if (typeof sq !== 'number' || !isFinite(sq) || sq <= 0) return { arrived: false, code: 'ROUTE_ORDER_UNVERIFIED' }; if (sq > maxSeq) { maxSeq = sq; cnt = 1; t = nodes[i]; } else if (sq === maxSeq) cnt++; }
+        if (cnt !== 1) return { arrived: false, code: 'ROUTE_ORDER_UNVERIFIED' };
+        var cls = nodeClass(t.status); if (cls !== 'current' && cls !== 'completed') return { arrived: false, code: 'NOT_AT_LAST_NODE' };
+        if (GATEWAY.test(String(t.nodeType || '') + ' ' + String(t.nodeCode || '') + ' ' + String(t.plannedEventType || ''))) return { arrived: false, code: 'LAST_NODE_IS_GATEWAY' };
+        if (!dest) return { arrived: false, code: 'DESTINATION_WAREHOUSE_MISSING' };
+        var tp = low(t.locationRefType), r = nodeLoc(t, idx);
+        var ok = (tp === 'warehouse' && String(t.locationRefId || '').trim() === dest) || (!!r.loc && String(r.loc.warehouseId || '').trim() === dest);
+        return ok ? { arrived: true, code: 'AT_DESTINATION' } : { arrived: false, code: 'LAST_NODE_NOT_DESTINATION', missing_field: r.miss || ('logistics_locations.warehouse_id = ' + dest + ' for the last route node') };
+    }
+    // = glmArrival_ (map): persisted arrived, else the route, else an Owner-typed delivered_date
+    function arrivalOf(ship, nodes, idx) {
+        var r = verdict(nodes, (ship && (ship.destinationWarehouseId || ship.warehouseId)) || '', idx);
+        if (!r.arrived && low(ship && ship.status) === 'arrived') return { arrived: true, code: 'STATUS_ARRIVED', basis: 'shipments.status', node_code: r.code };
+        if (!r.arrived && String((ship && ship.deliveredDate) || '').trim()) return { arrived: true, code: 'DELIVERED_DATE_RECORDED', basis: 'shipments.delivered_date', node_code: r.code };
+        return r;
+    }
+    function isDisplayOnly(ship) { return String((ship && ship.recordOrigin) || '').trim() === 'IMPORT_HISTORICAL' && String((ship && ship.openingSupplyMode) || '').trim().toUpperCase() === 'DISPLAY_ONLY'; }
+    // the ONE status mapping. ship: { status, recordOrigin, openingSupplyMode }; arrival: any verdict (or null = not read)
+    function stateFromVerdict(ship, arrival, statusLabels) {
+        var st = low(ship && ship.status), lab = statusLabels || {}, base = lab[st] || (ship && ship.status) || '—', dOnly = isDisplayOnly(ship) || !!(ship && ship.displayOnly);
+        if (st === 'arrived') return { key: 'arrived', label: LBL, projected: false, basis: 'shipments.status' };
+        if ((st === 'shipped' || st === 'in_transit') && arrival && arrival.arrived) return { key: 'arrived', label: dOnly ? LBL_DO : LBL, projected: true, basis: arrival.basis || 'route', code: arrival.code, display_only: dOnly };
+        return { key: st, label: base, projected: false, basis: 'shipments.status', code: arrival ? arrival.code : 'NOT_READ' };
+    }
+    function buildIndex(routes, locations, tplNodes) {
+        var nodesByShip = {}, locById = {}, owners = { warehouse: {}, factory: {} }, tpl = {};
+        (routes || []).forEach(function (n) { if (n && n.shipmentId) (nodesByShip[n.shipmentId] = nodesByShip[n.shipmentId] || []).push(n); });
+        (locations || []).forEach(function (l) { if (!l) return; if (l.logisticsLocationId) locById[l.logisticsLocationId] = l; if (l.warehouseId) (owners.warehouse[l.warehouseId] = owners.warehouse[l.warehouseId] || []).push(l); if (l.factoryId) (owners.factory[l.factoryId] = owners.factory[l.factoryId] || []).push(l); });
+        (tplNodes || []).forEach(function (n) { if (n && n.routeTemplateNodeId) (tpl[n.routeTemplateNodeId] = tpl[n.routeTemplateNodeId] || []).push(n); });
+        return { nodesByShip: nodesByShip, idx: { locById: locById, locRowsByOwner: owners, tplNodeRows: tpl } };
+    }
+    return { verdict: verdict, arrivalOf: arrivalOf, stateFromVerdict: stateFromVerdict, buildIndex: buildIndex, isDisplayOnly: isDisplayOnly, LABEL_ARRIVED: LBL, LABEL_ARRIVED_DISPLAY_ONLY: LBL_DO };
+})();
+if (typeof window !== 'undefined') window.KMLogisticsArrival = KMLogisticsArrival;
+// Overview: the route / location read for the projection is a SEPARATE, lazy, read-only workspace read (include routes + locations + templates),
+// issued once per Overview load and only when a shipped / in_transit row is listed. Until it lands, a DISPLAY_ONLY / not-COUNTED import row says
+// so ('物流到達讀取中'); a failed read says '未能讀取' - never a guessed arrival, never 'In Transit' over a proven arrival.
+var _shArrivalModel = null, _shArrivalLoading = false;
+function _shArrivalStateOf_(s) {
+    var A = KMLogisticsArrival, m = _shArrivalModel, imp = String((s && s.recordOrigin) || '').trim() === 'IMPORT_HISTORICAL';   // C3 L-3: every import row
+    if (m && !m.failed) return A.stateFromVerdict(s, A.arrivalOf(s, m.nodesByShip[s.shipmentId] || [], m.idx), SH_STATUS_LABEL);
+    var st0 = A.stateFromVerdict(s, (String((s && s.status) || '').trim().toLowerCase() === 'arrived') ? { arrived: true } : null, SH_STATUS_LABEL);
+    if (st0.key !== 'arrived' && imp && (s.status === 'shipped' || s.status === 'in_transit')) st0 = Object.assign({}, st0, { label: st0.label + (m && m.failed ? '（物流到達未能讀取）' : '（物流到達讀取中）') });
+    return st0;
+}
+// A-delta1 C3 (REVIEW_AD1 L-4): the projection is rebuilt after every Overview (re)load and after a map position update in this session
+if (typeof window !== 'undefined') window.KMLogisticsArrivalInvalidate = function () { _shArrivalModel = null; };
+function _shArrivalEnsure_(list, rerender) {
+    if (_shArrivalModel || _shArrivalLoading) return;
+    // r2 (cost): 1) reuse route / location rows another page already loaded (the map's read fills the shared cache) - zero extra reads;
+    // 2) otherwise read only when a DISPLAY_ONLY / not-COUNTED import row is shipped / in_transit (rows that can never get the arrived write).
+    //    System / COUNTED rows rely on the persisted status (31_ writes arrived at the true destination).
+    var DB0 = window.KM && window.KM.DB, r0 = (DB0 && DB0.getShipmentRoutes && DB0.getShipmentRoutes()) || [], l0 = (DB0 && DB0.getLogisticsLocations && DB0.getLogisticsLocations()) || [];
+    if (r0.length && l0.length) { _shArrivalModel = KMLogisticsArrival.buildIndex(r0, l0, (DB0.getShipmentRouteTemplateNodes && DB0.getShipmentRouteTemplateNodes()) || []); _shArrivalModel.source = 'shared-cache'; return; }
+    // A-delta1 C3 (REVIEW_AD1 L-3): EVERY open import row (COUNTED included) can sit at its destination without a persisted arrived (a ROUTE_INIT
+    // import positioned at the destination node keeps in_transit), so any IMPORT_HISTORICAL shipped / in_transit row triggers the one lazy read.
+    if (!(list || []).some(function (s) { return (s.status === 'shipped' || s.status === 'in_transit') && String(s.recordOrigin || '').trim() === 'IMPORT_HISTORICAL'; })) return;
+    if (!(window.KM && window.KM.api && typeof window.KM.api.getWorkspace === 'function' && window.KM.DB && typeof window.KM.DB.adaptShipmentWorkspace === 'function')) { _shArrivalModel = { failed: true }; return; }
+    _shArrivalLoading = true;
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { routes: true, locations: true, templates: true } })).then(function (env) {
+        _shArrivalLoading = false;
+        if (!(env && env.success)) { _shArrivalModel = { failed: true }; } else { var md = window.KM.DB.adaptShipmentWorkspace(env.data) || {}; _shArrivalModel = KMLogisticsArrival.buildIndex(md.shipmentRoutes, md.logisticsLocations, md.shipmentRouteTemplateNodes); }
+        if (typeof rerender === 'function') rerender();
+    }).catch(function () { _shArrivalLoading = false; _shArrivalModel = { failed: true }; if (typeof rerender === 'function') rerender(); });
+}
+// AD3 D (Owner decisions 6 / 7; Author A contract section 3) - MANUAL POSITION REPORT ON THE SHIPMENT CARD.
+// Only for a shipment confirmed with manual logistics (every route row route_template_id 'MANUAL'); a shipment with a template route uses the
+// normal Update Position on the map and gets no box. When the route rows are not loaded on this page the box is offered with a notice and the
+// server decides (ROUTE_NOT_MANUAL). The report is an explicit operator statement: kind (in transit / arrived at destination warehouse), report
+// time, reason / reference, the BOUND destination shown read-only (never sent - the server binds the saved destination). One operation id per
+// report attempt, kept in this browser until a definitive answer, so a retry can never write twice. An answer that did not arrive is held:
+// nothing is resent automatically; Re-check reads the shipment from the server, and only an explicit press resends with the SAME operation id
+// (the server answers idempotent). Arrival never receives stock: receipt stays the separate receipt flow. DISPLAY_ONLY imports: no arrival.
+var SH_MANUAL_POS_KEY_ = 'km.shipment.manualPositionOp.v1';
+var SH_MANUAL_POS_INFLIGHT_ = {};
+function _shManualPosRead_() { try { var v = JSON.parse(window.localStorage.getItem(SH_MANUAL_POS_KEY_) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
+var SH_MANUAL_POS_MEM_ = {};
+function _shManualPosGet_(sid) { var v = _shManualPosRead_(); return v[sid] || SH_MANUAL_POS_MEM_[sid] || null; }
+function _shManualPosPut_(sid, rec) { SH_MANUAL_POS_MEM_[sid] = rec; try { var v = _shManualPosRead_(); if (rec) v[sid] = rec; else delete v[sid]; window.localStorage.setItem(SH_MANUAL_POS_KEY_, JSON.stringify(v)); } catch (e) {} if (!rec) delete SH_MANUAL_POS_MEM_[sid]; }
+function _shManualPosNewOp_(sid) {
+    var r = ''; try { var a = new Uint32Array(2); window.crypto.getRandomValues(a); r = a[0].toString(36) + a[1].toString(36); } catch (e) { r = Math.floor(Math.random() * 1e12).toString(36); }
+    return ('mp-' + Date.now().toString(36) + '-' + r).replace(/[^A-Za-z0-9:_.-]/g, '').slice(0, 80);
+}
+// manual / template / unknown, from route rows already on this page (the map's shared cache or the Overview projection read); never a new read
+function _shManualRouteState_(s) {
+    var rows = null, m = _shArrivalModel;
+    if (m && !m.failed && m.nodesByShip) rows = m.nodesByShip[s.shipmentId] || [];
+    else { try { var all = (window.KM && window.KM.DB && window.KM.DB.getShipmentRoutes && window.KM.DB.getShipmentRoutes()) || []; if (all.length) rows = all.filter(function (n) { return n && n.shipmentId === s.shipmentId; }); } catch (e) {} }
+    if (rows === null) return 'UNKNOWN';
+    if (!rows.length) return 'NONE';
+    return rows.every(function (n) { return String((n && n.routeTemplateId) || '').trim().toUpperCase() === 'MANUAL'; }) ? 'MANUAL' : 'TEMPLATE';
+}
+function _shNowLocal_() { var d = new Date(), p = function (n) { return (n < 10 ? '0' : '') + n; }; return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + 'T' + p(d.getHours()) + ':' + p(d.getMinutes()); }
+function _shManualPosHtml_(s) {
+    var st = String((s && s.status) || '').trim().toLowerCase();
+    if (st !== 'shipped' && st !== 'in_transit') {   // AD3 D r3: the server refuses a report here; only an earlier UNKNOWN report is shown, re-check only
+        var h0 = s && _shManualPosGet_(String(s.shipmentId));
+        if (!h0) return '';
+        var e0 = _shEsc(String(s.shipmentId));
+        return '<div class="sh-manual-pos" data-sid="' + e0 + '" data-route-state="HELD_ONLY" style="margin-top:12px;padding:10px 12px;border:1px solid #CBD5E1;border-radius:6px;background:#fff;font-size:12px;">' +
+            '<div style="font-weight:600;color:#1E293B;">Manual position report</div>' +
+            '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;"><button type="button" class="sh-mp-recheck" onclick="shManualPosRecheck(\'' + e0 + '\', this)" style="background:#2563EB;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;">Re-check (read only)</button>' +
+            '<span class="sh-mp-note" role="status" style="overflow-wrap:anywhere;">' + _shEsc('An earlier report (' + h0.kind + ', operation ' + h0.op + ') has an UNKNOWN outcome. The shipment is now ' + (st || 'unknown') + ', so no new report can be sent here. Re-check reads the shipment.') + '</span></div></div>';
+    }
+    var rs = _shManualRouteState_(s);
+    if (rs === 'TEMPLATE' || rs === 'NONE') return '';
+    var sid = String(s.shipmentId), e = _shEsc(sid), dOnly = KMLogisticsArrival.isDisplayOnly(s);
+    var dest = String(s.destinationWarehouseId || s.warehouseId || '').trim(), hold = _shManualPosGet_(sid);
+    var kinds = [['IN_TRANSIT', 'In transit / 運送中']];
+    if (!dOnly) kinds.push(['ARRIVED_AT_DESTINATION', 'Arrived at destination warehouse / 已到目的倉']);
+    return '<div class="sh-manual-pos" data-sid="' + e + '" data-route-state="' + rs + '" style="margin-top:12px;padding:10px 12px;border:1px solid #CBD5E1;border-radius:6px;background:#fff;font-size:12px;">' +
+        '<div style="font-weight:600;color:#1E293B;">Manual position report (manual logistics, no route template)</div>' +
+        (rs === 'UNKNOWN' ? '<div class="sh-mp-unknown" style="color:#64748B;margin-top:2px;">Only for shipments confirmed with manual logistics. The server checks this; a shipment with a route template uses Update Position on the map.</div>' : '') +
+        '<div style="margin-top:6px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px;">' +
+        '<label style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:11px;color:#64748B;">Position</span><select class="sh-mp-kind" data-field="manual_report" style="padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;"><option value="">-- Choose --</option>' +
+            kinds.map(function (k) { return '<option value="' + k[0] + '">' + _shEsc(k[1]) + '</option>'; }).join('') + '</select></label>' +
+        '<label style="display:flex;flex-direction:column;gap:2px;"><span style="font-size:11px;color:#64748B;">Report time</span><input class="sh-mp-time" data-field="report_time" type="datetime-local" value="' + _shNowLocal_() + '" style="padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;min-width:0;"></label>' +
+        '<label style="display:flex;flex-direction:column;gap:2px;grid-column:1 / -1;"><span style="font-size:11px;color:#64748B;">Reason / reference (required)</span><input class="sh-mp-reason" data-field="reason" type="text" maxlength="200" placeholder="e.g. carrier email 2026-11-21, POD photo, call with warehouse" style="padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;"></label>' +
+        '<div style="grid-column:1 / -1;color:#475569;">Destination (saved on this shipment): <strong class="sh-mp-dest">' + _shEsc(dest || 'not set') + '</strong></div>' +
+        '</div>' +
+        (dOnly ? '<div style="color:#92400E;margin-top:4px;">Display-only import: arrival is not recorded here and nothing is received.</div>' : '<div style="color:#64748B;margin-top:4px;">Arrival does not receive stock. Receive the quantity in the receipt flow.</div>') +
+        '<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:8px;align-items:center;">' +
+        '<button type="button" class="sh-mp-send" onclick="shManualPosSend(\'' + e + '\', this)"' + (hold ? ' disabled' : '') + ' style="background:#0F766E;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;min-width:120px;">Report position</button>' +
+        (hold ? '<button type="button" class="sh-mp-recheck" onclick="shManualPosRecheck(\'' + e + '\', this)" style="background:#2563EB;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;">Re-check (read only)</button>' : '') +
+        '<span class="sh-mp-note" role="status" style="overflow-wrap:anywhere;">' + (hold ? _shEsc('An earlier report (' + hold.kind + ', operation ' + hold.op + ') has an UNKNOWN outcome. Nothing was resent. Re-check reads the shipment first.') : '') + '</span>' +
+        '</div></div>';
+}
+var SH_MANUAL_POS_TEXT_ = {
+    MANUAL_REPORT_INVALID: 'Choose a position.', MANUAL_REPORT_OPERATION_ID_REQUIRED: 'Internal: operation id missing.', MANUAL_REPORT_TIME_INVALID: 'The report time is not valid.',
+    MANUAL_REPORT_TIME_IN_FUTURE: 'The report time is in the future.', MANUAL_REPORT_REASON_REQUIRED: 'Enter a reason / reference (2-200 characters).',
+    MANUAL_REPORT_FIELD_NOT_ALLOWED: 'The request carried a field that is not allowed.', MANUAL_REPORT_DESTINATION_MISMATCH: 'The destination differs from the saved one.',
+    ROUTE_NOT_MANUAL: 'This shipment has a route template: use Update Position on the map.', ROUTE_NOT_SNAPSHOTTED: 'This shipment has no route snapshot yet.',
+    MANUAL_ROUTE_INVALID: 'The manual route of this shipment is not valid (not bound to the saved destination).', ROUTE_INIT_NOT_COMMITTED: 'The import that created the route is not committed.',
+    SHIPMENT_NOT_FOUND: 'Shipment not found.', MANUAL_REPORT_STATUS_NOT_OPEN: 'The shipment is not open for a position report.', RECEIPT_ALREADY_STARTED: 'Receipt has already started.',
+    MANUAL_ARRIVAL_DISPLAY_ONLY: 'Display-only import: arrival is not recorded.', MANUAL_REPORT_BACKWARD: 'The shipment is already at the destination; it cannot go back to in transit.',
+    MANUAL_REPORT_OPERATION_ID_REUSED: 'This operation id was used for another report. Reload and report again.', EDIT_CONFLICT: 'The shipment changed elsewhere. Reload and check before reporting.',
+    LOCK: 'The system is busy. Re-check, then try again.'
+};
+// AD3 D r7 (review F3): which failed answers PROVE that nothing was written. 31_ answers WRITE from its catch after route rows / the event /
+// the status may already be written (a retry with the same operation_id is safe), so WRITE is UNKNOWN; so is LOCK and any code not listed.
+var SH_MANUAL_POS_DEFINITIVE_ = { MANUAL_REPORT_INVALID: 1, MANUAL_REPORT_OPERATION_ID_REQUIRED: 1, MANUAL_REPORT_TIME_INVALID: 1, MANUAL_REPORT_TIME_IN_FUTURE: 1, MANUAL_REPORT_REASON_REQUIRED: 1,
+    MANUAL_REPORT_FIELD_NOT_ALLOWED: 1, MANUAL_REPORT_DESTINATION_MISMATCH: 1, ROUTE_NOT_MANUAL: 1, ROUTE_NOT_SNAPSHOTTED: 1, MANUAL_ROUTE_INVALID: 1, ROUTE_INIT_NOT_COMMITTED: 1, SHIPMENT_NOT_FOUND: 1,
+    MANUAL_REPORT_STATUS_NOT_OPEN: 1, RECEIPT_ALREADY_STARTED: 1, MANUAL_ARRIVAL_DISPLAY_ONLY: 1, MANUAL_REPORT_BACKWARD: 1, MANUAL_REPORT_OPERATION_ID_REUSED: 1, EDIT_CONFLICT: 1 };
+function _shManualPosDefinitive_(r) {
+    if (!r || r.success !== false) return false;
+    var code = String(r.code || '').trim();
+    if (code === 'WRITE' || code === 'LOCK' || code === 'network' || code === 'config') return false;
+    return r.zero_write === true || SH_MANUAL_POS_DEFINITIVE_[code] === 1;
+}
+// AD3 D r7 (review minor): the reported operator, from the same source the map uses (glmActor); the card's name when none is signed in
+function _shReportedOperator_() { try { return (window.KM && (window.KM.currentUserEmail || (window.KM.currentUser && window.KM.currentUser.email))) || 'operation-system'; } catch (e) { return 'operation-system'; } }
+function _shManualPosBox_(sid) { return document.querySelector('.sh-manual-pos[data-sid="' + String(sid).replace(/"/g, '') + '"]'); }
+function shManualPosSend(sid, btn) {
+    var box = _shManualPosBox_(sid); if (!box || SH_MANUAL_POS_INFLIGHT_[sid]) return false;
+    var note = box.querySelector('.sh-mp-note'), kind = box.querySelector('.sh-mp-kind').value, reason = String(box.querySelector('.sh-mp-reason').value || '').trim();
+    var t = String(box.querySelector('.sh-mp-time').value || '').trim().replace('T', ' ');
+    var hold = _shManualPosGet_(sid), resend = !!(hold && hold.checked === true);
+    if (hold && !resend) { note.textContent = 'An earlier report has an UNKNOWN outcome. Re-check first; nothing was sent.'; return false; }
+    if (resend) { kind = hold.kind; reason = hold.reason; t = hold.time; }
+    if (!kind) { note.textContent = 'Choose a position (in transit / arrived at destination warehouse).'; return false; }
+    if (reason.length < 2 || reason.length > 200) { note.textContent = 'Enter a reason / reference (2-200 characters).'; return false; }
+    if (!/^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2})?$/.test(t)) { note.textContent = 'Enter the report time.'; return false; }
+    var DB = window.KM && window.KM.DB; if (!DB || typeof DB.advanceShipmentRoutePoint !== 'function') { note.textContent = 'Not available on this page.'; return false; }
+    var op = resend ? hold.op : _shManualPosNewOp_(sid);
+    var body = { shipment_id: sid, manual_report: kind, operation_id: op, report_time: t, reason: reason, actor: _shReportedOperator_() };   // AD3 D r7: the map's reported operator
+    if (!resend) { var tok = _shTok_(sid); if (tok) body.expected_updated_at = tok; }   // a resend of the SAME operation carries no version: the server answers idempotent
+    if (SH_MANUAL_POS_INFLIGHT_MAP_[sid]) { note.textContent = 'A manual report for this shipment is being sent from the map. Nothing was sent.'; return false; }
+    _shManualPosPut_(sid, { op: op, kind: kind, reason: reason, time: t, at: new Date().toISOString(), checked: false, src: (hold && hold.src) || 'card' });   // held BEFORE sending (a reload mid-flight stays held)
+    SH_MANUAL_POS_INFLIGHT_[sid] = true; if (btn) { btn.disabled = true; btn.textContent = 'Reporting...'; }
+    note.textContent = '';
+    return Promise.resolve().then(function () { return DB.advanceShipmentRoutePoint(body); }).then(function (r) {
+        delete SH_MANUAL_POS_INFLIGHT_[sid];
+        var _rc = box.querySelector('.sh-mp-recheck'); if (_rc && _shManualPosDefinitive_(r)) _rc.remove();   // AD3 D r7
+        if (r && r.success === true) { if (_rc) _rc.remove();
+            _shManualPosPut_(sid, null);
+            var d = r.data || {}, a = d.arrival || {};
+            note.textContent = (d.idempotent ? 'Already recorded (no second write). ' : 'Recorded. ') +
+                (kind === 'ARRIVED_AT_DESTINATION' ? (a.arrived ? 'Arrived at ' + (a.destination_warehouse_id || 'the destination') + ' (status ' + (a.status_after || 'arrived') + '). Receive the quantity in the receipt flow.' : 'Position recorded; arrival not confirmed: ' + (a.code || a.reason || 'unknown') + (a.missing_field ? ' (missing ' + a.missing_field + ')' : '') + '.') : 'In transit.');
+            if (btn) { btn.disabled = false; btn.textContent = 'Report position'; }
+            try { if (window.KMLogisticsArrivalInvalidate) window.KMLogisticsArrivalInvalidate(); } catch (e) {}
+            setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
+            return r;
+        }
+        var code = String((r && r.code) || '').trim();
+        if (_shManualPosDefinitive_(r)) {   // AD3 D r7 (review F3): definitive only with zero_write or a known refusal - never WRITE / LOCK / unknown codes
+            _shManualPosPut_(sid, null);
+            note.textContent = 'Not recorded: ' + (SH_MANUAL_POS_TEXT_[code] || String(r.error || code)) + ' (' + code + ')';
+            if (btn) { btn.disabled = false; btn.textContent = 'Report position'; }
+            return r;
+        }
+        _shManualPosUnknown_(sid, box, btn); return r;
+    }, function (e) { delete SH_MANUAL_POS_INFLIGHT_[sid]; _shManualPosUnknown_(sid, box, btn); return null; });
+}
+function _shManualPosUnknown_(sid, box, btn) {
+    var note = box.querySelector('.sh-mp-note');
+    if (btn) { btn.disabled = true; btn.textContent = 'Report position'; }
+    note.textContent = 'The answer did not arrive: the outcome is UNKNOWN. Nothing will be resent. Press Re-check to read the shipment.';
+    if (!box.querySelector('.sh-mp-recheck')) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'sh-mp-recheck'; b.textContent = 'Re-check (read only)';
+        b.style.cssText = 'background:#2563EB;color:#fff;border:none;border-radius:4px;padding:5px 12px;font-size:12px;cursor:pointer;';
+        b.onclick = function () { shManualPosRecheck(sid, b); };
+        note.parentNode.insertBefore(b, note);
+    }
+}
+// READ ONLY: one server read of this shipment. If it shows the reported effect, the hold is cleared; if not, the operator may resend the SAME
+// operation (explicit press; the server does not write twice). It never sends the report itself.
+function shManualPosRecheck(sid, btn) {
+    var box = _shManualPosBox_(sid), hold = _shManualPosGet_(sid), api = window.KM && window.KM.api;
+    if (!box || !hold) return false;
+    var note = box.querySelector('.sh-mp-note'), send = box.querySelector('.sh-mp-send');
+    if (btn) btn.disabled = true; note.textContent = 'Reading the shipment from the server...';
+    return Promise.resolve().then(function () {
+        if (!api || typeof api.getWorkspace !== 'function') throw new Error('READ_UNAVAILABLE');
+        return api.getWorkspace('shipment', { filters: { shipmentId: sid }, page: { number: 1, size: 5 }, include: { routes: true } });
+    }).then(function (env) {
+        if (!env || env.success !== true) throw new Error('READ_FAILED');
+        var md = window.KM.DB.adaptShipmentWorkspace(env.data) || {}, row = ((md.shipments) || []).filter(function (x) { return String(x.shipmentId) === String(sid); })[0];
+        if (!row) throw new Error('SHIPMENT_NOT_FOUND');
+        var st = String(row.status || '').trim().toLowerCase();
+        var nodes = (md.shipmentRoutes || []).filter(function (n) { return n && n.shipmentId === sid; });
+        var destRow = nodes.filter(function (n) { return String(n.routeTemplateNodeId || '') === 'MANUAL:DESTINATION'; })[0];
+        var _recv = /^(arrived|partially_received|received|closed|completed)$/.test(st);   // AD3 D r3: receiving started / done also proves the earlier report landed
+        var landed = hold.kind === 'IN_TRANSIT' ? (st === 'in_transit' || _recv) : (_recv || (destRow && /current|completed/i.test(String(destRow.status || ''))));
+        if (landed) {
+            _shManualPosPut_(sid, null);
+            note.textContent = 'The server shows the report recorded (status ' + st + '). Nothing was resent.';
+            if (btn) btn.remove(); if (send && box.getAttribute('data-route-state') !== 'HELD_ONLY') send.disabled = false;
+            setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
+            return;
+        }
+        if (box.getAttribute('data-route-state') === 'HELD_ONLY' || !(st === 'shipped' || st === 'in_transit')) { note.textContent = 'The server does not show the report, and the shipment is ' + (st || 'unknown') + ': no report can be sent now. Nothing was resent.'; if (btn) btn.disabled = false; return; }   // AD3 D r3
+        hold.checked = true; _shManualPosPut_(sid, hold);
+        note.textContent = 'The server does not show the report yet (status ' + (st || 'unknown') + '). You may send it again: it reuses operation ' + hold.op + ', so it cannot be written twice.';
+        if (send) { send.disabled = false; send.textContent = 'Send again (same operation)'; }
+        if (btn) btn.disabled = false;
+    }).catch(function () {
+        note.textContent = 'The shipment could not be read. Nothing was resent. Re-check again later.';
+        if (btn) btn.disabled = false;
+    });
+}
+var SH_MANUAL_POS_INFLIGHT_MAP_ = {};
+// AD3 D r2: the ONE per-shipment manual-position hold, shared by this card and the map drawer (both send shipment.route.advance + manual_report
+// with an operation id). get/put/clear the hold; busy(sid) = a send in flight from either side.
+if (typeof window !== 'undefined') window.KMManualPositionOp = {
+    get: function (sid) { return _shManualPosGet_(String(sid)); },
+    put: function (sid, rec) { _shManualPosPut_(String(sid), rec); },
+    clear: function (sid) { _shManualPosPut_(String(sid), null); },
+    busy: function (sid) { return !!(SH_MANUAL_POS_INFLIGHT_[sid] || SH_MANUAL_POS_INFLIGHT_MAP_[sid]); },
+    mapSending: function (sid, on) { if (on) SH_MANUAL_POS_INFLIGHT_MAP_[sid] = true; else delete SH_MANUAL_POS_INFLIGHT_MAP_[sid]; }
+};
+if (typeof window !== 'undefined') { window.shManualPosSend = shManualPosSend; window.shManualPosRecheck = shManualPosRecheck; }
 var SH_STATUS_FLOW = ['draft', 'ready_to_ship', 'shipped', 'in_transit', 'arrived', 'received', 'closed'];
 function _shNextStatus(status) {
     var i = SH_STATUS_FLOW.indexOf(status);
@@ -717,7 +997,7 @@ function _shNextStatus(status) {
 // database as audit evidence, and it stays on screen for the same reason.
 var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped', 'cancelled'];
 // Shipment Overview = official records only (shipped onward).
-var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, received: 1, closed: 1 };
+var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1 };   // OVERVIEW-PR (R4 review M4, ships with the patch): 31_ writes partially_received
 // F1-6B Part B — statuses at which the frozen R2B final-output snapshot exists (post confirm-and-dispatch), so
 // Shipping Detail / Packing List documents can be generated. Purely a UX gate — the backend is fail-closed regardless.
 var SH_DOC_READY_STATUSES = { in_transit: 1, arrived: 1, received: 1, closed: 1 };
@@ -809,7 +1089,7 @@ function _shRefresh_(renderFn) {
         if (_st15c.env !== _shEnvId15c_() || _st15c.scope !== _shScopeId15c_()) { SH_RETURN_STATS_15C_.envDrop++; _shEnvGate15c_(); var _sec15f = document.getElementById('shipment-draft-section'); if (_sec15f && _sec15f.classList.contains('active')) _shLoadAndRender(); return; }   // [R15F-F19v2] envId via db-api; UNKNOWN is never a cache key: an answer for another environment is never drawn or kept
         if (env && env.success) {
             var _known15f = _st15c.env !== 'env:unknown', _st0 = _shModelStamp15c_, _prev15f = (_known15f && _st0 && _st0.env === _st15c.env && _st0.scope === _st15c.scope) ? _shReadModel : null;   // [R15F-F19v2] envId via db-api; UNKNOWN is never a cache key
-            _shReadModel = _shKeepNewer15c_(_prev15f, window.KM.DB.adaptShipmentWorkspace(env.data));   // R15C-B3B: never an older version over a newer one - and never across environments
+            _shReadModel = _shKeepNewer15c_(_prev15f, window.KM.DB.adaptShipmentWorkspace(env.data)); _shArrivalModel = null;   /* C3 L-4: a fresh list re-evaluates the arrival projection */   // R15C-B3B: never an older version over a newer one - and never across environments
             _st15c.at = Date.now(); _shModelStamp15c_ = _known15f ? _st15c : null;   // UNKNOWN: no cache stamp - a return drops it and reads anew
             if (rg) rg.set(_shReadModel.shipments.length ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
             if (typeof renderFn === 'function') renderFn();
@@ -1027,6 +1307,7 @@ function renderShipmentOverview() {
     emptyStateEl.hidden = true; listEl.hidden = false;
     var _keep15o = _shCaptureCards_(listEl);   // R15C-UI
     listEl.innerHTML = list.map(function(s) { return _shRenderDbCard(s, linesByShipment[s.shipmentId] || [], 'overview'); }).join('');
+    _shArrivalEnsure_(list, renderShipmentOverview);   // A-DELTA1 C2 item 1: one lazy read-only route read for the arrival projection
     _shRestoreCards_(listEl, _keep15o);
 }
 
@@ -1180,7 +1461,7 @@ function _shCartonLinesCp2_(pairs) {
 
 function _shRenderDbCard(s, planLines, mode) {
     var sid = s.shipmentId;
-    var statusLabel = SH_STATUS_LABEL[s.status] || s.status || '—';
+    var statusLabel = (mode === 'overview') ? _shArrivalStateOf_(s).label : (SH_STATUS_LABEL[s.status] || s.status || '—');   // A-DELTA1 C2 item 1
     var status = s.status;
     // Execution FIELDS editable only in the Draft workspace, and only while draft / ready_to_ship
     // (shipped is read-only on the Draft page; Overview is always read-only).
@@ -1247,7 +1528,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // thing this must never do is replace an identity it cannot resolve with a reassuring blank.
     function carrierField() {
         var d = _shCarrierCell_(s.carrierId);
-        if (d.state === 'NONE') return roField('Carrier', '');
+        if (d.state === 'NONE' || !String(s.carrierId || '').trim()) return '<div class="sh-carrier-cell">' + roField('Carrier', '') + _shAssignHtml_(s) + '</div>';   // AD3 D r2: blank carrier = to be assigned; fill later
         var sub = (d.state === 'RESOLVED')
             ? _shEsc(d.carrierId)
             : (d.state === 'UNREAD'
@@ -1257,7 +1538,7 @@ function _shRenderDbCard(s, planLines, mode) {
             '<label style="font-size:11px;color:#64748B;">Carrier</label>' +
             '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + _shEsc(d.text) +
             '<span style="display:block;font-size:11px;color:#94A3B8;">' + sub + '</span>' +
-            '</div></div>';
+            '</div>' + _shAssignHtml_(s) + '</div>';   // AD3 D r4: booking channel -> executing carrier (B 12 case b)
     }
     // Customs Type SNAPSHOT (shipments.shipments_customs_type; legacy customs_type read-fallback). Editable while Draft; read-only otherwise. Options =
     // distinct nonblank carrier_rate_cards.customs_type (never invented). Prefill = the shipment's stored
@@ -1302,7 +1583,9 @@ function _shRenderDbCard(s, planLines, mode) {
     // destination_warehouse_id arrive through a planned migration.
     function warehouseFld() {
         var label = '<label style="font-size:11px;color:#64748B;">Destination Warehouse</label>';
-        var curId = String(s.warehouseId || '').trim();
+        // N01 (A final2): the picker shows the CANONICAL destination (destinationWarehouseId = destination_warehouse_id, the legacy
+        // warehouse_id only as its read fallback). A plan-made Draft has no warehouse_id: the old picker showed nothing and Save posted ''.
+        var curId = String(s.destinationWarehouseId || s.warehouseId || '').trim();
         var curCode = String(s.warehouseCode || '').trim();
         if (!fieldsEditable) {
             var disp = curCode ? (curCode + (curId ? ' (' + curId + ')' : '')) : (curId || '');
@@ -1310,6 +1593,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(disp) || '--') + '</div></div>';
         }
         var all = _shGetWarehouses();
+        if (curId && !curCode) { var cw0_ = all.filter(function (w) { return String(w.warehouseId || '').trim() === curId; }); if (cw0_.length === 1) curCode = String(cw0_[0].warehouseCode || '').trim(); }   // N01: the code snapshot of the shown warehouse (exact id, one row)
         var company = String(s.company || '').trim();
         var country = String(s.country || '').trim();
         function eq(a, b) { return String(a || '').trim().toLowerCase() === String(b || '').trim().toLowerCase(); }
@@ -1329,50 +1613,63 @@ function _shRenderDbCard(s, planLines, mode) {
         }
         // §22.0(F) FBA: warehouse_type=FBA AND warehouse marketplace='Amazon' (the operator marketplace,
         // spec-mandated — NOT literal equality to the shipment's marketplace account) within company/country.
-        var fba = eligible.filter(function(w) { return eq(w.warehouseType, 'FBA') && eq(w.marketplace, 'Amazon') && scoped(w); });
+        // AD3 D (Owner decision 12; Author C contract 3b): a Walmart-family shipment (site Walmart / KM Walmart) lists the ACTUAL WFS fulfilment
+        // centres instead: warehouse_type FBA, warehouse marketplace of the same platform family, same company / country, never the two LOGICAL
+        // WFS rows (not a physical ship-to). Every other shipment keeps the Amazon rule above, byte for byte.
+        var _wmt = _shPlatformFamily_(s.marketplace) === 'walmart';
+        var fba = eligible.filter(function(w) {
+            if (!eq(w.warehouseType, 'FBA') || !scoped(w)) return false;
+            if (_wmt) return _shPlatformFamily_(w.marketplace) === 'walmart' && !_shLogicalPlatformWh_(w.warehouseId) && !!String(w.company || '').trim();
+            return eq(w.marketplace, 'Amazon');
+        });
         // §22.0(G) 3PL: warehouse_type=3PL within company/country scope; marketplace MAY be blank (not required).
-        var tpl = eligible.filter(function(w) { return eq(w.warehouseType, '3PL') && scoped(w); });
+        var _src = String(s.sourceWarehouseId || '').trim();   // AD3 D (Author C 2): a 3PL -> 3PL transfer never ships to its own source
+        var tpl = eligible.filter(function(w) { return eq(w.warehouseType, '3PL') && scoped(w) && !(_src && eq(w.warehouseId, _src)); });
         // §22.0(H) deterministic order within each group: logistics_region -> warehouse_code.
         function ordr(a, b) {
             var r = String(a.logisticsRegion || '').localeCompare(String(b.logisticsRegion || ''));
             return r !== 0 ? r : String(a.warehouseCode || '').localeCompare(String(b.warehouseCode || ''));
         }
         fba.sort(ordr); tpl.sort(ordr);
+        // A-delta2 F (Owner rule 5): ONE flat list of the legal choices (FBA rows first, then 3PL, each in the order above). Option text = the
+        // warehouse NAME; when two listed names repeat, ' (' + warehouse code + ')' - the code only. Value = warehouse_id. No optgroup.
+        // A saved destination that is not in the list is NOT inserted as an option (b3 showed it under "Current selection (outside current
+        // filter)"): the select is blank, a note beside it says why, and Save keeps the saved value untouched (_shCollectExec omits the
+        // destination fields while the held value is not replaced; Ship / Confirm refuse until a legal warehouse is chosen).
+        var legal = fba.concat(tpl), nameCount = {};
+        function nm(w) { return String(w.warehouseName || '').trim() || String(w.warehouseCode || '').trim() || String(w.warehouseId || ''); }
+        legal.forEach(function (w) { var k = nm(w).toLowerCase(); nameCount[k] = (nameCount[k] || 0) + 1; });
         function optOf(w) {
-            var disp = [w.warehouseCode, w.warehouseName, [w.city, w.state].filter(Boolean).join('/')].filter(Boolean).join(' — ');
+            var n = nm(w), code = String(w.warehouseCode || '').trim(), disp = (nameCount[n.toLowerCase()] > 1 && code && code !== n) ? n + ' (' + code + ')' : n;
             return '<option value="' + _shEsc(w.warehouseId) + '" data-code="' + _shEsc(w.warehouseCode) + '"' +
-                (eq(w.warehouseId, curId) ? ' selected' : '') + '>' + _shEsc(disp || w.warehouseId) + '</option>';
+                (eq(w.warehouseId, curId) ? ' selected' : '') + '>' + _shEsc(disp) + '</option>';
         }
         var inList = {};
-        fba.concat(tpl).forEach(function(w) { if (w.warehouseId) inList[w.warehouseId] = true; });
-        var groups = '';
-        if (fba.length) groups += '<optgroup label="FBA">' + fba.map(optOf).join('') + '</optgroup>';
-        if (tpl.length) groups += '<optgroup label="3PL">' + tpl.map(optOf).join('') + '</optgroup>';
-        // Preserve a selection that falls outside the current candidate scope (legacy row / scope changed)
-        // so Save never silently discards it. Shown but clearly flagged.
-        var curExtra = '';
-        if (curId && !inList[curId]) {
+        legal.forEach(function(w) { if (w.warehouseId) inList[w.warehouseId] = true; });
+        var held = (curId && !inList[curId]) ? curId : '', note = '';
+        if (held) {
             var cw = all.filter(function(w) { return eq(w.warehouseId, curId); })[0];
-            var cdisp = cw ? [cw.warehouseCode, cw.warehouseName].filter(Boolean).join(' — ') : (curCode ? (curCode + ' (' + curId + ')') : curId);
-            curExtra = '<optgroup label="Current selection (outside current filter)"><option value="' + _shEsc(curId) +
-                '" data-code="' + _shEsc(cw ? cw.warehouseCode : curCode) + '" selected>' + _shEsc(cdisp) + '</option></optgroup>';
+            var why = !cw ? '倉庫主檔找不到這個倉庫' : _shLogicalPlatformWh_(cw.warehouseId) ? 'WFS 邏輯總倉不是實際收貨地址，請選這一票實際的 WFS 倉' : cw.isActive === false ? '倉庫未啟用' : cw.isFactoryWarehouse === true ? '工廠倉不能當目的地'
+                : (company && cw.company && !eq(cw.company, company)) ? '倉庫屬於其他公司' : (country && cw.country && !eq(cw.country, country) && !_shSetMember15e_(country, cw.country)) ? '倉庫國家與 Shipment 不同'
+                : '此類型的倉庫不能在這裡選';
+            note = '原本儲存的目的倉 ' + (curCode || curId) + ' 目前不能選：' + why + '。儲存不會改動它；要 Confirm 前請選一個可選的倉庫。';
         } else if (!curId && curCode) {
-            // Legacy row: warehouse_code present, no warehouse_id. Preserve as a visible selected option
-            // (empty value). Picking a real candidate replaces it and fills warehouse_id.
-            curExtra = '<optgroup label="Current (legacy, no warehouse_id)"><option value="" data-code="' + _shEsc(curCode) +
-                '" selected>' + _shEsc(curCode) + '</option></optgroup>';
+            note = '原本只有倉庫代碼 ' + curCode + '，沒有倉庫 ID；請選一個倉庫。';
+        } else if (!curId && _wmt) {
+            // AD3 D: the plan carried the logical destination (Walmart / KM Walmart); this shipment needs its actual WFS ship-to
+            note = '目的地是 ' + (String(s.destination || s.marketplace || '').trim() || 'Walmart') + '（WFS 邏輯目的地）：請選這一票實際的 WFS 收貨倉。' + (fba.length ? '' : ' 倉庫主檔目前沒有這個平台的 WFS 實際倉（需先新增主檔列）。');
         }
-        var hasCandidates = (fba.length + tpl.length) > 0;
-        var phLabel = hasCandidates ? '-- Select warehouse --' : ((curId || curCode) ? '-- Clear selection --' : 'No eligible warehouse found');
-        var placeholder = '<option value="" data-code="">' + _shEsc(phLabel) + '</option>';
-        var sel = '<select class="sh-exec-input" data-field="warehouse_id" onchange="shWarehousePick(\'' + _shEsc(sid) + '\');_shLaneEdited_(\'' + _shEsc(sid) + '\')" ' +
+        var hasCandidates = legal.length > 0;
+        var placeholder = '<option value="" data-code="">' + _shEsc(hasCandidates ? '-- Select warehouse --' : '--') + '</option>';
+        var sel = '<select class="sh-exec-input" data-field="warehouse_id"' + (curId ? ' data-canonical="' + _shEsc(curId) + '"' : '') + (held ? ' data-held="' + _shEsc(held) + '"' : '') + (hasCandidates ? '' : ' disabled') + ' onchange="shWarehousePick(\'' + _shEsc(sid) + '\');_shLaneEdited_(\'' + _shEsc(sid) + '\')" ' +
             'style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' +
-            placeholder + curExtra + groups + '</select>';
+            placeholder + legal.map(optOf).join('') + '</select>';
+        var noteHtml = note ? '<div class="sh-wh-note" data-field-note="warehouse_id" role="status" style="font-size:11px;color:#B91C1C;margin-top:3px;white-space:normal;overflow-wrap:anywhere;">' + _shEsc(note) + '</div>' : '';
         // Hidden mirror — warehouse_code is COPIED from the chosen option so _shCollectExec persists BOTH
         // warehouse_id and warehouse_code (identity + snapshot).
         var hidden = '<input type="hidden" data-field="warehouse_code" id="sh-whcode-' + _shEsc(sid) + '" value="' + _shEsc(curCode) + '">';
         var help = hasCandidates ? '' : '<div style="font-size:11px;color:#DC2626;margin-top:3px;">No active warehouse for this company / country. Set the shipment context, or add a warehouse in Warehouse Master.</div>';
-        return '<div style="display:flex;flex-direction:column;gap:2px;">' + label + sel + hidden + help + '</div>';
+        return '<div style="display:flex;flex-direction:column;gap:2px;">' + label + sel + hidden + noteHtml + help + '</div>';
     }
     var execGrid =
         '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px 16px;">' +
@@ -1445,6 +1742,7 @@ function _shRenderDbCard(s, planLines, mode) {
         // exists). Thin: the frontend only sends { shipment_id, document_type, generate_file } and opens the returned
         // download_url via the existing R3C adapters — NO placeholder mapping / totals / template / master / file build.
         if (SH_DOC_READY_STATUSES[status]) actionsHtml += _shDocActionsHtml(sid);
+        actionsHtml += _shManualPosHtml_(s);   // AD3 D: manual position report (manual-logistics shipments only; '' otherwise)
     }
     // F1-7N-FB-1(J) — the shared Document Panel, in the right-side detail column directly below the
     // Execution Fields, for BOTH pages. It reads ONLY backend registry metadata already attached to the
@@ -1474,6 +1772,7 @@ function _shRenderDbCard(s, planLines, mode) {
             '<div class="sh-card-heading__facts">' +
                 '<span><strong>Marketplace:</strong> ' + _shEsc(s.marketplace || '--') + '</span>' +
                 '<span><strong>Company:</strong> ' + _shEsc((s.sourceCompanies || []).length > 1 ? s.sourceCompanies.join(' / ') : s.company || '--') + '</span>' +
+                (_shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Display only\"><strong>僅顯示</strong>（不計入供給、不收貨）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +   // A final3 (Owner item 1): no opening concept; display-only stays visible (it changes what the operator may do)
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
@@ -1906,6 +2205,55 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
 
 // R71-FE-2 (review m-5): the dialog's payload whose step 1 (the field save) already succeeded - a retry in that dialog skips step 1
 var _shConfirmSaved_ = {};
+// AD3 D (Owner decision 6; Author A contract section 1) - MANUAL LOGISTICS / NO ROUTE FALLBACK AT CONFIRM.
+// The server alone decides that no route template applies: only a zero-write refusal with code ROUTE_TEMPLATE_NOT_FOUND_MANUAL_AVAILABLE and
+// manual_fallback.available === true shows the choice. Nothing is automatic: the operator presses the button, and only then is Confirm re-sent
+// with route_mode 'MANUAL' (never another carrier / country / template). Other route refusals are explained and offer no manual choice.
+var _shConfirmRouteMode_ = {};
+var SH_ROUTE_CODE_TEXT_ = {
+    ROUTE_TEMPLATE_AMBIGUOUS: 'More than one route template matches this shipment. A template has to be chosen; manual logistics is not offered.',
+    ROUTE_DESTINATION_WAREHOUSE_REQUIRED: 'The shipment has no destination warehouse. Choose the Destination Warehouse and save.',
+    ROUTE_DESTINATION_WAREHOUSE_NOT_UNIQUE: 'The destination warehouse is not unique in the warehouse master.',
+    ROUTE_DESTINATION_WAREHOUSE_COUNTRY_MISMATCH: 'The destination warehouse country differs from the shipment country.',
+    ROUTE_DESTINATION_WAREHOUSE_CODE_MISMATCH: 'The saved warehouse code differs from the destination warehouse.',
+    ROUTE_WAREHOUSES_MISSING: 'The warehouse master could not be read.',
+    ROUTE_TEMPLATE_OVERRIDE_NOT_APPLICABLE_OR_NOT_UNIQUE: 'The chosen route template does not apply to this shipment.',
+    ROUTE_MANUAL_NOT_ALLOWED_TEMPLATE_APPLIES: 'A route template applies to this shipment now, so manual logistics is not used. Confirm again normally.',
+    ROUTE_MODE_CONFLICT: 'Manual logistics cannot be combined with a route template.',
+    ROUTE_MODE_INVALID: 'The route mode sent is not valid.',
+    ROUTE_MANUAL_SOURCE_UNRESOLVED: 'Manual logistics needs the real source warehouse of this shipment.',
+    ROUTE_MANUAL_DESTINATION_UNRESOLVED: 'Manual logistics needs the confirmed destination warehouse of this shipment.'
+};
+function _shRouteRefusalHtml_(shipmentId, res, go, cancel, status, execPayload) {
+    var code = String((res && res.code) || '').trim();
+    if (!status || !res || res.zero_write !== true || !(code === 'ROUTE_TEMPLATE_NOT_FOUND_MANUAL_AVAILABLE' || SH_ROUTE_CODE_TEXT_[code] || res.stage === 'route_template')) return false;
+    var mf = res.manual_fallback || {}, offer = code === 'ROUTE_TEMPLATE_NOT_FOUND_MANUAL_AVAILABLE' && mf.available === true && _shConfirmRouteMode_[shipmentId] !== 'MANUAL';
+    var miss = res.missing_field ? ' Missing: ' + String(res.missing_field) + '.' : '';
+    status.style.color = '#b91c1c';
+    status.innerHTML = '<div class="sh-route-refusal" data-code="' + _shEsc(code) + '">' +
+        (offer
+            ? '<strong>No route template applies to this shipment.</strong> Nothing was written.<br>You can confirm it with <strong>manual logistics (no route template)</strong>: the system records only the real source and the confirmed destination warehouse, with no invented hubs, scans, customs or dates. Position is then reported by hand on the shipment card (in transit / arrived).' +
+              (mf.resolver_code ? '<br><span style="font-size:11px;color:#7F1D1D;">Server: ' + _shEsc(mf.resolver_code) + '</span>' : '')
+            : '<strong>Cannot confirm - route.</strong> ' + _shEsc(SH_ROUTE_CODE_TEXT_[code] || String(res.error || code || 'Route template refused')) + _shEsc(miss) + ' Nothing was written.' +
+              (code ? '<br><span style="font-size:11px;color:#7F1D1D;">' + _shEsc(code) + '</span>' : '')) + '</div>';
+    if (go) { go.disabled = false; go.textContent = 'Confirm & Dispatch'; }
+    if (cancel) cancel.disabled = false;
+    var actions = document.getElementById('sh-confirm-actions'), old = document.getElementById('sh-confirm-manual');
+    if (old) old.remove();
+    if (offer && actions) {
+        var b = document.createElement('button'); b.type = 'button'; b.id = 'sh-confirm-manual';
+        b.textContent = 'Use manual logistics (no route) and confirm';
+        b.style.cssText = 'min-height:36px;padding:7px 12px;border:1px solid #B45309;background:#FFFBEB;color:#92400E;border-radius:6px;cursor:pointer;font-weight:600;white-space:normal;';
+        b.addEventListener('click', function () {
+            if (b.disabled) return;
+            b.disabled = true; _shConfirmRouteMode_[shipmentId] = 'MANUAL'; b.remove();
+            if (go) go.disabled = false;
+            _shRunConfirm(shipmentId, execPayload);
+        });
+        actions.insertBefore(b, go || null);
+    }
+    return true;
+}
 function _shAfterStep1Fail_(shipmentId, execPayload) {
     // a later step failed after step 1 saved: re-read, so the next dialog carries the new token (this dialog's retry skips step 1)
     if (_shConfirmSaved_[shipmentId] === execPayload && _shEffectiveWorkspace()) { try { _shLoadAndRender(); } catch (e) {} }
@@ -1962,7 +2310,28 @@ function _shCollectExec(shipmentId) {
         }));
         if (arr.length) payload.lines = arr;
     }
+    // A-delta2 F (Owner rule 5): a saved destination that is not selectable renders blank. Unless the operator explicitly cleared it (the
+    // shWarehousePick blank-option path adds destination_warehouse_id ''), neither warehouse_id nor warehouse_code is sent, so the saved
+    // destination_warehouse_id / warehouse_id / warehouse_code stay exactly as stored (never '' written over them).
+    if (_shHeldDestination_(shipmentId) && !Object.prototype.hasOwnProperty.call(payload, 'destination_warehouse_id')) { delete payload.warehouse_id; delete payload.warehouse_code; }
     return payload;
+}
+// the saved destination id that is not selectable and not replaced ('' when none)
+// AD3 D (Author C contract 3): platform family of a marketplace name (amazon: Amazon / KM Amazon; walmart: Walmart / KM Walmart; else the
+// lower-case name) and the two LOGICAL WFS warehouses (mirror of 22_ csdLogicalPlatformWarehouse_; a master id list, not a fabricated row).
+var SH_LOGICAL_PLATFORM_WH_ = { 'WH-RESUS-US-WFS-WALMART': 1, 'WH-KM-US-WFS-WALMART': 1 };
+function _shLogicalPlatformWh_(id) { return SH_LOGICAL_PLATFORM_WH_[String(id == null ? '' : id).trim().toUpperCase()] === 1; }
+function _shPlatformFamily_(name) {
+    var n = String(name == null ? '' : name).trim().toLowerCase();
+    if (n === 'amazon' || n === 'km amazon') return 'amazon';
+    if (n === 'walmart' || n === 'km walmart') return 'walmart';
+    return n;
+}
+function _shHeldDestination_(shipmentId) {
+    var box = document.getElementById('sh-exec-' + shipmentId), sel = box ? box.querySelector('select[data-field="warehouse_id"]') : null;
+    if (!sel) return '';
+    var h = String(sel.getAttribute('data-held') || '');
+    return (h && String(sel.value || '') === '') ? h : '';
 }
 
 // Save = update execution fields only. Does NOT change status, NOT create history, NOT enter Overview.
@@ -1973,7 +2342,7 @@ function shSaveExecution(shipmentId) {
     if (!_shTokReady_(shipmentId)) return;   // R71-FE-1
     var _p8 = _shCollectExec(shipmentId);   // R71-FE-8 (SH1)
     var before = _shFindShipment_(shipmentId) || {};
-    var reprice = String(_p8.warehouse_id || '') !== String(before.warehouseId || '') ||
+    var reprice = (Object.prototype.hasOwnProperty.call(_p8, 'warehouse_id') && String(_p8.warehouse_id || '') !== String(before.destinationWarehouseId || before.warehouseId || '')) ||   // N01: compared with the canonical destination; A-delta2 F: a held destination is not sent
         String(_p8.shipments_customs_type || '') !== String(before.shipmentsCustomsType || before.raw && before.raw.shipments_customs_type || '');
     _shUpd_(shipmentId, _p8, reprice ? function () { return _shAutoRateAfterSave_(shipmentId, before); } : null).then(function(res) {
         _shAdoptTok_(shipmentId, res);
@@ -2012,7 +2381,7 @@ function shReadyToShip(shipmentId) {
     var payload = _shCollectExec(shipmentId);
     payload.status = 'ready_to_ship';
     var before = _shFindShipment_(shipmentId) || {};
-    var reprice = String(payload.warehouse_id || '') !== String(before.warehouseId || '') || String(payload.shipments_customs_type || '') !== String(before.shipmentsCustomsType || '');
+    var reprice = (Object.prototype.hasOwnProperty.call(payload, 'warehouse_id') && String(payload.warehouse_id || '') !== String(before.warehouseId || '')) || String(payload.shipments_customs_type || '') !== String(before.shipmentsCustomsType || '');   // A-delta2 F: a held destination is not sent
     _shUpd_(shipmentId, payload, reprice ? function () { return _shAutoRateAfterSave_(shipmentId, before); } : null).then(function(res) {
         _shRememberSaved_(shipmentId, payload);   // R71-FE-8 (SH1)
         if (res.auto_rate_card) alert(res.auto_rate_card.message);
@@ -2033,7 +2402,8 @@ function shShip(shipmentId) {
     var missing = [];
     if (!String(payload.external_shipment_id || '').trim()) missing.push('Shipment ID (external)');
     if (!String(payload.reference_id || '').trim()) missing.push('Reference ID');
-    if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
+    if (_shHeldDestination_(shipmentId)) missing.push('Destination Warehouse (the saved ' + _shHeldDestination_(shipmentId) + ' is not selectable now; choose a warehouse)');   // A-delta2 F
+    else if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
     if (!String(payload.etd || '').trim()) missing.push('ETD');
     if (!String(payload.eta || '').trim()) missing.push('ETA');
     if (totalQty <= 0) missing.push('Total Qty');
@@ -2185,7 +2555,7 @@ function _shExecDirty(shipmentId) {
 // land in the SAME locked selection. The saved card's server state is shown; a stale card's cost is "needs re-pricing", never a quote.
 function _shRcCostHtml_(s, forceStale) {
     var t = s && s.estimatedTotalCost, cur = String((s && s.currency) || '').trim(), rc = _shRcState_(s);
-    if (rc.unpriced) return '<span style="color:#92400E;font-weight:600;">Freight pending quote</span>';
+    if (rc.unpriced) return '<span class="sh-cost-pending" style="color:#92400E;font-weight:600;">Cost pending - quote skipped (freight not yet quoted; no amount)</span>';   // AD3 D: never 0
     if (s.estimatedDutyCurrency && s.estimatedDutyCurrency !== cur && s.estimatedFreightCost !== '' && s.estimatedDuty !== '' && s.estimatedDuty != null) return '<span>' + (forceStale || !rc.ok ? 'NEEDS RE-PRICING: ' : '') + 'Freight ' + _shEsc(cur) + ' ' + Number(s.estimatedFreightCost).toFixed(2) + ' / Customs ' + _shEsc(cur) + ' ' + (s.estimatedCustomsFee === '' || s.estimatedCustomsFee == null ? 'unknown' : Number(s.estimatedCustomsFee).toFixed(2)) + ' / Duty ' + _shEsc(s.estimatedDutyCurrency) + ' ' + Number(s.estimatedDuty).toFixed(2) + ' / No combined total</span>';
     if (t === '' || t == null) return '<span style="color:#64748B;">Estimated cost: not priced yet - choose a carrier and method.</span>';
     if (forceStale || !rc.ok) return '<span style="color:#B45309;font-weight:600;">Estimated cost: NEEDS RE-PRICING</span> <span style="color:#94A3B8;text-decoration:line-through;">' + _shEsc(cur) + ' ' + Number(t).toFixed(2) + '</span>';
@@ -2213,7 +2583,7 @@ function shRateCardLoad(btn) {
         SH_RC_[sid] = r; list.removeAttribute('data-sel-carrier'); list.removeAttribute('data-sel-card');
         if (!r.editable) { list.textContent = 'This shipment is no longer a draft - its rate card is history.'; return; }
         if (!r.persistable) { list.innerHTML = '<span style="color:#B45309;">The choice cannot be saved yet (a database column is pending approval).</span>'; return; }
-        if (!r.options.length) { if (r.unpriced_approval) list.innerHTML = '<div>No active rate matches this shipment.</div>' + _shUnpricedHtml_(sid, r); else list.textContent = 'No active rate card matches the saved destination, customs and cargo today. Check the rate-card setup; no replacement was selected.'; return; }
+        if (!r.options.length) { if (r.unpriced_approval) list.innerHTML = '<div>No active rate matches this shipment.</div>' + _shUnpricedHtml_(sid, r) + _shSvcHtml_(sid, r); else list.innerHTML = _shEsc('No active rate card matches the saved destination, customs and cargo today. Check the rate-card setup; no replacement was selected.') + _shSvcHtml_(sid, r); return; }   // AD3 D: + service without a rate card
         var st = r.current && r.current.state, ce = document.getElementById('sh-rc-cost-' + sid), s = _shGetShipments().filter(function (x) { return x.shipmentId === sid; })[0] || {};
         if (ce && st && st !== 'COMPLETE' && st !== 'NONE') ce.innerHTML = _shRcCostHtml_(s, true) + ' <span style="color:#B45309;">- the saved card no longer matches this shipment (' + _shEsc(st) + ').</span>';
         _shRcRender_(sid);
@@ -2256,8 +2626,314 @@ function _shRcRender_(sid) {
             mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _shEsc(x.o.shipping_method_label || '(no label)') + ' \u00b7 ' + _shRcRateText15c_(x.o) + _shLtTag12_(x.o.lead_time) + '</option>'; }).join('') +
         '</select>' +
         '<div class="sh-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? _shLtLine12_(o.lead_time, 'This card') : '') + '</div>' + _shRcPendingHtml15c_(o, cur) +   // AGL02-SH
-        '<button type="button" class="sh-rc-confirm" onclick="shRateCardConfirm(this)"' + (o ? '' : ' disabled') + ' style="margin-top:4px;background:#1E293B;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:132px;">Use this rate card</button> <span class="sh-rc-note"></span>' + _shEtaBox12_(sid, r) + _shUnpricedHtml_(sid, r);   // R71-FE-12
+        '<button type="button" class="sh-rc-confirm" onclick="shRateCardConfirm(this)"' + (o ? '' : ' disabled') + ' style="margin-top:4px;background:#1E293B;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:132px;">Use this rate card</button> <span class="sh-rc-note"></span>' + _shEtaBox12_(sid, r) + _shUnpricedHtml_(sid, r) + _shSvcHtml_(sid, r);   // AD3 D   // R71-FE-12
 }
+// AD3 D (Owner decisions 8 / 9 / 10; Author B contract 1-3) - SERVICE WITHOUT A RATE CARD, and SKIP QUOTE / COST PENDING.
+// The lists come ONLY from the server's service_vocabulary (carriers = ACTIVE carriers master rows; method / last mile = stored tokens), never
+// from rate-card options, so a carrier with ZERO rate cards can be chosen. Carrier, method, last mile and delivery type are SEPARATE fields;
+// "To be assigned / manual logistics" is an explicit choice (carrier_assignment TO_BE_ASSIGNED: carrier_id written blank, never a placeholder
+// id). SPD / LTL is a delivery type (parcel / pallet) that maps to the server's (method, last mile) tuple - domestic only, the server checks.
+// The Save sends ONLY these fields (plus the row version) through the existing updateShipment; a refusal is shown beside the box, an answer
+// that did not arrive is held and re-read (never resent). Skip quote opens the existing explicit freight-pending dialog (reason + ack).
+var SH_SVC_TBA_ = '__TO_BE_ASSIGNED__';
+function _shSvcHtml_(sid, r) {
+    var v = r && r.service_vocabulary;
+    if (!v || !Array.isArray(v.carriers) || !Array.isArray(v.shipping_method) || !Array.isArray(v.last_mile_delivery)) return '';   // a server without the vocabulary: nothing offered
+    var sv = (r && r.service) || {}, s = _shGetShipments().filter(function (x) { return x.shipmentId === sid; })[0] || {};
+    var curC = String(sv.carrier_id != null ? sv.carrier_id : (s.carrierId || '')).trim(), curM = String(sv.shipping_method != null ? sv.shipping_method : (s.shippingMethod || '')).trim(), curL = String(sv.last_mile_delivery != null ? sv.last_mile_delivery : (s.lastMileDelivery || '')).trim();
+    var tba = !curC && (sv.carrier_state ? sv.carrier_state === 'TO_BE_ASSIGNED' : /^tba1\|/.test(String(s.rateCardVersion || ''))), e = _shEsc(sid), seen = {};   // AD3 D r4 (B 11)
+    var carMissing = !curC && !tba, caud = sv.carrier_assignment || null;
+    function opt(val, label, sel) { return '<option value="' + _shEsc(val) + '"' + (sel ? ' selected' : '') + '>' + _shEsc(label) + '</option>'; }
+    var cars = v.carriers.filter(function (c) { var id = String((c && c.carrier_id) || '').trim(); if (!id || seen[id]) return false; seen[id] = 1; return true; });
+    var curKnown = !curC || cars.some(function (c) { return String(c.carrier_id).trim() === curC; });
+    var mets = v.shipping_method.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lms = v.last_mile_delivery.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
+    var dts = _shSvcDeliveryTypes_(v, tba ? '' : curC);   // AD3 D r3: per carrier when the vocabulary says so
+    var dtCur = ''; dts.forEach(function (d) { if (!dtCur && curM && curL && d.shipping_method === curM && d.last_mile_delivery === curL) dtCur = d.value; });
+    var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
+    var a = r && r.unpriced_approval, canSkip = !!(a && a.enabled === true && (a.available === true || a.recoverable === true || (a.card_not_applied && a.card_not_applied.available === true)) && a.carrier_id);
+    var qs = r && r.current && r.current.quote_state;
+    return '<div class="sh-svc" data-sid="' + e + '" data-vocab="' + _shEsc(v.version || '') + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
+        '<div style="font-size:11px;font-weight:600;color:#334155;">Service without a rate card</div>' +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
+        '<select class="sh-svc-carrier" aria-label="Carrier" onchange="shSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', false) +
+            cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm && nm !== id ? nm + ' (' + id + ')' : id, !tba && id === curC); }).join('') +
+            opt(SH_SVC_TBA_, 'To be assigned / manual logistics', tba) + '</select>' +
+        (tba ? '<div class="sh-svc-tba-state" style="font-size:11px;color:#475569;">To be assigned' + (caud ? ' - recorded ' + _shEsc(caud.at || '') + (caud.actor ? ' by ' + _shEsc(caud.actor) + ' (reported, unverified)' : '') + (caud.reason ? ': ' + _shEsc(caud.reason) : '') : ' (server marker)') + '</div>' : '') +
+        (carMissing ? '<div class="sh-svc-missing" style="font-size:11px;color:#B91C1C;">No carrier, and not marked to be assigned: choose a carrier, or "To be assigned" with a reason.</div>' : '') +
+        '<input class="sh-svc-tba-reason" type="text" maxlength="500" aria-label="Reason for to be assigned" placeholder="Reason, required when choosing To be assigned" style="' + sel + 'margin-top:4px;">' +
+        (curKnown ? '' : '<div class="sh-svc-note-carrier" style="font-size:11px;color:#B91C1C;">The saved carrier ' + _shEsc(curC) + ' is not an active carrier (' + _shEsc(sv.carrier_state || 'unknown') + '); choose one.</div>') +
+        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sh-svc-method" aria-label="Shipping method" style="' + sel + '">' + opt('', '--', !curM) + mets.map(function (m) { return opt(m, m, m === curM); }).join('') + '</select></label>' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sh-svc-lastmile" aria-label="Last mile" style="' + sel + '">' + opt('', '--', !curL) + lms.map(function (m) { return opt(m, m, m === curL); }).join('') + '</select></label>' +
+        '</div>' +
+        (dts.length ? '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Delivery type (domestic only)<select class="sh-svc-dtype" aria-label="Delivery type" onchange="shSvcPickDeliveryType(\'' + e + '\', this.value)" style="' + sel + '">' + _shSvcDtypeOptions_(dts, dtCur) + '</select></label>' : '') +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center;">' +
+        '<button type="button" class="sh-svc-save" onclick="shSvcSave(\'' + e + '\', this)" style="background:#0F766E;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:110px;">Save service</button>' +
+        (canSkip ? '<button type="button" class="sh-svc-skip" onclick="shSvcSkipQuote(\'' + e + '\')" style="background:#FFFBEB;color:#92400E;border:1px solid #B45309;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Skip quote - cost pending</button>' : '') +
+        '</div>' +
+        '<div class="sh-svc-note" role="status" style="font-size:11px;margin-top:3px;overflow-wrap:anywhere;color:#475569;">' +
+            _shEsc(qs === 'COST_PENDING' ? 'Cost pending: the quote was skipped; no amount is recorded.' : (!canSkip && a && a.enabled === true ? 'Skip quote needs a saved carrier first.' : '')) + '</div>' +
+        '</div>';
+}
+// AD3 D r3: the delivery types the vocabulary allows for one carrier. A carrier row that lists delivery_types (master carriers.delivery_types,
+// e.g. BestWay = LTL) limits them; a carrier without the field gets the vocabulary's list; nothing is ever invented on the page.
+function _shSvcDeliveryTypes_(v, carrierId) {
+    var all = ((v && v.delivery_type) || []).filter(function (d) { return d && d.value; }), c = null;
+    ((v && v.carriers) || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === String(carrierId || '').trim()) c = x; });
+    if (!c) return all;
+    if (c.services_known === true && Array.isArray(c.services)) all = all.filter(function (d) { return c.services.some(function (x) { return x && x.shipping_method === d.shipping_method && x.last_mile_delivery === d.last_mile_delivery; }); });   // AD3 D r4 (B 16)
+    if (!Array.isArray(c.delivery_types)) return all;
+    var ok = c.delivery_types.map(function (t) { return String(t || '').trim().toUpperCase(); });
+    return all.filter(function (d) { return ok.indexOf(String(d.value).toUpperCase()) !== -1; });
+}
+// AD3 D r4 (B 13 / 16): the carrier's declared (method, last mile) tuples, or null when the server does not know them (then the full lists)
+function _shSvcCarrierServices_(v, carrierId) {
+    var c = null; ((v && v.carriers) || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === String(carrierId || '').trim()) c = x; });
+    return (c && c.services_known === true && Array.isArray(c.services)) ? c.services.filter(Boolean) : null;
+}
+function _shSvcPairOptions_(all, allowed, cur) { var list = allowed ? all.filter(function (m) { return allowed.indexOf(m) !== -1; }) : all; return '<option value=""' + (cur && list.indexOf(cur) !== -1 ? '' : ' selected') + '>--</option>' + list.map(function (m) { return '<option value="' + _shEsc(m) + '"' + (m === cur ? ' selected' : '') + '>' + _shEsc(m) + '</option>'; }).join(''); }
+function _shSvcDtypeOptions_(dts, cur) {
+    return '<option value=""' + (cur ? '' : ' selected') + '>-- none --</option>' + dts.map(function (d) { return '<option value="' + _shEsc(d.value) + '" data-method="' + _shEsc(d.shipping_method || '') + '" data-lastmile="' + _shEsc(d.last_mile_delivery || '') + '"' + (d.value === cur ? ' selected' : '') + '>' + _shEsc(d.value + (d.value === 'SPD' ? ' - parcel' : d.value === 'LTL' ? ' - pallet' : '')) + '</option>'; }).join('');
+}
+function shSvcCarrierChanged(sid) {   // rebuild the delivery-type list for the chosen carrier (a type it does not allow is not listed)
+    var box = _shSvcBox_(sid), r = SH_RC_[sid]; if (!box || !r) return false;
+    var d = box.querySelector('.sh-svc-dtype'); if (!d) return false;
+    var c = box.querySelector('.sh-svc-carrier').value, list = _shSvcDeliveryTypes_(r.service_vocabulary, c === SH_SVC_TBA_ ? '' : c), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : '';
+    d.innerHTML = _shSvcDtypeOptions_(list, keep); d.value = keep;
+    var v = r.service_vocabulary, svc = _shSvcCarrierServices_(v, c === SH_SVC_TBA_ ? '' : c), mEl = box.querySelector('.sh-svc-method'), lEl = box.querySelector('.sh-svc-lastmile');   // AD3 D r4
+    var mAll = (v.shipping_method || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lAll = (v.last_mile_delivery || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
+    if (mEl) { var mc = mEl.value; mEl.innerHTML = _shSvcPairOptions_(mAll, svc ? svc.map(function (x) { return x.shipping_method; }) : null, mc); }
+    if (lEl) { var lc = lEl.value; lEl.innerHTML = _shSvcPairOptions_(lAll, svc ? svc.map(function (x) { return x.last_mile_delivery; }) : null, lc); }
+    return false;
+}
+if (typeof window !== 'undefined') window.shSvcCarrierChanged = shSvcCarrierChanged;
+function _shSvcBox_(sid) { return document.querySelector('.sh-svc[data-sid="' + String(sid).replace(/"/g, '') + '"]'); }
+function shSvcPickDeliveryType(sid, val) {   // fills method + last mile with the server's tuple for SPD / LTL (shown, editable; the server re-checks)
+    var box = _shSvcBox_(sid); if (!box) return false;
+    var o = box.querySelector('.sh-svc-dtype option[value="' + String(val).replace(/"/g, '') + '"]');
+    if (o && val) { box.querySelector('.sh-svc-method').value = o.getAttribute('data-method') || ''; box.querySelector('.sh-svc-lastmile').value = o.getAttribute('data-lastmile') || ''; }
+    return false;
+}
+var SH_SVC_TEXT_ = {
+    SHIPMENT_CARRIER_UNKNOWN: 'That carrier is not in the carriers master.', SHIPMENT_CARRIER_NOT_UNIQUE: 'That carrier id is not unique in the master.', SHIPMENT_CARRIER_INACTIVE: 'That carrier is inactive.',
+    SHIPPING_METHOD_NOT_IN_VOCABULARY: 'That shipping method is not a known service token.', LAST_MILE_NOT_IN_VOCABULARY: 'That last mile is not a known service token.',
+    DELIVERY_TYPE_UNKNOWN: 'Unknown delivery type.', DELIVERY_TYPE_DOMESTIC_ONLY: 'SPD / LTL is for domestic shipments only (source and destination in the same country).',
+    DELIVERY_TYPE_COUNTRY_UNKNOWN: 'The source or destination warehouse country is not known.', DELIVERY_TYPE_CONFLICT: 'The method / last mile do not match the delivery type.',
+    CARRIER_ASSIGNMENT_CONFLICT: 'To be assigned cannot be sent together with a carrier.', CARRIER_CLEAR_WITH_SELECTED_QUOTE: 'A rate card is selected: the carrier cannot be cleared.',
+    SHIPMENT_FROZEN_AFTER_DISPATCH: 'The shipment is dispatched; transport fields are locked.', SHIPMENT_TRANSPORT_FROZEN: 'Transport fields are locked.', EDIT_CONFLICT: 'The shipment changed elsewhere. Reload first.'
+};
+function shSvcSave(sid, btn) {
+    var box = _shSvcBox_(sid); if (!box || _shInFlight_[sid]) return false;
+    var note = box.querySelector('.sh-svc-note'), c = box.querySelector('.sh-svc-carrier').value, m = box.querySelector('.sh-svc-method').value, l = box.querySelector('.sh-svc-lastmile').value;
+    var dEl = box.querySelector('.sh-svc-dtype'), dt = dEl ? dEl.value : '';
+    note.style.color = '#B91C1C';
+    if (_shExecDirty(sid).length) { note.textContent = 'Save the shipment field changes first.'; return false; }
+    if (!c) { note.textContent = 'Choose a carrier, or "To be assigned / manual logistics".'; return false; }
+    if (!m || !l) { note.textContent = 'Choose the shipping method and the last mile (or a delivery type).'; return false; }
+    var p = { shipment_id: sid, actor: 'operation-system', shipping_method: m, last_mile_delivery: l };
+    var tok = _shTok_(sid); if (tok) p.expected_updated_at = tok;
+    if (c === SH_SVC_TBA_) {   // AD3 D r4 (B 11): the marker is written by the server from carrier_assignment + carrier_assignment_reason
+        var tbr = String((box.querySelector('.sh-svc-tba-reason') || {}).value || '').trim();
+        if (!tbr) { note.style.color = '#B91C1C'; note.textContent = 'Enter the reason for "To be assigned". Nothing was sent.'; return false; }
+        p.carrier_assignment = 'TO_BE_ASSIGNED'; p.carrier_assignment_reason = tbr;
+    } else p.carrier_id = c;
+    if (dt) p.delivery_type = dt;
+    note.style.color = '#0369A1'; note.textContent = 'Saving the service...';
+    Promise.resolve(_shUpd_(sid, p)).then(function (r) {
+        _shAdoptTok_(sid, r); note.style.color = '#166534';
+        var sv = (r && r.service) || {};
+        note.textContent = 'Service saved: ' + (sv.carrier_state === 'TO_BE_ASSIGNED' || c === SH_SVC_TBA_ ? 'carrier to be assigned' : (sv.carrier_id || c)) + ' / ' + (sv.shipping_method || m) + ' / ' + (sv.last_mile_delivery || l) + '. Cost stays pending until a rate card is chosen or the quote is skipped.';
+        setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
+    }, function (err) {
+        if (_shUnknown11_(sid, err, 'Save service')) return;
+        var code = String((err && (err.code || err.message)) || '').trim();
+        note.style.color = '#B91C1C'; note.textContent = 'Not saved: ' + (SH_SVC_TEXT_[code] || code || 'refused') + (code ? ' (' + code + ')' : '') + ' Nothing was written.';
+    });
+    return false;
+}
+function shSvcSkipQuote(sid) {   // explicit: opens the freight-pending dialog (reason + acknowledgement); never sends by itself
+    var r = SH_RC_[sid]; if (!r) return false;
+    shUnpricedOpen14(sid, r);
+    return false;
+}
+if (typeof window !== 'undefined') { window.shSvcSave = shSvcSave; window.shSvcSkipQuote = shSvcSkipQuote; window.shSvcPickDeliveryType = shSvcPickDeliveryType; }
+// AD3 D r2/r4 (Owner decision 8; Author B contract v1.3 sections 11, 12, 14, 16) - CARRIER: TO BE ASSIGNED, ASSIGN LATER, EXECUTING CARRIER.
+// Modes (from the SERVER's read, never from note text):
+//   FILL    carrier blank AND the server's to-be-assigned marker: rateCardOptions.service.carrier_state TO_BE_ASSIGNED when that read is on the
+//           page, else the server-owned marker column the shipment read carries (rate_card_version 'tba1|...'; only the server writes it and the
+//           server re-validates it) -> shipment.assignCarrier case (a): fills the blank carrier.
+//   MISSING carrier blank WITHOUT the marker -> no send (the server refuses CARRIER_NOT_MARKED_TO_BE_ASSIGNED); says to use the Draft service box.
+//   EXEC    carrier is a BOOKING CHANNEL (vocabulary carriers[].booking_channel / service.booking_channel; fallback mirror of 12_
+//           SHIP_BOOKING_CHANNEL_CARRIERS_ = CAR_AMAZON_PARTNERED) -> shows the booking channel and the executing carrier separately
+//           (rateCardOptions.service.executing_carrier / executing_carrier_state); PENDING -> case (b) records the executing carrier, on a Draft
+//           or after Confirm; carrier_id is never written. DEPLOYMENT_HALF_SYNCED is said plainly.
+// Request: { shipment_id, company, carrier_id, reason, operation_id, expected_updated_at, actor }. One operation_id per attempt, kept with the hold:
+// an answer that did not arrive is held (localStorage), nothing is resent; Re-check reads; an explicit resend reuses the SAME operation id.
+var SH_ASSIGN_KEY_ = 'km.shipment.assignCarrierHold.v1', SH_ASSIGN_MEM_ = {}, SH_ASSIGN_INFLIGHT_ = {};
+var SH_ASSIGN_CLOSED_ = { cancelled: 1, closed: 1, received: 1, completed: 1 };
+var SH_BOOKING_CHANNEL_FALLBACK_ = { CAR_AMAZON_PARTNERED: 1 };   // mirror of 12_ SHIP_BOOKING_CHANNEL_CARRIERS_, used only before a vocabulary read
+function _shAssignRead_() { try { var v = JSON.parse(window.localStorage.getItem(SH_ASSIGN_KEY_) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
+function _shAssignGet_(sid) { return _shAssignRead_()[sid] || SH_ASSIGN_MEM_[sid] || null; }
+function _shAssignPut_(sid, rec) { if (rec) SH_ASSIGN_MEM_[sid] = rec; else delete SH_ASSIGN_MEM_[sid]; try { var v = _shAssignRead_(); if (rec) v[sid] = rec; else delete v[sid]; window.localStorage.setItem(SH_ASSIGN_KEY_, JSON.stringify(v)); } catch (e) {} }
+function _shAssignNewOp_() { var r = ''; try { var a = new Uint32Array(2); window.crypto.getRandomValues(a); r = a[0].toString(36) + a[1].toString(36); } catch (e) { r = Math.floor(Math.random() * 1e12).toString(36); } return ('ac-' + Date.now().toString(36) + '-' + r).replace(/[^A-Za-z0-9_.:-]/g, '').slice(0, 80); }
+function _shAssignCarriers_(sid, excludeBooking) {   // active carriers: the server vocabulary (rate-card read), else the carriers master; never rate cards
+    var r = SH_RC_[sid], v = r && r.service_vocabulary, out = [], seen = {};
+    if (v && Array.isArray(v.carriers)) v.carriers.forEach(function (c) { var id = String((c && c.carrier_id) || '').trim(); if (id && !seen[id] && !(excludeBooking && c.booking_channel === true)) { seen[id] = 1; out.push({ id: id, name: String(c.carrier_name || '').trim() }); } });
+    if (!out.length) (_shGetCarriers() || []).forEach(function (c) { var id = String((c && c.carrierId) || '').trim(); if (id && c.isActive === true && !seen[id] && !(excludeBooking && SH_BOOKING_CHANNEL_FALLBACK_[id])) { seen[id] = 1; out.push({ id: id, name: String(c.carrierName || '').trim() }); } });
+    return out;
+}
+function _shIsBookingChannel_(sid, carrierId) {
+    var r = SH_RC_[sid], sv = r && r.service, v = r && r.service_vocabulary, id = String(carrierId || '').trim(), hit = null;
+    if (!id) return false;
+    if (sv && String(sv.booking_channel || '').trim()) return String(sv.booking_channel).trim() === id;
+    if (v && Array.isArray(v.carriers)) v.carriers.forEach(function (c) { if (c && String(c.carrier_id || '').trim() === id) hit = c; });
+    if (hit && typeof hit.booking_channel === 'boolean') return hit.booking_channel;
+    return SH_BOOKING_CHANNEL_FALLBACK_[id] === 1;
+}
+function _shAssignMode_(s) {
+    var st = String((s && s.status) || '').trim().toLowerCase(), sid = String(s.shipmentId), cur = String(s.carrierId || '').trim();
+    if (SH_ASSIGN_CLOSED_[st]) return '';
+    var r = SH_RC_[sid], sv = r && r.service;
+    if (!cur) {
+        if (sv && sv.carrier_state) return sv.carrier_state === 'TO_BE_ASSIGNED' ? 'FILL' : 'MISSING';
+        return /^tba1\|/.test(String(s.rateCardVersion || '')) ? 'FILL' : 'MISSING';
+    }
+    return _shIsBookingChannel_(sid, cur) ? 'EXEC' : '';
+}
+function _shAssignHtml_(s) {
+    if (!s) return '';
+    var mode = _shAssignMode_(s); if (!mode) return '';
+    var sid = String(s.shipmentId), e = _shEsc(sid), hold = _shAssignGet_(sid), r = SH_RC_[sid], sv = (r && r.service) || {};
+    var box = function (title, inner) { return '<div class="sh-assign" data-sid="' + e + '" data-mode="' + mode + '" style="margin-top:4px;padding:6px 8px;border:1px dashed #CBD5E1;border-radius:4px;font-size:12px;"><div style="font-size:11px;font-weight:600;color:#334155;">' + _shEsc(title) + '</div>' + inner + '</div>'; };
+    if (mode === 'MISSING') return box('Carrier missing', '<div class="sh-assign-note" role="status" style="font-size:11px;color:#B91C1C;">No carrier and not marked "to be assigned" on the server. In the Shipment Draft choose a carrier, or "To be assigned / manual logistics" with a reason (Transport rate card > Edit).</div>');
+    var ca = sv.carrier_assignment, exe = sv.executing_carrier, exSt = String(sv.executing_carrier_state || '');
+    var head = '';
+    if (mode === 'FILL') head = '<div class="sh-assign-state" style="font-size:11px;color:#475569;">To be assigned' + (ca ? ' - recorded ' + _shEsc(ca.at || '') + (ca.actor ? ' by ' + _shEsc(ca.actor) + ' (reported, unverified)' : '') + (ca.reason ? ': ' + _shEsc(ca.reason) : '') : ' (server marker)') + '</div>';
+    if (mode === 'EXEC') {
+        head = '<div class="sh-assign-state" style="font-size:11px;color:#475569;">Booking channel: <strong>' + _shEsc(s.carrierId) + '</strong> · Executing carrier: <strong class="sh-exec-carrier">' +
+            (exe && exe.carrier_id ? _shEsc(exe.carrier_id) + '</strong> (recorded ' + _shEsc(exe.recorded_at || '') + ')' : (exSt === 'PENDING' ? 'pending</strong>' : 'not read yet</strong>')) + '</div>';
+        if (exe && exe.carrier_id) return box('Executing carrier', head);
+        if (exSt !== 'PENDING') return box('Executing carrier', head + '<button type="button" class="sh-assign-read" onclick="shAssignReadExec(\'' + e + '\', this)" style="margin-top:4px;background:#2563EB;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Read executing carrier (read only)</button><div class="sh-assign-note" role="status" style="font-size:11px;margin-top:3px;color:#475569;"></div>');
+    }
+    var cars = _shAssignCarriers_(sid, mode === 'EXEC');
+    var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
+    return box(mode === 'EXEC' ? 'Executing carrier - record' : 'Carrier to be assigned - assign later', head +
+        (cars.length
+            ? '<select class="sh-assign-carrier" aria-label="Carrier to assign" style="' + sel + '"><option value="">-- Choose carrier --</option>' + cars.map(function (c) { return '<option value="' + _shEsc(c.id) + '">' + _shEsc(c.name && c.name !== c.id ? c.name + ' (' + c.id + ')' : c.id) + '</option>'; }).join('') + '</select>'
+            : '<div class="sh-assign-nolist" style="color:#64748B;">The carrier list is not loaded on this page (Shipment Draft: press Edit under Transport rate card to load it).</div>') +
+        '<input class="sh-assign-reason" type="text" maxlength="500" aria-label="Reason" placeholder="Reason (required), e.g. booked with carrier on 2026-11-21" style="' + sel + 'margin-top:4px;">' +
+        '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px;align-items:center;">' +
+        '<button type="button" class="sh-assign-send" onclick="shAssignCarrier(\'' + e + '\', this)"' + ((hold || !cars.length) ? ' disabled' : '') + ' style="background:#0F766E;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:110px;">' + (mode === 'EXEC' ? 'Record executing carrier' : 'Assign carrier') + '</button>' +
+        (hold ? '<button type="button" class="sh-assign-recheck" onclick="shAssignRecheck(\'' + e + '\', this)" style="background:#2563EB;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Re-check (read only)</button>' : '') +
+        '</div><div class="sh-assign-note" role="status" style="font-size:11px;margin-top:3px;overflow-wrap:anywhere;color:#475569;">' +
+        (hold ? _shEsc('An earlier request (' + hold.carrier + ', operation ' + hold.op + ') has an UNKNOWN outcome. Nothing was resent. Re-check reads the shipment first.') : (mode === 'EXEC' ? 'Records who actually carries it; the booking channel stays the carrier.' : 'Fills the blank carrier only; it never changes method, last mile, route, quote or stock.')) + '</div>');
+}
+function _shAssignBox_(sid) { return document.querySelector('.sh-assign[data-sid="' + String(sid).replace(/"/g, '') + '"]'); }
+function _shAssignRerender_(sid) { var b = _shAssignBox_(sid), s = _shGetShipments().filter(function (x) { return x.shipmentId === sid; })[0]; if (!b || !s) return; var t = document.createElement('div'); t.innerHTML = _shAssignHtml_(s); if (t.firstChild) b.parentNode.replaceChild(t.firstChild, b); }
+function shAssignReadExec(sid, btn) {   // READ ONLY: rateCardOptions carries service.executing_carrier / executing_carrier_state / booking_channel
+    var db = window.KM && window.KM.DB, box = _shAssignBox_(sid), note = box && box.querySelector('.sh-assign-note');
+    if (!db || typeof db.getShipmentRateCardOptions !== 'function') { if (note) note.textContent = 'Not available on this page.'; return false; }
+    if (btn) btn.disabled = true; if (note) note.textContent = 'Reading...';
+    return Promise.resolve(db.getShipmentRateCardOptions(sid, { all_methods: true })).then(function (r) {
+        if (!r || r.success !== true || !r.service) { if (note) note.textContent = 'Could not read the executing carrier (' + String((r && (r.code || r.error)) || 'no service in the answer') + '). Nothing was changed.'; if (btn) btn.disabled = false; return; }
+        SH_RC_[sid] = r; _shAssignRerender_(sid);
+    }, function () { if (note) note.textContent = 'Could not read. Nothing was changed.'; if (btn) btn.disabled = false; });
+}
+var SH_ASSIGN_TEXT_ = {
+    CARRIER_ALREADY_ASSIGNED: 'A carrier is already assigned; it is not replaced here.', SHIPMENT_CARRIER_UNKNOWN: 'That carrier is not in the carriers master.',
+    SHIPMENT_CARRIER_NOT_UNIQUE: 'That carrier id is not unique in the master.', SHIPMENT_CARRIER_INACTIVE: 'That carrier is inactive.',
+    SHIPMENT_NOT_ASSIGNABLE: 'The shipment is closed / cancelled / received; no assignment.', EDIT_CONFLICT: 'The shipment changed elsewhere. Reload and check first.',
+    ASSIGN_CARRIER_INCOMPLETE: 'Choose a carrier and enter a reason.', SHIPMENT_NOT_FOUND: 'Shipment not found.', SHIPMENT_COMPANY_MISMATCH: 'The company does not match this shipment.',
+    CARRIER_NOT_MARKED_TO_BE_ASSIGNED: 'The carrier is blank but not marked "to be assigned" on the server.',
+    EXECUTING_CARRIER_ALREADY_ASSIGNED: 'Another executing carrier is already recorded; it is not replaced here.', EXECUTING_CARRIER_IS_BOOKING_CHANNEL: 'The booking channel cannot be its own executing carrier.',
+    DEPLOYMENT_HALF_SYNCED: 'The server is only partly updated (dispatch check not installed), so the executing carrier cannot be recorded on a Draft yet. Nothing was written; ask the administrator to finish the deployment.'
+};
+function shAssignCarrier(sid, btn) {
+    var box = _shAssignBox_(sid); if (!box || SH_ASSIGN_INFLIGHT_[sid]) return false;
+    var note = box.querySelector('.sh-assign-note'), cEl = box.querySelector('.sh-assign-carrier'), hold = _shAssignGet_(sid);
+    var resend = !!(hold && hold.checked === true);
+    if (hold && !resend) { note.textContent = 'An earlier request has an UNKNOWN outcome. Re-check first; nothing was sent.'; return false; }
+    var carrier = resend ? hold.carrier : (cEl ? String(cEl.value || '').trim() : ''), reason = resend ? hold.reason : String(box.querySelector('.sh-assign-reason').value || '').trim();
+    note.style.color = '#B91C1C';
+    if (!carrier) { note.textContent = 'Choose the carrier.'; return false; }
+    if (!reason) { note.textContent = 'Enter a reason (required).'; return false; }
+    var DB = window.KM && window.KM.DB; if (!DB || typeof DB.assignShipmentCarrier !== 'function') { note.textContent = 'Not available on this page (assign carrier is not installed).'; return false; }
+    var s = _shGetShipments().filter(function (x) { return x.shipmentId === sid; })[0] || {};
+    var tok = resend ? String(hold.token || '') : _shTok_(sid), op = resend ? hold.op : _shAssignNewOp_(), mode = box.getAttribute('data-mode') || 'FILL';
+    _shAssignPut_(sid, { carrier: carrier, reason: reason, token: tok, op: op, mode: mode, at: new Date().toISOString(), checked: false });   // held BEFORE sending
+    SH_ASSIGN_INFLIGHT_[sid] = true; if (btn) { btn.disabled = true; btn.textContent = 'Sending...'; }
+    note.style.color = '#0369A1'; note.textContent = 'Sending...';
+    return Promise.resolve().then(function () { return DB.assignShipmentCarrier({ shipment_id: sid, company: String(s.company || ''), carrier_id: carrier, reason: reason, operation_id: op, expected_updated_at: tok || undefined, actor: 'operation-system' }); }).then(function (r) {
+        delete SH_ASSIGN_INFLIGHT_[sid];
+        var code = String((r && r.code) || '').trim(), rc = box.querySelector('.sh-assign-recheck');
+        if (r && r.success === true) {
+            _shAssignPut_(sid, null); if (rc) rc.remove();
+            var exe = r.executing_carrier;
+            note.style.color = '#166534';
+            note.textContent = (r.already_assigned ? 'Already recorded (no second write): ' : (r.case === 'EXECUTING_CARRIER' ? 'Executing carrier recorded: ' : 'Carrier assigned: ')) + ((exe && exe.executing_carrier_id) || r.carrier_id || carrier) + (r.case === 'EXECUTING_CARRIER' || exe ? ' (booking channel ' + (r.booking_channel || s.carrierId || '') + ' unchanged).' : '.');
+            if (btn) { btn.disabled = true; }
+            setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
+            return r;
+        }
+        if (r && r.success === false && code && code !== 'CARRIER_ASSIGN_UNVERIFIED' && r.stage !== 'network' && r.stage !== 'config') {   // a coded server answer: definitive, nothing written
+            _shAssignPut_(sid, null); if (rc) rc.remove();
+            note.style.color = '#B91C1C'; note.textContent = 'Not recorded: ' + (SH_ASSIGN_TEXT_[code] || String(r.error || code)) + ' (' + code + ') Nothing was written.';
+            if (btn) { btn.disabled = false; btn.textContent = mode === 'EXEC' ? 'Record executing carrier' : 'Assign carrier'; }
+            return r;
+        }
+        _shAssignUnknown_(sid, box, btn); return r;
+    }, function () { delete SH_ASSIGN_INFLIGHT_[sid]; _shAssignUnknown_(sid, box, btn); return null; });
+}
+function _shAssignUnknown_(sid, box, btn) {
+    var note = box.querySelector('.sh-assign-note');
+    if (btn) { btn.disabled = true; }
+    note.style.color = '#B45309'; note.textContent = 'The answer did not arrive (or was not verified): the outcome is UNKNOWN. Nothing will be resent. Press Re-check to read the shipment.';
+    if (!box.querySelector('.sh-assign-recheck')) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'sh-assign-recheck'; b.textContent = 'Re-check (read only)';
+        b.style.cssText = 'background:#2563EB;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;';
+        b.onclick = function () { shAssignRecheck(sid, b); };
+        var send = box.querySelector('.sh-assign-send'); send.parentNode.appendChild(b);
+    }
+}
+// READ ONLY. FILL: the shipment row's carrier. EXEC: rateCardOptions.service.executing_carrier. Landed -> hold cleared; not landed -> an explicit
+// resend with the SAME operation id (and the token just read) is offered.
+function shAssignRecheck(sid, btn) {
+    var box = _shAssignBox_(sid), hold = _shAssignGet_(sid), api = window.KM && window.KM.api, db = window.KM && window.KM.DB;
+    if (!box || !hold) return false;
+    var note = box.querySelector('.sh-assign-note'), send = box.querySelector('.sh-assign-send');
+    if (btn) btn.disabled = true; note.textContent = 'Reading the shipment from the server...';
+    var exec = hold.mode === 'EXEC';
+    return Promise.resolve().then(function () {
+        if (!api || typeof api.getWorkspace !== 'function') throw new Error('READ_UNAVAILABLE');
+        return api.getWorkspace('shipment', { filters: { shipmentId: sid }, page: { number: 1, size: 5 } });
+    }).then(function (env) {
+        if (!env || env.success !== true) throw new Error('READ_FAILED');
+        var md = window.KM.DB.adaptShipmentWorkspace(env.data) || {}, row = (md.shipments || []).filter(function (x) { return String(x.shipmentId) === String(sid); })[0];
+        if (!row) throw new Error('SHIPMENT_NOT_FOUND');
+        if (!exec) return { row: row, got: String(row.carrierId || '').trim() };
+        return Promise.resolve(db.getShipmentRateCardOptions(sid, { all_methods: true })).then(function (r) {
+            if (!r || r.success !== true || !r.service) throw new Error('READ_FAILED');
+            SH_RC_[sid] = r; var ex = r.service.executing_carrier;
+            return { row: row, got: ex && ex.carrier_id ? String(ex.carrier_id) : '' };
+        });
+    }).then(function (x) {
+        if (x.got) {
+            _shAssignPut_(sid, null); if (btn) btn.remove();
+            note.style.color = x.got === hold.carrier ? '#166534' : '#B91C1C';
+            note.textContent = x.got === hold.carrier ? 'The server shows ' + x.got + ' recorded. Nothing was resent.' : 'The server shows another carrier (' + x.got + ') recorded; it is not replaced here.';
+            setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
+            return;
+        }
+        hold.checked = true; hold.token = String(x.row.updatedAt || hold.token || ''); _shAssignPut_(sid, hold);
+        note.style.color = '#B45309'; note.textContent = 'Not recorded on the server yet. You may send it again (' + hold.carrier + ', the same operation ' + hold.op + ').';
+        if (send) { send.disabled = false; send.textContent = 'Send again (same operation)'; }
+        if (btn) btn.disabled = false;
+    }).catch(function () { note.textContent = 'The shipment could not be read. Nothing was resent. Re-check again later.'; if (btn) btn.disabled = false; });
+}
+if (typeof window !== 'undefined') { window.shAssignCarrier = shAssignCarrier; window.shAssignRecheck = shAssignRecheck; window.shAssignReadExec = shAssignReadExec; }
+var SH_UNPRICED_OP_KEY_ = 'km.shipment.unpricedOp.v1';   // AD3 D r4: { shipment_id: operation_id } until a definitive answer
+function _shUnpricedOp_(sid, mint) { var v = {}; try { v = JSON.parse(window.localStorage.getItem(SH_UNPRICED_OP_KEY_) || '{}') || {}; } catch (e) { v = {}; } if (v[sid] || !mint) return v[sid] || ''; v[sid] = _shAssignNewOp_().replace(/^ac-/, 'uq-'); try { window.localStorage.setItem(SH_UNPRICED_OP_KEY_, JSON.stringify(v)); } catch (e) {} return v[sid]; }
+function _shUnpricedOpClear_(sid) { try { var v = JSON.parse(window.localStorage.getItem(SH_UNPRICED_OP_KEY_) || '{}') || {}; delete v[sid]; window.localStorage.setItem(SH_UNPRICED_OP_KEY_, JSON.stringify(v)); } catch (e) {} }
 var SH_UNPRICED_HOLD_ = {};
 var SH_HOLD_KEY_16_ = 'km.shipment.unpricedHold.v1';   // R15d r2b: { internal shipment_id: ISO time } - this browser only, no private value
 function _shHoldRead16_() { try { var v = JSON.parse(window.localStorage.getItem(SH_HOLD_KEY_16_) || '{}'); return v && typeof v === 'object' && !Array.isArray(v) ? v : {}; } catch (e) { return {}; } }
@@ -2316,16 +2992,16 @@ function shUnpricedOpen14(sid, response) {
         save.textContent = 'Saving...'; _shInFlight_[sid] = true; _shHoldSet16_(sid, a.expected_updated_at);   // R15d r2b: held BEFORE sending (a reload mid-flight stays held)
         var release = _shHoldCard_(sid, {}), saved = false;
         Promise.resolve().then(function () { return window.KM.DB.approveShipmentUnpriced({
-            shipment_id: sid, reason: reason, acknowledge_unpriced: true, carrier_id: a.carrier_id,
+            shipment_id: sid, reason: reason, acknowledge_unpriced: true, carrier_id: a.carrier_id, actor: 'operation-system', operation_id: _shUnpricedOp_(sid, true),   // AD3 D r4 (B 15)   // AD3 D: the declared operator (Author B 3)
             recover_unpriced: a.recoverable === true, expected_updated_at: a.expected_updated_at,
             expected_rate_card_version: a.expected_rate_card_version, expected_current_rate_card_id: a.expected_current_rate_card_id,
             unpriced_mode: cna4 ? 'card_not_applied' : '', acknowledge_card_not_applied: !!cna4, listed_card_ids: cna4 ? cna4.cards.slice() : []   // R15e (4)
         }); }).then(function (r) {
             if (r && r.success === true && r.verified === true) {
-                saved = true; _shHoldClear16_(sid); return _shLoadAndRender();
+                saved = true; _shHoldClear16_(sid); _shUnpricedOpClear_(sid); return _shLoadAndRender();
             }
             if (r && r.zero_write === true) {
-                _shHoldClear16_(sid); note.title = String(r.code || '');
+                _shHoldClear16_(sid); _shUnpricedOpClear_(sid); note.title = String(r.code || '');
                 note.textContent = 'Not saved. Reload and review the shipment.';
             } else _shUnpricedUnknown14_(sid, overlay, save, note);   // R15c-P0
         }).catch(function () { _shUnpricedUnknown14_(sid, overlay, save, note); }).then(function () {   // R15c-P0
@@ -2812,12 +3488,14 @@ function shConfirmShipment(shipmentId) {
     var missing = [];
     if (!String(payload.external_shipment_id || '').trim()) missing.push('Shipment ID (external)');
     if (!String(payload.reference_id || '').trim()) missing.push('Reference ID');
-    if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
+    if (_shHeldDestination_(shipmentId)) missing.push('Destination Warehouse (the saved ' + _shHeldDestination_(shipmentId) + ' is not selectable now; choose a warehouse)');   // A-delta2 F
+    else if (!String(payload.warehouse_code || '').trim()) missing.push('Warehouse Code');
     // FIX7-NEXT-1030 (K1, candidate): carrier and method are not fields of this form - they are the SAVED shipment's (the
     // rate-card choice writes the carrier), as last re-read; the choice is its receipt; a lane edit not saved stops here
     var s0 = _shGetShipments().filter(function (x) { return x.shipmentId === shipmentId; })[0] || {}, rcs = _shRcState_(s0);
     var lane = _shExecDirty(shipmentId).filter(function (k) { return k === 'warehouse_id' || k === 'shipments_customs_type'; });
-    if (!String(s0.carrierId || '').trim()) missing.push('Carrier (choose a rate card)');
+    var tbaRow6 = !String(s0.carrierId || '').trim() && /^tba1\|/.test(String(s0.rateCardVersion || ''));   // AD3 D r6: the server-owned marker; the server read below decides
+    if (!String(s0.carrierId || '').trim() && !tbaRow6) missing.push('Carrier (choose a rate card, or "To be assigned" with a reason under Transport rate card > Edit)');
     if (!String(s0.shippingMethod || '').trim()) missing.push('Shipping Method');
     // Fresh server pricing, not the stale local receipt, decides the next step.
     if (lane.length) missing.push('Save the changed ' + lane.join(' / ') + ', then choose the rate card again');
@@ -2837,18 +3515,23 @@ function shConfirmShipment(shipmentId) {
         delete _shInFlight_[shipmentId]; _cbRel11();
         if (!rc8 || rc8.success !== true) { alert('Cannot Confirm — the rate card could not be re-checked (' + ((rc8 && (rc8.code || rc8.error)) || 'NO_ANSWER') + '). Nothing was sent.'); return; }
         var st8 = (rc8.current && rc8.current.state) || 'NONE';
+        if (!String(s0.carrierId || '').trim()) {   // AD3 D r6: a blank carrier is legal only as the SERVER-read TO_BE_ASSIGNED state
+            var sv6 = rc8.service || {};
+            if (sv6.carrier_state !== 'TO_BE_ASSIGNED') { alert('Cannot Confirm — the carrier is blank and the server does not show it as "to be assigned" (' + (sv6.carrier_state || 'no service state') + '). Choose a carrier, or "To be assigned" with a reason. Nothing was sent.'); return; }
+            _shOpenConfirmChecked8_('TBA_COST_PENDING', sv6.carrier_assignment || null); return;
+        }
         if (_shHoldHas16_(shipmentId)) { if (st8 === 'UNPRICED_APPROVED' && _shVersionMoved18_(_shHoldTok16_(shipmentId), rc8.unpriced_approval && rc8.unpriced_approval.expected_updated_at) === 'MOVED') _shHoldClear16_(shipmentId); else { _shUnpricedHeldOpen16_(shipmentId); return; } }   // R15d r2b: the server read decides
         if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && rc8.unpriced_approval && rc8.unpriced_approval.enabled === true && (rc8.unpriced_approval.available === true || rc8.unpriced_approval.recoverable === true || (rc8.unpriced_approval.card_not_applied && rc8.unpriced_approval.card_not_applied.available === true))) { shUnpricedOpen14(shipmentId, rc8); return; }   // R15c-P0: a PENDING release can be finished
         if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED') { alert('Cannot Confirm — ' + (st8 === 'STALE' ? 'the saved quote no longer matches this shipment. Save the final destination and customs first, then use Edit under Transport rate card to choose a matching active card' : 'rate card state: ' + st8) + '. Nothing was dispatched.'); return; }
         _shOpenConfirmChecked8_(st8);
     })['catch'](function (e8) { delete _shInFlight_[shipmentId]; _cbRel11(); alert('Cannot Confirm — the rate card could not be re-checked (' + ((e8 && (e8.code || e8.message)) || e8) + '). Nothing was sent.'); });
-    function _shOpenConfirmChecked8_(pricingState) {
+    function _shOpenConfirmChecked8_(pricingState, tbaAudit) {
     var s = _shGetShipments().filter(function (x) { return x.shipmentId === shipmentId; })[0] || {};
     var lines = _shGetShipmentLines().filter(function (l) { return l.shipmentId === shipmentId; });
     var units = lines.reduce(function (a, l) { return a + (l.shipmentQty || l.qty || 0); }, 0);
     _shOpenConfirmModal(shipmentId, {
         no: s.externalShipmentId || s.shipmentNo || shipmentId,
-        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED',
+        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED', tba: pricingState === 'TBA_COST_PENDING', tbaAudit: tbaAudit || null,   // AD3 D r6
         origin: payload.ship_from || s.shipFrom || '—',
         sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
         sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
@@ -2857,6 +3540,7 @@ function shConfirmShipment(shipmentId) {
         // S7-R2A — the same resolver the Draft grid uses. The confirm step is the last screen before stock
         // moves, so it names the carrier and keeps the id beside it rather than choosing between them.
         carrier: (function () {
+            if (pricingState === 'TBA_COST_PENDING' && !String(payload.carrier_id || s.carrierId || '').trim()) return 'To be assigned (manual logistics)';   // AD3 D r6
             var d = _shCarrierCell_(payload.carrier_id || s.carrierId);
             if (d.state === 'NONE') return '—';
             if (d.state === 'RESOLVED') return d.carrierName;
@@ -2911,6 +3595,7 @@ function _shDispatchStockSentence_(domain) {
 }
 function _shOpenConfirmModal(shipmentId, sum, execPayload) {
     _shCloseConfirmModal();
+    delete _shConfirmRouteMode_[shipmentId];   // AD3 D: every new Confirm dialog starts with the normal route template; manual is chosen explicitly in it
     var overlay = document.createElement('div');
     overlay.id = 'sh-confirm-overlay';
     overlay.style.cssText = 'position:fixed;inset:0;background:rgba(15,23,42,0.45);z-index:2000;';
@@ -2927,6 +3612,10 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
         row('From', sum.origin) + row('Destination', (sum.country ? sum.country + ' / ' : '') + sum.dest) +
         row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
         (sum.unpriced ? row('Freight', 'Pending quote - manually approved') : '') +
+        (sum.tba ? row('Freight', 'Cost pending (carrier to be assigned) - no amount') : '') +   // AD3 D r6
+        (sum.tba ? '<div class="sh-confirm-tba" style="background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;border-radius:6px;padding:8px 10px;margin:10px 0;font-size:12px;line-height:1.5;">' +
+            '<strong>Carrier to be assigned.</strong> This shipment has no carrier yet' + (sum.tbaAudit && sum.tbaAudit.reason ? ' (' + _shEsc(sum.tbaAudit.reason) + ')' : '') + ' and no quote: freight cost stays pending, no amount is recorded. It can only go with manual logistics (no route template); assign the carrier later on the card.' +
+            '<label style="display:flex;gap:6px;align-items:flex-start;margin-top:6px;"><input type="checkbox" id="sh-confirm-tba-ack"> I confirm shipping with the carrier to be assigned and the cost pending.</label></div>' : '') +
         row('Tracking / Container', sum.tracking + ' / ' + sum.container) + row('ETD / ETA', sum.etd + ' / ' + sum.eta) +
         '<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:6px;padding:8px 10px;margin:12px 0;font-size:12px;line-height:1.5;">' +
           'Confirming marks this shipment as <strong>Shipped</strong>; ' + _shDispatchStockSentence_(sum.sourceDomain) + '. Shipping documents will be generated in Drive. <strong>This action cannot be undone here.</strong></div>' +
@@ -2938,12 +3627,15 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
     document.body.appendChild(modal);
     document.getElementById('sh-confirm-cancel').addEventListener('click', _shCloseConfirmModal);
     document.getElementById('sh-confirm-go').addEventListener('click', function () { _shRunConfirm(shipmentId, execPayload); });
+    var ack6 = document.getElementById('sh-confirm-tba-ack'), go6 = document.getElementById('sh-confirm-go');   // AD3 D r6: Confirm stays off until the acknowledgement is ticked
+    if (ack6 && go6) { go6.disabled = true; go6.style.opacity = '0.6'; ack6.addEventListener('change', function () { go6.disabled = !ack6.checked; go6.style.opacity = ack6.checked ? '' : '0.6'; }); }
 }
 function _shRunConfirm(shipmentId, execPayload) {
     var go = document.getElementById('sh-confirm-go');
     var cancel = document.getElementById('sh-confirm-cancel');
     var status = document.getElementById('sh-confirm-status');
     if (!go || go.disabled) return;   // FIX7-NEXT-1030 (K1): a second click while it runs sends nothing
+    var ack6r = document.getElementById('sh-confirm-tba-ack'); if (ack6r && !ack6r.checked) return;   // AD3 D r6: TBA needs the explicit acknowledgement
     if (_shDispatchHeld14_(shipmentId)) { _shDispatchUnknown_(shipmentId, null, go, cancel, status); return; }
     go.disabled = true; go.textContent = 'Confirming…'; if (cancel) cancel.disabled = true;
     if (status) { status.style.color = '#0369a1'; status.textContent = 'Persisting fields…'; }
@@ -2968,7 +3660,12 @@ function _shRunConfirm(shipmentId, execPayload) {
     }).then(function (alloc) {
         // R3C §6 — allocation readiness gate (UX only; R3B remains the in-lock execution authority). Fail closed:
         // the physical shipment draft stays saved, but dispatch does NOT proceed until PO allocation is valid.
-        if (!alloc || alloc.success === false) {
+        // c7fix (found with M-A): an OVERSEAS source has no factory PO lineage - 32_ answers SHIPMENT_FACTORY_ATTRIBUTION_GAP / NOT_A_FACTORY_WAREHOUSE (zero write).
+        // The page used to stop there, so a legal 3PL -> FBA transfer could never reach Confirm from this page. It now goes on to the server Confirm (22_),
+        // which alone decides: a legal transfer is confirmed without PO allocation, anything else is refused SHIPMENT_PO_ALLOCATION_MISSING with its reason.
+        var _c7ovs = !!(alloc && alloc.success === false && alloc.error === 'SHIPMENT_FACTORY_ATTRIBUTION_GAP' && alloc.reason === 'NOT_A_FACTORY_WAREHOUSE' && alloc.zero_write === true);
+        if (_c7ovs && status) status.textContent = '來源不是工廠倉：不建立 PO 配置，交由伺服器檢查海外調撥條件…';
+        if (!_c7ovs && (!alloc || alloc.success === false)) {
             var aerr = (alloc && alloc.error) || 'Allocation could not be prepared';
             var d0 = (alloc && alloc.detail) || {};
             var shortfall = (d0.shortage_qty != null) ? (' — need ' + d0.shipment_qty + ', available ' + d0.available_capacity + ', short ' + d0.shortage_qty) : '';
@@ -2979,7 +3676,8 @@ function _shRunConfirm(shipmentId, execPayload) {
         if (status) status.textContent = 'PO allocation ready — confirming & dispatching…';
         if (status) status.textContent = 'Confirming and preparing documents...';
         _shDispatchHold14_(shipmentId, true);
-        return window.KM.DB.confirmShipmentAndDispatch({ shipment_id: shipmentId, actor: 'operation-system', expected_updated_at: (execPayload && execPayload.expected_updated_at) || undefined });   // R15F2 P1 (GAP-2): the version this user's Save wrote; the retry reuses it, never a refetch
+        return window.KM.DB.confirmShipmentAndDispatch(Object.assign({ shipment_id: shipmentId, actor: 'operation-system', expected_updated_at: (execPayload && execPayload.expected_updated_at) || undefined },
+            _shConfirmRouteMode_[shipmentId] === 'MANUAL' ? { route_mode: 'MANUAL' } : {}));   // AD3 D: route_mode only after the operator pressed the manual-logistics button in THIS dialog   // R15F2 P1 (GAP-2): the version this user's Save wrote; the retry reuses it, never a refetch
     }).then(function (res) {
         if (!res || res.success === false) {
             // R71-FE-2: the dispatch answer was lost (db-api stage 'network': dropped / HTTP error / non-JSON / timed out) - never re-enable blindly
@@ -3015,7 +3713,9 @@ function _shRunConfirm(shipmentId, execPayload) {
                 if (cancel) cancel.disabled = false;
                 return;
             }
-            if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed' + stage + ': ' + ((res && res.error) || 'Unknown error') + ' — shipment_id: ' + shipmentId; }
+            if (_shRouteRefusalHtml_(shipmentId, res, go, cancel, status, execPayload)) return;   // AD3 D: route-template answers (manual fallback offered only when the server says so)
+            if (status) { status.style.color = '#b91c1c'; status.textContent = 'Confirm failed' + stage + ': ' + ((res && res.error) || 'Unknown error') + ' — shipment_id: ' + shipmentId +
+                ((res && res.overseas_transfer_check && res.overseas_transfer_check.reason) ? ' — 不適用海外調撥免 PO 規則：' + String(res.overseas_transfer_check.reason) + '（需先完成 PO 配置）' : ''); }   // c7fix M-A
             go.disabled = false; go.textContent = 'Confirm & Dispatch'; if (cancel) cancel.disabled = false;
             return;
         }
@@ -3036,6 +3736,7 @@ function _shRunConfirm(shipmentId, execPayload) {
                 'Retry document generation from the shipment card.</span>';
         }
         if (status) status.innerHTML = '<strong>Confirmed' + already + '.</strong><br>Shipment <code>' + _shEsc(d.shipment_id || shipmentId) + '</code> → <strong>' + _shEsc(d.status || 'shipped') + '</strong><br>' +
+            (String(d.route_mode || '').toUpperCase() === 'MANUAL' ? '<span class="sh-confirm-manual-route">Manual logistics (no route template): source and destination only; report the position on the shipment card.</span><br>' : '') +   // AD3 D
             'Route initialized: ' + (d.route_nodes_created != null ? d.route_nodes_created : '—') + ' node(s) · Initial Event created: ' + (d.events_created != null ? d.events_created : '—') + ' · Stock movements: ' + (d.stock_movements_created != null ? d.stock_movements_created : '—') +
             docLine;
         if (actions) {
@@ -3111,23 +3812,33 @@ function shCancelShipmentDraft(shipmentId, expectedStatus) {
             else {
                 alert('Shipment Draft cancelled.\n\nReservation released: ' + (d.reservation_released || 0) +
                       (d.source_warehouse_id ? (' at ' + d.source_warehouse_id) : '') +
-                      '\nCurrent factory stock: unchanged.' +
+                      '\nPO allocations released: ' + (d.allocations_released || 0) +   // SCF1 (F1)
+                      '\nCurrent factory stock: unchanged. PO completed / remaining: unchanged.' +
                       '\n\nThe approved plan can now create a new Shipment Draft with Retry.');
             }
             _shReadbackOne_(shipmentId);                        // authoritative readback - R15C-B3: of this shipment (whole-area only if that read fails)
             return;
         }
         // TYPED failure, and the state on screen is RETAINED: no optimistic cancellation.
+        // SCF1 (2026-11-13, F4): "Nothing was changed" ONLY when the server PROVED zero write (12_ scfCancelOut_ puts zero_write in data, which
+        // the command layer keeps as error.details). Every other failure - a lost / timed-out / non-JSON answer, a rollback (verified or
+        // stopped), a failure after writes started - is said as NOT PROVEN. Nothing is resent and nothing is retried automatically.
         var err = (res && res.error) || { code: 'UNKNOWN', message: 'Cancellation failed' };
-        alert('Cancel failed: ' + err.message + ' [' + err.code + ']\n\nNothing was changed.');
+        if (typeof err !== 'object') err = { code: (res && res.code) || 'UNKNOWN', message: String(err) };
+        var errCode = String(err.code || 'UNKNOWN'), errMsg = String(err.message || errCode);
+        if (err.details && err.details.zero_write === true) {
+            alert('Cancel failed: ' + errMsg + ' [' + errCode + ']\n\nNothing was changed (the server confirmed that nothing was written).');
+        } else {
+            alert('Cancel result not proven: ' + errMsg + ' [' + errCode + ']\n\nThe server did not confirm that nothing was written, so this page cannot say whether the draft was cancelled or its reservation and PO allocations were released. Nothing was resent and nothing will be retried automatically. The shipment is being re-read - check it before doing anything else.');
+        }
         _shReadbackOne_(shipmentId);   // R15C-B3
     }, function (e) {
         _shCancelInFlight[shipmentId] = false;
         _shSetCancelBusy_(shipmentId, false);
         // Outcome UNKNOWN, not failed. The readback settles it, and a retry is safe because the server
         // answers REUSED for an already-cancelled shipment.
-        alert('Cancel could not be confirmed: ' + (e && e.message ? e.message : e) +
-              '\n\nThe list will refresh; if the shipment is still active you can retry.');
+        alert('Cancel result not proven: ' + (e && e.message ? e.message : e) +   // SCF1 (F4): no answer = not proven; never retried automatically
+              '\n\nNothing was resent and nothing will be retried automatically. The list will refresh - check the shipment before doing anything else.');
         _shLoadAndRender();
     });
 }
@@ -3180,6 +3891,11 @@ function shWarehousePick(shipmentId) {
     if (!sel || !hidden) return;
     var opt = sel.options[sel.selectedIndex];
     hidden.value = opt ? (opt.getAttribute('data-code') || '') : '';
+    // N01 (A final2): choosing the blank option on a Draft that HAS a destination is an EXPLICIT clear - sent as destination_warehouse_id ''
+    // (the server never clears the destination from a blank warehouse_id alone). Choosing a warehouse again withdraws it.
+    var clr = document.getElementById('sh-whclear-' + shipmentId);
+    if (sel.value === '' && sel.getAttribute('data-canonical')) { if (!clr) { clr = document.createElement('input'); clr.type = 'hidden'; clr.id = 'sh-whclear-' + shipmentId; clr.setAttribute('data-field', 'destination_warehouse_id'); clr.value = ''; box.appendChild(clr); } }
+    else if (clr && clr.parentNode) clr.parentNode.removeChild(clr);
 }
 
 // Status-advance placeholder (Overview post-ship lifecycle). No factory-stock side effects.
@@ -3214,6 +3930,7 @@ window.shRegisterDocumentRefresh = shRegisterDocumentRefresh;
 function shToggleActionsMenu(ev) {
     if (ev) { try { ev.stopPropagation(); } catch (e) {} }
     var t = document.getElementById('shActionsTrigger'), l = document.getElementById('shActionsList'); if (!t || !l) return;
+    if (!document.getElementById('shHealthExportItem')) { var hb3_ = document.createElement('button'); hb3_.type = 'button'; hb3_.id = 'shHealthExportItem'; hb3_.setAttribute('role', 'menuitem'); hb3_.className = 'km-page-actions-menu__item'; hb3_.textContent = '下載 health JSON（唯讀）'; hb3_.onclick = function () { shCloseActionsMenu(); shHealthExport(); }; l.appendChild(hb3_); }   // A final3 (Owner item 6): one-click read-only health export
     var open = l.hidden; l.hidden = !open; t.setAttribute('aria-expanded', open ? 'true' : 'false');
     if (open) { var f = l.querySelector('[role=menuitem]'); if (f) f.focus(); }
     if (!window.__shMenuBound) {
@@ -3230,20 +3947,107 @@ function shRunAction(kind) {
     if (kind !== 'import') return;
     function go() { window.KM.importBatch.open({
         domain: 'shipment', title: 'Import Shipment',
+        // SHIP-OPEN: exactly two modes, ONE Download (Add New = blank template, Update Existing = this company's updatable shipments)
+        combinedWorkflowButtons: true,
         modes: [
-            { value: 'ADD_NEW', label: 'Add New (opening / historical shipments)', help: 'Creates already-shipped / in-transit / received shipments as an opening record: no stock deduction, reservation, route, event, receipt, document or e-mail. Draft / ready-to-ship cannot be imported (they need the normal plan and Confirm).' },
-            { value: 'UPDATE', label: 'Update existing shipments', help: 'By shipment id + line id from an exported update file; tracking, booking, invoice, actual dates / costs and notes only. Quantity, company, status, origin and SKU never change here.' }
+            { value: 'ADD_NEW', label: 'Add New', withData: false, help: 'Shipments already on the way (left the factory, not fully received). Required: 出貨單號, 國家, 站點, 出貨工廠倉, 目的倉, ETD, ETA, Reference ID, Shipping method; Lines: 出貨單號, SKU, 在途中數量 (quantity still not received). The import time is recorded by the server. No stock deduction, reservation, PO, route, event, receipt, document or e-mail.' },   // A final3
+            { value: 'UPDATE', label: 'Update Existing', withData: true, help: 'The file holds every updatable shipment of the company: tracking / booking / invoice numbers, ETA (fill, never clear), actual dates / costs and notes. Quantity, company, status and SKU never change here.' }
         ],
-scopeFields: [{ key: 'company', label: 'Company', required: true, options: (function (domain, list) { return function () { return window.KM.DB.importTemplateGet({ domain: domain, mode: 'UPDATE', scope: {} }).then(function (t) { if (!t || t.success !== true) throw Error('SHIPMENT_IMPORT_OPTIONS_UNAVAILABLE'); return ((t && t.lists && t.lists[list]) || []).map(function (o) { return { value: o.value, label: o.label && o.label !== o.value ? o.value + ' — ' + o.label : o.value }; }); }); }; })('shipment', 'company') }],
-        scopeLabel: function (v) { return v && v.company ? 'Company ' + v.company + '. The update export holds EVERY shipment of this company, not the visible page.' : 'Choose the company first.'; },
+        scopeFields: [
+            { key: 'company', label: 'Company', required: true, options: function () { return window.KM.DB.importTemplateGet({ domain: 'shipment', mode: 'ADD_NEW', scope: {} }).then(function (t) {
+                if (!t || t.success !== true) { var e = new Error((t && t.code) || 'SHIPMENT_IMPORT_OPTIONS_UNAVAILABLE'); e.code = (t && t.code) || 'SHIPMENT_IMPORT_OPTIONS_UNAVAILABLE'; throw e; }
+                return ((t.lists && t.lists.company) || []).map(function (o) { return { value: o.value, label: o.label && o.label !== o.value ? o.value + ' — ' + o.label : o.value }; }); }); } },
+            // A final3 (2A): no date picker - the server records the import time; opening_as_of is the source data time only
+        ],
+        scopeLabel: function (v) { return v && v.company ? 'Company ' + v.company + '. Update Existing: the export holds EVERY updatable shipment of this company, not the visible page.' : 'Choose the company first.'; },   // A final3
         actor: function () { return (window.KM && window.KM.currentUser && window.KM.currentUser.email) || ''; },
         onCommitted: function () { _shReadModel = null; _shRefresh_(renderShipmentOverview); }
     }); }
     if (window.KM && window.KM.importBatch) return go();
     var L = window.KM && window.KM.scriptLoader; if (!L) { alert('The import module could not be loaded.'); return; }
-    return L.load('assets/js/utils/import-batch.js?v=iu4-20261112').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+    return L.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
-window.shToggleActionsMenu = shToggleActionsMenu; window.shRunAction = shRunAction;
+// A final3 (Owner 2026-11-20 item 6): ONE-CLICK, READ-ONLY health export (More Options > 下載 health JSON). The SAME reads and rules as the
+// Console collectors (Sandbox v3.1 / Production v2.1): the Sandbox guard gate, system.health, the sign-in wait, then getClientCapabilities
+// through the app's own protected read path _kmGapRead_ + _kmCapVerifyServedAction_ (same login, same guard - no bypass, no new endpoint).
+// Success -> a file holding EXACTLY the JSON the strict checker reads (Sandbox KM_SANDBOX_HEALTH_METADATA_ONLY_V1 / Production
+// KM_PROD_HEALTH_SUMMARY_V2, allowlisted fields only). Any failure -> a DIAGNOSTIC file (step names, ms, error codes, fetch counts) that the
+// checker refuses as health. Never writes a URL, token, session, payload or the db fingerprint; never builds the gate or a success flag.
+// A file download replaces the Console copy() (no clipboard race). No retry; a late answer is never used.
+async function shHealthExport() {
+    var sbx = !!window.KM_SANDBOX_GUARD_, prod = !sbx && !!window.KM_PRODUCTION_GUARD_;
+    if (!sbx && !prod) { alert('Health export: this page has no Sandbox or Production guard. Nothing was read.'); return null; }
+    if (!window.KM || !window.KM.DB || typeof window.KM.DB.getSystemHealth !== 'function') { alert('Health export: the health read is not available on this page. Nothing was read.'); return null; }
+    var envName = sbx ? 'sandbox' : 'production';
+    var scalar = function (v) { return (typeof v === 'string' || typeof v === 'boolean' || typeof v === 'number') ? v : null; };
+    var names = function (v) { return Array.isArray(v) ? v.filter(function (x) { return typeof x === 'string'; }) : null; };
+    var code = function (r) { var e = r && (r.error || r), t = e && e.transport; return { code: scalar(e && (e.code || (typeof r.code === 'string' ? r.code : null))), phase: scalar(t && t.phase), http_status: scalar(t && t.httpStatus) }; };
+    var now = function () { return (typeof performance !== 'undefined' && performance.now) ? Math.round(performance.now()) : null; };
+    var fetchTiming = function () { try { if (typeof performance === 'undefined' || !performance.getEntriesByType) return 'UNAVAILABLE';
+        var e = performance.getEntriesByType('resource').filter(function (x) { return x.initiatorType === 'fetch' || x.initiatorType === 'xmlhttprequest'; }), t = now();
+        return { count: e.length, last_120s: e.filter(function (x) { return x.startTime > t - 120000; }).length, max_ms: e.reduce(function (m, x) { return Math.max(m, Math.round(x.duration || 0)); }, 0), last_durations_ms: e.slice(-8).map(function (x) { return Math.round(x.duration || 0); }) }; } catch (err) { return 'UNAVAILABLE'; } };
+    var diag = { kind: sbx ? 'KM_SANDBOX_HEALTH_DIAG_V3' : 'KM_PROD_HEALTH_DIAG_V2', diag_version: sbx ? '3.1' : '2.1', source: 'IN_APP_EXPORT', captured_at: new Date().toISOString(), steps: [], verdict: null };
+    var bounded = function (p, ms) { return new Promise(function (res) { var done = false, tm = setTimeout(function () { if (!done) { done = true; res({ timeout: true }); } }, ms);
+        Promise.resolve(p).then(function (v) { if (!done) { done = true; clearTimeout(tm); res({ value: v }); } }, function (e) { if (!done) { done = true; clearTimeout(tm); res({ thrown: true, name: scalar(e && e.name) }); } }); }); };
+    var step = async function (name, fn, ms) { var t0 = Date.now(), r = await bounded(Promise.resolve().then(fn), ms), s = { step: name, ms: Date.now() - t0, budget_ms: ms, at_ms_since_navigation: now() };
+        s.outcome = r.timeout ? 'TIMEOUT' : r.thrown ? 'THREW' : 'RETURNED'; if (r.thrown) s.error = r.name; diag.steps.push(s); return r; };
+    var stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\..*$/, '').replace('T', '-');
+    var save = function (obj, isDiag) {
+        var text = JSON.stringify(obj, null, 2), name = 'km-health-' + envName + (isDiag ? '-DIAG' : '') + '-' + stamp + '.json';
+        try { var blob = new Blob([text], { type: 'application/json' }), url = URL.createObjectURL(blob), a = document.createElement('a'); a.href = url; a.download = name; document.body.appendChild(a); a.click();
+            setTimeout(function () { try { URL.revokeObjectURL(url); if (a.parentNode) a.parentNode.removeChild(a); } catch (e2) {} }, 1500); } catch (e) { alert('Health export: the file could not be saved (' + scalar(e && e.name) + ').'); }
+        alert(isDiag ? '已下載診斷檔 ' + name + '（不是 health；verdict ' + obj.verdict + '）。請把整個檔案交回，不要重試多次。' : '已下載 ' + name + '。請用 check-health-download.ps1 檢查；這個檔案本身不是 PASS。');
+        return { name: name, text: text, diag: !!isDiag };
+    };
+    try {
+        diag.page = { ms_since_navigation: now(), visibility: scalar(typeof document !== 'undefined' && document.visibilityState), online: scalar(typeof navigator !== 'undefined' && navigator.onLine) };
+        diag.fetch_at_start = fetchTiming();
+        var pa = window.KM.passwordAccess;
+        diag.sign_in = pa ? (typeof pa.isSignedIn === 'function' ? !!pa.isSignedIn() : 'UNKNOWN') : 'NO_PASSWORD_ACCESS_MODULE';
+        diag.capabilities_path = typeof _kmGapRead_ === 'function' ? 'APP_PROTECTED_READ_PATH' : 'KM_DB_GETCLIENTCAPABILITIES';
+        if (sbx) {
+            var g = window.KM_SANDBOX_GUARD_;
+            diag.guard = { verdict: scalar(g.verdict), refusals: (g.refusals || []).map(function (x) { return scalar(x && x.code); }), gate_seen: !!g.sandbox_gate, health_seen: !!g.health, mode: scalar(g.mode) };
+            if (g.verdict) { diag.verdict = 'GUARD_REFUSED:' + g.verdict; return save(diag, true); }
+            if (typeof g.ready === 'function') { var r0 = await step('guard_gate', function () { return g.ready(); }, 30000); diag.steps[diag.steps.length - 1].ok = r0.value === true;
+                if (r0.timeout) { diag.verdict = 'GUARD_GATE_PENDING'; return save(diag, true); }
+                if (r0.value !== true) { diag.verdict = 'GUARD_GATE_REFUSED:' + (window.KM_SANDBOX_GUARD_.verdict || 'UNKNOWN'); return save(diag, true); } }
+        }
+        var rh = await step('system.health', function () { return window.KM.DB.getSystemHealth(); }, 60000);
+        diag.fetch_after_health = fetchTiming();
+        var h = rh.value;
+        if (!h || h.success !== true) { diag.verdict = rh.timeout ? 'HEALTH_NO_ANSWER_WITHIN_BUDGET' : 'HEALTH_ERROR:' + (code(h).code || 'UNKNOWN'); diag.health_error = rh.timeout ? null : code(h); return save(diag, true); }
+        diag.sign_in_before_capabilities = pa && typeof pa.isSignedIn === 'function' ? !!pa.isSignedIn() : diag.sign_in;
+        if (diag.sign_in_before_capabilities === false && pa && typeof pa.whenSignedIn === 'function') {
+            var rs = await step('sign_in_wait', function () { return pa.whenSignedIn(); }, 30000);
+            if (rs.timeout || rs.thrown) { diag.verdict = 'CAPS_WAITING_FOR_SIGN_IN'; diag.note = 'the capabilities read was NOT started: the app read path would wait for this same sign-in before its own timer'; return save(diag, true); } }
+        var capsFn = typeof _kmGapRead_ === 'function'
+            ? function () { return _kmGapRead_('getClientCapabilities', {}).then(function (r) { return typeof _kmCapVerifyServedAction_ === 'function' ? _kmCapVerifyServedAction_(r) : r; }); }
+            : function () { return window.KM.DB.getClientCapabilities(); };
+        var rc = await step('getClientCapabilities', capsFn, 100000);
+        diag.fetch_after_capabilities = fetchTiming();
+        var c = rc.value;
+        if (!c || c.success !== true) { diag.verdict = rc.timeout ? (diag.sign_in_before_capabilities === false ? 'CAPS_WAITING_FOR_SIGN_IN' : 'CAPS_NO_ANSWER_WITHIN_BUDGET') : 'CAPS_ERROR:' + (code(c).code || 'UNKNOWN'); diag.capabilities_error = rc.timeout ? null : code(c); return save(diag, true); }
+        var d = h.module_build_stamps ? h : (h.data || {}), mb = d.module_build_stamps || {};
+        var mods = Array.isArray(mb.modules) ? mb.modules : [];
+        if (sbx) {
+            var gate = c.sandbox_gate || (c.data && c.data.sandbox_gate) || (c.envelope && c.envelope.sandbox_gate) || null;
+            if (!gate) { diag.verdict = 'CAPS_WITHOUT_SANDBOX_GATE'; return save(diag, true); }
+            return save({ kind: 'KM_SANDBOX_HEALTH_METADATA_ONLY_V1', captured_at: new Date().toISOString(), health_success: scalar(h.success), capabilities_success: scalar(c.success),
+                deployment_release: scalar(d.deployment_release), build_id: scalar(d.build_id), mixed_deployment: scalar(d.mixed_deployment), stale_modules: names(mb.stale_modules), absent_modules: names(mb.absent_modules),
+                modules: mods.map(function (m) { return { file: scalar(m.file), declared: scalar(m.declared_build), expected: scalar(m.expected_build), matches: scalar(m.matches_expected) }; }),
+                sandbox_gate: { environment: scalar(gate.environment), allow_sha256: scalar(gate.allow_sha256), import_scope_sha256: scalar(gate.import_scope_sha256), bound_equals_constant: scalar(gate.bound_equals_constant) } }, false);
+        }
+        var pg = c.production_gate || (c.data && c.data.production_gate) || (c.envelope && c.envelope.production_gate) || null;
+        if (!pg) { diag.verdict = 'CAPS_WITHOUT_PRODUCTION_GATE'; return save(diag, true); }
+        return save({ kind: 'KM_PROD_HEALTH_SUMMARY_V2', captured_at: new Date().toISOString(), health_success: scalar(h.success), capabilities_success: scalar(c.success),
+            deployment_release: scalar(d.deployment_release), build_id: scalar(d.build_id), system_health_module_build: scalar(d.system_health_module_build), mixed_deployment: scalar(mb.mixed_deployment !== undefined ? mb.mixed_deployment : d.mixed_deployment),
+            stale_modules: names(mb.stale_modules), absent_modules: names(mb.absent_modules),
+            modules: mods.map(function (m) { return { file: scalar(m.file), symbol: scalar(m.symbol), present: scalar(m.present), declared: scalar(m.declared_build), expected: scalar(m.expected_build), matches: scalar(m.matches_expected) }; }),
+            production_gate: { environment: scalar(pg.environment), profile_id: scalar(pg.profile_id), policy_sha256: scalar(pg.policy_sha256), bound_equals_constant: scalar(pg.bound_equals_constant), module_stamps_ok: scalar(pg.module_stamps_ok), flat_v2: scalar(pg.flat_v2), administration_enabled: scalar(pg.administration_enabled), ai_plan_enabled: scalar(pg.ai_plan_enabled) } }, false);
+    } catch (e) { diag.verdict = 'COLLECTOR_THREW'; return save(diag, true); }
+}
+window.shToggleActionsMenu = shToggleActionsMenu; window.shRunAction = shRunAction; window.shHealthExport = shHealthExport;
 
 window._shToggleCardEl = _shToggleCardEl;
 window._shCardFromEvent = _shCardFromEvent;

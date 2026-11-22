@@ -2516,6 +2516,7 @@ function renderExpandPanel(item) {
             ${allocEmpty}
             <table class="ro-expand-table ro-rec-table"><thead><tr><th>Tier · Month</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
           </div>
+          ${typeof _roOverseasSummaryHtml_ === 'function' ? _roOverseasSummaryHtml_(item) : ''}
           ${_opRecoSubsectionHtml(item)}
           ${typeof _roRecoActionHtml === 'function' ? _roRecoActionHtml(item) : ''}
         </div>
@@ -2840,6 +2841,20 @@ function _opRecoMapLine(L) {
         remainingSupplyQty: _opNumOrNull(t.remainingSupplyQty), remainingGapQty: _opNumOrNull(t.remainingGapQty),
         suggestedOrderQty: _opNumOrNull(t.suggestedOrderQty) };
     }) : null,
+    // D5-V3-R5F FE-WARNINGS - THE EIGHT WARNING FIELDS 42_ PUTS ON EVERY CALCULATED LINE (docs/WARNING_CONTRACT.md).
+    // Carried exactly as received, never computed or repaired; an absent field becomes an empty array, which the
+    // contract defines as "nothing to warn". Written inline because repo suites evaluate this region with stubs.
+    incomingDateSources: Array.isArray(L.incomingDateSources) ? L.incomingDateSources.slice() : [],
+    arrivalUndetermined: Array.isArray(L.arrivalUndetermined) ? L.arrivalUndetermined.slice() : [],
+    shippedEtaMissing: Array.isArray(L.shippedEtaMissing) ? L.shippedEtaMissing.slice() : [],
+    inventoryShares: Array.isArray(L.inventoryShares) ? L.inventoryShares.slice() : [],
+    inventoryShareUnknown: Array.isArray(L.inventoryShareUnknown) ? L.inventoryShareUnknown.slice() : [],
+    inventoryShareReconciliation: Array.isArray(L.inventoryShareReconciliation) ? L.inventoryShareReconciliation.slice() : [],
+    incomingAttribution: Array.isArray(L.incomingAttribution) ? L.incomingAttribution.slice() : [],
+    shipmentDuplicates: {
+      conflicts: (L.shipmentDuplicates && Array.isArray(L.shipmentDuplicates.conflicts)) ? L.shipmentDuplicates.conflicts.slice() : [],
+      identical: (L.shipmentDuplicates && Array.isArray(L.shipmentDuplicates.identical)) ? L.shipmentDuplicates.identical.slice() : []
+    },
     diagnostics: (L.diagnostics && Array.isArray(L.diagnostics.issues)) ? L.diagnostics.issues.slice() : []
   };
 }
@@ -2865,6 +2880,7 @@ function _opRecoApplyEnvelope(env, scopeKey, scope) {
   _opRecoState.calcMonth = (env.meta && env.meta.calculationMonth) || null;
   _opRecoState.planningCycle = (env.meta && env.meta.planningCycle) || null;
   _opRecoState.conflicts = (env.meta && env.meta.conflicts) || 0;
+  _opRecoState.calculationDate = (env.meta && env.meta.calculationDate) || null;   // FE-WARNINGS: the "as of" of a live answer
   _opRecoState.loadedOk = true;
 }
 // Invalidate any in-flight request (bump seq + abort the browser response) and reset to a clean status.
@@ -3023,7 +3039,12 @@ function _opMatToLine(row, scope) {
   var blocked = String(row.calculation_status) === 'BLOCKED';
   return { recommendationMode: 'MARKETPLACE_ORDER_NEED', sku: scope.sku, siteSku: scope.siteSku || null,
     destinationType: 'MARKETPLACE', destinationLabel: 'Order Planning', blocked: blocked,
-    blockedReason: blocked ? (String(row.note || '') || 'BLOCKED') : null, monthlyProjection: mp };
+    blockedReason: blocked ? (String(row.note || '') || 'BLOCKED') : null, monthlyProjection: mp,
+    // FE-WARNINGS: the stored note (43_ writes the warning flags into it) and the row's own calculation identity, carried
+    // verbatim so the warnings box can say WHICH calculation they belong to. Display only; nothing reads them for a number.
+    gapNote: (row.note == null ? '' : String(row.note)), calculationStatus: String(row.calculation_status == null ? '' : row.calculation_status),
+    calculationMonth: (row.calculation_month == null || row.calculation_month === '') ? null : String(row.calculation_month),
+    calculatedAt: (row.calculated_at == null || row.calculated_at === '') ? null : String(row.calculated_at) };
 }
 function _opLoadMaterializedGap(item) {
   var scope = _opRecoScopeFor(item);
@@ -3250,6 +3271,32 @@ function _opRecoPrimaryProjection() {
   return withP.length === 1 ? withP[0].monthlyProjection : null;
 }
 function _opRecoScopeMatches(item) { var s = _opRecoScopeFor(item); return !!(s && _opRecoState.scopeKey === _opRecoKey(s)); }
+// b4 + b5 (Owner three-layer rule; Q1 approved; Q4 = rows, no schema): under Order Allocation, the layers of the platform need - overseas transfer,
+// factory ship, of which from factory stock, remaining new purchase / production - with the reasons. PRESENTATION ONLY: the numbers are the
+// server's (the materialized order_planning_gap note written by 43_, or - on the live fallback - the canonical monthlyProjection fields
+// overseasCoveredQty / factoryShipQty / factoryShipFromStockQty / newPurchaseQty). No page-side math beyond listing the tiers.
+function _roOverseasSummaryHtml_(item) {
+  if (typeof _opRecoScopeMatches !== 'function' || !_opRecoScopeMatches(item)) return '';
+  var st = _opRecoState; if (!st || st.status !== 'READY' || !Array.isArray(st.lines)) return '';
+  var ls = st.lines.filter(function (l) { return l && Array.isArray(l.monthlyProjection) && l.monthlyProjection.length; }); if (ls.length !== 1) return '';
+  var L = ls[0], note = String(L.gapNote == null ? '' : L.gapNote);
+  var seg = function (code) { var i = note.indexOf(' | ' + code); if (i < 0 && note.indexOf(code) === 0) i = -3; if (i === -1) return ''; var rest = note.slice(i + 3 + code.length), c = rest.indexOf(': '); if (c < 0) return ''; var v = rest.slice(c + 2), e = v.indexOf(' | '); return (e < 0 ? v : v.slice(0, e)).trim(); };
+  var tr = seg('OVERSEAS_TRANSFER_SUGGESTED'), fs = seg('FACTORY_SHIP'), fk = seg('FROM_FACTORY_STOCK'), np = seg('NEW_PURCHASE'), hd = seg('OVERSEAS_POOL_HELD');
+  if (L.gapNote === undefined) {   // live workspace fallback (no stored note): the canonical projection fields
+    var col = function (k, pos) { return L.monthlyProjection.filter(function (r) { return typeof r[k] === 'number' && (!pos || r[k] > 0); }).map(function (r) { return r.tier + '=' + r[k]; }).join(','); };
+    tr = col('overseasCoveredQty', true); fk = col('factoryShipFromStockQty', true);
+    if (tr || fk) { fs = col('factoryShipQty'); np = col('newPurchaseQty'); }
+  }
+  if (!tr && !fs && !hd) return '';
+  var row = function (label, value, why) { return '<tr><td>' + _roEsc(label) + '</td><td>' + _roEsc(value) + '</td><td class="ro-muted">' + _roEsc(why) + '</td></tr>'; };
+  var rows = row('海外可調撥（建議）', tr || '0', 'FBA 後段日期未定（B-Q1）：不計入平台可售量、不提高 DoS；平台缺口照常顯示')
+    + row('工廠出貨量', fs || '—', '= 平台補貨需求 − 海外可調撥')
+    + row('其中由工廠現貨', fk || '0', '工廠成品庫存（扣除已保留）；到貨前不計入平台可售量、不重複採購')
+    + row('新採購／生產', np || '—', '= 工廠出貨量 − 工廠現貨（未含箱規；上方 Suggested 為含箱規的下單建議，RO/PO 依此）')
+    + (hd ? row('未列入調撥的海外庫存', hd, '保留原因：與自履約站點共用、資料重複或不明（不計入、不猜測）') : '');
+  return '<div class="ro-block-sub ro-overseas-sub"><div class="ro-subtitle">補貨來源分層（Order Planning）</div>'
+    + '<table class="ro-expand-table ro-overseas-table"><thead><tr><th>項目</th><th>數量（依 Tier）</th><th>說明</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+}
 function _opRecoPrimaryProjectionFor(item) { return _opRecoScopeMatches(item) ? _opRecoPrimaryProjection() : null; }
 function _opRecoIsLoadingFor(item) { return !_opRecoScopeMatches(item) || _opRecoState.status === 'LOADING'; }
 function _opRecoTierIn(proj, tier) { if (!proj) return null; for (var i = 0; i < proj.length; i++) { if (proj[i].tier === tier) return proj[i]; } return null; }
@@ -3280,14 +3327,264 @@ function _opRecoPatchCanonicalCells(item) {
   });
 }
 // The Block-3 subsection markup. Returns '' when the feature is OFF → the legacy panel is byte-unchanged.
+// D5-V3-R5F FE-WARNINGS - THE PLANNING WARNINGS A NORMAL USER MUST SEE ON ORDER PLANNING (docs/WARNING_CONTRACT.md).
+// The detail above lives in a COLLAPSED diagnostics area, so a shipment not counted, a plan-date estimate or a duplicated
+// shipment was invisible. This box sits OPEN in the Recommendation Summary card, right after Order Allocation, in the
+// page's existing amber notice style (.ro-l2-state). It is rendered from the SAME read state as the rest of the card:
+//   materialized (default) -> the flags 43_ writes into order_planning_gap.note (+ the row's calculation identity);
+//   live 42_ answer        -> the line warning fields, judged with countedOrderPlanning (contract delta 1).
+// PRESENTATION ONLY: no request, no write, no quantity. No warnings -> '' and the card is exactly what it was before.
+// The user text per code lives in these tables, so a contract revision is a table edit.
+var _OP_WARN_REASON_TEXT_ = {
+  SHARE_MISSING: 'share not set', SHARE_NOT_A_NUMBER: 'invalid share', SHARE_NEGATIVE: 'invalid share', SHARE_OVER_100: 'invalid share',
+  WAREHOUSE_SHARE_PRECISION: 'share has more than 4 decimals', SHARE_SUM_OVER_100: 'shares exceed 100%',
+  SHARE_SUM_UNVERIFIABLE: 'shares cannot be verified', SHARE_CONFIG_UNAVAILABLE: 'share settings unavailable',
+  WAREHOUSE_POOL_NOT_WHOLE: 'stock is not a whole number', WAREHOUSE_POOL_TOO_LARGE: 'stock is too large to split exactly',
+  LINEAGE_SITE_NOT_IN_POOL: 'belongs to another site', CROSS_COMPANY_LINEAGE: 'belongs to another company',
+  CROSS_COMPANY_HEADER: 'shipment header belongs to another company', RATIO_UNKNOWN: 'no share for unassigned goods',
+  INCOMING_QTY_NOT_WHOLE: 'quantity is not a whole number', INCOMING_QTY_TOO_LARGE: 'quantity is too large to split exactly'
+};
+var _OP_WARN_SHARE_TEXT_ = {
+  SHARE_MISSING: 'Warehouse share not set — stock in {w} not counted',
+  SHARE_NOT_A_NUMBER: 'Invalid warehouse share for {w} — not counted', SHARE_NEGATIVE: 'Invalid warehouse share for {w} — not counted',
+  SHARE_OVER_100: 'Invalid warehouse share for {w} — not counted',
+  WAREHOUSE_SHARE_PRECISION: 'Warehouse share has more than 4 decimals — not counted ({w})',
+  SHARE_SUM_OVER_100: 'Warehouse shares exceed 100% — {w} not counted',
+  SHARE_SUM_UNVERIFIABLE: "Warehouse shares cannot be verified (another site's share is invalid) — {w} not counted",
+  WAREHOUSE_POOL_TOO_LARGE: 'Warehouse stock too large to split — {w} not counted',
+  DEFAULT: 'Warehouse share could not be applied — {w} not counted'
+};
+var _OP_WARN_ATTR_TEXT_ = {
+  RATIO: 'Split by warehouse share (no shipment lineage)',
+  LINEAGE_SITE_NOT_IN_POOL: 'Not counted: belongs to another site / company', CROSS_COMPANY_LINEAGE: 'Not counted: belongs to another site / company',
+  CROSS_COMPANY_HEADER: 'Not counted: shipment header belongs to another company',
+  RATIO_UNKNOWN: 'Not counted: no share for unassigned goods',
+  INCOMING_QTY_NOT_WHOLE: 'Not counted: quantity is not a whole number, so it cannot be split by share',
+  INCOMING_QTY_TOO_LARGE: 'Not counted: quantity too large to split'
+};
+var _OP_WARN_ATTR_SILENT_ = { LINEAGE: 1, LINEAGE_OTHER_SITE: 1, SOLE_SITE: 1 };
+// ONE live 42_ line -> [{ code, text, kind }] for the ORDER PLANNING calculation (kind 'info' = reconciliation, no sign).
+function _opWarnLineItems_(line) {
+  var out = [], seen = {};
+  function arr(v) { return Array.isArray(v) ? v : []; }
+  function s(v) { return (v === null || v === undefined) ? '' : String(v); }
+  function add(code, text, kind) { out.push({ code: code, text: text, kind: kind || 'warn' }); }
+  function once(k) { if (seen[k]) return false; seen[k] = 1; return true; }
+  function sid(d) { return s(d && (d.shipmentId || d.lineageKey)) || '?'; }
+  function why(code) { return _OP_WARN_REASON_TEXT_[code] || s(code); }
+  if (!line) return out;
+  var dates = arr(line.incomingDateSources), dup = (line.shipmentDuplicates && typeof line.shipmentDuplicates === 'object') ? line.shipmentDuplicates : {};
+  arr(line.arrivalUndetermined).concat(dates.filter(function (d) { return d && d.dateSource === 'UNDETERMINED'; })).forEach(function (d) {
+    if (once('U|' + sid(d))) add('UNDETERMINED', 'Shipment ' + sid(d) + ': Arrival date unknown — add an ETA to include this shipment');
+  });
+  arr(dup.conflicts).forEach(function (c) {
+    add('SHIPMENT_DUPLICATE_CONFLICT', 'Conflicting shipment rows (' + arr(c && c.fields).map(s).join(', ') + ') — fix the shipment to calculate (' + s(c && c.table) + ' ' + s(c && c.id) + ')');
+  });
+  arr(line.shippedEtaMissing).concat(dates.filter(function (d) { return d && d.dateSource === 'ETA_MISSING'; })).forEach(function (d) {
+    if (once('M|' + sid(d))) add('ETA_MISSING', 'Shipment ' + sid(d) + ': Shipped without ETA — not counted');
+  });
+  // date source / not counted, judged for THIS calculation: countedOrderPlanning (r5f). An answer without it (r5e) says
+  // nothing about Order Planning - its `counted` is the Inventory D90 flag - so no "not counted" is claimed from it.
+  dates.forEach(function (d) {
+    if (!d || (d.dateSource !== 'ETA' && d.dateSource !== 'PLAN_DATE')) return;
+    var plan = d.dateSource === 'PLAN_DATE', c = d.countedOrderPlanning;
+    if (c === false) {
+      // review r2 m2: supply-set membership BEFORE the horizon, as 43_ writes NOT_IN_SET - an entry outside this line's supply is
+      // never shown as "after <horizon end>" (it would not be counted before that date either)
+      var r = (d.inOrderPlanningSet === false) ? "not part of this line's supply"
+        : ((d.withinOrderPlanningHorizon === false) ? ('after ' + (s(d.orderPlanningHorizonEnd) || 'the planning horizon')) : 'not used');
+      add('NOT_COUNTED', 'Shipment ' + sid(d) + ': Not counted in this calculation (' + r + ')' + (plan ? ' — date estimated from plan date (no ETA)' : ''));
+    } else if (plan) {
+      add('PLAN_DATE', 'Shipment ' + sid(d) + ': Estimated from plan date (no ETA)' + (d.date ? (' — ' + s(d.date)) : ''));
+    }
+  });
+  arr(dup.identical).forEach(function (x) {
+    add('SHIPMENT_DUPLICATE_ROWS', 'Duplicate shipment rows — counted once (' + s(x && x.table) + ' ' + s(x && x.id) + ((x && x.rows != null) ? (', ' + s(x.rows) + ' rows') : '') + ')');
+  });
+  arr(line.inventoryShareUnknown).forEach(function (u) {
+    var w = s(u && u.warehouseId) || '?', c = s(u && u.reason);
+    add(c || 'WAREHOUSE_SHARE_UNKNOWN', (_OP_WARN_SHARE_TEXT_[c] || _OP_WARN_SHARE_TEXT_.DEFAULT).replace('{w}', function () { return w; }));   // review F1: literal insert ('$&' in an id stays '$&')
+  });
+  arr(line.incomingAttribution).forEach(function (a) {
+    var m = s(a && a.mode), head = 'Incoming ' + (s(a && a.incomingId) || '?') + ' to ' + (s(a && a.warehouseId) || '?') + ': ';
+    if (!m || _OP_WARN_ATTR_SILENT_[m]) return;
+    if (_OP_WARN_ATTR_TEXT_[m]) add(m, head + _OP_WARN_ATTR_TEXT_[m]);
+    else if (!(Number(a && a.countedForThisSite) > 0)) add(m, head + 'Not counted (' + why(m) + ')');
+  });
+  arr(line.inventoryShareReconciliation).forEach(function (x) {
+    if (!x || typeof x !== 'object') return;
+    var shared = Number(x.linkedSites) > 1, showStock = shared || x.shareSource === 'INVENTORY_SHARE' || !!x.unknownReason;
+    ['stock', 'incoming'].forEach(function (part) {
+      var r = x[part]; if (!r || typeof r !== 'object') return;
+      if (part === 'stock' && !showStock) return;
+      if (part === 'incoming' && (!(Array.isArray(r.events) && r.events.length) || (!shared && !r.notCountedQty))) return;
+      var nc = r.notCountedReason ? [why(r.notCountedReason)]
+        : Object.keys((r.notCountedByReason && typeof r.notCountedByReason === 'object') ? r.notCountedByReason : {}).map(function (k) { return why(k) + ' ' + s(r.notCountedByReason[k]); });
+      add('WAREHOUSE_SHARE_RECONCILIATION', (s(x.warehouseId) || '?') + ' ' + part + ' — Pool ' + s(r.poolQty) + ': counted ' + s(r.countedQty)
+        + ', rounding ' + s(r.roundingRemainderQty) + ', unassigned ' + s(r.unassignedQty) + ', not counted ' + s(r.notCountedQty)
+        + (nc.length ? (' (' + nc.join(', ') + ')') : '') + ((r.reconciled === false) ? ' — does not reconcile' : ''), 'info');
+    });
+  });
+  return out;
+}
+// D5-V3-R5G FE-WARNINGS-R2 - THE MATERIALIZED (default) ORDER PLANNING ROW READS THE GAP-NOTE GRAMMAR OF CONTRACT DELTA 9:
+//   note = base { " | " segment } " | " identity;  identity = "CALC D=<date> AT=<ts> TZ=<zone> [RUN=<id>]", ALWAYS last.
+// order_planning_gap notes are written with countedOrderPlanning (delta 1 / delta 8), so #4 here is THIS calculation's.
+// Parsed defensively: ONLY the last segment can be the identity; an unreadable segment is shown as "Other warning: <CODE>"
+// (review F4); a note without a readable CALC is never presented as the current calculation (review F2). Nothing computed.
+var _OP_NOTE_CALC_RX_ = /^CALC D=([0-9-]+|-) AT=([0-9T:-]+|-) TZ=(\S+)( RUN=(\S+))?$/;
+var _OP_NOTE_LIST_CODES_ = { WAREHOUSE_SHARE_UNKNOWN: 1, ARRIVAL_FROM_PLAN_DATE: 1, SHIPPED_ETA_MISSING: 1, SHIPMENT_DUPLICATE_ROWS: 1,
+  NOT_COUNTED_THIS_CALC: 1, INCOMING_RATIO_SPLIT: 1, INCOMING_NOT_COUNTED: 1 };
+// NOTE INJECTION (r5g review): a raw id could forge a "CALC ..." or "RECON ..." segment inside a note. The identity is read ONLY
+// from the LAST segment (never searched for elsewhere); a note with more than one segment that STARTS with "CALC " cannot confirm
+// its calculation (`calcSegments`; the "as of" rule marks it STALE). RECON and list segments are shown as untrusted note text.
+function _opNoteParse_(note) {
+  var segs = String(note == null ? '' : note).split(' | '), id = null, calls = 0;
+  segs.forEach(function (sg, i) { if (i > 0 && sg.indexOf('CALC ') === 0) calls++; });
+  if (segs.length > 1) { var m = _OP_NOTE_CALC_RX_.exec(segs[segs.length - 1]); if (m) { id = { d: m[1], at: m[2], tz: m[3], run: m[5] || '' }; segs.pop(); } }
+  return { head: segs[0], segs: segs.slice(1), identity: id, calcSegments: calls };
+}
+// ONE materialized line (an order_planning_gap row) -> items, with the SAME texts as the live 42_ path for the same fact.
+function _opWarnNoteItems_(line) {
+  var out = [], st = line ? String(line.calculationStatus || '') : '';
+  function add(code, text, kind) { out.push({ code: code, text: text, kind: kind || 'warn' }); }
+  function list(t) { return String(t || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return !!x; }); }
+  function more(code, x) { var mm = /^\+(\d+)$/.exec(x); if (mm) add(code, '… and ' + mm[1] + ' more not listed (' + code + ')'); return !!mm; }
+  function why(code) { return _OP_WARN_REASON_TEXT_[code] || code; }
+  function site(k) { var a = k.lastIndexOf('@'); return a > 0 ? (k.slice(0, a) + ' to ' + k.slice(a + 1)) : k; }
+  if (!line || line.gapNote == null || String(line.gapNote) === '' || (st !== 'READY' && st !== 'BLOCKED')) return out;
+  var p = _opNoteParse_(line.gapNote);
+  if (st === 'BLOCKED') {
+    var b = /^(PLANNED_SHIPMENT_ETA_MISSING|SHIPMENT_DUPLICATE_CONFLICT): (.*)$/.exec(String(p.head).trim());
+    if (b && b[1] === 'PLANNED_SHIPMENT_ETA_MISSING') list(b[2]).forEach(function (x) { if (!more(b[1], x)) add('UNDETERMINED', 'Shipment ' + x + ': Arrival date unknown — add an ETA to include this shipment'); });
+    if (b && b[1] === 'SHIPMENT_DUPLICATE_CONFLICT') list(b[2]).forEach(function (x) { if (!more(b[1], x)) add('SHIPMENT_DUPLICATE_CONFLICT', 'Conflicting shipment rows — fix the shipment to calculate (' + x + ')'); });
+  }
+  p.segs.forEach(function (seg) {
+    var r = /^RECON (\S+) (STOCK|INCOMING) (.*)$/.exec(seg);
+    if (r) {   // #15 - the remainder, so stock never looks like it vanished
+      var f = {}; r[3].split(' ').forEach(function (kv) { var e = kv.indexOf('='); if (e > 0) f[kv.slice(0, e)] = kv.slice(e + 1); });
+      if (f.pool === undefined || f.cnt === undefined || f.ok === undefined) { add('RECON', 'Other warning: RECON'); return; }
+      var ncr = f.ncr ? list(f.ncr).map(function (x) { var c = x.lastIndexOf(':'); return c > 0 ? (why(x.slice(0, c)) + ' ' + x.slice(c + 1)) : x; }) : [];
+      add('WAREHOUSE_SHARE_RECONCILIATION', r[1] + ' ' + r[2].toLowerCase() + ' — Pool ' + f.pool + ': counted ' + f.cnt.split('+').join(' + ') + ', rounding ' + (f.rnd || '-')
+        + ', unassigned ' + (f.una || '-') + ', not counted ' + (f.nc || '-') + (ncr.length ? (' (' + ncr.join(', ') + ')') : '') + (f.ok === '1' ? '' : ' — does not reconcile')
+        + ' · from the calculation note (not verified)', 'info');   // UNTRUSTED NOTE TEXT (injection review): never an authoritative figure
+      return;
+    }
+    var m = /^([A-Z][A-Z0-9_]*)(?: \([^)]*\))?: (.*)$/.exec(seg), code = m ? m[1] : ((/^([A-Z][A-Z0-9_]{2,})/.exec(seg) || [])[1] || '');
+    if (!m) { add('OTHER', 'Other warning: ' + (code || 'UNREADABLE')); return; }
+    if (code === 'NOTE_TRUNCATED') { add(code, 'Note truncated — ' + m[2] + ' more warning group(s) not shown here'); return; }
+    if (code === 'RECON_MORE') { add(code, m[2] + ' more warehouse reconciliation line(s) not shown', 'info'); return; }
+    var xs = list(m[2]);
+    if (!_OP_NOTE_LIST_CODES_[code]) { add(code, 'Other warning: ' + code + (xs.length ? (' (' + xs.join(', ') + ')') : '')); return; }   // review F4
+    xs.forEach(function (x) {
+      if (more(code, x)) return;
+      var eq = x.indexOf('='), k = eq > 0 ? x.slice(0, eq) : x, v = eq > 0 ? x.slice(eq + 1) : '';
+      if (code === 'WAREHOUSE_SHARE_UNKNOWN') add(v || code, v ? (_OP_WARN_SHARE_TEXT_[v] || _OP_WARN_SHARE_TEXT_.DEFAULT).replace('{w}', function () { return k; })
+        : ('Warehouse share missing or invalid — stock in ' + k + ' not counted'));   // r5f notes carry no reason
+      else if (code === 'ARRIVAL_FROM_PLAN_DATE') add('PLAN_DATE', 'Shipment ' + x + ': Estimated from plan date (no ETA)');
+      else if (code === 'SHIPPED_ETA_MISSING') add('ETA_MISSING', 'Shipment ' + x + ': Shipped without ETA — not counted');
+      else if (code === 'SHIPMENT_DUPLICATE_ROWS') add(code, 'Duplicate shipment rows — counted once (' + x + ')');
+      else if (code === 'NOT_COUNTED_THIS_CALC') add('NOT_COUNTED', 'Shipment ' + k + ': Not counted in this calculation ('
+        + (v === 'NOT_IN_SET' ? "not part of this line's supply" : (v === 'AFTER_HORIZON' ? 'after the planning horizon' : (v.indexOf('AFTER_') === 0 ? ('after ' + v.slice(6)) : 'not used'))) + ')');
+      else if (code === 'INCOMING_RATIO_SPLIT') add('RATIO', 'Incoming ' + site(k) + ': ' + _OP_WARN_ATTR_TEXT_.RATIO + (v ? (' — counted ' + v.split('/').join(' of ')) : ''));
+      else if (code === 'INCOMING_NOT_COUNTED') { var c2 = v.lastIndexOf(':'), mode = c2 > 0 ? v.slice(0, c2) : v;
+        add(mode || code, 'Incoming ' + site(k) + ': ' + (_OP_WARN_ATTR_TEXT_[mode] || ('Not counted (' + why(mode) + ')')) + (c2 > 0 ? (' (qty ' + v.slice(c2 + 1) + ')') : '')); }
+    });
+  });
+  return out;
+}
+// review r2 M1 - A GAP-ROW TIME VALUE IN EVERY FORM IT CAN ARRIVE IN, as Asia/Taipei wall time (Sheets turns the written strings
+// into Dates; getValues + JSON deliver UTC ISO). Accepted: ISO with Z / offset, Date-like (getTime), and plain local strings
+// 'yyyy-MM-dd HH:mm:ss' / 'yyyy-MM-ddTHH:mm:ss' / 'yyyy-MM-dd' / 'yyyy-MM' (taken as already Taipei). Asia/Taipei is a fixed
+// UTC+8 with no DST. Returns { day, ts, month } (ts T-separated) or null when present but unreadable. Comparison/display only.
+// NOT VERIFIED IN PRODUCTION: the form order_planning_gap.calculation_month arrives in (no Production OP body was available); a
+// 'yyyy-MM' string and a Date-ISO of the month's first day are both read to the same 'yyyy-MM'.
+function _opTpeTs_(v) {
+  var ms = null, s = '';
+  if (v && typeof v === 'object' && typeof v.getTime === 'function') ms = v.getTime();
+  else if (typeof v === 'string') {
+    s = v.trim();
+    if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:?\d{2})$/.test(s)) ms = Date.parse(s);
+    else if (/^\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}$/.test(s)) return { day: s.slice(0, 10), ts: s.slice(0, 10) + 'T' + s.slice(11), month: s.slice(0, 7) };
+    else if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return { day: s, ts: null, month: s.slice(0, 7) };
+    else if (/^\d{4}-\d{2}$/.test(s)) return { day: null, ts: null, month: s };
+    else return null;
+  } else return null;
+  if (typeof ms !== 'number' || !isFinite(ms)) return null;
+  var t = new Date(ms + 480 * 60000).toISOString();
+  return { day: t.slice(0, 10), ts: t.slice(0, 19), month: t.slice(0, 7) };
+}
+// WHICH calculation the warnings belong to, shown next to them, never "current" without proof (review F2). The identity is the
+// note's own CALC segment (contract delta 9, LAST segment only); the row's values are NORMALISED to Asia/Taipei first (review r2
+// M1). order_planning_gap rows carry calculation_month and calculated_at (no calculation_date). A stored row is STALE when:
+//   NO_IDENTITY                 the note's LAST segment is not a readable CALC, or its D / AT is '-';
+//   MULTIPLE_CALC               more than one segment starts with "CALC " (a forged identity cannot be told from the real one);
+//   CALC_TZ_UNSUPPORTED         CALC TZ is not Asia/Taipei;
+//   IDENTITY_MISMATCH           the row's calculated_at (Taipei) is missing / unreadable / not CALC AT, or CALC D is neither ONE
+//                               nor TWO days before AT's date. The contract defines Order Planning's D as the run day minus one
+//                               (review r2 m3); TWO is allowed because 46_ freezes D when a job STARTS (gapJobStart_ resolves the
+//                               context once) while each company slice stamps AT when it RUNS (43_ ts per slice), so a manual
+//                               Recalculate started before Taipei midnight writes slices after it with D = AT - 2 (review r3 m1).
+//                               A job is not resumed across a second midnight by design; D = AT - 3 or more is never current;
+//   OLDER_THAN_SITE_LATEST_RUN  AT is older than the newest calculated_at (Taipei) among the loaded rows of the same site
+//                               (_opMatCache; 43_ stamps ONE run time per job);
+//   PREVIOUS_PLANNING_MONTH     D falls in a month before the month of Asia/Taipei YESTERDAY - the calculation date a current run
+//                               writes (_roTpeNow, the page clock). Judged on the VALIDATED D, not on calculation_month, whose
+//                               Production form is unverified: a run on the 1st writes D = the last day of the previous month and
+//                               calculation_month = the previous month (43_ gapCalcContextForJob_), and is current (review r3 M1).
+// A live 42_ answer is the current calculation by definition and names its calculation date when the server sent one.
+function _opWarnAsOf_(st, line) {
+  function s(v) { return (v === null || v === undefined) ? '' : String(v); }
+  if (!line || line.gapNote === undefined) {
+    var d = s(st && st.calculationDate);
+    return { stale: false, reason: null, text: 'Planning warnings — live calculation' + (d ? (' as of ' + d) : '') };
+  }
+  var pp = _opNoteParse_(line.gapNote), id = pp.identity;
+  if (!id || id.d === '-' || id.at === '-') return { stale: true, reason: 'NO_IDENTITY', text: 'Planning warnings — calculation identity missing — STALE: may not be the latest calculation' };
+  if (pp.calcSegments > 1) return { stale: true, reason: 'MULTIPLE_CALC', text: 'Planning warnings — calculation identity cannot be confirmed (more than one CALC segment) — STALE: may not be the latest calculation' };
+  if (id.tz !== 'Asia/Taipei') return { stale: true, reason: 'CALC_TZ_UNSUPPORTED', text: 'Planning warnings — calculation time zone ' + id.tz + ' cannot be confirmed — STALE: may not be the latest calculation' };
+  var an = _opTpeTs_(line.calculatedAt), at = an ? s(an.ts) : '', mn = _opTpeTs_(line.calculationMonth), mon = mn ? s(mn.month) : '', newest = '';
+  var by = (typeof _opMatCache !== 'undefined' && _opMatCache && _opMatCache.bySku) || {};
+  for (var k in by) { if (Object.prototype.hasOwnProperty.call(by, k)) { var c = _opTpeTs_(by[k] && by[k].calculated_at); if (c && c.ts && c.ts > newest) newest = c.ts; } }
+  var atDay = /^\d{4}-\d{2}-\d{2}T/.test(id.at) ? id.at.slice(0, 10) : '';
+  var day1 = atDay ? new Date(Date.parse(atDay + 'T00:00:00Z') - 864e5).toISOString().slice(0, 10) : '';
+  var day2 = atDay ? new Date(Date.parse(atDay + 'T00:00:00Z') - 2 * 864e5).toISOString().slice(0, 10) : '';
+  var now = (typeof _roTpeNow === 'function') ? _roTpeNow() : null;
+  var yMonth = now ? new Date(Date.UTC(now.year, now.monthIdx, now.day) - 864e5).toISOString().slice(0, 7) : '';   // Taipei yesterday's month
+  var reason = (!at || id.at !== at || !day1 || (id.d !== day1 && id.d !== day2)) ? 'IDENTITY_MISMATCH'
+    : (newest && id.at < newest) ? 'OLDER_THAN_SITE_LATEST_RUN'
+    : (yMonth && id.d.slice(0, 7) < yMonth) ? 'PREVIOUS_PLANNING_MONTH' : null;
+  return { stale: !!reason, reason: reason, text: 'Planning warnings — as of ' + id.d + (mon ? (' (plan month ' + mon + ', run ' + id.at + ' ' + id.tz + ')') : (' (run ' + id.at + ' ' + id.tz + ')'))
+    + (reason ? ' — STALE: older than the latest calculation (run Recalculate All Sites)' : '') };
+}
+// The open box for the expanded row: '' unless the current read state belongs to THIS row and carries a warning.
+function _opWarnBoxHtml_(item) {
+  var st = _opRecoState;
+  if (!item || !st || st.status !== 'READY' || !Array.isArray(st.lines) || !st.lines.length) return '';
+  var scope = (typeof _opRecoScopeFor === 'function') ? _opRecoScopeFor(item) : null;
+  if (!scope || st.scopeKey !== _opRecoKey(scope)) return '';
+  var many = st.lines.length > 1, rows = [], first = null;
+  st.lines.forEach(function (L) {
+    var its = (L && L.gapNote !== undefined) ? _opWarnNoteItems_(L) : _opWarnLineItems_(L);
+    if (its.length && !first) first = L;
+    its.forEach(function (w) { rows.push({ code: w.code, kind: w.kind, text: (many ? ((L.destinationLabel || L.warehouseId || '?') + ': ') : '') + w.text }); });
+  });
+  if (!rows.length) return '';
+  var asof = _opWarnAsOf_(st, first);
+  return '<div class="ro-l2-state" role="status" data-op-warnings="1">'
+    + '<div data-op-warn-asof="' + (asof.stale ? 'stale' : 'current') + '"' + (asof.reason ? (' data-op-warn-stale-reason="' + _roEsc(asof.reason) + '"') : '') + '>' + (asof.stale ? '⚠ ' : '') + _roEsc(asof.text) + '</div>'
+    + rows.map(function (w) { return '<div data-op-warn="' + _roEsc(w.code) + '">' + (w.kind === 'info' ? '' : '⚠ ') + _roEsc(w.text) + '</div>'; }).join('')
+    + '</div>';
+}
 function _opRecoHostId(item) { return 'op-reco-' + _roPanelId(_roRowKey(item)); }
 function _opRecoSubsectionHtml(item) {
-  if (!_opRecoEnabled()) return '';   // legacy panel preserved verbatim when the workspace kill switch is OFF
+  // FE-WARNINGS: the open warnings box leads the subsection ('' when there is nothing to warn, so the panel is unchanged)
+  if (!_opRecoEnabled()) return _opWarnBoxHtml_(item);   // legacy panel preserved verbatim when the workspace kill switch is OFF
   // FM3d: the standalone "Recommendation — Order Need" DECISION table is retired. Its per-destination runtime
   // detail (status / recommended / blockedReason / requestId / cycle) is preserved ONLY as a COLLAPSED
   // diagnostics area — it is no longer the business-facing surface (that is now Demand Summary Gap + Order
   // Allocation Suggested, driven by monthlyProjection). Host id retained so the async re-render still patches it.
-  return '<details class="ro-block-sub op-reco-block op-reco-diag">' +
+  return _opWarnBoxHtml_(item) + '<details class="ro-block-sub op-reco-block op-reco-diag">' +
     '<summary class="ro-subtitle op-reco-diag__summary">Recommendation diagnostics</summary>' +
     '<div class="op-reco-host" id="' + _roEsc(_opRecoHostId(item)) + '">' + _opRecoInner(item) + '</div></details>';
 }
@@ -3306,6 +3603,15 @@ function _opRecoRerender() {
   var host = document.getElementById(_opRecoHostId(item));
   if (host) host.innerHTML = _opRecoInner(item);
   _opRecoPatchCanonicalCells(item);   // FM3d: patch Demand Summary Gap + Order Allocation Suggested from monthlyProjection
+  // FE-WARNINGS: the open warnings box follows the read state - replaced, added where the full render puts it (right after
+  // the Order Allocation block) or removed. No box before and none now -> the DOM is not touched.
+  var panel = document.getElementById(_roPanelId(_roRowKey(item)));
+  if (panel && typeof panel.querySelector === 'function') {
+    var wOld = panel.querySelector('[data-op-warnings]'), wHtml = _opWarnBoxHtml_(item);
+    if (wOld && wOld.parentNode) wOld.parentNode.removeChild(wOld);
+    var alloc = wHtml ? panel.querySelector('.ro-rec-table') : null, sub = alloc && alloc.parentNode;
+    if (sub && typeof sub.insertAdjacentHTML === 'function') sub.insertAdjacentHTML('afterend', wHtml);
+  }
 }
 if (typeof window !== 'undefined') {
   window._opSetRecommendationOptIn = _opSetRecommendationOptIn;   // DEPRECATED (FM2B): inert, no longer gates

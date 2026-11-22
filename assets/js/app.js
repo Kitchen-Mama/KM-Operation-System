@@ -134,7 +134,7 @@ var KM_ROUTE_ASSETS_ = {
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
             'assets/js/core/supply-planning-country-identity.js?v=r65-dc2r2-20261022',
-            'assets/js/pages/inventory-replenishment.js?v=iu3-20261112'
+            'assets/js/pages/inventory-replenishment.js?v=r76-a2sad3-20261129'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -150,7 +150,7 @@ var KM_ROUTE_ASSETS_ = {
             'assets/js/core/geo-name-resolver.js?v=map-texture3-r6-20260831',
             'assets/js/lib/km-geo-topology.js?v=map-texture3-r4-20260827',
             'assets/js/lib/km-globe.js?v=map-transporticons-r10-20260926',
-            'assets/js/pages/global-logistics-map.js?v=map-canvaslifecycle-r12-20261013'
+            'assets/js/pages/global-logistics-map.js?v=map-a2sad3-r17-20261129'
         ],
         partial: { key: 'global-logistics-map', url: 'assets/html/pages/global-logistics-map.html',
             target: '#global-logistics-map-mount' },
@@ -199,7 +199,7 @@ var KM_ROUTE_ASSETS_ = {
     'overseas-stock': {
         sectionId: 'overseas-stock-section',
         scripts: [
-            'assets/js/pages/overseas-stock.js?v=iu4-20261112'
+            'assets/js/pages/overseas-stock.js?v=r76-a2sad3-20261129'
         ],
         partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
             target: '#overseas-stock-mount' },

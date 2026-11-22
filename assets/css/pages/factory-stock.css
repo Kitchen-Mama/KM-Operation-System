@@ -599,8 +599,10 @@
     box-sizing: border-box;
 }
 #factory-stock-section .btn.btn-secondary {
-    height: var(--btn-height);
-    padding: 0 var(--btn-padding-inline);
+    min-height: var(--btn-height);   /* C4: may grow (was a fixed height); a single line stays --btn-height */
+    height: auto;
+    padding: var(--btn-padding-block) var(--btn-padding-inline);
+    white-space: normal;
     border-radius: var(--btn-radius);
     font-size: var(--btn-font-size);
     font-weight: var(--btn-font-weight);

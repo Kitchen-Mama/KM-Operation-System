@@ -1,5 +1,5 @@
 (function () { 'use strict'; var c = {
-  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1-IU3-IU4N1",
+  "profile_id": "KM-PRODUCTION-PHASE1-20261112-R2-AV1-IU3-IU4N1-PGSC1N1",
   "environment": "KM_PRODUCTION",
   "endpoint": "https://script.google.com/macros/s/AKfycbzQSU0ZR4EW5F79EzpOoBvUDxjJNLZkLrPkFjuaCBwiWXZMBPR4jnxvIS0FZnjNnp9Q/exec",
   "endpoint_sha256": "11ba59bcde9a7cc2fe5ddb5934b0780dfa3a518ab1e220368ae9b319cd42f290",
@@ -80,9 +80,11 @@
     "requestOrder.sendWorkset.get",
     "requestOrder.workspace.get",
     "requestOrderDraft.getActive",
+    "shipment.assignCarrier",
     "shipment.consolidationPolicy.get",
     "shipment.eta.update",
     "shipment.rateCardOptions",
+    "shipment.receipt.diagnose",
     "shipment.receipt.update",
     "shipment.removePlanFromConsolidated",
     "shipment.route.advance",
@@ -171,6 +173,7 @@
     "requestOrderDraft.getActive",
     "shipment.consolidationPolicy.get",
     "shipment.rateCardOptions",
+    "shipment.receipt.diagnose",
     "shipment.workspace.get",
     "shipmentDocument.get",
     "shippingPlan.rateCardOptions",
@@ -198,7 +201,12 @@
     "overseas_inventory": [
       "SET",
       "ADD"
+    ],
+    "shipment": [
+      "ADD_NEW",
+      "UPDATE",
+      "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "5b8dcdad207268676abb36ab452d5a54a187d776498bb2218a16d59f1e2a8939"
+  "policy_sha256": "be7f980f52db4f44e919b1ae7663648e2ff00702c4cce1dd11c1a634173cf057"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();
