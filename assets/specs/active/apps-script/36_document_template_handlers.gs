@@ -115,6 +115,7 @@ var DT_SRC_ = { 'tax_referral_rates.vat_no': 'l:vat_no', 'tax_referral_rates.eor
 'shipment_lines.carton_no_start,carton_no_end': 'l:carton_no_start', 'shipment_line_allocations.allocated_qty': 'l:allocated_qty', 'purchase_orders.po_no': 'l:po_no',
 'tax_referral_rates.country_of_origin': 'l:country_of_origin', 'logistics_locations.location_name': 'h:consignee.name', 'logistics_locations.address': 'h:consignee_address',
 'logistics_locations.city': 'h:consignee.address.city', 'logistics_locations.state_or_region': 'h:consignee.address.state_or_region', 'logistics_locations.postal_code': 'h:consignee.address.postal_code', 'logistics_locations.country': 'h:consignee.address.country',
+'shipments.shipping_method_label': 'h:shipping_method_label',
 'carrier_rate_cards.shipping_method_label': 'h:shipping_method_label', 'shipments.shipments_customs_type': 'h:shipments_customs_type',
 'sku_details.carton_weight': 'l:carton_weight', 'sku_details.package_weight': 'l:package_weight', 'sku_regional_details.product_url': 'l:product_url',
 'sku_regional_details.marketplace_product_id': 'l:marketplace_product_id', 'shipments.destination': 'h:ship_to',

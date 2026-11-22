@@ -535,7 +535,23 @@ templates.forEach(function (t) { if (dgsLc_(t.related_entity_type) === et && dtT
 every.forEach(function (f) { var p = dgsStr_(f.placeholder), ft = dgsLc_(f.field_type);
 if (!ids[dgsStr_(f.template_id)] || need.indexOf(p) < 0 || !(dgsBool_(f.is_active) || !dgsStr_(f.is_active)) || ft === 'collection' || ft === 'collection_item' || dgsStr_(f.collection_key) || dgsLc_(f.data_scope) === 'line') return;
 (defs[p] = defs[p] || {})[[f.data_source_table, f.data_source_field, f.transform_rule, f.format_rule].map(dgsLc_).join('|')] = Object.assign({}, f, { fallback_rule: '', default_value: '', required: 'TRUE', worksheet_name: '' }); });
-need.forEach(function (p) { var ks = Object.keys(defs[p] || {}); out[p] = ks.length === 1 ? defs[p][ks[0]] : ks.length ? 'DOCUMENT_FILE_NAME_TOKEN_AMBIGUOUS' : 'DOCUMENT_FILE_NAME_TOKEN_UNDEFINED'; });
+// DOC-CONTRACT-R1: missing shipment filename totals have canonical meanings, not cross-template definitions.
+need.forEach(function (p) {
+var total = et === 'shipment' && { TOTAL_QTY: 'shipment_total_qty', TOTAL_CARTONS: 'shipment_total_cartons' }[p], ks = Object.keys(defs[p] || {});
+out[p] = total ? { template_id: tpl.template_id, field_id: p, placeholder: p, field_type: 'scalar', data_scope: 'header',
+data_source_table: 'shipments', data_source_field: total, required: 'TRUE', is_active: 'TRUE', transform_rule: '', format_rule: '' } :
+ks.length === 1 ? defs[p][ks[0]] : ks.length ? 'DOCUMENT_FILE_NAME_TOKEN_AMBIGUOUS' : 'DOCUMENT_FILE_NAME_TOKEN_UNDEFINED';
+});
+return out;
+}
+function dgsShipmentFileNameTotals_(ss, shipmentId) {
+var lines = sfoReadTable_(ss, 'shipment_lines', []).filter(function (l) {
+return dgsStr_(l.shipment_id) === dgsStr_(shipmentId) && !sc13LineRemoved_(l);
+}), totals = docTotals_(lines), out = { qty: '', cartons: '' };
+// Do not turn missing/invalid inputs or an empty shipment into a plausible zero in a filename.
+[['qty', 'shipment_qty'], ['cartons', 'shipment_carton_qty']].forEach(function (pair) {
+if (lines.length && lines.every(function (l) { var s = dgsStr_(l[pair[1]]), n = Number(s.replace(/,/g, '')); return s !== '' && isFinite(n) && n >= 0; }) && isFinite(totals[pair[0]])) out[pair[0]] = totals[pair[0]];
+});
 return out;
 }
 function dgsScalarHave_(fs) { var h = {}; fs.forEach(function (f) { var ft = dgsLc_(f.field_type); if (ft !== 'collection' && ft !== 'collection_item' && !dgsStr_(f.collection_key) && dgsLc_(f.data_scope) !== 'line') h[dgsStr_(f.placeholder)] = 1; }); return h; }
@@ -1162,7 +1178,11 @@ return o; }) }; } catch (eD) { d12 = { err: 'DOCUMENT_MASTER_UNREADABLE' }; } }
 return d12.err ? [d12.err + ':sku_details'] : !d12.ls.length ? ['DOCUMENT_SOURCE_UNRESOLVED:sku_details (no shipment line)'] : dgsDb12FrozenIssues_(f, d12.ls, x.pre().header, num);
 },
 fn: function (tpl, have) { fnT = fnT || dgsTemplates_(ss); fnF = fnF || dtReadTable_(ss, 'document_template_fields', DOCUMENT_TEMPLATE_FIELDS_HEADERS_);
-return dgsFileNameBorrow_(dgsFileNameDefs_(tpl, have, fnT, fnF), x.pre(), dgsTplKeyOf_(fnT), true); },
+var defs = dgsFileNameDefs_(tpl, have, fnT, fnF), model = x.pre();
+if (Object.keys(defs).some(function (p) { var f = defs[p]; return typeof f !== 'string' && /^h:totals\.(qty|cartons)$/.test(DT_SRC_[dgsLc_(f.data_source_table) + '.' + dgsLc_(f.data_source_field)] || ''); })) {
+model = { header: Object.assign({}, model.header, { totals: Object.assign({}, model.header.totals, dgsShipmentFileNameTotals_(ss, shipmentId)) }), lines: model.lines };
+}
+return dgsFileNameBorrow_(defs, model, dgsTplKeyOf_(fnT), true); },
 pre: function () { if (pre0) return pre0; var h = sfoBuildHeader_(sc.row), sn = x.snap();
 [['external_shipment_id', sfoStr_], ['last_mile_delivery', sfoLc_], ['shipments_customs_type', sfoLc_]].forEach(function (k) { if (sn.indexOf(k[0]) >= 0) h[k[0]] = k[1](sc.row[k[0]]); });
 return (pre0 = { header: docHeaderBlock_(h, [], []), lines: [] }); },
