@@ -242,7 +242,7 @@ if (automatic.allowed) {
 var unpriced = shipUnpricedMeta_(s.rate_card_version);
 if (unpriced) {
 if (!shipUnpricedValid_(ss, s, shipRcLines_(ss, sfoStr_(s.shipment_id)), shipmentTimestamp_().slice(0, 10))) return { ok: false, reason: 'UNPRICED_APPROVAL_STALE', rate_card_id: '' };
-return { ok: true, rate_card_id: '', label: unpriced.label, version: sfoStr_(s.rate_card_version), pricing_state: 'UNPRICED_APPROVED' };
+return { ok: true, rate_card_id: '', label: shipServiceLabel_(ss, s) || unpriced.label, version: sfoStr_(s.rate_card_version), pricing_state: 'UNPRICED_APPROVED' };
 }
 var id = sfoStr_(s.rate_card_id), rows, r, off;
 if (!id) return { ok: false, reason: 'RATE_CARD_NOT_SELECTED', rate_card_id: '' };
@@ -312,6 +312,22 @@ o.sku_master_ref = ['UNIQUE'].concat(q).join(';');
 return o;
 }
 function sfoRegional_(t, sku, s) {
+var o = sfoRegionalExact_(t, sku, s);
+if (!t || t.err || t.h.indexOf('sku') < 0 || t.h.indexOf('product_url') < 0 || !sku) return o;
+if (/^https?:\/\/[^\s]+$/i.test(o.product_url || '')) return o;
+// A product link may come from another station; regional product IDs never do.
+var candidates = t.rows.filter(function (r) { return sfoStr_(r.sku) === sku && /^https?:\/\/[^\s]+$/i.test(sfoStr_(r.product_url)); });
+candidates.sort(function (a, b) {
+var key = function (r) { return JSON.stringify(['company','country','marketplace','regional_detail_id','product_url'].map(function (k) { return sfoStr_(r[k]); })); };
+return key(a) < key(b) ? -1 : key(a) > key(b) ? 1 : 0;
+});
+if (!candidates.length) return o;
+var ref = sfoStr_(o.regional_ref), source = encodeURIComponent(JSON.stringify(['regional_detail_id','company','country','marketplace'].map(function (k) { return sfoStr_(candidates[0][k]); })));
+o.product_url = sfoStr_(candidates[0].product_url);
+o.regional_ref = ref + ';product_url_source=SAME_SKU:' + source;
+return o;
+}
+function sfoRegionalExact_(t, sku, s) {
 if (!t) return {};
 var o = { product_url: '', marketplace_product_id: '' }, co = sfoStr_(s.company), ct = sfoStr_(s.country), mk = sfoStr_(s.marketplace), r, q = [];
 if (t.err) return Object.assign(o, { regional_ref: 'REGIONAL_' + t.err });

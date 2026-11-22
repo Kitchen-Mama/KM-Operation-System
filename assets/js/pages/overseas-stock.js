@@ -1019,6 +1019,7 @@ function downloadOverseasImportTemplate() {
     ];
     var spec = {
         filename: 'Overseas_Inventory_' + fnamePart + '_Import_Template.xlsx',
+        extendInputColumns: true,
         sheetName: 'Overseas Inventory Import',
         instructionRow: 'This import updates ONE overseas warehouse only — Company: ' + sc.company + ' · Country: ' + sc.country + ' · Warehouse: ' + whName + ' (' + sc.warehouseId + '). warehouse_id is prefilled; do not mix warehouses. available_stock is the SOURCE figure BEFORE our own reservation; the system subtracts what it already holds. A BLANK quantity leaves that bucket unchanged. Reserved stock is system-owned and cannot be imported. The server rejects any other / Factory / inactive / unknown warehouse.',
         masterTemplate: true,
@@ -1739,7 +1740,7 @@ function _ovsOpenBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 window._ovsOpenBatchImport = _ovsOpenBatchImport;
 window.openOverseasImportModal = openOverseasImportModal;

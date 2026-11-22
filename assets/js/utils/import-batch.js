@@ -170,6 +170,7 @@
                     var fl = ts.row_flags || {}, add = null; Object.keys(fl).forEach(function (f) { if (/^__[a-z0-9_]+$/.test(f) && Array.isArray(fl[f]) && fl[f].indexOf(i) >= 0) { add = add || {}; add[f] = true; } });   /* A final (REVIEW_FIX2 MINOR-3): only __-prefixed template flags, never a data column name */ return add ? Object.assign({}, r, add) : r; }) : [], exampleRow: withData ? null : (ts.example || null), blankInputRows: withData ? 20 : 50 };
         });
         return { filename: adapter.domain + '_' + (withData ? 'update_' : 'new_') + mode.toLowerCase() + '_' + stamp(), sheets: sheets, systemExtra: true,
+            extendInputColumns: ['po_factory_stock', 'overseas_inventory', 'shipment'].indexOf(adapter.domain) >= 0,
             system: { template_id: 'KM_IMPORT_' + adapter.domain.toUpperCase(), template_version: t.schema_version, module: adapter.domain, generated_at: t.exported_at, export_mode: withData ? 'UPDATE_EXPORT' : 'BLANK',
                 source_system: 'KM Operation System', mode: mode, scope: JSON.stringify(t.scope || {}), notes: (t.notes || []).join(' / ') } };
     }

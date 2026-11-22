@@ -3263,7 +3263,7 @@ window.shRcPickCarrier = shRcPickCarrier; window.shRcPickMethod = shRcPickMethod
 // S7-R2B1 — entityType: document.retry is scoped to an ENTITY (type + id), not to one document.
 function _shDocRowHtml(d, canRetry, entityId, entityType) {
     var st = String((d && d.status) || '').toUpperCase();
-    var isFailed = (st === 'FAILED' || st === 'FAILED_RETRYABLE');
+    var isFailed = (st === 'FAILED' || st === 'FAILED_RETRYABLE' || (st === 'CONFIGURATION_REQUIRED' && d && d.retryable === true));
     var name = String((d && d.file_name) || '').trim();
     var actions = _shDocLink(d && d.file_url, 'Open', true);
     // Download only when a genuinely downloadable artifact exists (never a fabricated export link).
@@ -4003,7 +4003,7 @@ function shRunAction(kind) {
     }); }
     if (window.KM && window.KM.importBatch) return go();
     var L = window.KM && window.KM.scriptLoader; if (!L) { alert('The import module could not be loaded.'); return; }
-    return L.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+    return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 // A final3 (Owner 2026-11-20 item 6): ONE-CLICK, READ-ONLY health export (More Options > 下載 health JSON). The SAME reads and rules as the
 // Console collectors (Sandbox v3.1 / Production v2.1): the Sandbox guard gate, system.health, the sign-in wait, then getClientCapabilities

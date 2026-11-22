@@ -1812,6 +1812,7 @@ function downloadFactoryImportTemplate() {
   ];
   var spec = {
     filename: 'Factory_Inventory_' + _fiiSanitizeFilePart_(selId) + '_Import_Template.xlsx',
+    extendInputColumns: true,
     sheetName: 'Factory Inventory Import',
     instructionRow: 'This import updates ONE factory only — Factory: ' + selId + (selCode ? ' / ' + selCode : '') + '. warehouse_id is prefilled; do not mix factories. SET_CURRENT_STOCK — imported current_stock_qty BECOMES the factory current stock for warehouse_id + sku (it does NOT add). Reserved / in-production / pending shipout / orders / shipments are never changed. The server rejects any other / non-factory / inactive warehouse.',
     masterTemplate: true,
@@ -2125,12 +2126,12 @@ function _fiiOpenLegacyBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=r76-a2sad3-20261129').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 function _fiiOpenBatchImport() {
   function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
   if (window.KM && window.KM.poFactoryImport) return go();
-  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r76-a2sad3-20261129').then(function (ok) {
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123').then(function (ok) {
     if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
     return go();
   }).catch(function (e) { alert(String(e.message || e)); });

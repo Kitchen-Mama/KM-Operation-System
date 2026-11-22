@@ -2069,6 +2069,22 @@ var keys = SHIP_RC_SEL_FIELDS_.concat(['source_warehouse_id', 'destination_wareh
 var digest = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify([text].concat(keys.map(function (k) { return shipRcCanon_(v[k]); }))), Utilities.Charset.UTF_8);
 return 'unpriced1|' + text + '|' + digest.slice(0, 12).map(function (x) { return ((x & 255) + 256).toString(16).slice(1); }).join('');
 }
+function shipServiceLabel_(ss, v) {
+// Resolve service text independently of price eligibility. Never select a quote here.
+var sh = ss.getSheetByName('carrier_rate_cards');
+if (!sh) return '';
+var t = shipmentReadSheet_(sh), country = typeof sfoDestCountry15g_ === 'function' ? sfoDestCountry15g_(ss, v) : v.country;
+var labels = [];
+t.rows.slice(1).forEach(function (row) {
+var r = {}; t.headers.forEach(function (k, i) { r[k] = row[i]; });
+var text = String(r.shipping_method_label || '').trim();
+if (!text || ['carrier_id','shipping_method','last_mile_delivery'].some(function (k) { return String(r[k] || '').trim().toLowerCase() !== String(v[k] || '').trim().toLowerCase(); })) return;
+if (r.destination_country && String(r.destination_country).trim().toUpperCase() !== String(country || '').trim().toUpperCase()) return;
+if (!shippingRateActive_(r, shipmentTimestamp_().slice(0, 10))) return;
+if (labels.indexOf(text) < 0) labels.push(text);
+});
+return labels.length === 1 ? labels[0] : '';
+}
 function shipUnpricedEligibility_(ss, v, lines, day, mode) {   // R15e (4): mode '' | 'card_not_applied'
 // AD3-B (Owner decisions 4 + 8): the explicit "skip quote, cost pending" decision is no longer Sandbox-only - a missing quote is never the only blocker.
 if (/^pending/.test(String(v.rate_card_version || ''))) return { allowed: false, reason: 'SELECTION_OUTCOME_NEEDS_REVIEW' };
@@ -2087,7 +2103,7 @@ var laneIds = shipRateCardLane_(ss, v, lines, day).filter(function (rc) { return
 if (laneIds.some(function (id) { return !id; }) || laneIds.some(function (id, i) { return i > 0 && laneIds[i - 1] === id; })) return { allowed: false, reason: 'APPLICABLE_CARD_IDS_UNREADABLE' };
 if (laneIds.length && mode !== 'card_not_applied') return { allowed: false, reason: 'APPLICABLE_RATE_AVAILABLE', cards: laneIds };
 if (!laneIds.length && mode === 'card_not_applied') return { allowed: false, reason: 'NO_CARD_TO_LEAVE_UNAPPLIED' };
-var label = ({ sea: 'Sea', sea_express: 'Sea Express', air: 'Air', truck: 'Truck', courier: 'Courier', express: 'Express' })[String(v.shipping_method).trim().toLowerCase()];
+var label = shipServiceLabel_(ss, v) || ({ sea: 'Sea', sea_express: 'Sea Express', air: 'Air', truck: 'Truck', courier: 'Courier', express: 'Express' })[String(v.shipping_method).trim().toLowerCase()];
 if (!label) return { allowed: false, reason: 'SHIPPING_METHOD_LABEL_UNRESOLVED' };
 return laneIds.length ? { allowed: true, reason: 'CARD_NOT_APPLIED', label: label, cards: laneIds } : { allowed: true, reason: 'NO_APPLICABLE_RATE', label: label };   // R15e (4)
 }

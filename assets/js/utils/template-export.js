@@ -100,6 +100,11 @@
         });
 
         var ncol = columns.length;
+        if (sp.extendInputColumns) columns.forEach(function (c, i) {
+            var col = ws.getColumn(i + 1);
+            col.protection = { locked: !isMaster && ['editable', 'required', 'business'].indexOf(c.kind) < 0 };
+            if (c.numFmt) col.numFmt = c.numFmt;
+        });
 
         // (1) Optional instruction row (row 1).
         if (hasInstruction) {
@@ -151,6 +156,7 @@
         } else {
             blanks = (sp.blankInputRows != null) ? sp.blankInputRows : BLANK_INPUT_ROWS;
         }
+        if (sp.extendInputColumns) blanks = Math.max(blanks, 200);
         for (var b = 0; b < blanks; b++) rowsToWrite.push({ data: {}, kind: 'blank' });
 
         rowsToWrite.forEach(function (rw, ri) {
@@ -274,7 +280,7 @@
 
         var dropped = [], totalRows = 0, totalCols = 0, sheets = [];
         sheetSpecs.forEach(function (sp, i) {
-            var w = writeDataSheet(wb, sp, isMaster, refsBySheet[i], dropped);
+            var w = writeDataSheet(wb, Object.assign({}, sp, { extendInputColumns: spec.extendInputColumns === true }), isMaster, refsBySheet[i], dropped);
             sheets.push(w.ws); totalRows += w.rows; totalCols += w.columns;
         });
 

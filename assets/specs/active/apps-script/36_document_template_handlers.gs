@@ -101,7 +101,7 @@ var DT_PATH_RE_ = /^[A-Za-z_]\w*(\.\w+)*$/, DT_FALLBACK_LITERALS_ = ['0', '\u542
 
 
 
-var DT_SRC_ = { 'tax_referral_rates.vat_no': 'l:vat_no', 'tax_referral_rates.eori_no': 'l:eori_no', 'pricing_list.regular_price': 'l:regular_price', 'pricing_list.currency': 'l:regular_price_currency',
+var DT_SRC_ = { 'tax_referral_rates.vat_no': 'l:vat_no', 'tax_referral_rates.eori_no': 'l:eori_no', 'pricing_list.regular_price': 'l:regular_price', 'pricing_list.auto_regular_price': 'l:regular_price', 'pricing_list.currency': 'l:regular_price_currency',
 'shipments.external_shipment_id': 'h:external_shipment_id', 'shipments.reference_id': 'h:reference_id', 'shipments.etd': 'h:etd', 'shipments.eta': 'h:eta',
 'shipments.country': 'h:country', 'shipments.marketplace': 'h:marketplace', 'shipments.warehouse_code': 'h:warehouse_code', 'shipments.invoice_no': 'h:invoice_no',
 'shipments.shipment_total_qty': 'h:totals.qty', 'shipments.shipment_total_cartons': 'h:totals.cartons', 'shipments.shipment_total_gross_weight': 'h:totals.gross_weight',
@@ -135,7 +135,8 @@ var m = DT_MASTER_[src], o = { un: [], inv: [], miss: [] };
 ls.forEach(function (l, i) {
 var n = no ? no(l, i) : i + 1, ref = m[0] in l ? dtStr_(l[m[0]]) : null, q = (ref || '').split(';'), own = q.filter(function (x) { return x.indexOf(m[1] + '=') === 0; })[0], v = dtStr_(l[m[1]]), x;
 if (ref === null || !(m[1] in l)) return o.un.push(n + ' NOT_FROZEN');
-if (!/^UNIQUE(:|$)/.test(q[0])) return o.un.push(n + ' ' + (q[0] || 'NOT_FROZEN'));
+var sameSkuUrl = src === 'sku_regional_details.product_url' && q.some(function (p) { return /^product_url_source=SAME_SKU:/.test(p); });
+if (!/^UNIQUE(:|$)/.test(q[0]) && !sameSkuUrl) return o.un.push(n + ' ' + (q[0] || 'NOT_FROZEN'));
 if (own) return o.un.push(n + ' ' + own.slice(m[1].length + 1));
 if (v === '') return o.miss.push(n);
 x = Number(v.replace(/,/g, ''));

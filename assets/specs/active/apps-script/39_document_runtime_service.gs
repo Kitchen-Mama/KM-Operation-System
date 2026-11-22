@@ -947,7 +947,7 @@ generated_at: dgsStr_(row.generated_at),
 status: state,
 reason: meta.reason,
 message: meta.text,
-retryable: state === 'FAILED_RETRYABLE',
+retryable: state === 'FAILED_RETRYABLE' || (state === 'CONFIGURATION_REQUIRED' && dgsLc_(row.related_entity_type) === 'shipment'),
 email_status: dgsLc_(row.email_status)
 };
 }
@@ -1624,7 +1624,7 @@ return 1;
 prior.forEach(function (a) { var r = rs.filter(function (x) { return dgsStr_(x.document_id) === a; })[0]; if (r && dgsRowState_(r) !== 'READY') dgsUpdateRegistry_(genSheet, a, { status: DGS_ROW_CANCELLED_, updated_at: now, note: dgsStr_(r.note).replace(/ ?DGS_KEPT=[^;]*;/g, '') + ' DGS_SUPERSEDED_BY=' + did + ';' }); });
 if (!one.ok) {
 var conf = !!one.configuration_required, reason = conf ? 'DOCUMENT_CONFIGURATION_REQUIRED' : one.reason;
-var human = conf ? (one.model ? 'No render model is implemented for ' + entry.class_key + '.' : 'Template field mapping is incomplete for ' + entry.template_key + '.')
+var human = conf ? (one.model ? 'No render model is implemented for ' + entry.class_key + '.' : 'Template field mapping is incomplete for ' + entry.template_key + '. ' + one.reason + ' ' + JSON.stringify(one.missing || []).slice(0, 6000))
 : (one.model ? 'Render model blocked: ' + one.reason + '.' : 'Drive generation failed: ' + one.reason + (one.message ? ' — ' + one.message : '') + '.' + dgsKeptNote_([one.partial_file_id], one.partial));
 dgsUpdateRegistry_(genSheet, did, { status: DGS_ROW_FAILED_, updated_at: now, note: dgsEncodeNote_(reason, !conf && dgsRetryable_(one.reason), human) });
 res = { status: conf ? 'CONFIGURATION_REQUIRED' : one.model ? 'FAILED' : 'FAILED_RETRYABLE', reason: one.reason, missing: one.missing || [], unresolved_authority: one.unresolved_authority || [] };
@@ -2221,20 +2221,19 @@ var l = dgsPoLoad_(ss, poId);
 return { today: shipmentToday_(), factory_name: l.ok ? dgsFactoryName_(ss, l.po.warehouse_id) : '', sku_labels: l.ok ? dgsSkuLabels_(ss, l.lines.map(function (x) { return x.sku; })) : {} };
 }
 function handleDocumentRetry_(body) {
-if (typeof rtrDocumentRecoveryScopeCp2c_ !== 'function' || !rtrDocumentRecoveryScopeCp2c_(body) || !dgsRecoveryTargetCp2c_(body.related_entity_id)) return jsonResponse_({ success: false, code: 'SANDBOX_DOCUMENT_RETRY_SCOPE_REFUSED', zero_write: true });
 var entityType = dgsLc_(body && (body.related_entity_type || body.entity_type));
 var entityId = dgsStr_(body && (body.related_entity_id || body.entity_id || body.shipment_id || body.purchase_order_id));
 var actor = dgsStr_(body && body.actor) || 'operation-system';
 if (!entityId) return jsonResponse_({ success: false, error: 'RELATED_ENTITY_ID_REQUIRED', zero_write: true });
-
-
-
-
+if (entityType !== 'shipment') return jsonResponse_({ success: false, code: 'SANDBOX_DOCUMENT_RETRY_SCOPE_REFUSED', zero_write: true });
 try {
 var ss = dgsDb_();
-var res = (entityType === 'purchase_order')
-? dgsGeneratePoDocuments_(ss, entityId, actor, dgsPoRetryOpts_(ss, entityId))
-: dgsGenerateShipmentDocuments_(ss, entityId, actor, {});
+var context = dgsShipmentContext_(ss, entityId);
+if (!context.ok || !SFO_DISPATCHED_STATUS_[context.status]) return jsonResponse_({ success: false, code: 'SHIPMENT_NOT_DISPATCHED', zero_write: true });
+var frozen = docReadSnapshot_(ss, entityId);
+if (!frozen || dgsStr_(frozen.header.shipment_id) !== entityId || dgsLc_(frozen.header.status) !== 'final') return jsonResponse_({ success: false, code: 'FROZEN_SNAPSHOT_REQUIRED', zero_write: true });
+// Generation reuses READY documents and the existing snapshot; dispatch is never invoked.
+var res = dgsGenerateShipmentDocuments_(ss, entityId, actor, {});
 return jsonResponse_({ success: !!res.ok, retried: true, result: res });
 } catch (err) {
 return jsonResponse_({ success: false, error: 'DOCUMENT_RETRY_FAILED: ' + (err && err.message ? err.message : err), related_entity_id: entityId });
