@@ -15,13 +15,14 @@
         var epoch = ++generation; policy = null; controls(false); message('Loading...');
         return window.KM.DB.getShipmentConsolidationPolicy().then(function (r) {
             if (epoch !== generation) return;
+            if (r && r.success === false) throw Error(r.code || 'READ_FAILED');
             if (!r || !r.success || !r.policy || ['SEPARATE', 'SAME_COMPANY', 'CROSS_COMPANY'].indexOf(r.policy.mode) < 0 || !Number.isSafeInteger(r.policy.version)) throw Error('READ_FAILED');
             policy = r.policy; uncertain = false;
             var s = section(); if (!s) return;
             s.querySelector('[value="' + policy.mode + '"]').checked = true;
             s.querySelector('[data-version]').textContent = 'Version ' + policy.version + (policy.updated_at ? ' / ' + policy.updated_at : '');
             message(''); controls(false);
-        }).catch(function () { if (epoch === generation) { message('Settings could not be loaded. Refresh to try again.'); controls(false); } });
+        }).catch(function (e) { if (epoch === generation) { message('Settings could not be loaded. Refresh to try again.' + (e && /^[A-Z][A-Z0-9_]{1,80}$/.test(e.message) ? ' [' + e.message + ']' : '')); controls(false); } });
     }
     function save(event) {
         event.preventDefault(); if (busy || uncertain || !policy) return;

@@ -12,7 +12,7 @@
 // the active path is
 //     Shipment/{DESTINATION_BUCKET}/{external_shipment_id}_{yyyyMMdd(shipped_at)}/     (three levels, no date dir)
 // and Purchase Order documents use
-//     PurchaseOrder/{yyyyMMdd(document_batch_date)}/
+//     PurchaseOrder/{yyyy-MM(document_batch_date)}/          (DC2-R3-R2: by month, same frozen date)
 // There is exactly ONE active folder contract; the retired shape is documented in the spec, not implemented here.
 //
 // ROOT AUTHORITY: document_templates.output_folder_id — the SAME field 36_/37_ already use. No parallel root
@@ -93,11 +93,12 @@ function dofShipmentFolderName_(externalShipmentId, shippedAt) {
   if (!safe) return { ok: false, name: '', reason: 'MISSING_EXTERNAL_SHIPMENT_ID' };
   return { ok: true, name: safe + '_' + ymd, reason: '', external_shipment_id: ext, sanitized_identity: safe, ymd: ymd };
 }
-// Purchase Order folder: yyyyMMdd of the IMMUTABLE document-batch date frozen at first generation.
+// Purchase Order folder: yyyy-MM of the IMMUTABLE document-batch date frozen at first generation, so a retry
+// in a later month still files with its first attempt.
 function dofPoDateFolderName_(batchDate) {
   var ymd = dofYmdFromCanonical_(batchDate);
   if (!ymd) return { ok: false, name: '', reason: 'MISSING_PO_DOCUMENT_BATCH_DATE' };
-  return { ok: true, name: ymd, reason: '', ymd: ymd };
+  return { ok: true, name: ymd.slice(0, 4) + '-' + ymd.slice(4, 6), reason: '', ymd: ymd };
 }
 
 // ---- Batch root resolution ----------------------------------------------------------------------------
@@ -163,8 +164,24 @@ function dofResolveShipmentFolder_(io, opts) {
   return { ok: true, folder_id: shipFolder.folder_id, folder_name: leaf.name, created: shipFolder.created, reused: shipFolder.reused,
     root_folder_id: root.root_folder_id, destination_bucket: bucket.bucket, bucket_folder_id: bucketFolder.folder_id, ymd: leaf.ymd };
 }
+// R69+EXTID-CAND3 (local candidate): the same path, READ-ONLY - lists, never creates. exists:false when the bucket or the leaf is not there.
+function dofPeekShipmentFolder_(io, opts) {
+  opts = opts || {};
+  var root = dofResolveBatchRoot_(opts.templates, 'shipment');
+  if (!root.ok) return root;
+  var bucket = dofDestinationBucket_(opts.destination_country);
+  if (!bucket.ok) return { ok: false, reason: bucket.reason };
+  var leaf = dofShipmentFolderName_(opts.external_shipment_id, opts.shipped_at);
+  if (!leaf.ok) return { ok: false, reason: leaf.reason };
+  var b = dofPickExactChild_(io.listChildFolders(root.root_folder_id), bucket.bucket);
+  if (b.action === 'CONFLICT') return { ok: false, reason: 'SHIPMENT_BUCKET_FOLDER_CONFLICT', match_count: b.match_count };
+  if (b.action === 'CREATE') return { ok: true, exists: false, folder_name: leaf.name };
+  var l = dofPickExactChild_(io.listChildFolders(b.folder_id), leaf.name);
+  if (l.action === 'CONFLICT') return { ok: false, reason: 'SHIPMENT_FOLDER_CONFLICT', match_count: l.match_count, folder_name: leaf.name };
+  return { ok: true, exists: l.action === 'REUSE', folder_id: l.folder_id, folder_name: leaf.name };
+}
 
-// Purchase Order: root -> {yyyyMMdd(document_batch_date)}
+// Purchase Order: root -> {yyyy-MM(document_batch_date)}
 function dofResolvePoDateFolder_(io, opts) {
   opts = opts || {};
   var root = dofResolveBatchRoot_(opts.templates, 'purchase_order');

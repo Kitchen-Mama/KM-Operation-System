@@ -2015,6 +2015,7 @@
 
   function submitPreflight(input) {
     input = input || {};
+    if (input.persistedOnly === true) return persistedSubmitPreflight(input);
     var C = IR_SUBMIT_CODES;
     var seen0 = {};
     var out = {
@@ -2253,6 +2254,29 @@
     };
     out.ok = true;
     return out;
+  }
+
+  function persistedSubmitPreflight(input) {
+    var rows = arr(input.routes), blockedDrafts = {}, excluded = {};
+    rows.forEach(function (r) { if (r.complete !== true && routeIsPersisted(r)) blockedDrafts[sstr(r.allocation_draft_id)] = true; });
+    var selected = rows.filter(function (r) {
+      var why = r.complete !== true ? 'INCOMPLETE_LOCAL_ROUTE' : !routeIsPersisted(r) ? 'NOT_YET_SAVED' : blockedDrafts[sstr(r.allocation_draft_id)] ? 'DRAFT_HAS_INCOMPLETE_EDIT' : '';
+      if (why) { excluded[why] = (excluded[why] || 0) + 1; return false; }
+      return true;
+    });
+    var skus = {}; selected.forEach(function (r) { skus[sstr(r.sku)] = true; });
+    var scoped = Object.assign({}, input, { persistedOnly: false, routes: selected, routesMissingDestination: [] });
+    ['saveFailed', 'pendingWrites', 'dirtyAfterWrite', 'panels'].forEach(function (key) {
+      scoped[key] = arr(input[key]).filter(function (x) { var sku = sstr(x && x.sku != null ? x.sku : x); return /^(line|draft):/.test(sku) || skus[sku]; });
+    });
+    // In-flight writes and cancellations stay blocking even when their rows are excluded.
+    var result = submitPreflight(scoped);
+    if (!selected.length && !result.blocking.reasons.length) result.code = IR_SUBMIT_CODES.NO_PERSISTED_CANDIDATE;
+    result.excluded = result.excluded.concat(Object.keys(excluded).map(function (k) { return { reason: k, count: excluded[k] }; }));
+    result.candidate.lineIds = selected.filter(function (r) { return result.candidate.draftIds.indexOf(sstr(r.allocation_draft_id)) >= 0; }).map(function (r) { return sstr(r.allocation_draft_line_id); });
+    result.candidate.expectedVersions = {};
+    selected.forEach(function (r) { if (r.draft_version != null && sstr(r.draft_version)) result.candidate.expectedVersions[sstr(r.allocation_draft_id)] = r.draft_version; });
+    return result;
   }
 
   // ---- THE CONFIRMATION -----------------------------------------------------------------------------------

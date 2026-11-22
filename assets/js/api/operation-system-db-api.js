@@ -4153,13 +4153,17 @@ function _kmDocumentAction(action, payload) {
         console.warn('[KM.DB] API not configured, ' + action + ' skipped');
         return Promise.resolve({ success: false, error: 'API not configured', stage: 'config' });
     }
-    return fetch(OP_DB_API_BASE_URL, {
+    var options = {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action: action }, payload || {}))
-    }).then(function (resp) {
+    };
+    var request = action === 'shipment.consolidationPolicy.get' || action === 'shipment.consolidationPolicy.save'
+        ? _kmFetchBounded_(OP_DB_API_BASE_URL, options, action.endsWith('.get') ? 'read' : 'write', action)
+        : fetch(OP_DB_API_BASE_URL, options);
+    return request.then(function (resp) {
         if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
         return resp.json();
-    }).catch(function (e) { return { success: false, error: (e && e.message) ? e.message : String(e), stage: 'network' }; });
+    }).catch(function (e) { return { success: false, error: (e && e.message) ? e.message : String(e), code: e && e.apiCode || '', zero_write: !!(e && e.zero_write === true), stage: 'network' }; });
 }
 // List the documents registered for ONE entity (shipment or purchase_order), with the resolved folder link,
 // the derived batch status and error assistance.
@@ -4512,6 +4516,9 @@ var KM_WRITE_TIMEOUT_MS_ = 90000;   // a locked DB write; Apps Script cold start
 // ============================================================================================================
 var KM_ACTION_WRITE_TIMEOUT_MS_ = {
     'weeklyAiPlan.generate': 180000,
+    'submitAllocationDraftsToShippingPlans': 180000,
+    'submitShippingAllocationDrafts': 180000,
+    'updateShippingPlanStatus': 180000,
     'confirmShipmentAndDispatch': 300000
 };
 // ============================================================================================================

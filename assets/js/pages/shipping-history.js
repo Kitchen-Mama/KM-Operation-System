@@ -3130,6 +3130,12 @@ function shDiagnoseShipment15(sid) {
     document.body.appendChild(overlay);
     var pre = overlay.querySelector('.sh-diag-out'); overlay.querySelector('.sh-diag-close').onclick = function () { overlay.remove(); };
     var db = window.KM && window.KM.DB;
+    if (db && typeof db.runShipmentDocumentDiagnostic === 'function') {
+        db.runShipmentDocumentDiagnostic(String(sid || '').trim()).then(function (r) {
+            pre.textContent = JSON.stringify(r, null, 2);
+        }, function () { pre.textContent = 'The diagnosis could not finish. Nothing was changed.'; });
+        return;
+    }
     if (typeof getOperationDbTableFromSheet !== 'function' || !db || typeof db.getShipmentRateCardOptions !== 'function') { pre.textContent = 'This page cannot read the shipment tables. Nothing was done.'; return; }
     _shDiag15Read_(String(sid || '').trim(), { table: function (n) { return getOperationDbTableFromSheet(n); }, rateCardOptions: function (id) { return db.getShipmentRateCardOptions(id); } })
         .then(function (o) { pre.textContent = 'OUTCOME: ' + o.outcome + '\n' + (o.next || '') + '\n\n' + JSON.stringify(o, null, 1); }, function (e) { pre.textContent = 'The diagnosis could not finish (' + String((e && (e.code || e.message)) || e) + '). Nothing was done.'; });
@@ -3314,6 +3320,16 @@ var SH_DOC_REASON_HELP_ = {
 function _shDocHelp(reason) {
     return SH_DOC_REASON_HELP_[String(reason || '').toUpperCase()] ||
         { say: 'The document could not be produced.', fix: 'Retry, or check Admin › Document Templates' };
+}
+function _shReadinessDetailsDw2_(b) {
+    b = b || {};
+    var parts = [String(b.reason || '') + (b.class_key ? ' / ' + b.class_key : '')];
+    (Array.isArray(b.problems) ? b.problems : []).forEach(function (p) { parts.push(String(p)); });
+    (Array.isArray(b.detail) ? b.detail : []).forEach(function (c) {
+        var d = c.diagnostic || {};
+        parts.push([c.check, c.reason, d.code, d.message].filter(Boolean).join(': '));
+    });
+    return parts.map(function (p) { return '<div style="overflow-wrap:anywhere">' + _shEsc(p.slice(0, 2000)) + '</div>'; }).join('');
 }
 function _shDocErrorHtml(model, state) {
     var err = model.error || null;
@@ -3714,7 +3730,7 @@ function _shRunConfirm(shipmentId, execPayload) {
                 var bl = (res.blockers || []).slice(0, 4).map(function (b) {
                     var h = _shDocHelp(b && b.reason);
                     return '<li style="margin-top:3px;">' + _shEsc(h.say) + '<br><span style="font-size:11px;">Contact your administrator to review the shipping document setup.</span>' +
-                        '<details style="font-size:11px;"><summary>Details</summary>' + _shEsc(String((b && b.reason) || '')) + (b && b.class_key ? ' · ' + _shEsc(b.class_key) : '') + '</details></li>';
+                        '<details style="font-size:11px;"><summary>Details</summary>' + _shReadinessDetailsDw2_(b) + '</details></li>';
                 }).join('');
                 if (status) {
                     status.style.color = '#b91c1c';

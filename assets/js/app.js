@@ -134,7 +134,7 @@ var KM_ROUTE_ASSETS_ = {
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
             'assets/js/core/supply-planning-country-identity.js?v=r65-dc2r2-20261022',
-            'assets/js/pages/inventory-replenishment.js?v=r76-a2sad3-20261129-ds2-dw1'
+            'assets/js/pages/inventory-replenishment.js?v=r76-a2sad3-20261129-ds2-dw1-dw2-20261122'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },
@@ -160,7 +160,7 @@ var KM_ROUTE_ASSETS_ = {
     // menu entry, and the boot census is a bounded set this round has no reason to grow. It carries the
     // canonical country owner with it, because the page BORROWS KMCID's single UK ≡ GB alias rather than
     // restating a table that would then drift from the runtime's.
-    'shipment-grouping': { sectionId: 'shipment-grouping-section', scripts: ['assets/js/pages/shipment-grouping.js?v=r13'], partial: { key: 'shipment-grouping', url: 'assets/html/pages/shipment-grouping.html', target: '#shipment-grouping-mount' }, label: 'Shipment Grouping' },
+    'shipment-grouping': { sectionId: 'shipment-grouping-section', scripts: ['assets/js/pages/shipment-grouping.js?v=r76-a2sad3-20261129-ds2-dw1-dw2-20261122'], partial: { key: 'shipment-grouping', url: 'assets/html/pages/shipment-grouping.html', target: '#shipment-grouping-mount' }, label: 'Shipment Grouping' },
     'site-priority': {
         sectionId: 'site-priority-section',
         scripts: [

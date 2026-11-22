@@ -955,7 +955,7 @@ function sadFindLineByNaturalKey_(sh, draftId, l) {
 // top-level field is finally read. A stamp records the round a module last changed; it is not the release.
 // A2-SUB16 — moved because THIS FILE changed: Submit refuses an AI-origin draft whose key is on commitment-date HOLD
 // (61_ weeklyAiPlanCommitmentHold_) or whose site is A0-BLOCKED (42_), and refuses a draft whose origin is unknown.
-var SAD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3';   // SANDBOX-GATE-1f: CANCEL_ROUTE_LINES + Submit site snapshot; A2-SUB16 Submit AI gate (v3: in-lock A0 re-read; undetermined A0 refuses)
+var SAD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3-DW2';   // SANDBOX-GATE-1f: CANCEL_ROUTE_LINES + Submit site snapshot; A2-SUB16 Submit AI gate (v3: in-lock A0 re-read; undetermined A0 refuses)
 
 var SAD_K2_GROUP_DIMENSIONS_ = ['planning_cycle', 'company', 'country', 'marketplace', 'source_page',
   'recommended_source_warehouse_id', 'recommended_destination_warehouse_id',
@@ -2536,7 +2536,7 @@ function sadAtomicUpsertCore_(body) {
 function handleSubmitShippingAllocationDrafts_(body) {
   body = body || {};
   return handleSubmitAllocationDraftsToShippingPlans_({ allocation_draft_ids: body.allocation_draft_ids || body.draft_ids || [],
-    expected_versions: body.expected_versions, execution_key: body.execution_key || body.submit_batch_id, submitted_by: body.submitted_by,
+    expected_versions: body.expected_versions, expected_line_ids: body.expected_line_ids, execution_key: body.execution_key || body.submit_batch_id, submitted_by: body.submitted_by,
     source: body.source, _deprecated_alias: 'submitShippingAllocationDrafts' });
 }
 
@@ -2589,7 +2589,7 @@ function handleSubmitAllocationDraftsToShippingPlans_(body) {
   var lock = LockService.getScriptLock(), locked = false;
   try { locked = lock.tryLock(30000); } catch (e) { SAD_SNAPSHOT_PREFETCH_1G_ = null; return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), code: 'LOCK_ERROR', stage: 'lock', zero_write: true }); }
   if (!locked) SAD_SNAPSHOT_PREFETCH_1G_ = null;   // [PERF-R15F-S1-16] in-lock pre-write read memo v3: the pre-lock prefetch never outlives a refused lock
-  if (!locked) return jsonResponse_({ success: false, error: 'IN_PROGRESS_SAME_EXECUTION_KEY — another Submit is in progress for this scope; read back by execution key rather than retrying.', code: 'IN_PROGRESS_SAME_EXECUTION_KEY', stage: 'lock', zero_write: true, data: { allocation_draft_ids: ids } });
+  if (!locked) return jsonResponse_({ success: false, error: 'The database is busy. This request did not write anything. Try again shortly.', code: 'LOCK_UNAVAILABLE', stage: 'lock', zero_write: true, data: { allocation_draft_ids: ids } });
   try { return jsonResponse_(sadSubmitToShippingPlansCore_(SpreadsheetApp.getActiveSpreadsheet(), body, ids)); }
   finally { SAD_SNAPSHOT_PREFETCH_1G_ = null; try { lock.releaseLock(); } catch (e2) { /* best-effort */ } }
 }
@@ -2718,6 +2718,23 @@ function sadVerifyShippingPlanOutput_(expectedLines, planIds, planRows, planLine
 }
 
 // PURE-ish orchestration core (assumes the caller holds the ScriptLock). Returns a PLAIN result object.
+function sadSubmitSelectionDw2_(drafts, expected) {
+  if (!Array.isArray(expected) || !expected.length) return false;
+  var want = expected.map(function (id) { return String(id || '').trim(); }).sort(), actual = [];
+  if (want.some(function (id, i) { return !id || (i && id === want[i - 1]); })) return false;
+  (drafts || []).forEach(function (d) { d.lines.forEach(function (l) { actual.push(String(l.allocation_draft_line_id || '').trim()); }); });
+  return JSON.stringify(want) === JSON.stringify(actual.sort());
+}
+function sadSubmitCellsDw2_(sheet, row, headers, values) {
+  var cells = Object.keys(values).map(function (key) { return { col: headers.indexOf(key) + 1, value: values[key] }; }).filter(function (c) { return c.col > 0; }).sort(function (a, b) { return a.col - b.col; });
+  var runs = [];
+  cells.forEach(function (cell) {
+    var run = runs[runs.length - 1];
+    if (!run || run.col + run.values.length !== cell.col) { run = { col: cell.col, values: [] }; runs.push(run); }
+    run.values.push(cell.value);
+  });
+  runs.forEach(function (run) { sheet.getRange(row, run.col, 1, run.values.length).setValues([run.values]); });
+}
 function sadSubmitToShippingPlansCore_(ss, body, ids) {
   var hSh = procurementEnsureSheet_(ss, 'shipping_allocation_drafts', SHIPPING_ALLOCATION_DRAFTS_HEADERS_);
   var lSh = procurementEnsureSheet_(ss, 'shipping_allocation_draft_lines', SHIPPING_ALLOCATION_DRAFT_LINES_HEADERS_);
@@ -2844,7 +2861,7 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     }
     if (lineErr) { errors.push({ allocation_draft_id: id, reason: lineErr }); return; }
     if (!shippable.length) { errors.push({ allocation_draft_id: id, reason: 'NO_POSITIVE_PLANNED_QTY_LINES' }); return; }
-    drafts.push({ id: id, header: header, lines: shippable });
+    drafts.push({ id: id, header: header, row: found.row, lines: shippable });
     if (isSubmitted) alreadySubmitted.push(id); else toTransition.push(id);
   });
   sadMemoClose16f_(memo16f); hSh = hShReal16f; lSh = lShReal16f;   // [PERF-R15F-S1-16] in-lock pre-write read memo W2 closed before the station gate and every write
@@ -2893,6 +2910,10 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
     }
   }
   if (errors.length) return { success: false, error: 'SUBMIT_VALIDATION_FAILED', code: 'SUBMIT_VALIDATION_FAILED', stage: 'validation', zero_write: true, data: { execution_key: execKey, errors: errors.slice(0, 25) } };
+  if (body.expected_line_ids != null && !sadSubmitSelectionDw2_(drafts, body.expected_line_ids)) return {
+    success: false, zero_write: true, code: 'SUBMIT_SELECTION_CHANGED', stage: 'validation',
+    error: 'The saved route selection changed. Reload and review before submitting.'
+  };
 
   // already-submitted drafts may only be replayed as an IDEMPOTENT reuse of the SAME execution-key plan; a new key over
   // already-submitted drafts is a CONFLICT (no double submit). (13) no already-submitted conflicting lineage.
@@ -3012,21 +3033,27 @@ function sadSubmitToShippingPlansCore_(ss, body, ids) {
   var now = procurementTimestamp_();
   var planIds = ((commit.data && commit.data.plans) || []).map(function (p) { return typeof p === 'string' ? p : String(p.shipping_plan_id || '').trim(); }).filter(String);
   var planTag = planIds.join(',');
+  var stampHeadersDw2 = hSh.getRange(1, 1, 1, hSh.getLastColumn()).getValues()[0].map(function (v) { return String(v).trim(); });
   toTransition.forEach(function (id) {
-    var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f) return;
-    var _bv1Row = sadRowToObject_(hSh, f.row), prevNote = String(_bv1Row.note || '').trim();
+    var d = drafts.filter(function (x) { return x.id === id; })[0]; if (!d) return;
+    var _bv1Row = d.header, prevNote = String(_bv1Row.note || '').trim(), cellsDw2 = {};
     var _bv1Tv = sadDraftVersionCheck_(_bv1Row.draft_version);   // BV1 (P3): validated in the pass above, under the same lock
-    function setCol(name, val) { var c = f.col(name); if (c !== -1) hSh.getRange(f.row, c + 1).setValue(val); }
+    function setCol(name, val) { cellsDw2[name] = val; }
     // BV1 (P3) - the status change is covered by an advance. The POSTCHECK restore below puts status / audit / note back
     // but NEVER the version: moving it back would let a request carrying the pre-Submit token land (ABA).
     if (_bv1Tv.ok) setCol('draft_version', _bv1Tv.next);
     setCol('status', 'submitted'); setCol('submitted_by', submittedBy); setCol('submitted_at', now); setCol('updated_by', submittedBy); setCol('updated_at', now);
     var appended = '[SUBMITTED @' + now + ' → shipping_plan ' + (planTag || '(reused)') + ' · exec ' + execKey + ']';
     setCol('note', prevNote ? (prevNote + '\n' + appended) : appended);
+    sadSubmitCellsDw2_(hSh, d.row, stampHeadersDw2, cellsDw2);
   });
   SpreadsheetApp.flush();
   var unverified = [];
-  toTransition.forEach(function (id) { var f = procurementFindRow_(hSh, 'allocation_draft_id', id); if (!f || String(sadRowToObject_(hSh, f.row).status || '').trim().toLowerCase() !== 'submitted') unverified.push(id); });
+  var statusRowsDw2 = hSh.getDataRange().getValues(), idColDw2 = stampHeadersDw2.indexOf('allocation_draft_id'), statusColDw2 = stampHeadersDw2.indexOf('status');
+  toTransition.forEach(function (id) {
+    var rows = statusRowsDw2.slice(1).filter(function (r) { return String(r[idColDw2]).trim() === id; });
+    if (rows.length !== 1 || String(rows[0][statusColDw2]).trim().toLowerCase() !== 'submitted') unverified.push(id);
+  });
   if (unverified.length) {
     // G — POSTCHECK failure: restore ONLY the draft cells this execution changed, AND roll back the committed plan rows
     // (inserted-only, reverse-FK) so we never leave a submitted draft without a verified plan, nor a plan behind.

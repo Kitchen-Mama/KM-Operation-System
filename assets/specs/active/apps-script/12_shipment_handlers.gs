@@ -369,7 +369,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1';   // SANDBOX-GATE-1f: carrier -> method in one selection
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2';   // SANDBOX-GATE-1f: carrier -> method in one selection
 
 
 
@@ -3022,7 +3022,9 @@ function sc13Policy_() {
 }
 function handleShipmentConsolidationPolicy_(body) {
   body = body || {};
-  if (typeof RTR_SANDBOX_GATE_ === 'undefined' || RTR_SANDBOX_GATE_.env !== 'KM_SANDBOX') return jsonResponse_({ success: false, zero_write: true, code: 'SANDBOX_ONLY' });
+  var enabled = (typeof RTR_SANDBOX_GATE_ !== 'undefined' && RTR_SANDBOX_GATE_.env === 'KM_SANDBOX') ||
+    (typeof RTR_PRODUCTION_PROFILE_ !== 'undefined' && RTR_PRODUCTION_PROFILE_.environment === 'KM_PRODUCTION');
+  if (!enabled) return jsonResponse_({ success: false, zero_write: true, code: 'ENVIRONMENT_NOT_ENABLED' });
   if (body.command === 'read') return jsonResponse_({ success: true, policy: sc13Policy_() });
   if (body.command !== 'save' || SC13_MODES_.indexOf(body.mode) < 0 || !Number.isSafeInteger(body.expected_version) || !sc13Str_(body.actor) || !sc13Str_(body.reason)) {
     return jsonResponse_({ success: false, zero_write: true, code: 'POLICY_INPUT_REQUIRED' });

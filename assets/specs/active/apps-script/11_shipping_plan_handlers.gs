@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -1058,9 +1058,8 @@ function handleUpdateShippingPlanStatus_(body) { if (typeof editP1Gate15f2_ !== 
       error: 'Lock error: ' + (eLk && eLk.message ? eLk.message : eLk) });
   }
   if (!locked) {
-    return jsonResponse_({ success: false, zero_write: true, code: 'IN_PROGRESS_SAME_PLAN', stage: 'lock',
-      error: 'IN_PROGRESS — another status transition is in progress. Read the plan back rather than retrying: a '
-        + 'transition that timed out waiting for the lock is indeterminate, not failed.',
+    return jsonResponse_({ success: false, zero_write: true, code: 'LOCK_UNAVAILABLE', stage: 'lock',
+      error: 'The database is busy with another operation. This request did not write anything. Try again shortly.',
       data: { shipping_plan_id: String((body && body.shipping_plan_id) || '').trim() } });
   }
   SHIP_EDIT_TOKEN_IGNORED_ = '';

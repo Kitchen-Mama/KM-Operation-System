@@ -3,7 +3,7 @@
     window.KM = window.KM || {};
     var status = 'NOT_LOADED', snapshot = null, flight = null, generation = 0, writes = 0, timer = null, channel = null;
     var listeners = [], freshAt = 0, ageTimer = null, MAX_AGE = 60000, DEADLINE = 30000;
-    var lastError = null, transientRetries = 0;
+    var lastError = null, transientRetries = 0, resumePending = false;
     function emit() { listeners.forEach(function (fn) { try { fn(); } catch (e) { console.warn('Factory availability repaint failed.'); } }); }
     function db() { return window.KM && window.KM.DB; }
     function active() {
@@ -73,6 +73,7 @@
     }
     function invalidate() { generation++; status = 'STALE'; snapshot = null; emit(); }
     function schedule() { if (timer) clearTimeout(timer); timer = setTimeout(function () { timer = null; if (active() && !writes) ensure(false); }, 250); }
+    function resume() { if (!active()) return Promise.resolve(null); transientRetries = 0; if (flight && status === 'FAILED') resumePending = true; return ensure(status === 'FAILED'); }
     function ensure(force) {
         if (writes) return Promise.resolve(null);
         if (flight) return flight;
@@ -91,7 +92,8 @@
             if (!projection || projection.display_only !== true || !projection.revision) fail('Factory display build unavailable');
             var checked = validate(projection.stock, res); checked.revision = String(projection.revision); return checked;
         });
-        request.then(function () { networkDone = true; if (raceDone) { flight = null; emit(); } }, function () { networkDone = true; if (raceDone) { flight = null; emit(); } });
+        function settledRead() { networkDone = true; if (raceDone) { flight = null; emit(); if (resumePending) { resumePending = false; resume(); } } }
+        request.then(settledRead, settledRead);
         var deadline = new Promise(function (_, reject) { timeout = setTimeout(function () { reject(new Error('Factory read timed out')); }, DEADLINE); });
         flight = Promise.race([request, deadline]).then(function (checked) {
             if (generation !== my || writes) return null;
@@ -144,7 +146,7 @@
         }).join('');
         return head + '<div style="overflow-x:auto;margin-top:8px"><table style="width:100%;font-size:12px;border-collapse:collapse"><thead><tr>' + ['Factory','On hand','Reserved','Drafts','Plans','Free to plan'].map(function (s) { return '<th style="padding:6px;text-align:left;white-space:nowrap">' + s + '</th>'; }).join('') + '</tr></thead><tbody>' + body + '</tbody></table></div><small>Last checked ' + esc(new Date(freshAt).toLocaleTimeString()) + (status === 'READY' ? '' : (status === 'LOADING' ? ' · Updating...' : ' · Refresh before planning.')) + '</small>';
     }
-    window.KM.factoryAvailability = { ensure: ensure, invalidate: invalidate, status: function () { return status; },
+    window.KM.factoryAvailability = { ensure: ensure, resume: resume, invalidate: invalidate, status: function () { return status; },
         rows: function () { return status === 'READY' && snapshot && Date.now() - freshAt < MAX_AGE ? snapshot.rows : null; }, html: html,
         lastError: function () { return lastError; }, revision: function () { return status === 'READY' && snapshot ? (snapshot.revision || '') : ''; },
         subscribe: function (fn) { if (listeners.indexOf(fn) < 0) listeners.push(fn); }, observeWriters: observeWriters, validate: validate,
@@ -161,6 +163,6 @@
     };
     observeWriters();
     if (typeof BroadcastChannel === 'function') { try { channel = new BroadcastChannel('km-factory-feedback-v1'); channel.onmessage = function (e) { if (e.data === 'factory-source-changed') { invalidate(); schedule(); } }; } catch (e) {} }
-    window.addEventListener('focus', function () { if (active()) ensure(false); });
-    document.addEventListener('visibilitychange', function () { if (!document.hidden && active()) ensure(false); });
+    window.addEventListener('focus', resume);
+    document.addEventListener('visibilitychange', function () { if (!document.hidden) resume(); });
 })();

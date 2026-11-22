@@ -712,7 +712,7 @@ var root = dofResolveBatchRoot_(templates, entityType);
 if (!root.ok) return { ok: false, status: 'BLOCKED', reason: root.reason, detail: root, checks: [] };
 var checks = [];
 var rootProbe = io.probeFolder(root.root_folder_id);
-checks.push({ check: 'ROOT_FOLDER', target: root.root_folder_id, ok: !!(rootProbe && rootProbe.ok), reason: (rootProbe && rootProbe.ok) ? '' : 'OUTPUT_FOLDER_ROOT_INACCESSIBLE' });
+checks.push({ check: 'ROOT_FOLDER', target: root.root_folder_id, ok: !!(rootProbe && rootProbe.ok), reason: (rootProbe && rootProbe.ok) ? '' : 'OUTPUT_FOLDER_ROOT_INACCESSIBLE', diagnostic: rootProbe && rootProbe.diagnostic || null });
 if (!rootProbe || !rootProbe.ok) {
 return { ok: false, status: 'BLOCKED', reason: 'OUTPUT_FOLDER_ROOT_INACCESSIBLE', root_folder_id: root.root_folder_id, checks: checks };
 }
@@ -732,7 +732,7 @@ continue;
 }
 var fileProbe = io.probeFile(assetId);
 var fok = !!(fileProbe && fileProbe.ok), r = fok ? (fileProbe.mime === DFO_SUPPORTED_TYPES_[dgsLc_(t.template_file_type)] ? '' : 'DOCUMENT_TEMPLATE_TYPE_MISMATCH') : 'DOCUMENT_TEMPLATE_ASSET_INACCESSIBLE';
-checks.push({ check: 'TEMPLATE_ASSET', class_key: dgsStr_(e.class_key), template_key: dgsStr_(t.template_key), target: assetId, ok: !r, reason: r });
+checks.push({ check: 'TEMPLATE_ASSET', class_key: dgsStr_(e.class_key), template_key: dgsStr_(t.template_key), target: assetId, ok: !r, reason: r, diagnostic: fileProbe && fileProbe.diagnostic || null });
 if (r) blocked = blocked || r;
 }
 if (blocked) return { ok: false, status: 'BLOCKED', reason: blocked, root_folder_id: root.root_folder_id, checks: checks };
@@ -2364,6 +2364,17 @@ out.next_action = 'Configure exactly ONE active Purchase Order document template
 dgsLog_('[DGS-PO-DIAG]', { po: poId, verdict: out.verdict, template: out.template && out.template.template_key });
 return jsonResponse_(out);
 }
+// Run manually in the editor after updating oauthScopes. Opens configured identities only; creates nothing.
+function documentWorkflowAuthorizationCheck() {
+var io = dofProbeIo_(), rows = dgsTemplates_(dgsDb_()).filter(function (t) { return dgsBool_(t.is_active); });
+var checks = rows.map(function (t) {
+var root = dofNormalizeFolderRef_(t.output_folder_id);
+return { template_key: dgsStr_(t.template_key), root: root.ok ? io.probeFolder(root.folder_id) : root,
+  asset: dgsStr_(t.template_file_id) ? io.probeFile(dgsStr_(t.template_file_id)) : { ok: false, reason: 'DOCUMENT_TEMPLATE_ASSET_MISSING' } };
+});
+var result = { read_only: true, writes_performed: 0, checks: checks };
+Logger.log(JSON.stringify(result)); return result;
+}
 function handleShipmentDocumentDiagnostic_(body) {
 var shipmentId = dgsStr_(body && body.shipment_id);
 if (!shipmentId) return jsonResponse_({ success: false, error: 'SHIPMENT_ID_REQUIRED' });
@@ -2506,4 +2517,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2';

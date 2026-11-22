@@ -1,6 +1,6 @@
 (function () {
     'use strict';
-    var nativeFetch = window.fetch.bind(window), session = '', expires = 0, endpoint = '';
+    var nativeFetch = window.fetch.bind(window), session = '', expires = 0, endpoint = '', lastFailure = null;
     // Public endpoint only. Never copy the Sandbox caller credential into the login layer.
     endpoint = window.KM_PRODUCTION_CONFIG_ && window.KM_PRODUCTION_CONFIG_.endpoint || '';
     var meta = document.querySelector('meta[name="km-access-endpoint"]');
@@ -30,6 +30,9 @@
     restoreSession();
     var waiting = [], cover, form, error, field, busy = false, configFlight = null, configStarted = 0;
     function locked() { return !session || Date.now() >= expires; }
+    function sessionRefused(code) {
+        return /^AUTH_/.test(code) && !/^AUTH_(MODULE_MISSING|RATE_LIMIT|LOCK_UNAVAILABLE|LOCK_TIMEOUT|BUSY|SERVICE_UNAVAILABLE|INTERNAL_ERROR)$/.test(code);
+    }
     function show(message) {
         session = ''; expires = 0; forgetSession();
         if (cover) { cover.hidden = false; error.textContent = message || ''; field.focus(); }
@@ -50,6 +53,7 @@
     }
     window.KM = window.KM || {};
     window.KM.passwordAccess = { whenSignedIn: ready, isSignedIn: function () { return !locked(); }, assertWriteAllowed: function () { if (locked()) { show('Please sign in again.'); throw authError(); } } };
+    window.KM.passwordAccess.lastFailure = function () { return lastFailure ? { code: lastFailure.code, at: lastFailure.at } : null; };
     function postAuth(body) {
         if (!endpointOk) return Promise.reject(new Error('Sign in is not available.'));
         var ctrl = new AbortController(), timer = setTimeout(function () { ctrl.abort(); }, 30000);
@@ -112,7 +116,10 @@
             options.method = 'POST'; options.body = JSON.stringify(body); options.cache = 'no-store'; options.headers = { 'Content-Type': 'text/plain' };
             return nativeFetch(u.toString(), options).then(function (response) {
                 return response.clone().json().then(function (r) {
-                    if (r && /^AUTH_/.test(r.code || '') && !r.success && session === sentSession) { show('Please sign in again.'); rejectWaiting(); }
+                    if (r && /^AUTH_/.test(r.code || '') && !r.success) {
+                        lastFailure = { code: String(r.code), at: Date.now() };
+                        if (sessionRefused(r.code) && session === sentSession) { show('Please sign in again.'); rejectWaiting(); }
+                    }
                     return response; // No automatic replay, especially for writes.
                 }, function () { return response; });
             });

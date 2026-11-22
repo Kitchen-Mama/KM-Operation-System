@@ -22,6 +22,7 @@
     "createShippingPlansBatch",
     "deleteFcSpecialEvent",
     "deleteFcTargetRule",
+    "document.diagnostic.shipment",
     "document.export",
     "document.exportNonce",
     "document.get",
@@ -82,6 +83,8 @@
     "requestOrderDraft.getActive",
     "shipment.assignCarrier",
     "shipment.consolidationPolicy.get",
+    "shipment.consolidationPolicy.save",
+    "shipment.documentValues.check",
     "shipment.eta.update",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
@@ -136,6 +139,7 @@
   "reads": [
     "aiPlanFirstLayer.get",
     "automationSchedule.get",
+    "document.diagnostic.shipment",
     "document.export",
     "document.exportNonce",
     "document.get",
@@ -172,6 +176,7 @@
     "requestOrder.workspace.get",
     "requestOrderDraft.getActive",
     "shipment.consolidationPolicy.get",
+    "shipment.documentValues.check",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
     "shipment.workspace.get",
@@ -208,5 +213,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "46aa57d02984355400d529460fea806324de95a3ffabec37d281548a5643ea2a"
+  "policy_sha256": "7052919254294efee7f7ae508bd6e162bbb13685ba4fdbbf76be5f509ae84f55"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

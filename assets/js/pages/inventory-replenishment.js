@@ -3618,6 +3618,9 @@ async function submitReplenishmentPlans() {
     if (typeof _irSubmitPhase_ !== 'undefined' && _irSubmitPhase_) return;   // R71-FE-6: one Submit at a time (a double click sends once)
     if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_('CHECKING');
     try {   // R71-FE-6: CHECKING is cleared on every return that did not hand over to SUBMITTING (finally below)
+    var _pf = _irSubmitPreflight_();
+    if (!_pf.ok) { _irAlertSubmitBlocked_(_pf); return; }
+    var _selectedLinesDw2 = {}; (_pf.candidate.lineIds || []).forEach(function (id) { _selectedLinesDw2[id] = true; });
     const data = getReplenishmentData();
     // Country + marketplace NAME are derived from the selected scope (the Marketplace dropdown value is a
     // marketplace_id in Cloud mode), so the payload carries the marketplace NAME — not the raw id.
@@ -3645,6 +3648,7 @@ async function submitReplenishmentPlans() {
         const draftRows = _allocationDraftRowsFor(item.sku);
         if (!draftRows || !draftRows.length) return;
         draftRows.forEach(r => {
+            if (!_selectedLinesDw2[String(r.allocation_draft_line_id || '')]) return;
             const method = r.shipping_method;
             const qty = parseInt(r.qty) || 0;
             if (qty > 0 && method) {
@@ -3779,8 +3783,7 @@ async function submitReplenishmentPlans() {
     // yet sent, a write in flight, an edit that landed during a write, an unpersisted delete, an Execution panel
     // that is a shell or a named failure, a missing destination, a duplicate line identity) plus the candidate
     // set and the confirmation totals. The alert() bodies are its RENDERERS, not separate decisions.
-    var _pf = (typeof _irSubmitPreflight_ === 'function') ? _irSubmitPreflight_()
-        : { ok: false, code: 'PREFLIGHT_UNAVAILABLE', blocking: { skus: [], reasons: [] }, candidate: null, excluded: [] };
+    // The selection above is frozen for this confirmation; the server rechecks its versions and exact line set.
     if (!_pf.ok && _pf.code !== 'NO_PERSISTED_CANDIDATE') {
         if (typeof _irAlertSubmitBlocked_ === 'function') _irAlertSubmitBlocked_(_pf);
         return;   // fail CLOSED — ZERO requests, ZERO writes, and the dirty routes are left exactly as they are
@@ -3829,7 +3832,7 @@ async function submitReplenishmentPlans() {
         // the older stored quantity while the operator is looking at the newer one. An inconclusive read never
         // blocks and is never reported as a verification (see _irVerifyPersistedRouteQuantities_).
         var _qv = { verdict: 'UNVERIFIABLE', drifted: [] };
-        try { _qv = await _irVerifyPersistedRouteQuantities_((typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null); } catch (_eV) {}
+        try { _qv = await _irVerifyPersistedRouteQuantities_((typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null, _pf.candidate.lineIds); } catch (_eV) {}
         if (_qv.verdict === 'CORRUPTED') {
             alert('Cannot Submit Plan — the database holds duplicate rows under one Execution Plan line identity.' + NL2 +
                 (_qv.duplicates || []).slice(0, 8).map(function (d) { return '  · ' + d.sku + ' — ' + d.allocation_draft_line_id + ' names ' + d.physical_rows + ' physical rows'; }).join(String.fromCharCode(10)) + NL2 +
@@ -3865,7 +3868,7 @@ async function submitReplenishmentPlans() {
         }
         if (!_irConfirmSubmit_(_conf)) return;   // Cancel → nothing sent, nothing minted, nothing lost
         var submitExecutionKey = _replenSubmitExecutionKey();   // minted ONLY after an explicit confirmation
-        _replenCanonicalSubmit(_draftIds, submitExecutionKey, _conf.lineCount);
+        _replenCanonicalSubmit(_draftIds, submitExecutionKey, _conf.lineCount, _pf.candidate);
         return;
     }
 
@@ -4431,7 +4434,7 @@ window._irAppliedSubmitScope_ = _irAppliedSubmitScope_;
 // returns UNVERIFIABLE and Submit proceeds — the server re-reads the persisted drafts anyway and the
 // unsaved-route gate has already run. What is NEVER allowed is claiming a verification that did not happen, or
 // blocking a legitimate Submit because a diagnostic read was unavailable. A PROVEN drift blocks.
-async function _irVerifyPersistedRouteQuantities_(appliedScope) {
+async function _irVerifyPersistedRouteQuantities_(appliedScope, selectedLineIds) {
     var out = { verdict: 'UNVERIFIABLE', checked: 0, drifted: [], reason: '' };
     var db = window.KM && window.KM.DB;
     if (!db || typeof db.getShippingAllocationDraftWorkspace !== 'function') { out.reason = 'READBACK_API_UNAVAILABLE'; return out; }
@@ -4464,6 +4467,13 @@ async function _irVerifyPersistedRouteQuantities_(appliedScope) {
     });
     if (!Object.keys(persisted).length) { out.reason = 'READBACK_NO_LINES'; return out; }
     var bySku = (replenAllocationDraft && replenAllocationDraft.bySku) || {};
+    if (Array.isArray(selectedLineIds)) {
+        var selection = {}; selectedLineIds.forEach(function (id) { selection[String(id)] = true; });
+        var selectedBySku = {};
+        Object.keys(bySku).forEach(function (sku) { selectedBySku[sku] = bySku[sku].filter(function (r) { return selection[String(r.allocation_draft_line_id || '')]; }); });
+        bySku = selectedBySku;
+        Object.keys(persisted).forEach(function (id) { if (!selection[id]) delete persisted[id]; });
+    }
     Object.keys(bySku).forEach(function (sku) {
         (bySku[sku] || []).forEach(function (r) {
             if (!_isRouteComplete(r)) return;
@@ -4627,6 +4637,7 @@ function _irSubmitStateSnapshot_() {
                     composer_touched: (r && r.composer_touched) === true,
                     allocation_draft_id: String((r && r.allocation_draft_id) || ''),
                     allocation_draft_line_id: String((r && r.allocation_draft_line_id) || ''),
+                    draft_version: r && r.draft_version,
                     qty: r && r.qty,
                     complete: _complete,
                     missingFields: _missing,
@@ -4665,13 +4676,14 @@ function _irSubmitStateSnapshot_() {
         routesMissingDestination: (typeof _irRoutesMissingDestination_ === 'function') ? _irRoutesMissingDestination_() : [],
         duplicateCorruption: (typeof _irDuplicateLineIdentities_ === 'function') ? _irDuplicateLineIdentities_() : [],
         routes: routes,
+        persistedOnly: true,
         // F1-7N-FC-1B-E3 §G.14 — an AI Plan run whose rows the server did not acknowledge. Submit is
         // refused while this stands, because the station's stored plan is not known to be the plan on screen.
         aiPlanUnreconciled: (window._irAiPlanUnreconciled && window._irAiPlanUnreconciled.reason)
             ? String(window._irAiPlanUnreconciled.reason) : '',
         // S2-R3 §4 — read from the controller at snapshot time, never cached here. A page that remembered this
         // separately would be able to go on refusing after a read had already succeeded.
-        draftStateUnverified: (typeof _irDraftStateUnverified_ === 'function') ? _irDraftStateUnverified_() : '',
+        draftStateUnverified: Object.keys(typeof _irAckUnknown === 'object' ? _irAckUnknown : {}).some(function (sku) { return _irAckUnknownHeld_(sku).length; }) ? 'WRITE_OUTCOME_UNKNOWN' : ((typeof _irDraftStateUnverified_ === 'function') ? _irDraftStateUnverified_() : ''),
         // The page does not know how many ACTIVE headers the station holds with zero lines - the hydrate
         // produces routes, not a header inventory. That count belongs to the read-only census
         // (TEMP_SHIPPING_ALLOCATION_SUBMIT_PLAN_A2_SUMMARY), and is reported there rather than guessed here.
@@ -4835,7 +4847,7 @@ function _irConfirmSubmit_(conf) {
 }
 window._irConfirmSubmit_ = _irConfirmSubmit_;
 
-function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
+function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount, selection) {
     if (_replenSubmitInFlight[execKey]) return _replenSubmitInFlight[execKey];   // share the in-flight Promise (no 2nd mutation)
     if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_('SUBMITTING');   // R71-FE-6
     var _irUnknown = false;
@@ -4847,13 +4859,15 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount) {
     var _appliedScope = (typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null;
     var p = window.KM.DB.submitAllocationDraftsToShippingPlans({
         allocation_draft_ids: draftIds, execution_key: execKey, submitted_by: 'inventory-replenishment',
+        expected_line_ids: selection && selection.lineIds,
+        expected_versions: selection && selection.expectedVersions,
         applied_scope: _appliedScope || undefined
     }).then(function (result) {
         result = result || {};
         if (result.success) {
             var d = result.data || {};
             try { (draftIds || []).forEach(function (x) { var t = String(x == null ? '' : x).trim(); if (t) _irTerminalDraftIds_[t] = 'submitted'; }); _irDropHistoricalRouteRows_(); _irPurgeHistoricalMarkers_(); } catch (_eHS) {}   // R71-FE-7 (H1/H2/H5): the server just submitted them
-            _clearAllocationDraft();   // confirmed terminal (CREATED or REUSED) → drop the Working Draft + execution key
+            _irKeepUnsubmittedRoutesDw2_(draftIds);
             // F1-7N-FB-3C §I — report the server's EXACT output verification rather than only "created".
             // The plan writer returning success is not proof that the committed lines carry the operator's
             // planned quantities; the server now re-reads them field by field and says so on the wire.
@@ -7357,21 +7371,18 @@ function _irDecorateRouteOpRow_(k) {
     });
 }
 function _irRouteOpBannerHtml_(keys) {
+    var deleting = keys.every(function (k) { return (_irUnsavedRoutes[k] || {}).state === 'DELETING'; });
     var items = keys.map(function (k) {
         var m = _irUnsavedRoutes[k] || {}, lbl = m.route || m.live || {};
-        var what = [lbl.sku || m.sku || '', (lbl.from || '') + (lbl.to ? ' → ' + lbl.to : ''), lbl.qty ? 'Qty ' + lbl.qty : '', lbl.method || ''].filter(String).join(' · ');
-        var ids = (m.op === 'CANCEL_HEADER' ? 'route ticket ' + _irRoS_(m.draftId || k.slice(6)) : 'line ' + _irRoS_(m.lineId || k.slice(5)) + (m.draftId ? ', ticket ' + m.draftId : ''));
-        var last = m.verifyCode && m.verifyCode !== 'STILL_ACTIVE' ? ' Last check: ' + m.verifyCode + (m.verifyMessage ? ' — ' + m.verifyMessage : '') + '.' : '';
-        return '<li data-route-op-key="' + _irEsc_(k) + '" data-route-op-state="' + _irEsc_(m.state || '') + '" style="margin:3px 0;"><strong>' + _irEsc_(IR_ROUTE_OP_STATES_[m.state] || m.state || 'Unresolved') + '</strong> — ' +
-            _irEsc_(what || '(route details not in this tab)') + ' (' + _irEsc_(ids) + '). ' + _irEsc_(_irRouteOpGuidance_(m)) + _irEsc_(last) + _irRouteOpButtons_(k, m.state) + '</li>';
+        var what = [lbl.sku || m.sku || '', lbl.from || '', lbl.to || '', lbl.qty ? 'Qty ' + lbl.qty : ''].filter(String).join(' / ');
+        return '<li data-route-op-key="' + _irEsc_(k) + '" data-route-op-state="' + _irEsc_(m.state || '') + '">' +
+            _irEsc_(what) + ': ' + _irEsc_(IR_ROUTE_OP_STATES_[m.state] || 'Awaiting confirmation') + _irRouteOpButtons_(k, m.state) +
+            '<details><summary>Details</summary>' + _irEsc_((m.lineId || m.draftId || k) + ' ' + (m.verifyCode || '') + ' ' + (m.verifyMessage || '')) + '</details></li>';
     }).join('');
-    return '<div class="replen-route-op-banner" role="alert" style="background:#FFFBEB;border-left:3px solid #D97706;color:#92400E;padding:8px 10px;margin:0 0 8px;font-size:12px;">' +
-        (function () { var nU = keys.filter(function (k) { return !!(_irUnsavedRoutes[k] && _irUnsavedRoutes[k].opUnknown); }).length, nD = keys.length - nU;   // RC1-R4
-            return '<strong>' + [nD ? 'Route deletion not confirmed — ' + _irEsc_(String(nD)) + ' route(s)' : '', nU ? 'Operation outcome unknown — ' + _irEsc_(String(nU)) + ' route(s)' : ''].filter(String).join('; ') + '.</strong> ' +
-                (nD ? 'A route leaves the plan only after the database confirms the cancellation and it is read back. ' : '') + (nU ? 'For an operation of unknown type nothing is retried. ' : ''); })() +
-        'Submit Plan and Search stay blocked until each one is resolved. Nothing is resent automatically.' +
-        '<ul style="margin:4px 0 4px 16px;padding:0;">' + items + '</ul>' +
-        '<button type="button" class="ir-route-op-btn" style="font-size:12px;" onclick="event.stopPropagation();_irRouteCancelVerify_()">Check all with database (read-only)</button></div>';
+    return '<div class="replen-route-op-banner" role="alert" style="background:#FFFBEB;border-left:3px solid #D97706;color:#92400E;padding:8px 10px;font-size:12px">' +
+        '<strong>' + (deleting ? 'Removing ' + keys.length + ' route(s). Please wait.' : 'Route removal needs review.') + '</strong>' +
+        '<ul style="margin:4px 0;padding-left:18px">' + items + '</ul>' +
+        '<button type="button" class="ir-route-op-btn" onclick="event.stopPropagation();_irRouteCancelVerify_()">Check status</button></div>';
 }
 // Owner 2026-11-13 (1): ADD and MODIFY show their state too. The state already existed (data-route-save-state, set by
 // _irSetRouteSaveState_) but nothing displayed it, so an operator could not see Saving / Saved / Not saved / Outcome unknown.
@@ -7902,6 +7913,19 @@ function _clearAllocationDraft() {
     replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     try { sessionStorage.removeItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) {}
+}
+function _irKeepUnsubmittedRoutesDw2_(draftIds) {
+    var done = {}; (draftIds || []).forEach(function (id) { done[String(id)] = true; });
+    var bySku = replenAllocationDraft.bySku || {};
+    Object.keys(bySku).forEach(function (sku) {
+        bySku[sku] = bySku[sku].filter(function (r) { return !done[String(r.allocation_draft_id || '')]; });
+        if (!bySku[sku].length) delete bySku[sku];
+    });
+    replenAllocationDraft.allocationDraftIds = (replenAllocationDraft.allocationDraftIds || []).filter(function (id) { return !done[String(id)]; });
+    if (done[String(replenAllocationDraft.allocationDraftId || '')]) replenAllocationDraft.allocationDraftId = '';
+    delete replenAllocationDraft.submitExecutionKey;
+    window.KM.shippingAllocationDraft = replenAllocationDraft;
+    _persistAllocationDraft();
 }
 // ===== C2-D2A-UI: Allocation Draft persistence UI workspace (truthful state machine + targeted readback) =====
 // One controller (IRDraftWorkspace, inventory-compat.js — deps-injected) owns the canonical persistence state; the
@@ -9900,7 +9924,7 @@ function _renderExecutionRoute(sku, route) {
         '<span class="replen-card__to-cell' + (needsDest ? ' replen-card__to-cell--needs-confirm' : '') + '">' +
         '<select class="replen-card__select replen-card__select--wh" data-field="destination_warehouse_id" aria-label="To" title="To" onchange="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()"' + toDisabled + '>' + _execPickerOptionsHtml_(_pk.to, 'To…') + '</select>' +
         _execPickerNoteHtml_(needsDest ? null : _pk.toNote, _pk.toEmpty, 'to') +
-        (needsDest ? '<span class="replen-card__to-warning" data-field="destination_confirmation">Destination confirmation required</span>' : '') +
+        '' +
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" aria-label="Qty" title="Qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
         // R6-R1 §5 — the Method cell holds the SERVICE, and a service is (method, last mile). The second
@@ -10015,7 +10039,11 @@ function removeExecutionRoute(event, sku) {
         // operator to confirm. This removed a stored ticket from the database on a single click with no
         // question asked — the only remaining unconfirmed cancel once the edit-driven ones were removed.
         // An UNSAVED row has nothing to cancel and is dropped without a prompt, as before.
-        if (lineId && typeof _cancelAllocationDraftLine === 'function') {
+        var instance = String(row.getAttribute('data-route-instance') || '');
+        if (!lineDraftId && (_irAckUnknownIsHeld_(sku, instance) || (_draftDbInFlight[sku] && (_draftDbTouched[sku] || {})[instance]))) {
+            alert('This route is still saving or awaiting verification. Check its saved state before removing it.'); return false;
+        }
+        if (lineId && lineDraftId && typeof _cancelAllocationDraftLine === 'function') {
             var _goCancel = false;
             try {
                 _goCancel = window.confirm('Remove this saved route from the Execution Plan?\n\n' +
@@ -10037,7 +10065,9 @@ function removeExecutionRoute(event, sku) {
             }
         }
         row.remove();
+        if (_draftDbTouched[sku]) delete _draftDbTouched[sku][instance];
         onExecutionRouteEdit(sku);
+        if (!((replenAllocationDraft.bySku || {})[sku] || []).length) _irClearRouteUnsaved_(sku);
         syncExpandPanelHeight(sku);
     }
 }
@@ -18559,6 +18589,7 @@ if (window.KM && window.KM.lifecycle) {
                 var sec = document.getElementById('ops-section');
                 if (sec) sec.classList.add('active');
                 _inventoryReplenStaticInit();
+                if (window.KM && window.KM.factoryAvailability) window.KM.factoryAvailability.resume();
                 // KM Sticky Header Framework: drive --km-sticky-top-base from the sticky control
                 // panel's LIVE height (it wraps taller on small screens), so the main table's
                 // two-layer header pins right below it instead of being covered (hard-coded top:72px bug).

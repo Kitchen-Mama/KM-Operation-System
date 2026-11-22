@@ -49,7 +49,7 @@
 
 
 
-var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1";
+var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2";
 
 
 
@@ -136,6 +136,8 @@ return {
 'factoryStockGuard.get': handleFactoryStockGuardGet_,
 
 'shipment.consolidationPolicy.get': handleShipmentConsolidationPolicyGet_,
+'shipment.documentValues.check': handleShipmentDocumentValuesCheck_,
+'document.diagnostic.shipment': handleShipmentDocumentDiagnostic_,
 'system.sourceRevision': handleSourceRevisionGet_
 };
 }
@@ -1256,6 +1258,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "createShippingPlansBatch",
     "deleteFcSpecialEvent",
     "deleteFcTargetRule",
+    "document.diagnostic.shipment",
     "document.export",
     "document.exportNonce",
     "document.get",
@@ -1316,6 +1319,8 @@ var RTR_PRODUCTION_PROFILE_ = {
     "requestOrderDraft.getActive",
     "shipment.assignCarrier",
     "shipment.consolidationPolicy.get",
+    "shipment.consolidationPolicy.save",
+    "shipment.documentValues.check",
     "shipment.eta.update",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
@@ -1370,6 +1375,7 @@ var RTR_PRODUCTION_PROFILE_ = {
   "reads": [
     "aiPlanFirstLayer.get",
     "automationSchedule.get",
+    "document.diagnostic.shipment",
     "document.export",
     "document.exportNonce",
     "document.get",
@@ -1406,6 +1412,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "requestOrder.workspace.get",
     "requestOrderDraft.getActive",
     "shipment.consolidationPolicy.get",
+    "shipment.documentValues.check",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
     "shipment.workspace.get",
@@ -1424,7 +1431,6 @@ var RTR_PRODUCTION_PROFILE_ = {
     "backfillFcSpecialEventIds",
     "carrierLeadTime.duplicateCensus",
     "document.diagnostic.purchaseOrder",
-    "document.diagnostic.shipment",
     "document.retry",
     "factoryInventory.import.commit",
     "factoryInventory.import.validate",
@@ -1448,8 +1454,6 @@ var RTR_PRODUCTION_PROFILE_ = {
     "retireShipmentLabelColumns",
     "runAmazonSnapshotImports",
     "seedSinotransCarrier",
-    "shipment.consolidationPolicy.save",
-    "shipment.documentValues.check",
     "system.allocationDraftIdentityDiagnostic",
     "system.executionPlanConflictDiagnostic",
     "system.executionPlanDuplicateLineDiagnostic",
@@ -1504,7 +1508,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-      "expected": "PROD1-DGS-20261112-AD3-DW1",
+      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2",
       "optional": false
     },
     {
@@ -1564,7 +1568,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SYS_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2",
       "optional": false
     },
     {
@@ -1634,7 +1638,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SAD_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-A2SUB16V3-AD1B-AD3-DW2",
       "optional": false
     },
     {
@@ -1644,7 +1648,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SP_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2",
       "optional": false
     },
     {
@@ -1659,7 +1663,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHIPMENT_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2",
       "optional": false
     },
     {
@@ -1709,7 +1713,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "RTR_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2",
       "optional": false
     },
     {
@@ -1746,6 +1750,11 @@ var RTR_PRODUCTION_PROFILE_ = {
       "symbol": "TEMP_AIMIG_BUILD_VERSION_",
       "expected": "F1-7N-FB-4C-ADDENDUM-MIGRATION",
       "optional": true
+    },
+    {
+      "symbol": "DFO_BUILD_VERSION_",
+      "expected": "DW2-RENDERER-20261122",
+      "optional": false
     }
   ],
   "import_scopes": {
@@ -1764,7 +1773,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "46aa57d02984355400d529460fea806324de95a3ffabec37d281548a5643ea2a"
+  "policy_sha256": "7052919254294efee7f7ae508bd6e162bbb13685ba4fdbbf76be5f509ae84f55"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};
