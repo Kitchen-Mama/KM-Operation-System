@@ -8558,7 +8558,22 @@ function _execResolveMethods(routeCtx) {
 // STALE_SCOPE case the registry reports rather than answering about the wrong station.
 function _irMethodScope_() {
     var applied = (typeof _irSearch !== 'undefined' && _irSearch && _irSearch.applied) ? _irSearch.applied : null;
-    if (applied) return { company: applied.company || '', country: applied.country || '', marketplace: applied.marketplace || '' };
+    if (applied) {
+        // Search stores country + marketplaceId, not company/marketplace. Resolve the APPLIED ID,
+        // never the pending selectors or the source warehouse, so another company cannot supply the scope.
+        if (Object.prototype.hasOwnProperty.call(applied, 'marketplaceId')) {
+            var id = String(applied.marketplaceId || '').trim(), records = [];
+            try { records = typeof _irWsGet === 'function' ? (_irWsGet('getMarketplaces') || []) : []; } catch (e) {}
+            var hits = records.filter(function (m) { return id && String(m.marketplaceId || '').trim() === id; });
+            var rec = hits.length === 1 ? hits[0] : null;
+            if (rec && String(rec.country || '').trim().toUpperCase() === String(applied.country || '').trim().toUpperCase() &&
+                rec.company && rec.marketplace && !/^(inactive|disabled)$/i.test(String(rec.status || '').trim())) {
+                return { company: rec.company, country: applied.country, marketplace: rec.marketplace };
+            }
+            return { company: '', country: applied.country || '', marketplace: '' };
+        }
+        return { company: applied.company || '', country: applied.country || '', marketplace: applied.marketplace || '' };
+    }
     var sc = (typeof _replenSelectedScope === 'function') ? _replenSelectedScope() : {};
     return { company: sc.company || '', country: sc.country || '', marketplace: sc.marketplace || '' };
 }

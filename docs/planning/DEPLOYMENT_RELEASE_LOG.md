@@ -7215,3 +7215,12 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - The legacy inventory-workspace harness stops on a missing `_kmScNote13_` extraction; the same exception was reproduced with unmodified HEAD. Not silently reported as a passing full suite; the focused tests evaluate the full adapter and compare unchanged primary-workspace output.
 - `GIT_ONLY`: focused tests, build/verify/capture tools. `DOCUMENTATION_ONLY`: this entry and `docs/handoffs/DS1_SERVICE_METHODS_20261122.txt` (install, UAT and paired rollback instructions).
 - No push, Apps Script deployment, DB write, master activation, cleanup or go-live declaration performed. Owner live UAT and deployment-version evidence remain pending.
+
+## 2026-11-22 - DS2 Applied Method Scope Repair
+
+- Owner reported both ResUS AMZL -> Amazon and KM AMZL -> WINIT still had no methods, and explicitly authorized the repair and Git push in this turn.
+- Root cause: `_irApplySearch_` stores `{country, marketplaceId}`, while DS1's `_irMethodScope_` expected company/channel inline. The valid source-company check received an empty company. The previous component harness prefilled that missing identity and missed the actual Search contract.
+- Fix: uniquely resolve the applied marketplace ID through the existing workspace master, rejecting unknown/duplicate/inactive or country-mismatched rows; pending selectors and source-warehouse companies are not fallbacks. Both lazy-load cache tokens change to `-ds2`.
+- `FRONTEND_GITHUB_PAGES_REQUIRED`: `index.html`, `assets/js/app.js`, `assets/js/pages/inventory-replenishment.js`. `APPS_SCRIPT_SYNC_REQUIRED`: NONE. `BUNDLE_REBUILD_REQUIRED`: NO. DS1 GS/policy and frozen packages are unchanged; no data writes/activation, fake prices/ETA, B8 merge or WFS-rule change.
+- `GIT_ONLY`: applied-scope and actual Search-to-repaint browser tests. The frozen DS1 fails the new browser test at the disabled Method control; repaired source passes 96 assertions (seven country fixtures + KM US transfer, desktop/mobile) and 13 focused checks. Existing service tests remain 59/0 and component checks 10/0. Real dispatch/receipt acceptance remains Owner-owned.
+- `DOCUMENTATION_ONLY`: `docs/handoffs/DS2_METHOD_SCOPE_20261122.txt`. Push/Pages completion and served-file equality must be verified after commit; this entry alone does not assert deployment success.

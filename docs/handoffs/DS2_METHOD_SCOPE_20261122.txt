@@ -1,0 +1,48 @@
+DS2: Applied marketplace identity repair (frontend only)
+Date: 2026-11-22 (Asia/Taipei)
+
+ROOT CAUSE
+Actual _irApplySearch_ stores {country, marketplaceId}. DS1's _irMethodScope_
+instead read company/marketplace directly, getting empty strings. A valid 3PL
+was therefore rejected by the new domestic-service company check.
+The earlier component test prefilled those fields and missed the real Search
+contract. The new browser test executes the actual Search commit, asynchronous
+catalogue load, adapter, registry and row repaint; the frozen DS1 fails it.
+
+FIX
+Resolve the APPLIED marketplaceId against the existing workspace master.
+Require exactly one matching ID, matching country and a nonempty company/channel.
+Unknown/duplicate/inactive records fail closed. Never borrow pending filter
+values or infer a company from the From warehouse.
+Update both cache tokens: index -> app.js -> lazy inventory-replenishment.js.
+
+DEPLOYMENT
+FRONTEND_GITHUB_PAGES_REQUIRED:
+  index.html
+  assets/js/app.js
+  assets/js/pages/inventory-replenishment.js
+APPS_SCRIPT_SYNC_REQUIRED: NONE (keep the already deployed DS1 60/63/01).
+BUNDLE_REBUILD_REQUIRED: NO. No 90_ or core planning source changes.
+DB/MASTER changes: NONE. Do not add rate cards, activate lead times or delete data.
+No B8 integration. No change to WFS pause, customs, PO, stock or pricing rules.
+
+OWNER RETEST
+1. After Pages publishes, hard reload or open a fresh tab, then Search again.
+2. US / Amazon (ResUS): choose AMZL -> Amazon. Truck must be selectable.
+3. US / Shopify (KM): choose KM AMZL -> KM WINIT. Truck must be selectable.
+4. Select parcel for SPD / truck for LTL. Missing price/ETA stays pending/unknown.
+5. Save and reopen a small authorized UAT route; verify method/last mile persist.
+6. Resume the existing Production acceptance checklist. Never repeatedly Confirm
+   an unknown transaction outcome. Test cleanup remains a separate instruction.
+
+LOCAL EVIDENCE
+13 focused applied-scope/cache checks.
+96 browser assertions across seven physical-country fixtures plus the KM
+AMZL->WINIT case, each at desktop/mobile widths. Real shipped functions, fixture IO.
+The same browser runner on frozen DS1 reproduces the disabled Method on case 1.
+DS1 service tests: 59/0. Earlier component checks: 10/0. Frozen package intact.
+These are local tests, not a claim of live dispatch/receipt acceptance.
+
+ROLLBACK
+Restore the previous frontend commit 0aa73bb9 only. DS1 GS and all DB data remain.
+That version reproduces the empty-method issue; do not disable identity checks.
