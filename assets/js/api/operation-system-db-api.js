@@ -5880,8 +5880,9 @@ async function _kmGapRead_(action, payload) {
         // one error per bad row, and collapsing that to errors[0] tells an operator about one of four
         // problems and leaves them to discover the rest by saving again, three more times. `errors` is
         // additive - absent when the server sent none - so no page that does not ask for it is affected.
-        return { success: false, errors: (json.errors && json.errors.length > 1) ? json.errors : undefined,
-            error: (json.errors && json.errors[0]) || { code: 'GAP_READ_ERROR', message: 'gap read failed' } };
+        return { success: false, code: json.code || undefined, zero_write: json.zero_write === true,
+            errors: (json.errors && json.errors.length > 1) ? json.errors : undefined,
+            error: (json.errors && json.errors[0]) || { code: json.code || 'GAP_READ_ERROR', message: typeof json.error === 'string' ? json.error : 'Unable to load data.' } };
     }
     return { success: true, data: json.data || { rows: [] }, envelope: json };
 }

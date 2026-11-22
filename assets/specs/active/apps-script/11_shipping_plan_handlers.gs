@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -1974,7 +1974,7 @@ function spRcQuote_(ss, p, rc, lines, tot, day, org) {   // WK1 r3 (D-6): priced
 function spRcWk1Customs_(ss, p, body) {
   if (!body || !Object.prototype.hasOwnProperty.call(body, 'customs_type')) return { ok: true, plan: p, asked: false };
   var cx = spRcStr_(body.customs_type);
-  var na4 = (typeof shipCustomsApplicability_ === 'function') ? shipCustomsApplicability_(ss, p) : { applicable: true };   // AD4: a proven domestic overseas transfer has no customs
+  var na4 = (typeof shipCustomsApplicability_ === 'function') ? shipCustomsApplicability_(ss, p, { allow_planned_destination: true }) : { applicable: true };
   if (na4.applicable === false) { if (!cx || cx === spRcStr_(p.customs_type)) return { ok: true, plan: p, asked: false, customs_type: spRcStr_(p.customs_type), label: spRcStr_(p.customs_type), customs_not_applicable: true }; return { ok: false, code: 'PLAN_CUSTOMS_NOT_APPLICABLE' }; }   // Preserve old stored values, including on the explicit-service save path.
   if (!cx) return { ok: false, code: 'PLAN_CUSTOMS_REQUIRED' };
   var list = (typeof sc13PlanLaneOptions_ === 'function') ? (sc13PlanLaneOptions_(ss, p).customs || []) : null;
@@ -2018,7 +2018,7 @@ function spRcWk1CustomsOnly_(body) { if (typeof editP1Gate15f2_ !== 'function' |
     if (spRcStr_(body.expected_current_carrier_id) !== spRcStr_(p0.carrier_id)) return spRcNo_('RATE_CARD_SELECTION_CONFLICT', { current_carrier_id: spRcStr_(p0.carrier_id) });
     // The real client omits blank customs. Waive it only after reading the saved lane inside the lock.
     if (!Object.prototype.hasOwnProperty.call(body, 'customs_type')) {
-      if (body.service_only !== true || typeof shipCustomsApplicability_ !== 'function' || shipCustomsApplicability_(ss, p0).applicable !== false) return spRcNo_('CUSTOMS_SAVE_INCOMPLETE');
+      if (body.service_only !== true || typeof shipCustomsApplicability_ !== 'function' || shipCustomsApplicability_(ss, p0, { allow_planned_destination: true }).applicable !== false) return spRcNo_('CUSTOMS_SAVE_INCOMPLETE');
       body = Object.assign({}, body, { customs_type: '' });
     }
     var exp15 = body.service_only === true && body.explicit_service === true;   // AD3-B (Owner 10): an explicit service, not derived from cards

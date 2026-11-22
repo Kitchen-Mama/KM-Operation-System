@@ -297,10 +297,11 @@ policy_gating: rows.filter(function (r) { return r.gates_by_policy; }).map(funct
 function dgsGatingClassKeys_() {
 return DGS_SHIPMENT_CLASSES_.filter(function (c) { return c.gates_transition; }).map(function (c) { return c.class_key; });
 }
+function dgsDocumentType_(value) { var v = dgsLc_(value); return v === 'shipment_detail_sheet' ? 'shipment_detail' : v; }
 function dgsClassCandidates_(templates, ctx, cls) {
 return (templates || []).filter(function (t) {
 if (dgsLc_(t.related_entity_type) !== 'shipment') return false;
-if (dgsLc_(t.document_type) !== cls.document_type) return false;
+if (dgsDocumentType_(t.document_type) !== cls.document_type) return false;
 if (dgsLc_(t.document_usage) !== cls.document_usage) return false;
 if (!dgsActive_(t, ctx.as_of)) return false;
 if (cls.match === 'EXACT_COUNTRY' && !dgsScopeExact_(t, 'country', ctx.template_country !== undefined ? ctx.template_country : ctx.country)) return false;   // R15G-EU D2: the shared EU template
@@ -350,7 +351,7 @@ if (cls.requirement === 'ALWAYS') errors.push({ class_key: cls.class_key, reason
 return;
 }
 entries.push({
-class_key: cls.class_key, document_type: cls.document_type, document_usage: cls.document_usage,
+class_key: cls.class_key, document_type: cls.document_type, document_usage: cls.document_usage, overseas_no_po: ovsOk,
 requirement: cls.requirement, match_basis: cls.match, render: cls.render,
 template_id: dgsStr_(cand[0].template_id), template_key: dgsStr_(cand[0].template_key),
 template_version: dgsNum_(cand[0].template_version), template: cand[0]
@@ -1338,6 +1339,11 @@ function dgsSkuFieldsCp2_(fields, render) {
     });
 }
 
+function dgsOverseasFieldsDw1_(opts, fields, model) {
+    if (!opts.entry || opts.entry.render !== 'SHIPDETAIL' || opts.entry.overseas_no_po !== true || opts.related_entity_type !== 'shipment' || !(model.lines || []).length || model.lines.some(function (l) { return (l.po_allocations || []).length; })) return fields;
+    // An approved overseas transfer has no factory PO. Keep it blank, not invented; factory documents retain their requirement.
+    return fields.map(function (f) { return dgsLc_(f.data_source_table) === 'purchase_orders' && dgsLc_(f.data_source_field) === 'po_no' ? Object.assign({}, f, { required: false, default_value: '', fallback_rule: '' }) : f; });
+}
 function dgsResolvePayload_(ss, opts) {
 var entry = opts.entry, model = opts.model, tpl = entry.template;
 var fields = dgsCountryFieldsDoc1_(dgsFieldsFor_(ss, entry.template_id), model), ws = dgsPlannedTabs_(fields, tpl, entry.render), sheets = null, mapped;
@@ -1345,6 +1351,7 @@ var fields = dgsCountryFieldsDoc1_(dgsFieldsFor_(ss, entry.template_id), model),
 var skuProjectionCp2 = /^(SHIPDETAIL|BOOKING)$/.test(entry.render) ? dgsSkuProjectionCp2_(model, xcoSeriesCompanyOf_(ss, model)) : null;
 if (skuProjectionCp2 && !skuProjectionCp2.ok) return { ok: false, configuration_required: true, reason: skuProjectionCp2.reason, missing: [{ placeholder: 'SKU', problems: skuProjectionCp2.problems }] };
 if (skuProjectionCp2) { model = skuProjectionCp2.model; fields = dgsSkuFieldsCp2_(fields, entry.render); }
+fields = dgsOverseasFieldsDw1_(opts, fields, model);
 var seriesModel = null;
 if (!skuProjectionCp2 && (ws.length ? ws : ['']).some(function (w) { return dgsSeriesExportPage_(entry, w); })) {
 seriesModel = dgsSeriesExportModel_(model, sfoReadTable_(ss, 'sku_details', []), xcoSeriesCompanyOf_(ss, model));   // XCO-R15G G3: the line company
@@ -2499,4 +2506,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1';

@@ -35,7 +35,7 @@
 
 // The build stamp of THIS module. Moves only when this file changes (per-module stamp, not the release).
 var FSG_FACTORY_SOURCE_ONLY_ = true;   // A-delta1 C5: see fsgReadInventoryFacts_
-var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B';
+var FSG_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B-DW1';
 
 // ==============================================================================================================
 // THE APPEND-ONLY OVERRIDE AUDIT LEDGER — PROVISIONED BY MIGRATION, NEVER BY THE RUNTIME.
@@ -837,7 +837,14 @@ function RUN_R6R7_R5_FACTORY_STOCK_GUARD_CENSUS() {
 // Display-only projection. Transition/dispatch gates still read uncached facts under their own lock.
 function fsgDisplay14_(ss) {
   var before = typeof kmSrcRevGet_ === 'function' ? kmSrcRevGet_() : null;
-  if (!before) return jsonResponse_({ success: false, zero_write: true, code: 'SOURCE_REVISION_PENDING' });
+  // An unrelated or abandoned global write marker must not hide every factory balance for 30 minutes.
+  // Display only: read under the same stock lock when the global revision is pending. Never clears markers or grants a transition.
+  var displayLock = null;
+  if (before === false) {
+    displayLock = LockService.getScriptLock();
+    if (!displayLock.tryLock(1000)) return jsonResponse_({ success: false, zero_write: true, code: 'SOURCE_REVISION_PENDING' });
+  } else if (!before) return jsonResponse_({ success: false, zero_write: true, code: 'SOURCE_REVISION_UNAVAILABLE' });
+  try {
   var facts = fsgReadInventoryFacts_(ss, { display14: true });
   if (!facts.ok) return jsonResponse_({ success: false, zero_write: true, code: facts.reason });
   var raw = facts.display14;
@@ -861,7 +868,8 @@ function fsgDisplay14_(ss) {
   });
   var after = kmSrcRevGet_();
   if (bad) return jsonResponse_({ success: false, zero_write: true, code: 'FACTORY_DISPLAY_BALANCE_INVALID' });
-  if (!after || before !== after) return jsonResponse_({ success: false, zero_write: true, code: 'FACTORY_CHANGED_DURING_READ' });
+  if (!displayLock && (!after || before !== after)) return jsonResponse_({ success: false, zero_write: true, code: 'FACTORY_CHANGED_DURING_READ' });
+  if (displayLock) after = 'factory-display:' + Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify([raw, facts.available.fingerprint]), Utilities.Charset.UTF_8).map(function (x) { return ((x & 255) + 256).toString(16).slice(1); }).join('');
   return jsonResponse_({ success: true, zero_write: true, data: {
     contract: KMFSG.CONTRACT, build: FSG_BUILD_VERSION_, pool_keys: facts.available.pool_keys,
     byPool: facts.available.byPool, inventory_snapshot_fingerprint: facts.available.fingerprint,
@@ -873,4 +881,5 @@ function fsgDisplay14_(ss) {
         counts: { factory_stock: raw.factory_stock.length, warehouses: raw.warehouses.length } }
     } }
   } });
+  } finally { if (displayLock) displayLock.releaseLock(); }
 }

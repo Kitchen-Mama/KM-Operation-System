@@ -17409,9 +17409,10 @@ function _irRecoWarnAsOf_() {
 // The note box: '' when there is nothing to say. Every text and code is escaped (ids come from the database). The first
 // line says which calculation the warnings belong to (and STALE when it is not the latest).
 function _irWarnBoxHtml_(items, asof) {
+  items = (items || []).filter(function (w) { return w.kind !== 'info' && !(w.code === 'NOT_COUNTED' && /not part of this line.s supply/i.test(w.text)); });
   if (!items || !items.length) return '';
   var head = asof ? ('<div data-ir-warn-asof="' + (asof.stale ? 'stale' : 'current') + '"' + (asof.reason ? (' data-ir-warn-stale-reason="' + escapeReplenHtml(asof.reason) + '"') : '') + '>'
-    + (asof.stale ? '⚠ ' : '') + escapeReplenHtml(asof.text) + '</div>') : '';
+    + (asof.stale ? 'Refresh recommendations before planning.' : 'Planning Notes') + '</div>') : '';
   return '<div class="replen-horizon-dest__blocked" data-ir-warnings="1">' + head + items.map(function (w) {
     return '<div data-ir-warn="' + escapeReplenHtml(w.code) + '">' + (w.kind === 'info' ? '' : '⚠ ') + escapeReplenHtml(w.text) + '</div>';
   }).join('') + '</div>';

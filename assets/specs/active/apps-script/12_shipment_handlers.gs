@@ -369,7 +369,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4';   // SANDBOX-GATE-1f: carrier -> method in one selection
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1';   // SANDBOX-GATE-1f: carrier -> method in one selection
 
 
 
@@ -2091,6 +2091,13 @@ var label = ({ sea: 'Sea', sea_express: 'Sea Express', air: 'Air', truck: 'Truck
 if (!label) return { allowed: false, reason: 'SHIPPING_METHOD_LABEL_UNRESOLVED' };
 return laneIds.length ? { allowed: true, reason: 'CARD_NOT_APPLIED', label: label, cards: laneIds } : { allowed: true, reason: 'NO_APPLICABLE_RATE', label: label };   // R15e (4)
 }
+// Temporary operating policy: a proven absence of an applicable quote needs no manual exception.
+function shipNoRatePolicy_(ss, v, lines, day) {
+  if (String(v.rate_card_id || '').trim() || String(v.rate_card_version || '').trim() || SHIP_UNPRICED_COST_FIELDS_.some(function (k) { return String(v[k] == null ? '' : v[k]).trim() !== ''; })) return { allowed: false };
+  if (['draft', 'ready_to_ship'].indexOf(String(v.status || '').trim().toLowerCase()) < 0) return { allowed: false };
+  var e = shipUnpricedEligibility_(ss, v, lines, day);
+  return e.allowed === true && e.reason === 'NO_APPLICABLE_RATE' ? { allowed: true, label: e.label, policy: 'NO_RATE_COST_PENDING_V1' } : { allowed: false };
+}
 function shipUnpricedValid_(ss, v, lines, day) {
 var audit = shipUnpricedMeta_(v.rate_card_version);
 if (!audit || String(v.rate_card_id || '').trim() || SHIP_UNPRICED_COST_FIELDS_.some(function (k) { return String(v[k] == null ? '' : v[k]).trim() !== ''; })) return false;
@@ -2213,10 +2220,11 @@ var base4 = curV === 'pending-unpriced' ? Object.assign({}, v, { rate_card_versi
 var cna4 = e04.reason === 'APPLICABLE_RATE_AVAILABLE' ? shipUnpricedEligibility_(ss, base4, ln, day, 'card_not_applied') : null, meta4 = shipUnpricedMeta_(curV);
 return jsonResponse_({ success: true, shipment_id: sid, quote_date: day, editable: SHIPMENT_DISPATCHED_STATUSES_.indexOf(st) < 0 && st !== 'cancelled', persistable: r.s.col('rate_card_version') >= 0 && r.s.col('estimated_duty_currency') >= 0,
 service_vocabulary: shipServiceVocabulary_(ss), service: shipSvcStateOf_(ss, v),   /* AD3-B */
+customs_applicable: shipCustomsApplicability_(ss, v, { allow_planned_destination: true }).applicable !== false,
 unpriced_approval: { enabled: true /* AD3-B: all environments */, available: unpriced.allowed, reason: unpriced.reason, recoverable: curV === 'pending-unpriced', label: unpriced.label || '', card_not_applied: cna4 ? { available: cna4.allowed === true, cards: cna4.cards || e04.cards || [], reason: cna4.reason, label: cna4.label || '' } : null, carrier_id: String(v.carrier_id || ''), carriers: Object.keys(names).map(function (id) { return { id: id, name: names[id] || id }; }), expected_updated_at: editTok_(v.updated_at), expected_rate_card_version: curV, expected_current_rate_card_id: cur },
 current: (function () { var k = shipRcMarker_(curV), ok = k.state === 'COMPLETE' && shipRcReceipt_(v, k.ver) === curV && shipRcStillOnLane16_(ss, v, ln, cur, k.ver, day);   // R15e U23 (+ REVIEW_R15E_FINAL m-5: 34_'s rule)
 var lt1g = shipLt1g_(ss, v.carrier_id, v.shipping_method, v.last_mile_delivery, org1g, shipRateCountry15e_(ss, v));   // R15C-EU
-var st4 = shipUnpricedValid_(ss, v, ln, day) ? 'UNPRICED_APPROVED' : !cur ? 'NONE' : ok ? 'COMPLETE' : k.state === 'COMPLETE' ? 'STALE' : k.state;
+var st4 = shipUnpricedValid_(ss, v, ln, day) ? 'UNPRICED_APPROVED' : shipNoRatePolicy_(ss, v, ln, day).allowed ? 'COST_PENDING_AUTO' : !cur ? 'NONE' : ok ? 'COMPLETE' : k.state === 'COMPLETE' ? 'STALE' : k.state;
 return { unpriced_basis: meta4 ? (meta4.basis || 'NO_APPLICABLE_RATE') : '', lead_time: lt1g, eta_check: shipEtaCheck1g_(v, lt1g), rate_card_id: cur, rate_card_version: k.ver, chosen: !!(cur && ok), state: st4, quote_state: ({ UNPRICED_APPROVED: 'COST_PENDING', COMPLETE: 'QUOTE_SELECTED', STALE: 'QUOTE_STALE', NONE: 'NO_QUOTE' })[st4] || st4 /* AD3-B */, audit: meta4 ? { actor: meta4.actor, actor_source: meta4.actor_source || 'unattributed', at: meta4.at, reason: meta4.reason } : null }; })(),
 options: cards.map(function (c) { return { rate_card_id: String(c.rate_card_id || '').trim(), rate_card_version: shipRateCardVersion_(c), carrier_id: String(c.carrier_id || '').trim(), carrier_name: names[String(c.carrier_id || '').trim()] || '',
 shipping_method_label: String(c.shipping_method_label || '').trim(), shipping_method: String(c.shipping_method || '').trim(), last_mile_delivery: String(c.last_mile_delivery || '').trim(),
@@ -3296,16 +3304,24 @@ function sc13TryLocked_(ss, pid, actor) {
 // 3PL -> platform warehouse (FBA type; never the logical platform rows) or the approved 3PL -> 3PL countries (22_ CSD_3PL_TRANSFER_COUNTRIES_).
 // Factory sources, another country, an unknown / blank / planning-group country (EU), another company, inactive / unknown / duplicate warehouses
 // keep customs applicable. Read-only; grants nothing else (no PO / stock / document rule depends on it).
-function shipCustomsApplicability_(ss, row) {
+function shipCustomsApplicability_(ss, row, opts) {
   var S = function (v) { return String(v == null ? '' : v).trim(); }, U = function (v) { return S(v).toUpperCase(); }, T = function (v) { return v === true || /^(true|yes|y|1)$/i.test(S(v)); };
   var yes = function (why) { return { applicable: true, reason: why }; };
   try {
     var co = S(row && row.company), src = S(row && row.source_warehouse_id), dst = S(row && row.destination_warehouse_id) || S(row && row.warehouse_id);
-    if (!co || !src || !dst) return yes('NOT_PROVEN_BLANK_IDENTITY'); if (src === dst) return yes('SOURCE_EQUALS_DESTINATION');
+    if (!co || !src) return yes('NOT_PROVEN_BLANK_IDENTITY'); if (src === dst) return yes('SOURCE_EQUALS_DESTINATION');
     var sh = ss.getSheetByName('warehouses'); if (!sh) return yes('WAREHOUSE_MASTER_UNREADABLE');
     var d = sh.getDataRange().getValues(), h = (d[0] || []).map(function (x) { return S(x); }), rows = [];
     for (var r = 1; r < d.length; r++) { var o = {}; for (var c = 0; c < h.length; c++) o[h[c]] = d[r][c]; if (S(o.warehouse_id) === src || S(o.warehouse_id) === dst) rows.push(o); }
-    var one = function (id) { var m = rows.filter(function (w) { return S(w.warehouse_id) === id; }); return m.length === 1 ? m[0] : null; }, s = one(src), t = one(dst);
+    var one = function (id) { var m = rows.filter(function (w) { return S(w.warehouse_id) === id; }); return m.length === 1 ? m[0] : null; }, s = one(src), t = dst ? one(dst) : null;
+    // Planning can prove a domestic Amazon lane before an FC is selected. Dispatch still requires the actual warehouse.
+    if (!dst && opts && opts.allow_planned_destination === true && s && S(row.destination_type).toLowerCase() === 'marketplace' && S(row.destination).toLowerCase() === 'amazon' && S(row.marketplace).toLowerCase() === 'amazon') {
+      var msh = ss.getSheetByName('marketplaces'), md = msh && msh.getDataRange().getValues(), mh = md && md[0], matches = [];
+      var physical = function (v) { return typeof KMCID !== 'undefined' && typeof KMCID.canonicalCountryCode === 'function' ? KMCID.canonicalCountryCode(U(v)) : U(v); };
+      for (var mi = 1; md && mi < md.length; mi++) { var mo = {}; mh.forEach(function (k, j) { mo[S(k)] = md[mi][j]; }); if (S(mo.company) === co && physical(mo.country) === physical(s.country) && S(mo.marketplace).toLowerCase() === 'amazon') matches.push(mo); }
+      if (matches.length === 1 && !/^(inactive|disabled)$/i.test(S(matches[0].status)) && !/^(false|0|no)$/i.test(S(matches[0].is_active))) t = { company: co, country: s.country, warehouse_type: 'FBA', marketplace: 'Amazon', is_active: true, __planned: true };
+    }
+    if (!dst && !t) return yes('NOT_PROVEN_BLANK_IDENTITY');
     if (!s || !t) return yes('WAREHOUSE_NOT_UNIQUE_IN_MASTER');
     var act = function (w) { if (Object.prototype.hasOwnProperty.call(w, 'is_active')) return T(w.is_active); if (Object.prototype.hasOwnProperty.call(w, 'status')) return S(w.status).toLowerCase() === 'active'; return false; };
     if (!act(s) || !act(t)) return yes('WAREHOUSE_INACTIVE');
@@ -3323,7 +3339,7 @@ function shipCustomsApplicability_(ss, row) {
     var tt = U(t.warehouse_type);
     if (T(t.is_factory_warehouse)) return yes('DESTINATION_IS_FACTORY');
     if (tt === 'FBA') {
-      if (typeof csdLogicalPlatformWarehouse_ !== 'function' || csdLogicalPlatformWarehouse_(dst)) return yes('DESTINATION_LOGICAL_OR_UNVERIFIED');
+      if (!t.__planned && (typeof csdLogicalPlatformWarehouse_ !== 'function' || csdLogicalPlatformWarehouse_(dst))) return yes('DESTINATION_LOGICAL_OR_UNVERIFIED');
       if (S(t.marketplace) && (typeof csdPlatformFamily_ !== 'function' || csdPlatformFamily_(t.marketplace) !== csdPlatformFamily_(row.marketplace))) return yes('DESTINATION_PLATFORM_MISMATCH');
     }
     else if (tt === '3PL') { if (typeof CSD_3PL_TRANSFER_COUNTRIES_ === 'undefined' || !CSD_3PL_TRANSFER_COUNTRIES_ || CSD_3PL_TRANSFER_COUNTRIES_[cs] !== 1) return yes('TRANSFER_COUNTRY_NOT_ENABLED'); }
@@ -3332,7 +3348,7 @@ function shipCustomsApplicability_(ss, row) {
   } catch (e) { return yes('NOT_PROVEN_ERROR'); }
 }
 function sc13PlanLaneOptions_(ss, plan) {
-  var cxa4 = shipCustomsApplicability_(ss, plan);   // AD4
+  var cxa4 = shipCustomsApplicability_(ss, plan, { allow_planned_destination: true });
   var warehouses = sc13Read_(ss, 'warehouses', ['warehouse_id', 'country', 'warehouse_name']).rows;
   var options = warehouses.filter(function (w) {
     return sc13Str_(w.country).toUpperCase() === sc13Str_(plan.country).toUpperCase() &&

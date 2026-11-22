@@ -3,7 +3,7 @@
     window.KM = window.KM || {};
     var status = 'NOT_LOADED', snapshot = null, flight = null, generation = 0, writes = 0, timer = null, channel = null;
     var listeners = [], freshAt = 0, ageTimer = null, MAX_AGE = 60000, DEADLINE = 30000;
-    var lastError = null;   // FE-SI2: WHY the last read failed - a short code for the details view (never a raw server text)
+    var lastError = null, transientRetries = 0;
     function emit() { listeners.forEach(function (fn) { try { fn(); } catch (e) { console.warn('Factory availability repaint failed.'); } }); }
     function db() { return window.KM && window.KM.DB; }
     function active() {
@@ -86,7 +86,7 @@
         }).then(function (res) {
             // FE-SI2: a server refusal carries its own code (e.g. FACTORY_DISPLAY_BALANCE_INVALID, SOURCE_REVISION_PENDING);
             // it used to surface only as "Factory display build unavailable", which named no cause
-            if (!res || res.success !== true) { var c = String((res && (res.code || res.error)) || 'NO_RESPONSE'); fail('SERVER:' + (/^[A-Z0-9_:.-]{1,80}$/.test(c) ? c : 'REFUSED')); }
+            if (!res || res.success !== true) { var c = String((res && (res.code || (res.error && res.error.code) || res.error)) || 'NO_RESPONSE'); fail('SERVER:' + (/^[A-Z0-9_:.-]{1,80}$/.test(c) ? c : 'REFUSED')); }
             var projection = res && res.data && res.data.display14;
             if (!projection || projection.display_only !== true || !projection.revision) fail('Factory display build unavailable');
             var checked = validate(projection.stock, res); checked.revision = String(projection.revision); return checked;
@@ -95,12 +95,16 @@
         var deadline = new Promise(function (_, reject) { timeout = setTimeout(function () { reject(new Error('Factory read timed out')); }, DEADLINE); });
         flight = Promise.race([request, deadline]).then(function (checked) {
             if (generation !== my || writes) return null;
-            snapshot = checked; status = 'READY'; freshAt = Date.now(); lastError = null; emit();
+            snapshot = checked; status = 'READY'; freshAt = Date.now(); lastError = null; transientRetries = 0; emit();
             if (ageTimer) clearTimeout(ageTimer);
             // Age changes display freshness, not the source. Reads resume on explicit refresh / focus / page entry.
             ageTimer = setTimeout(function () { if (generation === my && status === 'READY') { status = 'STALE'; emit(); } }, MAX_AGE + 1);
             return checked;
-        }).catch(function (e) { if (generation === my) { status = 'FAILED'; lastError = { message: String((e && e.message) || 'Factory read failed').slice(0, 120), at: Date.now() }; emit(); } return null; }).then(function (result) {
+        }).catch(function (e) { if (generation === my) { status = 'FAILED'; lastError = { message: String((e && e.message) || 'Factory read failed').slice(0, 120), at: Date.now() }; emit();
+            if (/^SERVER:(SOURCE_REVISION_PENDING|FACTORY_CHANGED_DURING_READ)$/.test(lastError.message) && transientRetries < 3) {
+                transientRetries++; setTimeout(function () { if (generation === my && !writes && active()) ensure(true); }, transientRetries * 2000);
+            }
+        } return null; }).then(function (result) {
             clearTimeout(timeout); raceDone = true;
             if (networkDone) flight = null;
             if (status === 'STALE' && !writes && active()) schedule();

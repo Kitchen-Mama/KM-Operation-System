@@ -402,7 +402,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71';
 
 
 
-var SYS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1";
+var SYS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1";
 
 
 
@@ -772,7 +772,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "39_document_runtime_service.gs",
     "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-    "expected": "PROD1-DGS-20261112-AD3",
+    "expected": "PROD1-DGS-20261112-AD3-DW1",
     "owns": "Production profile; Sandbox single-ticket recovery disabled"
   },
   {
@@ -844,7 +844,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "63_api_v1_system_health.gs",
     "symbol": "SYS_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1",
     "owns": "this module: deployment identity, health and local PFI2/WDL1 dependency stamps"
   },
   {
@@ -904,7 +904,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "71_api_v1_factory_stock_guard.gs",
     "symbol": "FSG_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R5-R1-AD1B-DW1",
     "owns": "the shared factory stock guard seam: the one pooled availability read, the AI hard-guard entry, the plan overage challenge/confirm gate, the REQUIRED (never lazily created) override audit ledger, and the journalled verified rollback the plan transition unwinds through"
   },
   {
@@ -922,7 +922,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "34_shipment_final_output_handlers.gs",
     "symbol": "SFO_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1",
     "owns": "Shipment final output snapshot (frozen document data). SANDBOX-GATE-1l: an unknown measure is UNKNOWN, never 0."
   },
   {
@@ -946,7 +946,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "11_shipping_plan_handlers.gs",
     "symbol": "SP_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1",
     "owns": "Weekly status/quantity owner plus Draft SKU command delegation and unresolved transaction guard"
   },
   {
@@ -964,7 +964,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "12_shipment_handlers.gs",
     "symbol": "SHIPMENT_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1",
     "owns": "Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed"
   },
   {
@@ -1024,7 +1024,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "01_router.gs",
     "symbol": "RTR_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1",
     "owns": "doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release. R52 ADDS ONE MORE - marketplace.allocationPriority.set - moving the action contract 19 -> 20; a project holding a pre-R52 router cannot route a priority write at all, and because upsertMarketplace simultaneously stops accepting the field, that is a total loss of the capability rather than a degraded one. R56 adds system.sourceRevision (contract 21 -> 22) and moves KM_SOURCE_REVISION after every non-read POST."
   },
   {

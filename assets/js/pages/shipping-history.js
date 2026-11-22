@@ -1564,12 +1564,14 @@ function _shRenderDbCard(s, planLines, mode) {
     }
     function customsFld() {
         var label = '<label style="font-size:11px;color:#64748B;">Customs Type</label>';
+        _shCustomsRead_(s);
+        if (_shCustomsNa_(s)) return '<div>' + label + '<select disabled aria-label="Customs type"><option>Not required - domestic transport</option></select></div>';
         if (!fieldsEditable) {
             return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
-                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(_customsVal) || '--') + '</div></div>';
+                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(_customsVal.replace(/_/g, ' ')) || '--') + '</div></div>';
         }
         var opts = '<option value="">-- Select --</option>' + _customsOpts.map(function(v) {
-            return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(v) + '</option>';
+            return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(v.replace(/_/g, ' ')) + '</option>';
         }).join('');
         return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
             '<select class="sh-exec-input" data-field="shipments_customs_type" onchange="_shLaneEdited_(\'' + _shEsc(sid) + '\')" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
@@ -1921,6 +1923,7 @@ function _shTok_(shipmentId) { var r = _shFindShipment_(shipmentId); return r ? 
 var _shInFlight_ = {};
 var SH_UPD_WAIT_DEFAULT_MS_15C_ = 120000;   // AGL02-SH: the longest a shipment update is waited for before its outcome is UNKNOWN (window.SH_UPD_WAIT_MS_15C_ may override it)
 function _shUpd_(shipmentId, payload, afterSave) {
+    if (_shInFlight_[shipmentId]) return Promise.reject(new Error('IN_FLIGHT'));
     _shInFlight_[shipmentId] = true;
     SH_UPD_PHASE_17_[shipmentId] = 'update'; SH_AFTER_SENT_17_[shipmentId] = null; SH_LAST_SENT_17_[shipmentId] = { at: Date.now(), perfAt: _shPerf17_(), sess: SH_PAGE_SESS_17_, token: String((payload && payload.expected_updated_at) || ''), lines: !!(payload && payload.lines), fields: _shChangedFields17_(shipmentId, payload) };   // R15e step 3 (r2): the token it was sent with + only the fields it CHANGED
     var _rel11 = _shHoldCard_(shipmentId, payload);   // R71-FE-11
@@ -2507,7 +2510,26 @@ function _shDocLink(url, label, strong) {
 }
 // O1-C7 (2026-11-02, local): ported unchanged from owner-rules-r1/office-download/patched (R7-x / K1) - the rate-card choice
 // REVIEW-FIX7-MS-NEXT (R7-x, candidate): the options last shown per shipment; the choice sends the version the user saw
-var SH_RC_ = {};
+var SH_RC_ = {}, SH_CUSTOMS_READ_ = {};
+function _shCustomsNa_(s) { var c = s && SH_CUSTOMS_READ_[s.shipmentId]; return !!(c && c.token === _shTok_(s.shipmentId) && c.domestic === true); }
+function _shCustomsRead_(s) {
+    if (!s || !s.shipmentId || !window.KM.DB || !window.KM.DB.getShipmentRateCardOptions) return;
+    var sid = s.shipmentId, token = _shTok_(sid), old = SH_CUSTOMS_READ_[sid];
+    if (!token || (old && old.token === token)) return;
+    var entry = SH_CUSTOMS_READ_[sid] = { token: token, domestic: false };
+    setTimeout(function () {
+        Promise.resolve(window.KM.DB.getShipmentRateCardOptions(sid)).then(function (r) {
+            if (SH_CUSTOMS_READ_[sid] !== entry || _shTok_(sid) !== token) return;
+            if (!r || r.success !== true) { delete SH_CUSTOMS_READ_[sid]; return; }
+            entry.domestic = r.customs_applicable === false;
+            var box = document.getElementById('sh-exec-' + sid), field = box && box.querySelector('select[data-field="shipments_customs_type"]');
+            if (entry.domestic && field && _shExecDirty(sid).indexOf('warehouse_id') < 0) {
+                field.removeAttribute('data-field'); field.disabled = true;
+                field.innerHTML = '<option>Not required - domestic transport</option>';
+            }
+        }).catch(function () { if (SH_CUSTOMS_READ_[sid] === entry) delete SH_CUSTOMS_READ_[sid]; });
+    }, 0);
+}
 // R71-FE-8 (SH1): what each shipment's form held when the server last CONFIRMED a save of it (field -> value)
 var SH_SAVED_ = {};
 function _shYmd_(v) {
@@ -2521,8 +2543,8 @@ function _shRememberSaved_(shipmentId, payload) { var o = {}; Object.keys(payloa
 // FIX7-NEXT-1030 (K1, candidate): the saved choice as the server keeps it (shipments.rate_card_version, the selection receipt)
 function _shRcState_(s) {
     var v = String((s && s.rateCardVersion) || '').trim(), id = String((s && s.rateCardId) || '').trim();
-    if (!id && /^unpriced1\|/.test(v)) return { ok: true, unpriced: true, say: 'Freight pending quote - approval saved' };
-    if (!id) return { ok: false, say: 'None chosen - Confirm needs one' };
+    if (!id && /^unpriced1\|/.test(v)) return { ok: true, unpriced: true, say: 'Freight cost pending' };
+    if (!id) return { ok: false, say: 'Freight cost pending' };
     if (/^rcv1:[0-9a-f]{24}\|sel1:[0-9a-f]{24}$/.test(v)) return { ok: true, say: 'Chosen: ' + id };
     if (/^pending\|/.test(v)) return { ok: false, say: 'The choice of ' + id + ' did not finish - choose it again' };
     return { ok: false, say: id + ' was not chosen here - choose a rate card' };
@@ -2555,9 +2577,9 @@ function _shExecDirty(shipmentId) {
 // land in the SAME locked selection. The saved card's server state is shown; a stale card's cost is "needs re-pricing", never a quote.
 function _shRcCostHtml_(s, forceStale) {
     var t = s && s.estimatedTotalCost, cur = String((s && s.currency) || '').trim(), rc = _shRcState_(s);
-    if (rc.unpriced) return '<span class="sh-cost-pending" style="color:#92400E;font-weight:600;">Cost pending - quote skipped (freight not yet quoted; no amount)</span>';   // AD3 D: never 0
+    if (rc.unpriced) return '<span class="sh-cost-pending" style="color:#92400E;font-weight:600;">Freight cost pending</span>';
     if (s.estimatedDutyCurrency && s.estimatedDutyCurrency !== cur && s.estimatedFreightCost !== '' && s.estimatedDuty !== '' && s.estimatedDuty != null) return '<span>' + (forceStale || !rc.ok ? 'NEEDS RE-PRICING: ' : '') + 'Freight ' + _shEsc(cur) + ' ' + Number(s.estimatedFreightCost).toFixed(2) + ' / Customs ' + _shEsc(cur) + ' ' + (s.estimatedCustomsFee === '' || s.estimatedCustomsFee == null ? 'unknown' : Number(s.estimatedCustomsFee).toFixed(2)) + ' / Duty ' + _shEsc(s.estimatedDutyCurrency) + ' ' + Number(s.estimatedDuty).toFixed(2) + ' / No combined total</span>';
-    if (t === '' || t == null) return '<span style="color:#64748B;">Estimated cost: not priced yet - choose a carrier and method.</span>';
+    if (t === '' || t == null) return '<span style="color:#64748B;">Freight cost pending</span>';
     if (forceStale || !rc.ok) return '<span style="color:#B45309;font-weight:600;">Estimated cost: NEEDS RE-PRICING</span> <span style="color:#94A3B8;text-decoration:line-through;">' + _shEsc(cur) + ' ' + Number(t).toFixed(2) + '</span>';
     var unit = (s.estimatedUnitCost === '' || s.estimatedUnitCost == null) ? '' : (' \u00b7 per pcs ' + _shEsc(cur) + ' ' + Number(s.estimatedUnitCost).toFixed(4));
     var dc = ((s.estimatedDuty === '' || s.estimatedDuty == null) && (s.estimatedCustomsFee === '' || s.estimatedCustomsFee == null)) ? '' : (' \u00b7 duty/customs ' + ((s.estimatedDuty === '' || s.estimatedDuty == null) ? 'unknown (duty not determined)' : (Number(s.estimatedDuty) + Number(s.estimatedCustomsFee || 0)).toFixed(2)));
@@ -2653,23 +2675,22 @@ function _shSvcHtml_(sid, r) {
     var a = r && r.unpriced_approval, canSkip = !!(a && a.enabled === true && (a.available === true || a.recoverable === true || (a.card_not_applied && a.card_not_applied.available === true)) && a.carrier_id);
     var qs = r && r.current && r.current.quote_state;
     return '<div class="sh-svc" data-sid="' + e + '" data-vocab="' + _shEsc(v.version || '') + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
-        '<div style="font-size:11px;font-weight:600;color:#334155;">Service without a rate card</div>' +
+        '<div style="font-size:11px;font-weight:600;color:#334155;">' + (r.customs_applicable === false ? 'Domestic Transport' : 'Shipping Service') + '</div>' +
         '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
         '<select class="sh-svc-carrier" aria-label="Carrier" onchange="shSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', false) +
-            cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm && nm !== id ? nm + ' (' + id + ')' : id, !tba && id === curC); }).join('') +
+            cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm || id, !tba && id === curC); }).join('') +
             opt(SH_SVC_TBA_, 'To be assigned / manual logistics', tba) + '</select>' +
         (tba ? '<div class="sh-svc-tba-state" style="font-size:11px;color:#475569;">To be assigned' + (caud ? ' - recorded ' + _shEsc(caud.at || '') + (caud.actor ? ' by ' + _shEsc(caud.actor) + ' (reported, unverified)' : '') + (caud.reason ? ': ' + _shEsc(caud.reason) : '') : ' (server marker)') + '</div>' : '') +
         (carMissing ? '<div class="sh-svc-missing" style="font-size:11px;color:#B91C1C;">No carrier, and not marked to be assigned: choose a carrier, or "To be assigned" with a reason.</div>' : '') +
-        '<input class="sh-svc-tba-reason" type="text" maxlength="500" aria-label="Reason for to be assigned" placeholder="Reason, required when choosing To be assigned" style="' + sel + 'margin-top:4px;">' +
+        '<input class="sh-svc-tba-reason" type="text" maxlength="500" aria-label="Reason for to be assigned" placeholder="Reason for assigning the carrier later" style="' + sel + 'margin-top:4px;display:' + (tba ? 'block' : 'none') + ';">' +
         (curKnown ? '' : '<div class="sh-svc-note-carrier" style="font-size:11px;color:#B91C1C;">The saved carrier ' + _shEsc(curC) + ' is not an active carrier (' + _shEsc(sv.carrier_state || 'unknown') + '); choose one.</div>') +
         '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
         '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sh-svc-method" aria-label="Shipping method" style="' + sel + '">' + opt('', '--', !curM) + mets.map(function (m) { return opt(m, m, m === curM); }).join('') + '</select></label>' +
         '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sh-svc-lastmile" aria-label="Last mile" style="' + sel + '">' + opt('', '--', !curL) + lms.map(function (m) { return opt(m, m, m === curL); }).join('') + '</select></label>' +
         '</div>' +
-        (dts.length ? '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Delivery type (domestic only)<select class="sh-svc-dtype" aria-label="Delivery type" onchange="shSvcPickDeliveryType(\'' + e + '\', this.value)" style="' + sel + '">' + _shSvcDtypeOptions_(dts, dtCur) + '</select></label>' : '') +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center;">' +
         '<button type="button" class="sh-svc-save" onclick="shSvcSave(\'' + e + '\', this)" style="background:#0F766E;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:110px;">Save service</button>' +
-        (canSkip ? '<button type="button" class="sh-svc-skip" onclick="shSvcSkipQuote(\'' + e + '\')" style="background:#FFFBEB;color:#92400E;border:1px solid #B45309;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Skip quote - cost pending</button>' : '') +
+        (canSkip && r.current && r.current.state !== 'COST_PENDING_AUTO' ? '<button type="button" class="sh-svc-skip" onclick="shSvcSkipQuote(\'' + e + '\')" style="background:#FFFBEB;color:#92400E;border:1px solid #B45309;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Continue without quote</button>' : '') +
         '</div>' +
         '<div class="sh-svc-note" role="status" style="font-size:11px;margin-top:3px;overflow-wrap:anywhere;color:#475569;">' +
             _shEsc(qs === 'COST_PENDING' ? 'Cost pending: the quote was skipped; no amount is recorded.' : (!canSkip && a && a.enabled === true ? 'Skip quote needs a saved carrier first.' : '')) + '</div>' +
@@ -2697,9 +2718,9 @@ function _shSvcDtypeOptions_(dts, cur) {
 }
 function shSvcCarrierChanged(sid) {   // rebuild the delivery-type list for the chosen carrier (a type it does not allow is not listed)
     var box = _shSvcBox_(sid), r = SH_RC_[sid]; if (!box || !r) return false;
-    var d = box.querySelector('.sh-svc-dtype'); if (!d) return false;
-    var c = box.querySelector('.sh-svc-carrier').value, list = _shSvcDeliveryTypes_(r.service_vocabulary, c === SH_SVC_TBA_ ? '' : c), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : '';
-    d.innerHTML = _shSvcDtypeOptions_(list, keep); d.value = keep;
+    var d = box.querySelector('.sh-svc-dtype'), c = box.querySelector('.sh-svc-carrier').value;
+    var reason = box.querySelector('.sh-svc-tba-reason'); if (reason) reason.style.display = c === SH_SVC_TBA_ ? 'block' : 'none';
+    if (d) { var list = _shSvcDeliveryTypes_(r.service_vocabulary, c === SH_SVC_TBA_ ? '' : c), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : ''; d.innerHTML = _shSvcDtypeOptions_(list, keep); d.value = keep; }
     var v = r.service_vocabulary, svc = _shSvcCarrierServices_(v, c === SH_SVC_TBA_ ? '' : c), mEl = box.querySelector('.sh-svc-method'), lEl = box.querySelector('.sh-svc-lastmile');   // AD3 D r4
     var mAll = (v.shipping_method || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lAll = (v.last_mile_delivery || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
     if (mEl) { var mc = mEl.value; mEl.innerHTML = _shSvcPairOptions_(mAll, svc ? svc.map(function (x) { return x.shipping_method; }) : null, mc); }
@@ -2742,7 +2763,7 @@ function shSvcSave(sid, btn) {
     Promise.resolve(_shUpd_(sid, p)).then(function (r) {
         _shAdoptTok_(sid, r); note.style.color = '#166534';
         var sv = (r && r.service) || {};
-        note.textContent = 'Service saved: ' + (sv.carrier_state === 'TO_BE_ASSIGNED' || c === SH_SVC_TBA_ ? 'carrier to be assigned' : (sv.carrier_id || c)) + ' / ' + (sv.shipping_method || m) + ' / ' + (sv.last_mile_delivery || l) + '. Cost stays pending until a rate card is chosen or the quote is skipped.';
+        note.textContent = 'Transport saved.' + (sv.carrier_state === 'TO_BE_ASSIGNED' || c === SH_SVC_TBA_ ? ' Carrier to be assigned.' : '') + ' Freight cost pending until a quote is available.';
         setTimeout(function () { try { _shLoadAndRender(); } catch (e) {} }, 0);
     }, function (err) {
         if (_shUnknown11_(sid, err, 'Save service')) return;
@@ -2950,6 +2971,7 @@ function shUnpricedClose14() {
     if (el && el.getAttribute('data-busy') !== 'true') el.remove();
 }
 function shUnpricedOpen14(sid, response) {
+    if (response && response.current && response.current.state === 'COST_PENDING_AUTO') { _shNote_(sid, 'Freight cost pending. You can confirm this shipment.'); return; }
     var a = response && response.unpriced_approval;
     if (!response || response.success !== true || response.editable !== true || response.persistable !== true || !a || a.enabled !== true || (a.available !== true && a.recoverable !== true && !(a.card_not_applied && a.card_not_applied.available === true)) || !a.carrier_id || _shInFlight_[sid]) return;
     if (_shHoldHas16_(sid)) { _shUnpricedHeldOpen16_(sid); return; }   // R15d r2b: held -> re-check only, never a new Continue
@@ -3521,8 +3543,8 @@ function shConfirmShipment(shipmentId) {
             _shOpenConfirmChecked8_('TBA_COST_PENDING', sv6.carrier_assignment || null); return;
         }
         if (_shHoldHas16_(shipmentId)) { if (st8 === 'UNPRICED_APPROVED' && _shVersionMoved18_(_shHoldTok16_(shipmentId), rc8.unpriced_approval && rc8.unpriced_approval.expected_updated_at) === 'MOVED') _shHoldClear16_(shipmentId); else { _shUnpricedHeldOpen16_(shipmentId); return; } }   // R15d r2b: the server read decides
-        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && rc8.unpriced_approval && rc8.unpriced_approval.enabled === true && (rc8.unpriced_approval.available === true || rc8.unpriced_approval.recoverable === true || (rc8.unpriced_approval.card_not_applied && rc8.unpriced_approval.card_not_applied.available === true))) { shUnpricedOpen14(shipmentId, rc8); return; }   // R15c-P0: a PENDING release can be finished
-        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED') { alert('Cannot Confirm — ' + (st8 === 'STALE' ? 'the saved quote no longer matches this shipment. Save the final destination and customs first, then use Edit under Transport rate card to choose a matching active card' : 'rate card state: ' + st8) + '. Nothing was dispatched.'); return; }
+        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && st8 !== 'COST_PENDING_AUTO' && rc8.unpriced_approval && rc8.unpriced_approval.enabled === true && (rc8.unpriced_approval.available === true || rc8.unpriced_approval.recoverable === true || (rc8.unpriced_approval.card_not_applied && rc8.unpriced_approval.card_not_applied.available === true))) { shUnpricedOpen14(shipmentId, rc8); return; }
+        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && st8 !== 'COST_PENDING_AUTO') { alert('Please review the shipping service before confirming. Nothing was dispatched.'); return; }
         _shOpenConfirmChecked8_(st8);
     })['catch'](function (e8) { delete _shInFlight_[shipmentId]; _cbRel11(); alert('Cannot Confirm — the rate card could not be re-checked (' + ((e8 && (e8.code || e8.message)) || e8) + '). Nothing was sent.'); });
     function _shOpenConfirmChecked8_(pricingState, tbaAudit) {
@@ -3531,7 +3553,7 @@ function shConfirmShipment(shipmentId) {
     var units = lines.reduce(function (a, l) { return a + (l.shipmentQty || l.qty || 0); }, 0);
     _shOpenConfirmModal(shipmentId, {
         no: s.externalShipmentId || s.shipmentNo || shipmentId,
-        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED', tba: pricingState === 'TBA_COST_PENDING', tbaAudit: tbaAudit || null,   // AD3 D r6
+        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED' || pricingState === 'COST_PENDING_AUTO', tba: pricingState === 'TBA_COST_PENDING', tbaAudit: tbaAudit || null,
         origin: payload.ship_from || s.shipFrom || '—',
         sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
         sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
@@ -3611,7 +3633,7 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
         row('Shipment No.', sum.no) + row('Lines / Total Units', sum.lineCount + ' / ' + (sum.units || 0).toLocaleString()) +
         row('From', sum.origin) + row('Destination', (sum.country ? sum.country + ' / ' : '') + sum.dest) +
         row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
-        (sum.unpriced ? row('Freight', 'Pending quote - manually approved') : '') +
+        (sum.unpriced ? row('Freight', 'Cost pending') : '') +
         (sum.tba ? row('Freight', 'Cost pending (carrier to be assigned) - no amount') : '') +   // AD3 D r6
         (sum.tba ? '<div class="sh-confirm-tba" style="background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;border-radius:6px;padding:8px 10px;margin:10px 0;font-size:12px;line-height:1.5;">' +
             '<strong>Carrier to be assigned.</strong> This shipment has no carrier yet' + (sum.tbaAudit && sum.tbaAudit.reason ? ' (' + _shEsc(sum.tbaAudit.reason) + ')' : '') + ' and no quote: freight cost stays pending, no amount is recorded. It can only go with manual logistics (no route template); assign the carrier later on the card.' +
@@ -3691,8 +3713,8 @@ function _shRunConfirm(shipmentId, execPayload) {
             if (res && res.stage === 'document_readiness') {
                 var bl = (res.blockers || []).slice(0, 4).map(function (b) {
                     var h = _shDocHelp(b && b.reason);
-                    return '<li style="margin-top:3px;">' + _shEsc(h.say) + ' <span style="color:#7F1D1D;">(' + _shEsc(String((b && b.reason) || '')) + (b && b.class_key ? ' · ' + _shEsc(b.class_key) : '') + ')</span><br>' +
-                        '<span style="font-size:11px;">Where to fix: ' + _shEsc((b && b.correction) || h.fix) + '</span></li>';
+                    return '<li style="margin-top:3px;">' + _shEsc(h.say) + '<br><span style="font-size:11px;">Contact your administrator to review the shipping document setup.</span>' +
+                        '<details style="font-size:11px;"><summary>Details</summary>' + _shEsc(String((b && b.reason) || '')) + (b && b.class_key ? ' · ' + _shEsc(b.class_key) : '') + '</details></li>';
                 }).join('');
                 if (status) {
                     status.style.color = '#b91c1c';

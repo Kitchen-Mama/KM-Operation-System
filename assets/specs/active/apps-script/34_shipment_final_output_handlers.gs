@@ -101,7 +101,7 @@ return sfoStr_(v);
 function sfoLc_(v) { return sfoStr_(v).toLowerCase(); }
 function sfoUc_(v) { return sfoStr_(v).toUpperCase(); }
 // SANDBOX-GATE-1l (K-1): the round this file last changed
-var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3';
+var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1';
 // SANDBOX-GATE-1l (K-1): a measure whose source is blank is UNKNOWN (''), never 0; a stored 0 with a known source stays 0
 function sfoHas_(v) { var t = sfoStr_(v); return t !== '' && !isNaN(Number(t.replace(/,/g, ''))); }
 function sfoNumOrBlank_(v) { var t = sfoStr_(v); if (t === '') return ''; var n = Number(t.replace(/,/g, '')); return isNaN(n) ? '' : n; }
@@ -234,6 +234,11 @@ var SFO_DB16_ = ['rate_card_id', 'shipping_method_label', 'last_mile_delivery', 
 var SFO_DB16L_ = ['tax_rate_id', 'tax_match', 'vat_no', 'eori_no', 'regular_price', 'regular_price_currency', 'regular_price_ref'];
 var SFO_DB16A_ = ['carton_weight', 'package_weight', 'sku_master_ref'], SFO_DB16U_ = ['product_url', 'marketplace_product_id', 'regional_ref'];
 function sfoRateCardLabel_(ss, s) {
+var automatic = shipNoRatePolicy_(ss, s, shipRcLines_(ss, sfoStr_(s.shipment_id)), shipmentTimestamp_().slice(0, 10));
+if (automatic.allowed) {
+  var audit = { reason: automatic.policy, actor: 'system-policy', actor_source: 'server_policy', basis: 'NO_APPLICABLE_RATE', label: automatic.label, lines: shipUnpricedLines_(shipRcLines_(ss, sfoStr_(s.shipment_id))) };
+  return { ok: true, rate_card_id: '', label: automatic.label, version: shipUnpricedReceipt_(s, audit), pricing_state: 'COST_PENDING_AUTO' };
+}
 var unpriced = shipUnpricedMeta_(s.rate_card_version);
 if (unpriced) {
 if (!shipUnpricedValid_(ss, s, shipRcLines_(ss, sfoStr_(s.shipment_id)), shipmentTimestamp_().slice(0, 10))) return { ok: false, reason: 'UNPRICED_APPROVAL_STALE', rate_card_id: '' };
