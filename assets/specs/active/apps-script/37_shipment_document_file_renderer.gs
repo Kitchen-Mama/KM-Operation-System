@@ -140,6 +140,15 @@ if (fx[bb.row - 1] && fx[bb.row - 1][bb.col - 1]) return { error: 'DOCUMENT_BIND
 var bm = dfoMergeAt_(mg, bb.row, bb.col); if (bm && (bm.r1 !== bb.row || bm.c1 !== bb.col)) return { error: 'DOCUMENT_TEMPLATE_MERGE_UNSUPPORTED ' + w.name + '!' + dfoA1_(bb.row, bb.col) + ': a binding inside a merged range' };
 has[bb.key] = 1; binds.push(bb);
 }
+// AGL v1 has a reviewed fixed USD cell instead of a currency token. All other required tokens remain mandatory.
+for (var fk in w.fixed_scalars || {}) {
+if (fk !== 'DECLARED_CURRENCY' || w.fixed_scalars[fk] !== 'USD') return { error: 'DOCUMENT_FIXED_VALUE_UNSUPPORTED ' + w.name + ': ' + fk };
+var literal = [];
+vals.forEach(function (row, r) { row.forEach(function (v, c) { if (!fx[r][c] && dfoCell_(v) === 'USD') literal.push([r, c]); }); });
+if (literal.length !== 1) return { error: 'DOCUMENT_FIXED_VALUE_NOT_IN_TEMPLATE ' + w.name + ': ' + fk };
+if (x && x.check_values && dfoCell_((w.scalars || {})[fk]) !== 'USD') return { error: 'DOCUMENT_FIXED_VALUE_MISMATCH ' + w.name + ': ' + fk };
+has[fk] = 1;
+}
 var gone = (w.required || []).filter(function (k) { var s = !has[k] && x && dfoSupply_(fx, w, x, k); if (s) via.push(s); return !has[k] && !s; });
 if (gone.length) return { error: 'DOCUMENT_TOKEN_NOT_IN_TEMPLATE ' + w.name + ': ' + gone.join(', ') };
 for (q = 0; q < via.length; q++) if (dfoCell_(w.scalars[via[q].key]) !== dfoCell_(x.sib[via[q].tab].scalars[via[q].key])) return { error: 'DOCUMENT_FORMULA_SUPPLY_MISMATCH ' + w.name + '!' + via[q].a1 + ': ' + via[q].key + ' is not the value of ' + via[q].from };
@@ -467,14 +476,14 @@ d.saveAndClose();
 planWorkbook: function (templateFileId, sheets, pdf, opts) {
 var ss = SpreadsheetApp.openById(templateFileId), bad = '', t;
 try { t = dfoReadTabs_(ss, sheets); } catch (e) { return String(e && e.message || e); }
-sheets.forEach(function (w) { if (!bad) { var pl = dfoPlanSheet_(t[w.name].vals, t[w.name].fx, w, t[w.name].x); bad = pl.error || '';
+sheets.forEach(function (w) { if (!bad) { t[w.name].x.check_values = !!(opts && opts.check_values); var pl = dfoPlanSheet_(t[w.name].vals, t[w.name].fx, w, t[w.name].x); bad = pl.error || '';
 if (!bad && opts && opts.check_values) (pl.binds || []).forEach(function (b) { if (!bad) bad = dfoBindRule_(b, w.scalars[b.key], w.name); }); } });
 if (!bad && pdf) bad = dfoPdfRefs_(t, pdf, ss.getSheets().map(function (s) { return s.getName(); }), dfoNames_(ss));
 return bad;
 },
 fillWorkbook: function (fileId, sheets) {
 var ss = SpreadsheetApp.openById(fileId), t = dfoReadTabs_(ss, sheets), via = [];
-var plans = sheets.map(function (w) { var p = dfoPlanSheet_(t[w.name].vals, t[w.name].fx, w, t[w.name].x); if (p.error) throw new Error(p.error); return p; });
+var plans = sheets.map(function (w) { t[w.name].x.check_values = true; var p = dfoPlanSheet_(t[w.name].vals, t[w.name].fx, w, t[w.name].x); if (p.error) throw new Error(p.error); return p; });
 sheets.forEach(function (w, wi) {
 var sh = t[w.name].sh, ctx = dfoScalarCtx_(w.scalars, {}), p = plans[wi], n2 = t[w.name].n2;
 p.via.forEach(function (s) { via.push({ sh: sh, s: s, v: w.scalars[s.key], row: s.row }); });

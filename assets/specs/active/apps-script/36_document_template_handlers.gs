@@ -115,6 +115,9 @@ var DT_SRC_ = { 'tax_referral_rates.vat_no': 'l:vat_no', 'tax_referral_rates.eor
 'shipment_lines.carton_no_start,carton_no_end': 'l:carton_no_start', 'shipment_line_allocations.allocated_qty': 'l:allocated_qty', 'purchase_orders.po_no': 'l:po_no',
 'tax_referral_rates.country_of_origin': 'l:country_of_origin', 'logistics_locations.location_name': 'h:consignee.name', 'logistics_locations.address': 'h:consignee_address',
 'logistics_locations.city': 'h:consignee.address.city', 'logistics_locations.state_or_region': 'h:consignee.address.state_or_region', 'logistics_locations.postal_code': 'h:consignee.address.postal_code', 'logistics_locations.country': 'h:consignee.address.country',
+'warehouses.warehouse_name': 'h:consignee.name', 'warehouses.address': 'h:consignee_address',
+'warehouses.city': 'h:consignee.address.city', 'warehouses.state': 'h:consignee.address.state_or_region',
+'warehouses.postal_code': 'h:consignee.address.postal_code', 'warehouses.country': 'h:consignee.address.country',
 'shipments.shipping_method_label': 'h:shipping_method_label',
 'carrier_rate_cards.shipping_method_label': 'h:shipping_method_label', 'shipments.shipments_customs_type': 'h:shipments_customs_type',
 'sku_details.carton_weight': 'l:carton_weight', 'sku_details.package_weight': 'l:package_weight', 'sku_regional_details.product_url': 'l:product_url',
@@ -232,6 +235,7 @@ return v;
 }
 function dtApplyFormat_(v, rule, bad, num) {
 var r = dtLc_(rule), s = dtStr_(v), m, n; if (!r || r === 'text') return v;
+if (r === 'country_to_iso2') return dtApplyTransform_(v, r, bad, {});
 if (r === 'number' || r === 'currency') return dtNum_(v);
 if ((m = /^#,##0(\.0+)?$/.exec(r))) {
 n = Number(s.replace(/,/g, '')); if (!s) return v;
@@ -323,7 +327,36 @@ return dtStr_(relatedEntityId) + '|' + dtLc_(documentTypeEnum) + '|' + dtStr_(te
 
 
 
-function dtReadTable_(ss, name, headers) { return sfoRowsAsObjects_(dtRequireKnownLayoutSc2_(ss, name, headers)); }
+// Carrier R2: interpret only the confirmed legacy mapping shapes; never rewrite registry rows.
+function dtNormalizeCarrierFieldsR2_(rows) {
+var totals = { TOTAL_QTY: 'shipment_total_qty', TOTAL_CARTONS: 'shipment_total_cartons', TOTAL_NET_WEIGHT: 'shipment_total_net_weight', TOTAL_GROSS_WEIGHT: 'shipment_total_gross_weight', TOTAL_CBM: 'shipment_total_cbm' };
+var tabs = { '\u901a\u7528\u767c\u7968\u5c0e\u5165\u6a21\u7248': 'CARRIER_INVOICE_LINES', '\u88dd\u7bb1\u55ae\u767c\u7968\u901a\u7528\u6a21\u677f': 'CARRIER_PACKING_LINES' };
+return (rows || []).map(function (row) {
+var f = Object.assign({}, row), p = dtStr_(f.placeholder), src = dtLc_(f.data_source_table) + '.' + dtLc_(f.data_source_field), key = dtStr_(f.template_key), tab = dtStr_(f.worksheet_name);
+if (src === 'shipments.shipments_customs_type_label' && !dtStr_(f.transform_rule)) {
+f.data_source_field = 'shipments_customs_type'; f.transform_rule = 'customs_type_label';
+}
+if (key === 'PACKING_LIST_SINOTRANS' && /^FIELD-SINOTRANS-PL-04[0-4]0$/.test(dtStr_(f.field_id)) && totals[p] &&
+dtLc_(f.field_type) === 'scalar' && dtLc_(f.data_scope) === 'shipments' && dtStr_(f.data_source_table) === totals[p] &&
+dtStr_(f.data_source_field) === 'shipments.' + totals[p] && !dtStr_(f.data_source_path) && !dtStr_(f.collection_key)) {
+f.data_scope = 'total'; f.data_source_table = 'shipments'; f.data_source_field = totals[p]; f.data_source_path = 'shipments.' + totals[p];
+}
+if (key === 'BOOKING_TOP_SEALAND' && tabs[tab] && dtLc_(f.data_scope) === 'line' && dtLc_(f.field_type) !== 'collection') {
+var controllers = rows.filter(function (r) { return dtStr_(r.template_id) === dtStr_(f.template_id) && dtStr_(r.worksheet_name) === tab && dtLc_(r.field_type) === 'collection' && (dtBool_(r.is_active) || !dtStr_(r.is_active)); });
+if (controllers.length === 1 && dtStr_(controllers[0].placeholder) === tabs[tab] && dtStr_(controllers[0].collection_key) === tabs[tab]) {
+if (!dtStr_(f.collection_key)) f.collection_key = tabs[tab];
+else if (p === 'CARTON_REFERENCE' && f.collection_key === 'carton_reference_format' && !dtStr_(f.transform_rule) && src === 'shipment_lines.carton_no_start,carton_no_end') {
+f.collection_key = tabs[tab]; f.transform_rule = 'carton_reference_format';
+}
+}
+}
+return f;
+});
+}
+function dtReadTable_(ss, name, headers) {
+var rows = sfoRowsAsObjects_(dtRequireKnownLayoutSc2_(ss, name, headers));
+return name === 'document_template_fields' ? dtNormalizeCarrierFieldsR2_(rows) : rows;
+}
 
 function handleDocumentTemplateList_(body) {
 var ss = SpreadsheetApp.openById(prodExpectedDbId_());

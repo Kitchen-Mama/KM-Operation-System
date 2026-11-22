@@ -571,6 +571,10 @@ return { values: values, bad: bad };
 function dgsPdfTabs_(t) { var v = dgsStr_(t && t.pdf_sheets); return v ? v.split('|').map(dgsStr_) : null; }
 
 function dgsPlannedTabs_(fields, tpl, render) { var ws = []; if (render !== 'PO' && dgsLc_(tpl && tpl.template_file_type) === 'google_sheet') fields.forEach(function (f) { var w = dgsStr_(f.worksheet_name); if (w && ws.indexOf(w) < 0) ws.push(w); }); return ws; }
+function dgsSheetPolicyCarrierR2_(sheet, tpl) {
+if (dgsStr_(tpl.template_key) === 'BOOKING_AGL' && dgsNum_(tpl.template_version) === 1 && sheet.name === 'Template') sheet.fixed_scalars = { DECLARED_CURRENCY: 'USD' };
+return sheet;
+}
 function dgsPdfScopeOff_(pdf, ws) { return (pdf || []).map(function (n, i) { return !n || pdf.indexOf(n) !== i ? [n, 'DOCUMENT_PDF_SCOPE_TAB_INVALID'] : ws.indexOf(n) < 0 ? [n, 'DOCUMENT_PDF_SCOPE_TAB_NOT_PLANNED'] : null; }).filter(Boolean); }
 
 function dgsPdfDrift_(row, tpl) { var m = /DGS_PDF=([^;]*);/.exec(dgsStr_(row && row.note)), had = m ? decodeURIComponent(m[1]) : '', want = (dgsPdfTabs_(tpl) || []).join('|'); return had === want ? null : { pdf_delivered: had || '(whole workbook)', pdf_configured: want || '(whole workbook)' }; }
@@ -1099,7 +1103,7 @@ var mine = fs.filter(function (f) { return dgsStr_(f.worksheet_name) === w; }), 
 mine.forEach(function (f) { var ft = dgsLc_(f.field_type), ph = dgsStr_(f.placeholder);
 if (ft === 'collection') s.children[ph] = mine.filter(function (c) { return dgsLc_(c.field_type) !== 'collection' && dgsStr_(c.collection_key) === dgsStr_(f.collection_key); }).map(function (c) { return dgsStr_(c.placeholder); });
 else { if (!dgsStr_(f.collection_key)) s.scalars[ph] = 1; if (dgsBool_(f.required)) s.required.push(ph); } });
-return s; }), pdf); } catch (eT) { pre = 'DOCUMENT_TEMPLATE_UNREADABLE: ' + dgsStr_(eT && eT.message || eT); }
+return dgsSheetPolicyCarrierR2_(s, e.template); }), pdf); } catch (eT) { pre = 'DOCUMENT_TEMPLATE_UNREADABLE: ' + dgsStr_(eT && eT.message || eT); }
 if (pre) out.push(pre);
 }
 return out;
@@ -1386,8 +1390,8 @@ m.missing.forEach(function (x) { mapped.missing.push(Object.assign({ worksheet_n
 (m.warnings || []).forEach(function (x) { mapped.warnings.push(Object.assign({ worksheet_name: w }, x)); });
 Object.keys(sp.scalars).forEach(function (k) { if (!(k in mapped.values)) mapped.values[k] = sp.scalars[k]; });
 fs.forEach(function (f) { if (dgsLc_(f.field_type) === 'collection') ch[dgsStr_(f.placeholder)] = fs.filter(function (c) { return dgsLc_(c.field_type) !== 'collection' && dgsStr_(c.collection_key) === dgsStr_(f.collection_key); }).map(function (c) { return dgsStr_(c.placeholder); }); });
-return { name: w, scalars: sp.scalars, collections: sp.collections, children: ch,
-required: fs.filter(function (f) { return dgsBool_(f.required) && dgsLc_(f.field_type) !== 'collection'; }).map(function (f) { return dgsStr_(f.placeholder); }) };
+return dgsSheetPolicyCarrierR2_({ name: w, scalars: sp.scalars, collections: sp.collections, children: ch,
+required: fs.filter(function (f) { return dgsBool_(f.required) && dgsLc_(f.field_type) !== 'collection'; }).map(function (f) { return dgsStr_(f.placeholder); }) }, tpl);
 });
 } else mapped = entry.render === 'PO' ? dgsPoMap_(model, fields) : dtMapPlaceholders_(seriesModel ? seriesModel.model : model, fields);
 
@@ -1396,6 +1400,9 @@ var unresolved = (entry.render === 'CI') ? docCiUnresolvedFields_(fields) : [];
 if (mapped.reason || mapped.missing.length || unresolved.length) {
 return { ok: false, configuration_required: true, reason: unresolved.length ? 'DOCUMENT_FIELD_AUTHORITY_MISSING' : mapped.reason || 'DOCUMENT_REQUIRED_FIELD_MISSING',
 missing: mapped.missing, problems: mapped.problems || [], unresolved_authority: unresolved };
+}
+if (sheets && sheets.some(function (s) { return s.fixed_scalars && dgsStr_(s.scalars.DECLARED_CURRENCY) !== s.fixed_scalars.DECLARED_CURRENCY; })) {
+return { ok: false, configuration_required: true, reason: 'DOCUMENT_FIXED_VALUE_MISMATCH', missing: [{ placeholder: 'DECLARED_CURRENCY', problems: ['DOCUMENT_FIXED_VALUE_MISMATCH: AGL v1 requires resolved USD'] }] };
 }
 if (entry.render !== 'PO' && dgsStr_(tpl.file_name_rule)) { var have = {}; Object.keys(mapped.values).forEach(function (k) { if (!Array.isArray(mapped.values[k])) have[k] = 1; });
 if (dgsFileNameLeft_(tpl.file_name_rule, have).length) { var tl = dgsTemplates_(ss), fb = dgsFileNameBorrow_(dgsFileNameDefs_(tpl, have, tl, dtReadTable_(ss, 'document_template_fields', DOCUMENT_TEMPLATE_FIELDS_HEADERS_)), model, dgsTplKeyOf_(tl));
