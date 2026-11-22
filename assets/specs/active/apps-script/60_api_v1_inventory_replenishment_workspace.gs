@@ -58,7 +58,7 @@
 // PERFORMANCE difference rather than a wrong answer - which is why this stamp matters for a DIFFERENT reason
 // than R42's did: R42 told you a stale copy would lie to you, R43 tells you a stale copy is merely slow, and
 // an acceptance that cannot tell the two deployments apart cannot attribute the measurement it just took.
-var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R45';
+var SIR_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R56-DS1';
 
 var SIR_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
@@ -88,7 +88,10 @@ var SIR_WORKSPACE_TABLES_ = [
   // ('carrierPlanning') + missing-safe — NOT read on the primary render (no read cost, base payload unchanged) unless
   // the caller sets include.carrierPlanning. Reference data only; the workspace authors NO carrier selection/booking.
   { name: 'carrier_lead_times', requiredCols: [], optional: true, include: 'carrierPlanning' },
-  { name: 'carrier_rate_cards', requiredCols: [], optional: true, include: 'carrierPlanning' }
+  { name: 'carrier_rate_cards', requiredCols: [], optional: true, include: 'carrierPlanning' },
+  // DS1: service declarations only; disabled templates do not become active routes or ETA authority.
+  { name: 'carriers', requiredCols: [], optional: true, include: 'carrierPlanning' },
+  { name: 'shipment_route_templates', requiredCols: [], optional: true, include: 'carrierPlanning' }
 ];
 
 // Generous safety backstop. In real data these tables are well under this; the cap only guards a runaway payload and is
@@ -717,7 +720,8 @@ function sirWsRecentWindow_(rows, spec) {
 function sirWsStr_(v) { return String(v === undefined || v === null ? '' : v).trim(); }
 
 function sirBuildEnvelope_(ok, data, errors, meta) {
-  var m = { apiVersion: '1', source: 'workspace', action: 'inventoryReplenishment.workspace.get', workspace: 'inventoryReplenishment', cached: false };
+  var m = { apiVersion: '1', source: 'workspace', action: 'inventoryReplenishment.workspace.get', workspace: 'inventoryReplenishment', cached: false,
+    sourceRevision: SIR_SRC_REV_ };
   if (meta) { for (var k in meta) m[k] = meta[k]; }
   return { success: !!ok, data: ok ? (data === undefined ? null : data) : null, meta: m, errors: ok ? [] : (errors || []) };
 }
@@ -1070,7 +1074,9 @@ function sirWorkspaceDefaultIo_() {
 // lock contention is one of the enumerated reach classes, and "we did not look" and "there is no lock" are
 // different answers.
 // ================================================================================================================
+var SIR_SRC_REV_ = null;
 function handleInventoryReplenishmentWorkspaceGet_(body, io) {
+  SIR_SRC_REV_ = (typeof kmSrcRevGet_ === 'function') ? kmSrcRevGet_() : null;
   io = io || sirWorkspaceDefaultIo_();
   var t0 = io.now();
   var seq = (io && typeof io.nextSeq === 'function') ? io.nextSeq() : 0;

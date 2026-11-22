@@ -3287,7 +3287,9 @@ window.KM.DB.adaptInventoryReplenishmentWorkspace = function(data) {
         // include.carrierPlanning; [] otherwise. Same normalizers + filters as normalizeOperationDb → equal to the broad
         // getCarrierLeadTimes / getCarrierRateCards getters (BEFORE == AFTER). Reference data only (no carrier selection).
         getCarrierLeadTimes: (data.carrier_lead_times || []).map(normalizeCarrierLeadTimeRecord).filter(function(r) { return r.leadTimeId || r.carrierId; }),
-        getCarrierRateCards: (data.carrier_rate_cards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; })
+        getCarrierRateCards: (data.carrier_rate_cards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; }),
+        getCarriers: (data.carriers || []).map(normalizeCarrierRecord).filter(function(r) { return r.carrierId; }),
+        getShipmentRouteTemplates: (data.shipment_route_templates || []).map(normalizeShipmentRouteTemplateRecord).filter(function(r) { return r.routeTemplateId; })
     };
 };
 

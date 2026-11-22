@@ -378,6 +378,85 @@
     };
   }
 
+  // DS1: a declaration supplies a method/last-mile pair, NEVER a quote, time or active route.
+  // Mirrors 12_ zero-card capability semantics without reading inactive lead-time estimates.
+  function domesticDeclarations(entry, scope, route) {
+    route = route || {}; scope = scope || {};
+    var K = getKMCID15e();
+    function country(v) {
+      var c = str(v).toUpperCase();
+      if (!/^[A-Z]{2}$/.test(c) || c === 'EU' || setMembers15e(c)) return '';
+      c = K && K.canonicalCountryCode ? K.canonicalCountryCode(c) : c;
+      return ['US', 'CA', 'GB', 'DE', 'AU', 'JP', 'FR', 'ES', 'IT'].indexOf(c) < 0 ? '' : c;
+    }
+    function raw(r) { return r && r.raw ? r.raw : (r || {}); }
+    function active(r) {
+      r = raw(r);
+      if (/^(inactive|disabled|retired|archived)$/i.test(str(r.status))) return false;
+      return /^(true|yes|y|1|active)$/i.test(str(r.is_active !== undefined ? r.is_active : r.isActive));
+    }
+    function one(rows, field, value) {
+      var found = (rows || []).filter(function (r) { return str(r[field]) === str(value); });
+      return found.length === 1 ? found[0] : null;
+    }
+    var O = country(route.originCountry), D = country(route.destinationCountry);
+    var members = setMembers15e(route.destinationCountry);
+    if (!O || (!D && !(members || []).some(function (c) { return country(c) === O; })) || (D && D !== O)) return [];
+    if (country(scope.country) !== O && !(setMembers15e(scope.country) || []).some(function (c) { return country(c) === O; })) return [];
+    var company = str(scope.company), source = one(entry.warehouses, 'warehouseId', route.sourceWarehouseId);
+    if (!company || !str(route.sourceWarehouseId) || !source || !active(source) || lo(source.company) !== lo(company) || country(source.country) !== O ||
+        lo(source.warehouseType) !== '3pl' || source.isFactoryWarehouse === true) return [];
+    var dest = null;
+    if (str(route.destinationWarehouseCode)) {
+      dest = one(entry.warehouses, 'warehouseCode', route.destinationWarehouseCode);
+      if (!dest || !active(dest) || dest.warehouseId === source.warehouseId || lo(dest.company) !== lo(company) || country(dest.country) !== O ||
+          !((lo(dest.warehouseType) === 'fba') || (lo(dest.warehouseType) === '3pl' && O === 'US')) ||
+          /WFS|WALMART/i.test(str(dest.warehouseId) + ' ' + str(dest.warehouseCode) + ' ' + str(dest.marketplace))) return [];
+    } else if (!str(route.marketplace)) return [];
+    var out = [], templates = entry.templates || [];
+    templates.forEach(function (t) {
+      if (!t.routeTemplateId || one(templates, 'routeTemplateId', t.routeTemplateId) !== t) return;
+      if (country(t.originCountry) !== O || country(t.destinationCountry) !== O || lo(t.transitType) !== 'truck' ||
+          ['parcel', 'truck'].indexOf(lo(t.lastMileDelivery)) < 0 || str(t.customsType) || str(t.destinationRegion)) return;
+      if (str(t.originWarehouseId) && str(t.originWarehouseId) !== str(source.warehouseId)) return;
+      if (str(t.destinationWarehouseId) && (!dest || str(t.destinationWarehouseId) !== str(dest.warehouseId))) return;
+      var carrier = one(entry.carriers, 'carrierId', t.carrierId);
+      if (!carrier || !active(carrier)) return;
+      var zeroCard = !(entry.cards || []).some(function (rc) { return rc.carrierId === t.carrierId && lo(raw(rc).status) === 'active'; });
+      if (!active(t) && !(zeroCard && /^SRT-DOM-/.test(t.routeTemplateId))) return;
+      out.push({ shippingMethod: 'truck', lastMileDelivery: lo(t.lastMileDelivery), carrierId: t.carrierId,
+        templateId: t.routeTemplateId, country: O, source: 'DOMESTIC_SERVICE_DECLARATION', priced: false });
+    });
+    return out.sort(function (a, b) { return (a.carrierId + a.lastMileDelivery + a.templateId).localeCompare(b.carrierId + b.lastMileDelivery + b.templateId); });
+  }
+
+  function addDomesticDeclarations(result, declarations) {
+    if (!declarations.length) return result;
+    var m = result.methods.filter(function (x) { return lo(x.value) === 'truck'; })[0];
+    if (!m) {
+      m = { value: 'truck', label: 'Truck', carrierId: '', carrierIds: [], priced: false, pricedCarrierIds: [],
+        profiles: [], transitProfileCount: 0, lastMileOptions: [], carrierSelection: DEFERRED_, source: 'DOMESTIC_SERVICE_DECLARATION' };
+      result.methods.push(m);
+    }
+    m.serviceDeclarations = declarations;
+    declarations.forEach(function (d) {
+      if (m.carrierIds.indexOf(d.carrierId) < 0) m.carrierIds.push(d.carrierId);
+      if (m.lastMileOptions.indexOf(d.lastMileDelivery) < 0) m.lastMileOptions.push(d.lastMileDelivery);
+    });
+    m.carrierIds.sort(); m.lastMileOptions.sort();
+    m.lastMileDelivery = m.lastMileOptions.length === 1 ? m.lastMileOptions[0] : '';
+    m.lastMileAmbiguous = m.lastMileOptions.length > 1;
+    result.methods.sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
+    result.status = STATUS.READY;
+    result.method_source = (result.method_source ? result.method_source + '+' : '') + 'DOMESTIC_SERVICE_DECLARATION';
+    result.last_mile_source = (result.last_mile_source ? result.last_mile_source + '+' : '') + 'DOMESTIC_SERVICE_DECLARATION';
+    result.carrier_selection = DEFERRED_;
+    if (result.configuration) { delete result.configuration; delete result.transit_authority; }
+    if (!result.pricing) result.pricing = { available: result.methods.some(function (x) { return x.priced === true; }) };
+    result.pricing.unpriced_services = declarations;
+    return result;
+  }
+
   function create(deps) {
     deps = deps || {};
     var cache = {};        // scopeKey -> { cards, leadTimes, at }
@@ -391,7 +470,7 @@
       if (!api || typeof api.getWorkspace !== 'function') {
         return Promise.resolve({ success: false, errors: [{ code: 'METHOD_REGISTRY_API_UNAVAILABLE', message: 'The workspace API is not available to this page.' }] });
       }
-      // F1-7N-FC-1B-E3-R4-A1 §D — TWO SHEETS, NOT TWENTY-ONE.
+      // DS1: one bounded catalogue read, including declaration and warehouse identities.
       //
       // R4 had this ask for the bounded payload, which trimmed rows it was never going to read anyway. The live
       // measurement says the cost is per-TABLE, not per-row: 13 107 rows still took 30 833 ms of server time
@@ -402,7 +481,7 @@
       // what reached the 60 s bound as METHOD_CATALOGUE_ERROR. That alternative no longer exists.
       return Promise.resolve(api.getWorkspace('inventoryReplenishment', {
         include: { carrierPlanning: true }, recentWindow: true,
-        only: ['carrier_lead_times', 'carrier_rate_cards']
+        only: ['carrier_lead_times', 'carrier_rate_cards', 'carriers', 'shipment_route_templates', 'warehouses']
       }));
     }
 
@@ -429,7 +508,7 @@
           errors[key] = { code: 'METHOD_REGISTRY_ADAPTER_UNAVAILABLE', message: 'The workspace adapter is not available to this page.' };
           return { status: STATUS.ERROR, key: key, error: errors[key] };
         }
-        cache[key] = { cards: adapted.getCarrierRateCards || [], leadTimes: adapted.getCarrierLeadTimes || [] };
+        cache[key] = catalogue(adapted);
         return { status: STATUS.READY, key: key };
       })['catch'](function (err) {
         delete pending[key];
@@ -446,10 +525,15 @@
     // picks the warehouse, whose own country then prices it. A non-set route is answered by resolve0_ exactly as before.
     function resolve(scope, route, today) {
       var r = resolve0_(scope, route, today), set = setMembers15e(route && route.destinationCountry);
+      var loaded = cache[scopeKey(scope)];
+      if (loaded && (r.status === STATUS.READY || r.status === STATUS.EMPTY_CONFIGURATION) && lo(route && route.batteryType) !== 'unclassified') {
+        r = addDomesticDeclarations(r, domesticDeclarations(loaded, scope, route));
+      }
       if (!set || !r || !r.methods || !r.methods.length) return r;
       var entry = cache[scopeKey(scope)] || { cards: [], leadTimes: [] }, profs = serviceProfilesForRoute(entry.leadTimes || [], route);
       r.methods.forEach(function (m) {
         var cs = {};
+        (m.serviceDeclarations || []).forEach(function (d) { cs[d.country] = 1; });
         (entry.cards || []).forEach(function (rc) { if (rateCardUsable(rc, today) && !axisRejection(rc, route) && lo(rc.shippingMethod) === lo(m.value)) cs[str(rc.destinationCountry).toUpperCase() || '*'] = 1; });
         profilesForMethod(profs, m.value).forEach(function (p) { (p.destinationCountries || []).forEach(function (c) { cs[c] = 1; }); });
         m.destinationCountries = Object.keys(cs).sort(); m.priced = false; m.pricedCarrierIds = []; m.pricedAtWarehouse = true;   /* review m-2: no carrier is priced for a set */
@@ -553,7 +637,7 @@
     function adopt(scope, adapted) {
       if (!adapted) return false;
       var key = scopeKey(scope);
-      cache[key] = { cards: adapted.getCarrierRateCards || [], leadTimes: adapted.getCarrierLeadTimes || [] };
+      cache[key] = catalogue(adapted);
       delete errors[key];
       delete pending[key];
       return true;
@@ -581,12 +665,17 @@
     };
   }
 
+  function catalogue(adapted) {
+    return { cards: adapted.getCarrierRateCards || [], leadTimes: adapted.getCarrierLeadTimes || [],
+      carriers: adapted.getCarriers || [], templates: adapted.getShipmentRouteTemplates || [], warehouses: adapted.getWarehouses || [] };
+  }
+
   var API = {
     STATUS: STATUS, create: create, scopeKey: scopeKey, rateCardUsable: rateCardUsable,
     methodsForRoute: methodsForRoute, configurationDiagnosis: configurationDiagnosis, axisRejection: axisRejection, batteryRejection: batteryRejection,
     serviceProfilesForRoute: serviceProfilesForRoute, methodsFromLeadTimes: methodsFromLeadTimes,
     profilesForMethod: profilesForMethod, lastMileFacts: lastMileFacts, withTransitLastMile: withTransitLastMile,
-    DEFERRED_CARRIER_SELECTION: DEFERRED_
+    DEFERRED_CARRIER_SELECTION: DEFERRED_, domesticDeclarations: domesticDeclarations
   };
 
   if (root) {

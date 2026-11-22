@@ -1,0 +1,103 @@
+DS1: Domestic service-only methods across configured stations
+Date: 2026-11-22 (Asia/Taipei)
+Status: LOCAL TESTED. OWNER DEPLOYMENT AND LIVE UAT PENDING.
+
+Package: output/ds1-service-20261122/release-2
+Build: r6.8-ds1
+INSTALL.sha256.txt SHA256:
+42f54f60b188c4f751659e4d401f3835c34dca5066505cd21e34a4a58a162e89
+Do not use release-1 (superseded local build).
+AD3-c2 and AD4-c3 remain unchanged; B8 is not merged.
+
+CHANGE
+The Site Inventory Method picker can read carrier identities and domestic
+service declarations from shipment_route_templates, separately from quotes
+and lead times. Disabled SRT-DOM templates declare capability only for a
+zero-active-card carrier, as already supported by server 12_. They stay disabled.
+No route activation, price, currency, booking, customs waiver or ETA is implied.
+An active, unique, same-company overseas 3PL and an exact physical-country lane
+are required. A template naming EU or a blank country grants no domestic lane.
+The implementation is shared by all stations; carrier coverage is not widened.
+WFS physical destinations remain paused; Walmart self-fulfilled is not disabled.
+
+METHOD MAPPING (canonical tokens, not display labels)
+Method truck + Last Mile parcel = SPD.
+Method truck + Last Mile truck = LTL.
+BestWay: US LTL. USPS / UPS / FedEx: configured US SPD only.
+Amazon: configured US / CA / UK / DE / AU / JP / FR domestic SPD and LTL.
+Carrier selection remains deferred to Shipping Plan Review.
+
+DB / MASTER DATA
+NO new columns; NO rate cards; NO master-data writes in this release.
+The 18 disabled templates already exist in Production (read-only check).
+Do not turn on the 54 owner-estimate lead-time drafts to populate this picker.
+They are estimates, not validated carrier SLA. Their processing-start basis,
+region rules and live planning/AI/ETA outcomes need separate acceptance first.
+Real, validated active lead-time rows continue to work unchanged.
+
+MANUAL INSTALL (backend first, then matching frontend)
+1. Confirm the environment, current working deployment version and backup.
+   Do not perform shipment writes while switching the paired backend/frontend.
+2. From this package candidate/<ENV>/apps-script, replace WHOLE files:
+   Production: 60_api_v1_inventory_replenishment_workspace.gs
+               63_api_v1_system_health.gs
+               01_router.gs (LAST)
+   Sandbox:    60_api_v1_inventory_replenishment_workspace.gs
+               63_api_v1_system_health.gs
+   No 90_ rebuild or sync. Do not copy Production 01_/63_ into Sandbox.
+3. Read back editor files before publishing:
+   powershell -ExecutionPolicy Bypass -File assets/tools/capture-ds1.ps1 -Env Production
+   Use -Env Sandbox for Sandbox. Stop on DS1_READBACK_STOP.
+4. Save all files; publish a NEW VERSION on the existing intended deployment.
+   Do not change the deployment URL, secret modules, DB identity or guard.
+5. Frontend Git changes: index.html, production-config.js,
+   assets/js/api/operation-system-db-api.js, assets/js/core/method-registry.js.
+   Owner reviews, then manually runs: git push origin main
+   Wait for Pages deployment; open a fresh tab and hard reload.
+   Sandbox instead serves candidate/Sandbox/site, not candidate/Production/site.
+6. Verify live health: mixed_deployment=false, no absent/stale modules,
+   SIR_BUILD_VERSION_ ends R56-DS1; SYS and Production RTR end AD4-DS1.
+   Production policy SHA must match this package's production-config.js.
+   Copy only the sanitized health summary using the existing health-copy tool,
+   then run tools/check-prod-health-ds1.cjs <summary.json> inside this package.
+   For Sandbox use tools/check-sbx-health-ds1.cjs <summary.json>.
+   Never send URLs, headers, passwords, sessions, tokens or private modules.
+
+SHORTEST OWNER UAT (synthetic/test records only; record IDs and initial stock)
+1. US / Amazon: choose a stocked US 3PL From and Amazon To; Method offers Truck
+   without any new rate card. Select Last Mile parcel (SPD) or truck (LTL).
+   With no validated lead time, Expected Arrival is unavailable, not zero days.
+2. Save/reopen, submit and approve a SMALL test quantity. In Plan Review choose
+   Amazon SPD; cost remains pending when no quote exists. Do not enter a fake 0.
+3. Generate/open Shipment Details; use manual logistics where required; Confirm
+   once. Record source-stock delta and event/ledger IDs before any retry.
+4. Manual arrival is NOT receipt. Partial receipt, reopen, then full receipt:
+   source deducts once; received quantity is counted once; retries add nothing.
+5. Separate test: US 3PL -> DIFFERENT same-company US 3PL, BestWay LTL.
+   Documents, Confirm, arrival, receipt; destination stock increases only upon
+   receipt. Keep both shipment/document IDs as the two acceptance results.
+6. Another configured country (e.g. DE / Amazon or EU scope with actual DE From)
+   offers only its declared same-country service. DE -> FR and US -> CA must
+   not acquire a domestic declaration. EU is never a physical endpoint.
+7. CN/TW factory route retains its original method, last mile and customs rules.
+   WFS physical shipments remain paused. Real carrier entitlement is not assumed.
+8. No production test cleanup or deletion is authorized here. Report any error
+   code and affected test IDs; do not repeatedly Confirm an unknown outcome.
+
+LOCAL VERIFICATION
+59 service/workspace tests; 10 real Chromium component checks (1440/390 widths).
+Production customs/service-save regression 35/0; page regression 7/0.
+Package: 741 file hashes, guard 5/0, health checker 2/0, public policy mirror PASS.
+The existing 90_ publication remains AST-equivalent to its 60 source modules.
+The older inventory-workspace test harness still stops on its missing
+_kmScNote13_ dependency; reproduced with unmodified HEAD, not introduced by DS1.
+The focused tests load the complete real adapter instead of that extraction.
+Browser transport and master fixtures are synthetic; NOT live shipment E2E.
+No private config/password module was read. No push or deployment performed.
+
+RECOVERY
+Stop writes. Restore the previously recorded working deployment AND matching
+previous Pages commit (232eab55) together. Keep DB/master/transaction data.
+Do NOT copy the older Git R45 version of 60_: the working pre-DS1 baseline is
+AD4-c3 candidate/Production/apps-script/60_... (R56 with sourceRevision echo).
+Never disable the guard or change stamps alone to hide a mismatch.

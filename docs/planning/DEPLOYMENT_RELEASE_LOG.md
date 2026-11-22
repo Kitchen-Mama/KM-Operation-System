@@ -7202,3 +7202,16 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - Final test sheet: `docs/handoffs/PRODUCTION_FINAL_UAT_20261122.txt`. Owner will perform Production health, P0, U1-U7, real document download/open, dispatch/receipt and ledger reconciliation.
 - Deployment version number, runtime health and final business acceptance remain pending evidence; Git push and Pages publication must each be verified separately after committing this record.
 - No DB writes, schema migration, master-data activation, test-data cleanup, opening-stock import or formal go-live declaration is authorized/performed by this follow-up. Test cleanup and the final announcement await the Owner's next instruction.
+
+## 2026-11-22 - DS1 Domestic Service Methods (Local Only)
+
+- Owner approved service-only methods across stations. No fake rate cards, prices or ETA were added. Carrier identities and exact domestic template declarations are secondary catalogue inputs; 54 inactive lead-time estimates remain excluded, and disabled templates remain disabled.
+- Physical source/company checks apply; no new cross-border service, EU-country entitlement, WFS physical destination or non-US 3PL-transfer branch is granted. Existing priced/transit methods remain intact. B8 is not merged.
+- `APPS_SCRIPT_SYNC_REQUIRED`: `60_api_v1_inventory_replenishment_workspace.gs`, `63_api_v1_system_health.gs`, Production `01_router.gs` last. Workspace 60 is based on the working R56 revision, retaining sourceRevision rather than restoring the older Git R45 copy.
+- `FRONTEND_GITHUB_PAGES_REQUIRED`: `index.html`, `production-config.js`, `assets/js/api/operation-system-db-api.js`, `assets/js/core/method-registry.js`. The matching router/public policy SHA is `28d6d221786620da1776ef3e76fe9054503c08935c964524d90285546f772d21`; identity guards are not weakened.
+- `BUNDLE_REBUILD_REQUIRED`: NO. Method registry is not one of the generated bundle's 60 modules; read-only AST/source-digest equivalence passes. No 90_ rewrite or sync.
+- New package: `output/ds1-service-20261122/release-2`, build `r6.8-ds1`. INSTALL manifest SHA `42f54f60b188c4f751659e4d401f3835c34dca5066505cd21e34a4a58a162e89`. Supersedes local release-1 only; frozen AD3-c2 and AD4-c3 are unchanged.
+- Focused tests 59/0; actual Chromium component tests 10/0 at 1440/390 widths; existing Production customs/service-save regression 35/0 and plan-page regression 7/0. Package hashes 741/741, target gate 5/0, health checker 2/0; actual Production source/policy files match the package. These are local fixtures, not live transaction acceptance.
+- The legacy inventory-workspace harness stops on a missing `_kmScNote13_` extraction; the same exception was reproduced with unmodified HEAD. Not silently reported as a passing full suite; the focused tests evaluate the full adapter and compare unchanged primary-workspace output.
+- `GIT_ONLY`: focused tests, build/verify/capture tools. `DOCUMENTATION_ONLY`: this entry and `docs/handoffs/DS1_SERVICE_METHODS_20261122.txt` (install, UAT and paired rollback instructions).
+- No push, Apps Script deployment, DB write, master activation, cleanup or go-live declaration performed. Owner live UAT and deployment-version evidence remain pending.
