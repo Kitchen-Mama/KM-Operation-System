@@ -261,6 +261,8 @@ function handleRequestOrderWorkspaceGet_(body, io) {
       readCount++;
     }
     var vm = roWorkspaceBuild_(tables, payload);
+    vm.capabilities = { purchase_setup_version: (typeof PO_PURCHASE_SETUP_CONTRACT_VERSION_ !== 'undefined' &&
+      PO_PURCHASE_SETUP_CONTRACT_VERSION_ === 1 && typeof poResolvePurchaseSetup_ === 'function') ? 1 : 0 };
     return roBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'RO_WORKSPACE_BUILD_FAILED';

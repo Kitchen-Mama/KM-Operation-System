@@ -5,7 +5,7 @@ const path = require('node:path');
 const { createWorld, root, read } = require('./helpers/order-mainline-world.cjs');
 const runtime = process.env.KM_NODE_MODULES || 'C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1119-907-0_26.1119.907.0_x64__3k8sg7r9htsxt/dependencies/node/node_modules';
 const { chromium } = require(require.resolve('playwright', { paths: [runtime] }));
-const output = path.join(root, 'output/order-mainline-c1-20261123');
+const output = path.resolve(root, process.env.KM_BROWSER_OUTPUT || 'output/order-mainline-c1-20261123');
 let checks = 0;
 function check(label, value) { assert(value, label); checks++; console.log('PASS ' + label); }
 
@@ -227,7 +227,8 @@ async function receiptGuards(browser) {
   } finally { await page.close(); }
 }
 
-(async () => {
+module.exports = { openHarness, mount };
+if (require.main === module) (async () => {
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {

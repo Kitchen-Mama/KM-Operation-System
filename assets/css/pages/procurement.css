@@ -269,6 +269,15 @@ select.pc-input:disabled {
     display: flex; gap: 8px; justify-content: flex-end;
     padding: 12px 18px; border-top: 1px solid #E2E8F0;
 }
+#ro-po-setup .pc-modal { border-radius: 8px; }
+#ro-po-setup .pc-modal__grid label { flex: 1 1 220px; min-width: 0; max-width: 100%; }
+#ro-po-setup select { width: 100%; max-width: 100%; }
+#ro-po-setup .pc-modal__foot { flex-wrap: wrap; }
+@media (max-width: 640px) {
+    #request-order-draft-section .sp-card-header { flex-direction: column; gap: 12px; }
+    #request-order-draft-section .sp-card-summary { width: 100%; }
+    #request-order-draft-section .sp-card-actions { margin-left: 0; }
+}
 
 /* ============================================================
    Request Order Draft card — Weekly Shipping Plan visual pattern (Part A/B).

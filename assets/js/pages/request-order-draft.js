@@ -850,10 +850,120 @@
     var _convertInFlight = {};
     function convertToPo(id) {
         if (_convertInFlight[id]) return;
+        var order = _roGetOrders().filter(function (r) { return r.requestOrderId === id; })[0] || {};
+        var lines = (roLinesCache[id] || []).filter(function (l) { return l.lineStatus !== 'cancelled' && num(l.approvedQty) > 0; });
+        if (lines.some(function (l) { return l.unitCost === '' || l.unitCost == null || !l.currency || !(l.supplierId || l.supplierName || order.supplierName); })) {
+            if (!_roReadModel || _roReadModel.purchaseSetupVersion !== 1) {
+                alert('Purchase setup requires the updated Apps Script backend (13 + 51). Deploy it, then refresh this Request. Nothing was sent.');
+                return;
+            }
+            openPurchaseSetup(id, order);
+            return;
+        }
         if (!confirm('Convert this approved request into Purchase Order(s)?\n\nActive T1 → one PO; active T2+T3 → one combined PO. Cancelled lines are excluded.')) return;
+        runConvert(id);
+    }
+
+    function closePurchaseSetup() {
+        var modal = document.getElementById('ro-po-setup');
+        if (modal && !_convertInFlight[modal.dataset.requestId]) modal.remove();
+    }
+
+    function openPurchaseSetup(id, order) {
+        closePurchaseSetup();
+        if (document.getElementById('ro-po-setup')) return;
+        var suppliers = [], seen = {};
+        _roGetSupplierPriceListArr().forEach(function (r) {
+            var active = String(r.isActive == null ? '' : r.isActive).trim().toLowerCase();
+            if (active && active !== 'true' && active !== '1' && active !== 'active' && active !== 'yes') return;
+            if (!r.supplierName) return;
+            var key = JSON.stringify([r.supplierId || '', r.supplierName]);
+            if (seen[key]) return; seen[key] = true;
+            suppliers.push({ id: r.supplierId || '', name: r.supplierName });
+        });
+        suppliers.sort(function (a, b) { return a.name.localeCompare(b.name); });
+        var factories = _roGetWarehousesArr().filter(function (w) { return w.isFactoryWarehouse === true && w.isActive !== false; });
+        var overlay = document.createElement('div');
+        overlay.id = 'ro-po-setup'; overlay.className = 'pc-modal-overlay'; overlay.dataset.requestId = id;
+        overlay.innerHTML = '<div class="pc-modal" role="dialog" aria-modal="true" aria-labelledby="ro-po-title">' +
+            '<div class="pc-modal__head"><h3 id="ro-po-title">Purchase Order Setup</h3><button class="pc-modal__close" aria-label="Close" onclick="roClosePurchaseSetup()">&times;</button></div>' +
+            '<div class="pc-modal__body"><div class="pc-modal__grid">' +
+            '<label>Production Factory<select id="ro-po-factory" class="pc-input" onchange="roResetPurchaseQuote()"><option value="">Select factory</option>' + factories.map(function (w) {
+                return '<option value="' + esc(w.warehouseId) + '">' + esc(w.warehouseName || w.warehouseId) + '</option>';
+            }).join('') + '</select></label>' +
+            '<label>Supplier<select id="ro-po-supplier" class="pc-input" onchange="roResetPurchaseQuote()"><option value="">Select supplier</option>' + suppliers.map(function (s, i) {
+                return '<option value="' + i + '" data-id="' + esc(s.id) + '" data-name="' + esc(s.name) + '">' + esc(s.name) + '</option>';
+            }).join('') + '</select></label></div>' +
+            '<div id="ro-po-error" class="pc-modal__msg pc-modal__msg--error" role="alert"></div><div id="ro-po-quote" class="procurement-table-wrap"></div></div>' +
+            '<div class="pc-modal__foot"><button class="pc-btn pc-btn--default" onclick="roClosePurchaseSetup()">Cancel</button>' +
+            '<button id="ro-po-check" class="pc-btn pc-btn--default" onclick="roCheckPurchaseQuote()">Check Prices</button>' +
+            '<button id="ro-po-confirm" class="pc-btn pc-btn--primary" onclick="roConfirmPurchaseSetup()" disabled>Create PO</button></div></div>';
+        document.body.appendChild(overlay);
+        document.getElementById('ro-po-factory').value = order.warehouseId || order.factoryId || '';
+        var selected = suppliers.findIndex(function (s) { return order.supplierId ? s.id === order.supplierId : s.name === order.supplierName; });
+        if (selected >= 0) document.getElementById('ro-po-supplier').value = String(selected);
+        document.getElementById('ro-po-factory').focus();
+    }
+
+    function resetPurchaseQuote() {
+        var modal = document.getElementById('ro-po-setup');
+        if (!modal) return;
+        delete modal.dataset.checksum;
+        document.getElementById('ro-po-confirm').disabled = true;
+        document.getElementById('ro-po-quote').innerHTML = '';
+        document.getElementById('ro-po-error').textContent = '';
+    }
+
+    function purchaseSelection() {
+        var modal = document.getElementById('ro-po-setup');
+        if (!modal) return null;
+        var warehouse = document.getElementById('ro-po-factory').value;
+        var supplier = document.getElementById('ro-po-supplier').selectedOptions[0];
+        if (!warehouse || !supplier || !supplier.dataset.name) {
+            document.getElementById('ro-po-error').textContent = 'Select a production factory and supplier.';
+            return null;
+        }
+        return { warehouse_id: warehouse, supplier_id: supplier.dataset.id, supplier_name: supplier.dataset.name };
+    }
+
+    function checkPurchaseQuote() {
+        var modal = document.getElementById('ro-po-setup'), setup = purchaseSelection();
+        if (!modal || !setup || _convertInFlight[modal.dataset.requestId]) return;
+        resetPurchaseQuote();
+        var signature = JSON.stringify(setup), id = modal.dataset.requestId;
         _convertInFlight[id] = true;
-        window.KM.DB.createPurchaseOrderFromRequest({ request_order_id: id, actor: 'operation-system' })
+        document.getElementById('ro-po-check').disabled = true;
+        window.KM.DB.createPurchaseOrderFromRequest({ request_order_id: id, purchase_setup: setup, purchase_setup_preview: true, actor: 'operation-system' })
             .then(function (data) {
+                if (document.getElementById('ro-po-setup') !== modal || JSON.stringify(purchaseSelection()) !== signature) return;
+                if (!data || !data.purchase_setup_preview || !data.quote_checksum) throw new Error('Purchase preview unavailable; refresh this Request.');
+                modal.dataset.checksum = data.quote_checksum;
+                document.getElementById('ro-po-quote').innerHTML = '<table class="procurement-table"><thead><tr><th>SKU</th><th>Supplier SKU</th><th>Qty</th><th>Unit Cost</th><th>Amount</th></tr></thead><tbody>' +
+                    data.purchase_setup_preview.lines.map(function (l) {
+                        return '<tr><td>' + esc(l.sku) + '</td><td>' + dash(l.supplier_sku) + '</td><td>' + esc(l.quantity) + '</td><td>' + esc(l.currency) + ' ' + esc(l.unit_cost) + '</td><td>' + money(Math.round(l.quantity * l.unit_cost * 100) / 100, l.currency) + '</td></tr>';
+                    }).join('') + '</tbody></table>';
+                document.getElementById('ro-po-confirm').disabled = false;
+            }).catch(function (e) { document.getElementById('ro-po-error').textContent = e.message || String(e); })
+            .then(function () { _convertInFlight[id] = false; var btn = document.getElementById('ro-po-check'); if (btn) btn.disabled = false; });
+    }
+
+    function confirmPurchaseSetup() {
+        var modal = document.getElementById('ro-po-setup'), setup = purchaseSelection();
+        if (!modal || !setup || !modal.dataset.checksum || _convertInFlight[modal.dataset.requestId]) return;
+        runConvert(modal.dataset.requestId, setup, modal.dataset.checksum);
+    }
+
+    function runConvert(id, setup, checksum) {
+        _convertInFlight[id] = true;
+        var btn = document.getElementById('ro-po-confirm');
+        if (btn) btn.disabled = true;
+        var controls = document.querySelectorAll('#ro-po-setup select, #ro-po-check');
+        controls.forEach(function (el) { el.disabled = true; });
+        var payload = { request_order_id: id, actor: 'operation-system' };
+        if (setup) { payload.purchase_setup = setup; payload.purchase_setup_checksum = checksum; }
+        window.KM.DB.createPurchaseOrderFromRequest(payload)
+            .then(function (data) {
+                var modal = document.getElementById('ro-po-setup'); if (modal) modal.remove();
                 // PO v2 may create up to two POs (T1 and T2_T3). Support the array; fall back to the single-PO shape.
                 var pos = (data && data.purchase_orders) || [];
                 var reused = data && (data.reused || data.repaired);
@@ -868,7 +978,16 @@
                 alert(msg + '\n\nOpen Purchase Order Workspace to continue.');
                 loadAndRender();
             })
-            .catch(function (e) { alert('Convert failed: ' + (e && e.message ? e.message : e)); })
+            .catch(function (e) {
+                var error = 'Convert failed: ' + (e && e.message ? e.message : e);
+                var msg = document.getElementById('ro-po-error');
+                if (setup) resetPurchaseQuote();
+                if (msg) msg.textContent = error; else alert(error);
+            })
+            .then(function () {
+                controls.forEach(function (el) { el.disabled = false; });
+                if (btn) { var modal = document.getElementById('ro-po-setup'); btn.disabled = !modal || !modal.dataset.checksum; }
+            })
             .then(function () { _convertInFlight[id] = false; });   // release the UX guard (runs after success or failure)
     }
 
@@ -1275,6 +1394,10 @@
     window.roApprove = approve;
     window.roReject = reject;
     window.roConvertToPo = convertToPo;
+    window.roClosePurchaseSetup = closePurchaseSetup;
+    window.roConfirmPurchaseSetup = confirmPurchaseSetup;
+    window.roCheckPurchaseQuote = checkPurchaseQuote;
+    window.roResetPurchaseQuote = resetPurchaseQuote;
     window.roDone = done;
     window.roCreateManualDraft = createManualDraft;
     window.roAddCreateLine = addCreateLine;
@@ -1297,7 +1420,7 @@
                     loadAndRender();
                 });
             },
-            unmount: function () { closeCreateModal(); }
+            unmount: function () { closeCreateModal(); closePurchaseSetup(); }
         });
     }
 })();

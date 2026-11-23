@@ -1581,10 +1581,91 @@ return jsonResponse_({ success: true, data: { cancelled_lines: cancelled, skippe
 function handleCreatePurchaseOrderFromRequest_(body) {
 return roLockedMutation_('convert', body, function (tx) { return roCreatePurchaseOrder_(body, tx); });
 }
+
+// Explicit conversion setup fills commercial data from the maintained master, never from UI prices.
+// Approved Request quantities/sources remain untouched; the selected quote is frozen on the new PO.
+var PO_PURCHASE_SETUP_CONTRACT_VERSION_ = 1;
+function poResolvePurchaseSetup_(ss, setup, data, lc, groups, today) {
+function str(v) { return String(v == null ? '' : v).trim(); }
+function fail(code, sku) { return { ok: false, error: code, detail: sku || '', zero_write: true, stage: 'purchase_setup' }; }
+if (!setup || typeof setup !== 'object' || Array.isArray(setup)) return fail('PO_PURCHASE_SETUP_INVALID');
+var warehouseId = str(setup.warehouse_id), supplierId = str(setup.supplier_id), supplierName = str(setup.supplier_name);
+var fw = procurementFactoryMap_(ss)[warehouseId.toLowerCase()];
+if (!fw || !fw.isFactory || !fw.isActive) return fail('PO_ACTIVE_FACTORY_REQUIRED');
+if (!supplierId && !supplierName) return fail('PO_SUPPLIER_REQUIRED');
+var sheet = ss.getSheetByName('supplier_price_list');
+if (!sheet) return fail('PO_SUPPLIER_PRICE_MASTER_MISSING');
+var grid = sheet.getDataRange().getValues(), headers = (grid[0] || []).map(str);
+if (['sku', 'unit_cost', 'currency'].some(function (key) { return headers.indexOf(key) < 0; })) return fail('PO_SUPPLIER_PRICE_COLUMNS_MISSING');
+function value(row, key) {
+var at = headers.indexOf(key), v = at < 0 ? '' : row[at];
+if (key === 'supplier_name' && !str(v)) { at = headers.indexOf('supplier_name_snapshot'); v = at < 0 ? '' : row[at]; }
+return v;
+}
+function date(v) {
+if (v === '' || v == null) return '';
+var day = procurementDateOnly_(v);
+return /^\d{4}-\d{2}-\d{2}$/.test(day) && !isNaN(Date.parse(day)) && new Date(day + 'T00:00:00Z').toISOString().slice(0, 10) === day ? day : null;
+}
+var rows = grid.slice(1).filter(function (row) {
+return supplierId ? str(value(row, 'supplier_id')) === supplierId : str(value(row, 'supplier_name')) === supplierName;
+});
+var identities = {};
+rows.forEach(function (row) { identities[JSON.stringify([str(value(row, 'supplier_id')), str(value(row, 'supplier_name'))])] = 1; });
+if (Object.keys(identities).length !== 1) return fail('PO_SUPPLIER_IDENTITY_MISSING_OR_AMBIGUOUS');
+var identity = JSON.parse(Object.keys(identities)[0]);
+if (!identity[1] || (supplierName && supplierName !== identity[1])) return fail('PO_SUPPLIER_IDENTITY_MISMATCH');
+var result = { ok: true, warehouseId: fw.warehouseId, supplierId: identity[0], supplierName: identity[1], currency: '', byRow: {}, priceIds: [] };
+var members = groups.T1.concat(groups.T2_T3), totalAmount = 0;
+for (var i = 0; i < members.length; i++) {
+var rowIndex = members[i].rowIndex, sku = str(data[rowIndex][lc('sku')]);
+var candidates = [];
+for (var j = 0; j < rows.length; j++) {
+var r = rows[j];
+if (str(value(r, 'sku')) !== sku) continue;
+var active = str(value(r, 'is_active')).toLowerCase();
+if (active && active !== 'true' && active !== '1' && active !== 'active' && active !== 'yes') continue;
+var wh = str(value(r, 'supplier_warehouse_id'));
+if (wh && wh !== result.warehouseId) continue;
+var from = date(value(r, 'effective_from')), to = date(value(r, 'effective_to'));
+if (from === null || to === null || (from && to && from > to)) return fail('PO_SUPPLIER_PRICE_DATE_INVALID', sku);
+if ((from && from > today) || (to && to < today)) continue;
+candidates.push({ row: r, from: from });
+}
+if (!candidates.length) return fail('PO_SUPPLIER_PRICE_NOT_FOUND', sku);
+candidates.sort(function (a, b) { return b.from.localeCompare(a.from); });
+if (candidates.length > 1 && candidates[0].from === candidates[1].from) return fail('PO_SUPPLIER_PRICE_AMBIGUOUS', sku);
+var price = candidates[0].row, raw = value(price, 'unit_cost');
+var cost = Number(raw), currency = str(value(price, 'currency')).toUpperCase();
+if (raw == null || (typeof raw !== 'number' && typeof raw !== 'string') || !/^(?:\d+\.?\d*|\.\d+)$/.test(str(raw)) || !isFinite(cost) || cost < 0 || cost > Number.MAX_SAFE_INTEGER) return fail('PO_SUPPLIER_PRICE_INVALID', sku);
+if (!/^[A-Z]{3}$/.test(currency)) return fail('PO_SUPPLIER_CURRENCY_INVALID', sku);
+if (result.currency && result.currency !== currency) return fail('PO_SUPPLIER_CURRENCY_CONFLICT', sku);
+var amount = Number(data[rowIndex][lc('approved_qty')]) * cost;
+if (!isFinite(amount) || amount > Number.MAX_SAFE_INTEGER / 100) return fail('PO_SUPPLIER_AMOUNT_INVALID', sku);
+totalAmount += Math.round(amount * 100);
+if (!isFinite(totalAmount) || totalAmount > Number.MAX_SAFE_INTEGER) return fail('PO_SUPPLIER_AMOUNT_INVALID', sku);
+result.currency = currency;
+result.byRow[rowIndex] = { unitCost: cost, currency: currency, supplierSku: str(value(price, 'supplier_sku')) };
+var priceId = str(value(price, 'supplier_price_id') || value(price, 'price_id'));
+if (priceId && result.priceIds.indexOf(priceId) < 0) result.priceIds.push(priceId);
+}
+var facts = members.map(function (m) {
+var p = result.byRow[m.rowIndex];
+return { request_order_line_id: str(data[m.rowIndex][lc('request_order_line_id')]), sku: str(data[m.rowIndex][lc('sku')]),
+quantity: Number(data[m.rowIndex][lc('approved_qty')]), supplier_sku: p.supplierSku, unit_cost: p.unitCost, currency: p.currency };
+});
+result.preview = { warehouse_id: result.warehouseId, supplier_id: result.supplierId, supplier_name: result.supplierName,
+currency: result.currency, lines: facts, price_ids: result.priceIds, as_of: today };
+result.checksum = Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256, JSON.stringify(result.preview), Utilities.Charset.UTF_8)
+.map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+return result;
+}
+
 function roCreatePurchaseOrder_(body, tx) {
 var roId = String((body && body.request_order_id) || '').trim();
 var actor = String((body && body.actor) || 'operation-system').trim();
 if (!roId) return jsonResponse_({ success: false, error: 'Missing request_order_id', zero_write: true });
+if (body.purchase_setup_preview === true && body.purchase_setup === undefined) return jsonResponse_({ success: false, error: 'PO_PURCHASE_SETUP_REQUIRED', zero_write: true });
 
 
 
@@ -1614,9 +1695,7 @@ var company = String(roVal('company') || '').trim();
 var supplierId = String(roVal('supplier_id') || '').trim();
 var supplierName = String(roVal('supplier_name') || '').trim();
 
-var poWh = procurementResolveWarehouse_(ss, roVal('warehouse_id'), roVal('factory_id'), 'new');
-if (!poWh.ok) return jsonResponse_({ success: false, error: poWh.reason, stage: 'warehouse', detail: poWh.value || '', zero_write: true });
-var warehouseId = poWh.warehouse_id, factoryId = warehouseId;
+var warehouseId = '', factoryId = '';
 var currency = String(roVal('currency') || '').trim();
 
 
@@ -1673,18 +1752,33 @@ detail: 'request is converted_to_po but the canonical PO result is incomplete (m
 if (completeExisting) {
 
 
-poSetRoConverted_(roSheet, ref, actor, now);
+if (!(body && body.purchase_setup_preview === true)) poSetRoConverted_(roSheet, ref, actor, now);
 return poReuseResponse_(roId, det, { reused: true, repaired: true });
 }
 
 
 
 
+var poWh = procurementResolveWarehouse_(ss, body && body.purchase_setup ? body.purchase_setup.warehouse_id : roVal('warehouse_id'),
+body && body.purchase_setup ? '' : roVal('factory_id'), 'new');
+if (!poWh.ok) return jsonResponse_({ success: false, error: poWh.reason, stage: 'warehouse', detail: poWh.value || '', zero_write: true });
+warehouseId = poWh.warehouse_id; factoryId = warehouseId;
 var fw = procurementFactoryMap_(ss)[warehouseId.toLowerCase()];
 var ctx = { tx: tx, rolSheet: rolSheet, poLineIdBackCol: poLineIdBackCol, data: data, lc: lc,
 now: now, today: today, roId: roId, actor: actor, company: company, supplierId: supplierId,
 supplierName: supplierName, warehouseId: warehouseId, factoryId: factoryId, currency: currency,
 factoryWh: (fw && fw.isFactory && fw.isActive) ? fw.warehouseId : '' };
+if (body && body.purchase_setup !== undefined) {
+if (det.presentSummaries.length) return jsonResponse_({ success: false, error: 'PO_PARTIAL_CONVERSION_SETUP_CONFLICT', zero_write: true });
+var setup = poResolvePurchaseSetup_(ss, body.purchase_setup, data, lc, groups, today);
+if (!setup.ok) return jsonResponse_(setup);
+if (body.purchase_setup_preview === true) return jsonResponse_({ success: true, data: { purchase_setup_preview: setup.preview, quote_checksum: setup.checksum }, zero_write: true });
+if (body.purchase_setup_checksum !== setup.checksum) return jsonResponse_({ success: false, error: 'PO_PURCHASE_SETUP_CHANGED_REVIEW_REQUIRED', zero_write: true, stage: 'purchase_setup' });
+ctx.warehouseId = ctx.factoryId = ctx.factoryWh = setup.warehouseId;
+ctx.supplierId = setup.supplierId; ctx.supplierName = setup.supplierName; ctx.currency = setup.currency;
+ctx.commercialByRow = setup.byRow;
+ctx.setupNote = 'Purchase setup confirmed by ' + actor + ' at ' + now + '; supplier_price_list: ' + (setup.priceIds.join(', ') || 'matched supplier/SKU/effective date');
+}
 var createdSummaries = [];
 det.missingGroups.forEach(function (groupKey) {
 var summary = poCreateBucketGroup_(ss, ctx, groupKey, groups[groupKey]);
@@ -1822,6 +1916,8 @@ var orderedQty = cellNum(row, 'approved_qty');
 var upc = cellNum(row, 'units_per_carton');
 var carton = lc('carton_qty') !== -1 ? cellNum(row, 'carton_qty') : ((upc > 0) ? Math.ceil(orderedQty / upc) : 0);
 var ucRaw = lc('unit_cost') !== -1 ? data[row][lc('unit_cost')] : '';
+var commercial = ctx.commercialByRow && ctx.commercialByRow[row];
+if (commercial) ucRaw = commercial.unitCost;
 var hasUc = (ucRaw !== '' && ucRaw != null && !isNaN(parseFloat(ucRaw)));
 var unitCost = hasUc ? parseFloat(ucRaw) : '';
 var lineAmount = hasUc ? Math.round(orderedQty * unitCost * 100) / 100 : '';
@@ -1839,10 +1935,10 @@ company: cellStr(row, 'company'),
 series: cellStr(row, 'series'),
 factory_item_no: cellStr(row, 'factory_item_no'),
 factory_item_name: cellStr(row, 'factory_item_name'),
-supplier_id: cellStr(row, 'supplier_id') || ctx.supplierId,
-supplier_name: cellStr(row, 'supplier_name') || ctx.supplierName,
-supplier_sku: cellStr(row, 'supplier_sku'),
-supplier_warehouse_id: cellStr(row, 'supplier_warehouse_id') || ctx.factoryWh,
+supplier_id: commercial ? ctx.supplierId : (cellStr(row, 'supplier_id') || ctx.supplierId),
+supplier_name: commercial ? ctx.supplierName : (cellStr(row, 'supplier_name') || ctx.supplierName),
+supplier_sku: commercial ? commercial.supplierSku : cellStr(row, 'supplier_sku'),
+supplier_warehouse_id: commercial ? ctx.factoryWh : (cellStr(row, 'supplier_warehouse_id') || ctx.factoryWh),
 km_qty: cellNum(row, 'km_qty'),
 resus_qty: cellNum(row, 'resus_qty'),
 restw_qty: cellNum(row, 'restw_qty'),
@@ -1857,7 +1953,7 @@ carton_qty: carton,
 units_per_carton: upc,
 unit_cost: unitCost,
 line_amount: lineAmount,
-currency: cellStr(row, 'currency') || ctx.currency,
+currency: commercial ? commercial.currency : (cellStr(row, 'currency') || ctx.currency),
 line_status: cellStr(row, 'line_status') || 'draft',
 inspection_date: cellDate(row, 'inspection_date'),
 expected_completion_date: cellDate(row, 'expected_ready_date'),
@@ -1877,7 +1973,7 @@ if (hasUc) totalAmount += orderedQty * unitCost;
 if (sku) distinctSku[sku.toLowerCase()] = 1;
 });
 
-var subtotal = (totalAmount > 0 ? Math.round(totalAmount * 100) / 100 : '');
+var subtotal = (ctx.commercialByRow || totalAmount > 0) ? Math.round(totalAmount * 100) / 100 : '';
 procurementAppendByHeader_(poSheet, {
 purchase_order_id: purchaseOrderId,
 po_no: purchaseOrderNo,
@@ -1897,7 +1993,7 @@ paid_amount: '',
 payment_status: 'unpaid',
 payment_term_id: '',
 currency: ctx.currency,
-note: '',
+note: ctx.setupNote || '',
 purchase_order_no: purchaseOrderNo,
 po_version: 1,
 parent_purchase_order_id: purchaseOrderId,

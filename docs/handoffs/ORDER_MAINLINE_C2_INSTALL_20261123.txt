@@ -1,0 +1,46 @@
+下單主線 C2 安裝說明
+日期：2026-11-23（台北時間）
+本包為 release-7；先前內部 release-1～6 不要安裝。
+
+重要：先備份目前 Apps Script 與 DB。這裡沒有執行任何正式收貨、出貨、DB 寫入或 Apps Script 部署。
+GitHub push 與 Apps Script 部署是兩件事；GS 仍由你手動貼上、儲存及更新部署版本。
+
+【Production】
+這是本輪下單主線累計修復包，前提是原本 DW2、R3、DR4 及匯入功能已在 Production。
+只替換 Production/apps-script 內這三份同名檔案：
+13_procurement_handlers.gs
+39_document_runtime_service.gs
+51_api_v1_request_order_workspace.gs
+13 包含先前審核／轉 PO 補償與這輪價格確認；39 保留累計 PO 文件修復；51 提供新功能後端能力檢查。
+不需要更換 Production 的 router、00_config、84 私有驗證檔或 90 bundle。
+儲存後編輯原 Web App 部署，選擇新版本，維持原網址。前端由本輪 GitHub Pages 更新。
+新版前端遇到未更新的後端會阻擋新價格預覽，不會拿舊後端的 Convert 當預覽使用。
+
+【Sandbox 完整累計】
+Sandbox/apps-script 是完整「公開 GS」集合：86 份 .gs 加 appsscript.json。
+包含各輪 Sandbox 專屬安全閘、累計文件／匯入／下單修復，以及原本的 frozen 90 bundle，沒有重新編譯 bundle。
+請在正確的 Sandbox 專案逐一替換同名檔案；不要新增另一份同名函式檔，也不要刪除包外檔案。
+保留原 Sandbox 的 00_config、84 私有驗證、實際 PIN／local 設定與憑證，這些刻意不在包裡。
+不要從 Production 複製設定檔補進 Sandbox。不要把 Sandbox 的 router 或安全閘貼去 Production。
+site-delta 含公開前端資產與 Sandbox 專屬 index／guard，合併到原 Sandbox 前端，保留既有私有連線／PIN 檔。
+先儲存、更新 Sandbox Web App 的部署版本，再重新整理沙盒前端。
+
+【先驗證環境，再操作】
+你提供的 R71 Health 是編輯器輸出，只能證明已儲存，不能證明 /exec 更新。
+舊 Health 的 env=production 在 Sandbox 原始碼也是固定文字，不能只靠這欄判斷 DB 指向。
+請用 tools/SANDBOX_HEALTH_COPY_A2.v3_1.js 在「Sandbox 前端」依其註解擷取唯讀 health/capabilities。
+用 included tools/check-sbx-health-dw2.cjs 檢查擷取的 JSON。這是模組版本／安全閘檢查，不是寫入安全保證。
+仍須確認實際 Sandbox DB 與 /exec 正確；任何 STOP、缺少模組或混版先不要下單／收貨。
+SHA256SUMS.txt 可核對包內檔案內容；它不是目前遠端專案的備份。
+
+【最小驗收順序，先在 Sandbox】
+1. Order Planning 保存一筆小數量，Send Request，確認只建立一次 Request。
+2. Request Draft：更新數量／日期、Submit、Reject／重新 Submit、Approve。
+3. Convert：缺少採購資料時選工廠／供應商，Check Prices，核對後 Create PO。
+4. PO Workspace：Save 排程日期，Send PO，開啟／下載文件，核對 SKU、數量、單價、幣別、金額與日期。
+5. Receive：先部分收貨，再收剩餘數量；確認庫存與 movement 沒有重複累加。
+6. PO Overview：確認 In Production／Ready-Completed、數量與甘特圖排程。
+
+供應商單價只能取有效 supplier_price_list；缺價格、重複有效價格或混合幣別會阻擋，不會自動填 0。
+工廠、SKU 箱規、PO 模板／必填欄位／Drive 權限仍須有效。真實模板產出與正式 /exec 需你部署後驗收。
+既有 Shipped 出貨不用重新 Confirm 或重新扣庫存；本輪沒有改出貨扣帳／站點配額／混箱規則。

@@ -7,7 +7,14 @@ const crypto = require('node:crypto');
 const { extract } = require('../ad4/extract.cjs');
 const root = path.resolve(__dirname, '../../..');
 const gs = 'assets/specs/active/apps-script/';
-const read = relative => fs.readFileSync(path.join(root, relative), 'utf8');
+const read = relative => {
+  const site = process.env.KM_MAINLINE_SITE && /^assets\/(?:js|css|html)\//.test(relative)
+    ? path.join(process.env.KM_MAINLINE_SITE, relative) : '';
+  if (site && fs.existsSync(site)) return fs.readFileSync(site, 'utf8');
+  const override = process.env.KM_MAINLINE_GS && relative.startsWith(gs) && !/^(?:00_config|84_)/.test(path.basename(relative))
+    ? path.join(process.env.KM_MAINLINE_GS, path.basename(relative)) : '';
+  return fs.readFileSync(override && fs.existsSync(override) ? override : path.join(root, relative), 'utf8');
+};
 const plain = value => JSON.parse(JSON.stringify(value));
 function parts(file, names, constants = []) {
   return extract(read(file), n => names.includes(n), n => constants.includes(n)).map(p => p.text).join('\n');

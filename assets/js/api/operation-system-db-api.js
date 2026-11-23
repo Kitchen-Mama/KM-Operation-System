@@ -3098,7 +3098,8 @@ window.KM.DB.adaptRequestOrderWorkspace = function(data) {
         .filter(function(r) { return r.sku; });
     var supplierPriceList = (data.supplierPriceList || []).map(function(r) { return normalizeSupplierPriceListRecord(r || {}); })
         .filter(function(r) { return r.sku; });
-    return { orders: orders, lines: lines, lineSources: lineSources, warehouses: warehouses, skuDetails: skuDetails, supplierPriceList: supplierPriceList };
+    return { orders: orders, lines: lines, lineSources: lineSources, warehouses: warehouses, skuDetails: skuDetails, supplierPriceList: supplierPriceList,
+        purchaseSetupVersion: data.capabilities && data.capabilities.purchase_setup_version === 1 ? 1 : 0 };
 };
 
 // F1-7F: expose the canonical Shipment normalizers so a scoped-workspace page adapter produces records IDENTICAL to the
@@ -6826,6 +6827,15 @@ window.KM.DB.createPurchaseOrderFromRequest = async function(payload) {
         console.warn('[KM.DB] API not configured, createPurchaseOrderFromRequest skipped');
         return { success: false, error: 'API not configured' };
     }
+    // Old 13_ ignores unknown preview fields and would convert. Probe a read-only owner before sending either setup POST.
+    if (payload && (payload.purchase_setup !== undefined || payload.purchase_setup_preview === true)) {
+        var api = window.KM && window.KM.api;
+        if (!api || typeof api.getWorkspace !== 'function') throw new Error('PO_PURCHASE_SETUP_BACKEND_UPDATE_REQUIRED');
+        var capability = await api.getWorkspace('requestOrder', { page: { number: 1, size: 1 }, include: { summary: false, orders: false, details: false, filterOptions: false } });
+        if (!capability || capability.success !== true || !capability.data || !capability.data.capabilities || capability.data.capabilities.purchase_setup_version !== 1) {
+            throw new Error('PO_PURCHASE_SETUP_BACKEND_UPDATE_REQUIRED: deploy 13_procurement_handlers.gs and 51_api_v1_request_order_workspace.gs');
+        }
+    }
     var resp = await fetch(OP_DB_API_BASE_URL, {
         method: 'POST',
         cache: 'no-store',
@@ -6834,8 +6844,8 @@ window.KM.DB.createPurchaseOrderFromRequest = async function(payload) {
     });
     if (!resp.ok) throw new Error('API returned ' + resp.status);
     var json = await resp.json();
-    if (!json.success) throw new Error(json.error || 'Create purchase order failed');
-    await _kmWriterPostWrite_();
+    if (!json.success) throw new Error((json.error || 'Create purchase order failed') + (json.detail ? ': ' + json.detail : ''));
+    if (!(payload && payload.purchase_setup_preview === true)) await _kmWriterPostWrite_();
     return json.data;
 };
 

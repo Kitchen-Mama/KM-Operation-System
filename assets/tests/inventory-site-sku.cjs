@@ -6,7 +6,11 @@ const vm = require('node:vm');
 const crypto = require('node:crypto');
 const { extract } = require('./ad4/extract.cjs');
 const root = path.resolve(__dirname, '../..');
-const read = p => fs.readFileSync(path.join(root, p), 'utf8');
+const read = p => {
+  const override = process.env.KM_SITE_GS && /\/apps-script\/[^/]+\.gs$/.test(p) && !/^(?:00_config|84_)/.test(path.basename(p))
+    ? path.join(process.env.KM_SITE_GS, path.basename(p)) : '';
+  return fs.readFileSync(override && fs.existsSync(override) ? override : path.join(root, p), 'utf8');
+};
 const gs = 'assets/specs/active/apps-script/';
 const parts = (source, names, vars = []) => extract(source, n => names.includes(n), n => vars.includes(n)).map(p => p.text).join('\n');
 // Reuse only the synthetic spreadsheet host, without running the phase-one audit tests.
