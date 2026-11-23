@@ -329,19 +329,20 @@ test('Gantt reads canonical header schedule dates, not a separate production_sch
   assert.match(body.innerHTML, /C10\/S0\/R10/);
 });
 
-// Known-defect probes assert the observed baseline, NOT that the workflow is safe.
-// Keep these explicit so a passing test cannot be mistaken for full-chain acceptance.
-test('KNOWN GAP: approving with a line-write failure leaves the header advanced', () => {
+// Checkpoint B replaces the original known-defect observations with regression assertions.
+test('approving with a line-write failure restores the header and lines', () => {
   const h = host(), id = request(h);
   assert.equal(status(h, id, 'submit').success, true);
   h.tables.request_order_lines.beforeWrite = () => { throw new Error('FIXTURE_LINE_WRITE_FAILURE'); };
-  assert.throws(() => status(h, id, 'approve'), /FIXTURE_LINE_WRITE_FAILURE/);
-  assert.equal(h.rows('request_orders')[0].request_status, 'approved');
+  const result = status(h, id, 'approve');
+  assert.equal(result.success, false);
+  assert.equal(result.rollback_verified, true);
+  assert.equal(h.rows('request_orders')[0].request_status, 'pending_approval');
   assert.equal(h.rows('request_order_lines')[0].line_status, 'submitted');
-  assert.equal(h.lockCalls(), 0);
+  assert(h.lockCalls() >= 2);
 });
 
-test('KNOWN GAP: concurrent reject can leave an already converted request back in Draft', () => {
+test('concurrent approval/conversion cannot interleave with a rejection', () => {
   const h = host(), id = request(h);
   assert.equal(status(h, id, 'submit').success, true);
   const sh = h.tables.request_orders, statusCol = sh.grid[0].indexOf('request_status') + 1;
@@ -354,28 +355,31 @@ test('KNOWN GAP: concurrent reject can leave an already converted request back i
     }
   };
   const rejected = status(h, id, 'reject', { rejected_reason: 'Concurrent fixture rejection' });
-  assert.equal(nested.success, true);
-  assert.equal(converted.success, true, JSON.stringify(converted));
+  assert.equal(nested.success, false);
+  assert.equal(nested.code, 'PO_LOCK_UNAVAILABLE');
+  assert.equal(converted.success, false, JSON.stringify(converted));
+  assert.equal(converted.code, 'PO_LOCK_UNAVAILABLE');
   assert.equal(rejected.success, true);
   assert.equal(h.rows('request_orders')[0].request_status, 'draft');
-  assert.notEqual(h.rows('request_orders')[0].approved_at, '');
-  assert.equal(h.rows('purchase_orders').length, 1);
-  assert.equal(h.lockCalls(), 1, 'only conversion acquired a lock, reject and approve did not');
+  assert.equal(h.rows('request_orders')[0].approved_at, '');
+  assert.equal(h.rows('purchase_orders').length, 0);
+  assert(h.lockCalls() >= 4);
 });
 
-test('KNOWN GAP: an all-zero approved request can create a zero-quantity PO', () => {
+test('an all-zero request cannot submit or create a zero-quantity PO', () => {
   const h = host(), id = request(h), line = h.rows('request_order_lines')[0];
   assert.equal(h.c.handleUpdateRequestOrderLineQty_({ lines: [{ request_order_line_id: line.request_order_line_id,
     approved_qty: 0 }] }).success, true);
-  assert.equal(status(h, id, 'submit').success, true);
-  assert.equal(status(h, id, 'approve').success, true);
+  assert.equal(status(h, id, 'submit').code, 'REQUEST_NO_POSITIVE_LINES');
+  h.put('request_orders', 'request_order_id', id, 'request_status', 'approved');
   const response = convert(h, id);
-  assert.equal(response.success, true, JSON.stringify(response));
-  assert.equal(h.rows('purchase_order_lines')[0].ordered_qty, 0);
-  assert.equal(h.rows('purchase_orders')[0].total_qty, 0);
+  assert.equal(response.success, false, JSON.stringify(response));
+  assert.equal(response.code, 'REQUEST_NO_POSITIVE_LINES');
+  assert.equal(h.rows('purchase_order_lines').length, 0);
+  assert.equal(h.rows('purchase_orders').length, 0);
 });
 
-test('KNOWN GAP: PO header append failure leaves orphan lines despite compensated=true', () => {
+test('PO header append failure removes this attempt lines/backlinks and retry succeeds', () => {
   const h = host(), id = approved(h), sheet = h.tables.purchase_orders;
   const append = sheet.appendRow;
   sheet.appendRow = () => { throw new Error('FIXTURE_PO_HEADER_APPEND_FAILURE'); };
@@ -383,12 +387,13 @@ test('KNOWN GAP: PO header append failure leaves orphan lines despite compensate
   assert.equal(failed.success, false);
   assert.equal(failed.compensated, true);
   assert.equal(h.rows('purchase_orders').length, 0);
-  assert.equal(h.rows('purchase_order_lines').length, 1);
-  assert.notEqual(h.rows('request_order_lines')[0].purchase_order_line_id, '');
+  assert.equal(h.rows('purchase_order_lines').length, 0);
+  assert.equal(h.rows('request_order_lines')[0].purchase_order_line_id, '');
   sheet.appendRow = append;
   const retry = convert(h, id);
-  assert.equal(retry.success, false);
-  assert.equal(retry.error, 'PO_CREATION_ATOMICITY_GAP');
+  assert.equal(retry.success, true, JSON.stringify(retry));
+  assert.equal(h.rows('purchase_orders').length, 1);
+  assert.equal(h.rows('purchase_order_lines').length, 1);
 });
 
 test('PO document canonical facts are repaired; frozen pre-fix release still reproduces the original gap', () => {

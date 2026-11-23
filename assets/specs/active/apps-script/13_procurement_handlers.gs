@@ -955,6 +955,9 @@ return jsonResponse_({ success: false, error: 'REQUEST_ORDER_WRITE_FAILED:' + (w
 
 
 function handleUpdateRequestOrderStatus_(body) {
+return roLockedMutation_('status', body, function (tx) { return roUpdateStatus_(body, tx); });
+}
+function roUpdateStatus_(body, tx) {
 var roId = String((body && body.request_order_id) || '').trim();
 var transition = String((body && body.transition) || '').trim();
 var actor = String((body && body.actor) || 'operation-system').trim();
@@ -972,12 +975,16 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
 var sheet = ss.getSheetByName('request_orders');
 if (!sheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found', zero_write: true });
 
-sheetEnsureColumns_(sheet, ['request_status', 'tier_group', 'completed_by', 'completed_at', 'updated_by', 'updated_at']);
+roRequireColumns_(sheet, ['request_status', 'tier_group', 'completed_by', 'completed_at', 'updated_by', 'updated_at']);
 
 var ref = procurementFindRow_(sheet, 'request_order_id', roId);
 if (!ref) return jsonResponse_({ success: false, error: 'Request order not found: ' + roId, zero_write: true });
 var col = ref.col;
 var curStatus = procurementReqStatus_(ref);
+if ((transition === 'submit' && curStatus === 'draft') || (transition === 'approve' && curStatus === 'pending_approval')) {
+var positive = roPositiveLines_(ss, roId);
+if (!positive.ok) return jsonResponse_(positive);
+}
 var now = procurementTimestamp_();
 function setCell(name, value) { var c = col(name); if (c !== -1) sheet.getRange(ref.row, c + 1).setValue(value); }
 
@@ -1043,7 +1050,7 @@ return jsonResponse_({ success: true, data: { request_order_id: roId, transition
 function procurementUpdateRequestLines_(ss, roId, opts) {
 var sh = ss.getSheetByName('request_order_lines');
 if (!sh) return;
-sheetEnsureColumns_(sh, ['line_status', 'updated_at']);
+roRequireColumns_(sh, ['line_status', 'updated_at']);
 var data = sh.getDataRange().getValues();
 if (data.length < 2) return;
 var h = data[0].map(function (x) { return String(x).trim(); });
@@ -1107,6 +1114,9 @@ return map;
 
 
 function handleUpdateRequestOrderLineQty_(body) {
+return roLockedMutation_('edit', body, function (tx) { return roUpdateLineQty_(body, tx); });
+}
+function roUpdateLineQty_(body, tx) {
 var reqLines = (body && body.lines) || [];
 if (!reqLines.length) return jsonResponse_({ success: false, error: 'No lines provided' });
 
@@ -1296,6 +1306,7 @@ var shipDate = procurementDateOnly_(String(rq.expected_ship_date || '').trim() |
 var note = String(rq.note || '').trim() || sibStr(noteCol);
 var cq = procurementCompanyQty_(company, approved);
 var newLineId = 'ROL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+tx.intent('request_order_lines', newLineId);
 
 
 procurementAppendByHeader_(lineSheet, {
@@ -1343,6 +1354,7 @@ sf = sf || { site_sku: '', marketplace_product_id: '', country: '', marketplace:
 }
 sf = sf || {};
 var sid = 'ROLS-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+tx.intent('request_order_line_sources', sid);
 procurementAppendByHeader_(srcSheet, {
 request_order_line_source_id: sid,
 line_source_id: sid,
@@ -1467,6 +1479,9 @@ setCell('estimated_amount', est > 0 ? Math.round(est * 100) / 100 : '');
 
 
 function handleCancelRequestOrderTier_(body) {
+return roLockedMutation_('cancel_tier', body, function (tx) { return roCancelTier_(body, tx); });
+}
+function roCancelTier_(body, tx) {
 var ids = (body && body.request_order_line_ids) || [];
 if (!ids.length) return jsonResponse_({ success: false, error: 'request_order_line_ids required' });
 var actor = String((body && body.actor) || 'operation-system').trim();
@@ -1476,8 +1491,8 @@ var lineSheet = ss.getSheetByName('request_order_lines');
 var roSheet = ss.getSheetByName('request_orders');
 if (!lineSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found' });
 if (!roSheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found' });
-sheetEnsureColumns_(lineSheet, ['line_status', 'updated_at']);
-sheetEnsureColumns_(roSheet, ['request_status']);
+roRequireColumns_(lineSheet, ['line_status', 'updated_at']);
+roRequireColumns_(roSheet, ['request_status']);
 
 var data = lineSheet.getDataRange().getValues();
 if (data.length < 2) return jsonResponse_({ success: false, error: 'request_order_lines is empty' });
@@ -1564,23 +1579,21 @@ return jsonResponse_({ success: true, data: { cancelled_lines: cancelled, skippe
 
 
 function handleCreatePurchaseOrderFromRequest_(body) {
+return roLockedMutation_('convert', body, function (tx) { return roCreatePurchaseOrder_(body, tx); });
+}
+function roCreatePurchaseOrder_(body, tx) {
 var roId = String((body && body.request_order_id) || '').trim();
 var actor = String((body && body.actor) || 'operation-system').trim();
 if (!roId) return jsonResponse_({ success: false, error: 'Missing request_order_id', zero_write: true });
 
 
 
-var lock = LockService.getScriptLock();
-try { if (!lock.tryLock(30000)) return jsonResponse_({ success: false, error: 'Could not acquire lock; please retry.', stage: 'lock', zero_write: true }); }
-catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e && e.message ? e.message : e), stage: 'lock', zero_write: true }); }
-try {
-
 var ss = SpreadsheetApp.getActiveSpreadsheet();
 var roSheet = ss.getSheetByName('request_orders');
 var rolSheet = ss.getSheetByName('request_order_lines');
 if (!roSheet) return jsonResponse_({ success: false, error: 'request_orders sheet not found', zero_write: true });
 if (!rolSheet) return jsonResponse_({ success: false, error: 'request_order_lines sheet not found', zero_write: true });
-sheetEnsureColumns_(roSheet, ['request_status']);
+roRequireColumns_(roSheet, ['request_status']);
 
 
 var ref = procurementFindRow_(roSheet, 'request_order_id', roId);
@@ -1608,8 +1621,10 @@ var currency = String(roVal('currency') || '').trim();
 
 
 
-sheetEnsureColumns_(rolSheet, ['purchase_order_line_id']);
+roRequireColumns_(rolSheet, ['purchase_order_line_id']);
 var data = rolSheet.getDataRange().getValues();
+var positive = roPositiveLines_(ss, roId, data);
+if (!positive.ok) return jsonResponse_(positive);
 var lh = data[0].map(function (x) { return String(x).trim(); });
 function lc(n) { return lh.indexOf(n); }
 var poLineIdBackCol = lc('purchase_order_line_id');
@@ -1621,6 +1636,7 @@ if (!sku) continue;
 
 var ls = lc('line_status') !== -1 ? String(data[i][lc('line_status')]).trim().toLowerCase() : '';
 if (ls === 'cancelled') continue;
+if (!positive.rows[i]) continue;
 var bucket = lc('request_bucket') !== -1 ? String(data[i][lc('request_bucket')]).trim().toUpperCase() : '';
 var groupKey = (bucket === 'T2' || bucket === 'T3') ? 'T2_T3' : 'T1';
 groups[groupKey].push({ rowIndex: i, bucket: (bucket || 'T1') });
@@ -1665,23 +1681,15 @@ return poReuseResponse_(roId, det, { reused: true, repaired: true });
 
 
 var fw = procurementFactoryMap_(ss)[warehouseId.toLowerCase()];
-var ctx = { rolSheet: rolSheet, poLineIdBackCol: poLineIdBackCol, data: data, lc: lc,
+var ctx = { tx: tx, rolSheet: rolSheet, poLineIdBackCol: poLineIdBackCol, data: data, lc: lc,
 now: now, today: today, roId: roId, actor: actor, company: company, supplierId: supplierId,
 supplierName: supplierName, warehouseId: warehouseId, factoryId: factoryId, currency: currency,
 factoryWh: (fw && fw.isFactory && fw.isActive) ? fw.warehouseId : '' };
-var createdSummaries = [], createdPoIds = [];
-try {
+var createdSummaries = [];
 det.missingGroups.forEach(function (groupKey) {
 var summary = poCreateBucketGroup_(ss, ctx, groupKey, groups[groupKey]);
-createdPoIds.push(summary.purchase_order_id);
 createdSummaries.push(summary);
 });
-} catch (writeErr) {
-
-
-try { poDeleteCreatedThisRun_(ss, roId, createdPoIds); } catch (compErr) { }
-return jsonResponse_({ success: false, error: 'PO_CREATION_WRITE_FAILED:' + (writeErr && writeErr.message ? writeErr.message : writeErr), stage: 'write', compensated: true });
-}
 
 
 poSetRoConverted_(roSheet, ref, actor, now);
@@ -1698,7 +1706,6 @@ reused: false,
 recovered: det.presentSummaries.length > 0
 } });
 
-} finally { try { lock.releaseLock(); } catch (e2) { } }
 }
 
 
@@ -1749,6 +1756,30 @@ if (lpo && !headerIds[lpo]) orphanPoIds[lpo] = 1;
 }
 }
 var conflict = false, conflictDetail = [];
+// A landed header with missing children/backlinks is not a completed conversion to reuse.
+var activePo = Object.create(null), polById = Object.create(null), childCount = Object.create(null), requestLines = Object.create(null), linkErrors = [];
+['T1', 'T2_T3'].forEach(function (g) { headersByGroup[g].forEach(function (p) { activePo[p.purchase_order_id] = true; }); });
+if (polSheet && ld && lhx) {
+var idAt = lhx.indexOf('purchase_order_line_id'), parentAt = lhx.indexOf('purchase_order_id'), requestAt = lhx.indexOf('request_order_line_id');
+for (var x = 1; x < ld.length; x++) {
+var lineId = idAt >= 0 ? String(ld[x][idAt]).trim() : '', parentId = parentAt >= 0 ? String(ld[x][parentAt]).trim() : '';
+if (lineId) { if (polById[lineId]) polById[lineId].duplicate = true; else polById[lineId] = { parent: parentId, requestLine: requestAt >= 0 ? String(ld[x][requestAt]).trim() : '' }; }
+if (activePo[parentId]) childCount[parentId] = (childCount[parentId] || 0) + 1;
+}
+}
+var requestSheet = ss.getSheetByName('request_order_lines');
+if (requestSheet) {
+var requests = requestSheet.getDataRange().getValues(), requestHeaders = requests[0] || [], requestIdAt = requestHeaders.indexOf('request_order_line_id'), roAt = requestHeaders.indexOf('request_order_id'), backAt = requestHeaders.indexOf('purchase_order_line_id');
+for (var y = 1; y < requests.length; y++) {
+if (roAt < 0 || String(requests[y][roAt]).trim() !== roId) continue;
+var rid = requestIdAt >= 0 ? String(requests[y][requestIdAt]).trim() : '', back = backAt >= 0 ? String(requests[y][backAt] || '').trim() : '';
+requestLines[rid] = back;
+if (back && (!polById[back] || polById[back].duplicate || polById[back].requestLine !== rid)) linkErrors.push('invalid backlink ' + rid);
+}
+}
+Object.keys(activePo).forEach(function (id) { if (!childCount[id]) linkErrors.push('header without lines ' + id); });
+Object.keys(polById).forEach(function (id) { var line = polById[id]; if (activePo[line.parent] && (!line.requestLine || requestLines[line.requestLine] !== id || line.duplicate)) linkErrors.push('incomplete line linkage ' + id); });
+if (linkErrors.length) { conflict = true; conflictDetail = conflictDetail.concat(linkErrors); }
 ['T1', 'T2_T3'].forEach(function (g) {
 if (headersByGroup[g].length > 1) { conflict = true; conflictDetail.push(g + ' x' + headersByGroup[g].length); }
 if (headersByGroup[g].length >= 1 && !expected[g]) { conflict = true; conflictDetail.push('unexpected ' + g); }
@@ -1775,6 +1806,7 @@ function cellStr(row, name) { return lc(name) !== -1 ? String(data[row][lc(name)
 function cellDate(row, name) { return lc(name) !== -1 ? procurementDateOnly_(data[row][lc(name)]) : ''; }
 
 var purchaseOrderId = 'PO-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+ctx.tx.intent('purchase_orders', purchaseOrderId);
 var purchaseOrderNo = 'PO-' + today.replace(/-/g, '') + '-' + Utilities.getUuid().substring(0, 4).toUpperCase() + '-' + groupKey;
 
 var totalQty = 0, totalCartons = 0, totalAmount = 0, distinctSku = {};
@@ -1794,6 +1826,7 @@ var hasUc = (ucRaw !== '' && ucRaw != null && !isNaN(parseFloat(ucRaw)));
 var unitCost = hasUc ? parseFloat(ucRaw) : '';
 var lineAmount = hasUc ? Math.round(orderedQty * unitCost * 100) / 100 : '';
 var poLineId = 'POL-' + Utilities.getUuid().substring(0, 10).toUpperCase();
+ctx.tx.intent('purchase_order_lines', poLineId);
 
 procurementAppendByHeader_(polSheet, {
 purchase_order_line_id: poLineId,
@@ -1891,7 +1924,7 @@ request_bucket: groupKey, line_count: members.length, total_qty: totalQty };
 
 
 function poSetRoConverted_(roSheet, ref, actor, now) {
-sheetEnsureColumns_(roSheet, ['request_status', 'updated_by', 'updated_at']);
+roRequireColumns_(roSheet, ['request_status', 'updated_by', 'updated_at']);
 function setRo(name, value) { var c = ref.col(name); if (c !== -1) roSheet.getRange(ref.row, c + 1).setValue(value); }
 setRo('request_status', 'converted_to_po');
 setRo('updated_by', actor);
@@ -1987,6 +2020,132 @@ function procurementResolveWarehouse_(ss, w, f, op) { return procurementResolveW
 
 
 var PROC_LOCK_BUSY_ = { success: false, code: 'PO_LOCK_UNAVAILABLE', error: 'Could not acquire lock; please retry.', stage: 'lock', zero_write: true };
+var RO_RECOVERY_MARKER_ = '[PROCUREMENT_RECOVERY_REQUIRED]';
+function roRequireColumns_(sheet, columns) {
+if (!sheet) throw new Error('PROCUREMENT_TABLE_MISSING');
+var h = sheet.getDataRange().getValues()[0] || [];
+if (columns.some(function (c) { return h.indexOf(c) < 0; })) throw new Error('PROCUREMENT_COLUMNS_MISSING:' + columns.join(','));
+}
+function roPositiveLines_(ss, id, data) {
+var sh = ss.getSheetByName('request_order_lines');
+if (!sh) return { success: false, ok: false, code: 'REQUEST_LINES_UNREADABLE', error: 'Request lines cannot be read.', zero_write: true };
+data = data || sh.getDataRange().getValues();
+var h = data[0] || [], parent = h.indexOf('request_order_id'), sku = h.indexOf('sku'), qty = h.indexOf('approved_qty'), status = h.indexOf('line_status'), rows = {}, count = 0;
+if ([parent, sku, qty, status].some(function (c) { return c < 0; })) return { success: false, ok: false, code: 'REQUEST_LINES_UNREADABLE', error: 'Required request line columns are missing.', zero_write: true };
+for (var i = 1; i < data.length; i++) {
+if (String(data[i][parent]).trim() !== id || String(data[i][status]).trim().toLowerCase() === 'cancelled') continue;
+var raw = data[i][qty], n = Number(raw), text = String(raw == null ? '' : raw).trim();
+if (!String(data[i][sku] || '').trim() || !text || typeof raw === 'boolean' || !isFinite(n) || n < 0 || Math.floor(n) !== n || n > 9007199254740991) return { success: false, ok: false, code: 'REQUEST_APPROVED_QTY_INVALID', error: 'Every active request line needs a SKU and a known nonnegative whole approved quantity.', row: i + 1, zero_write: true };
+if (n > 0) { rows[i] = true; count++; }
+}
+return count ? { ok: true, rows: rows } : { success: false, ok: false, code: 'REQUEST_NO_POSITIVE_LINES', error: 'At least one active request line must have approved quantity greater than zero.', zero_write: true };
+}
+function roTxRead_(ss, name, ids, lineIds, optional) {
+var sh = ss.getSheetByName(name); if (!sh && optional) return null;
+if (!sh) throw new Error('PROCUREMENT_TABLE_MISSING:' + name);
+var range = sh.getDataRange(), data = range.getValues(), h = data[0] || [], fx = typeof range.getFormulas === 'function' ? range.getFormulas() : [];
+var keys = { request_orders: ['request_order_id'], request_order_lines: ['request_order_line_id'], request_order_line_sources: ['request_order_line_source_id', 'line_source_id'], purchase_orders: ['purchase_order_id'], purchase_order_lines: ['purchase_order_line_id'] }[name];
+var keyCols = keys.map(function (k) { return h.indexOf(k); }).filter(function (c) { return c >= 0; }), parent = h.indexOf('request_order_id'), line = h.indexOf('request_order_line_id');
+if (!keyCols.length || parent < 0) throw new Error('PROCUREMENT_IDENTITY_COLUMNS_MISSING:' + name);
+var rows = [], allIds = Object.create(null), counts = Object.create(null);
+function key(r) { for (var i = 0; i < keyCols.length; i++) { var s = String(r[keyCols[i]] || '').trim(); if (s) return s; } return ''; }
+function owned(r) { return !!ids[String(r[parent] || '').trim()] || (line >= 0 && !!lineIds[String(r[line] || '').trim()]); }
+for (var r = 1; r < data.length; r++) {
+var k = key(data[r]); if (k) { allIds[k] = true; counts[k] = (counts[k] || 0) + 1; }
+if (owned(data[r])) { if (!k) throw new Error('PROCUREMENT_ROW_ID_MISSING:' + name); rows.push({ key: k, row: r + 1, values: data[r].slice(), formulas: (fx[r] || []).slice() }); }
+}
+if (rows.some(function (r) { return counts[r.key] !== 1; })) throw new Error('PROCUREMENT_ROW_ID_DUPLICATE:' + name);
+return { name: name, sheet: sh, headers: h.slice(), rows: rows, allIds: allIds, key: key, owned: owned };
+}
+function roTxCapture_(ss, operation, body) {
+body = body || {};
+var ids = Object.create(null), wanted = Object.create(null), lineIds = Object.create(null);
+if (body.request_order_id) ids[String(body.request_order_id).trim()] = true;
+(body.lines || []).forEach(function (r) { if (r.new_line && r.request_order_id) ids[String(r.request_order_id).trim()] = true; if (r.request_order_line_id) wanted[String(r.request_order_line_id).trim()] = true; });
+(body.request_order_line_ids || []).forEach(function (id) { wanted[String(id).trim()] = true; });
+var sh = ss.getSheetByName('request_order_lines'); if (!sh) throw new Error('PROCUREMENT_TABLE_MISSING:request_order_lines');
+roRequireColumns_(sh, ['request_order_line_id', 'request_order_id', 'line_status', 'approved_qty', 'updated_at']);
+roRequireColumns_(ss.getSheetByName('request_orders'), ['request_order_id', 'request_status', 'updated_by', 'updated_at']);
+var data = sh.getDataRange().getValues(), h = data[0] || [], ci = h.indexOf('request_order_line_id'), cp = h.indexOf('request_order_id');
+if (ci < 0 || cp < 0) throw new Error('PROCUREMENT_REQUEST_IDENTITY_MISSING');
+data.slice(1).forEach(function (r) { if (wanted[String(r[ci]).trim()]) ids[String(r[cp]).trim()] = true; });
+data.slice(1).forEach(function (r) { if (ids[String(r[cp]).trim()]) lineIds[String(r[ci]).trim()] = true; });
+var names = ['request_orders', 'request_order_lines', 'request_order_line_sources'];
+if (operation === 'convert') names = names.concat(['purchase_orders', 'purchase_order_lines']);
+var tables = names.map(function (n) { return roTxRead_(ss, n, ids, lineIds, n === 'request_order_line_sources'); }).filter(Boolean), byName = {};
+tables.forEach(function (t) { byName[t.name] = t; });
+var ro = byName.request_orders, note = ro.headers.indexOf('note');
+if (note < 0) throw new Error('PROCUREMENT_COLUMNS_MISSING:request_orders.note');
+if (ro.rows.some(function (r) { return String(r.values[note] || '').split('\n').some(function (s) { return s.indexOf(RO_RECOVERY_MARKER_) === 0; }); })) throw new Error('PROCUREMENT_RECOVERY_REQUIRED');
+if (operation === 'edit') (body.lines || []).forEach(function (r) {
+if (r.approved_qty === undefined) return;
+var n = Number(r.approved_qty), s = String(r.approved_qty == null ? '' : r.approved_qty).trim();
+if (!s || typeof r.approved_qty === 'boolean' || !isFinite(n) || n < 0 || Math.floor(n) !== n || n > 9007199254740991) throw new Error('REQUEST_APPROVED_QTY_INVALID');
+});
+return { ss: ss, ids: ids, lineIds: lineIds, tables: tables, byName: byName, intents: {}, intent: function (name, id) {
+var t = byName[name]; if (!t || !id || t.allIds[id]) throw new Error('PROCUREMENT_APPEND_ID_CONFLICT:' + name);
+var set = this.intents[name] || (this.intents[name] = Object.create(null));
+if (set[id]) throw new Error('PROCUREMENT_APPEND_ID_CONFLICT:' + name); set[id] = true;
+} };
+}
+function roTxCellSame_(a, b) {
+if (Object.prototype.toString.call(a) === '[object Date]' && Object.prototype.toString.call(b) === '[object Date]') return a.getTime() === b.getTime();
+return a === b || ((a == null || a === '') && (b == null || b === ''));
+}
+function roTxUndo_(tx) {
+// A Sheets call may land before throwing; final readback determines compensation.
+function attempt(fn) { try { fn(); } catch (e) {} }
+// Delete only IDs declared before this operation's append, never unrelated/pre-existing rows.
+tx.tables.slice().reverse().forEach(function (old) { attempt(function () {
+var current = roTxRead_(tx.ss, old.name, tx.ids, tx.lineIds, false), intended = tx.intents[old.name] || {};
+current.rows.slice().reverse().forEach(function (r) { if (intended[r.key] && !old.allIds[r.key]) attempt(function () { current.sheet.deleteRow(r.row); }); });
+}); });
+tx.tables.forEach(function (old) { attempt(function () {
+var current = roTxRead_(tx.ss, old.name, tx.ids, tx.lineIds, false), byId = Object.create(null);
+if (old.headers.join('\n') !== current.headers.join('\n')) throw new Error('PROCUREMENT_ROLLBACK_HEADER_CHANGED');
+current.rows.forEach(function (r) { byId[r.key] = r; });
+old.rows.forEach(function (r) {
+var live = byId[r.key]; if (!live) throw new Error('PROCUREMENT_ROLLBACK_ROW_MISSING');
+r.values.forEach(function (v, c) {
+var formula = r.formulas[c] || '', nowFormula = live.formulas[c] || '';
+if (!roTxCellSame_(v, live.values[c]) || formula !== nowFormula) attempt(function () { current.sheet.getRange(live.row, c + 1).setValue(formula || v); });
+});
+});
+}); });
+try {
+return tx.tables.every(function (old) {
+var current = roTxRead_(tx.ss, old.name, tx.ids, tx.lineIds, false), byId = Object.create(null);
+if (old.headers.join('\n') !== current.headers.join('\n')) return false;
+current.rows.forEach(function (r) { byId[r.key] = r; });
+if (Object.keys(tx.intents[old.name] || {}).some(function (id) { return current.allIds[id]; })) return false;
+return old.rows.every(function (r) { var live = byId[r.key]; return live && r.values.every(function (v, c) { return roTxCellSame_(v, live.values[c]) && (r.formulas[c] || '') === (live.formulas[c] || ''); }); });
+});
+} catch (e) { return false; }
+}
+function roTxMarkRecovery_(tx, operation) {
+var ok = true, sheet = tx.ss.getSheetByName('request_orders');
+Object.keys(tx.ids).forEach(function (id) { try {
+var ref = procurementFindRow_(sheet, 'request_order_id', id), c = ref && ref.col('note');
+if (!ref || c < 0) { ok = false; return; }
+var note = String(ref.vals[c] || ''), marker = RO_RECOVERY_MARKER_ + ' ' + operation + ' ' + procurementTimestamp_();
+sheet.getRange(ref.row, c + 1).setValue(note + (note ? '\n' : '') + marker);
+var after = procurementFindRow_(sheet, 'request_order_id', id); if (!after || String(after.vals[c]).indexOf(marker) < 0) ok = false;
+} catch (e) { ok = false; } }); return ok;
+}
+function roLockedMutation_(operation, body, work) {
+return procLocked_(function () {
+var tx;
+try { tx = roTxCapture_(SpreadsheetApp.getActiveSpreadsheet(), operation, body); }
+catch (e) { var message = String(e && e.message || e); return jsonResponse_({ success: false, code: message === 'PROCUREMENT_RECOVERY_REQUIRED' || message === 'REQUEST_APPROVED_QTY_INVALID' ? message : 'REQUEST_MUTATION_PRECHECK_FAILED', error: message, zero_write: true }); }
+try { return work(tx); }
+catch (e) {
+var restored = roTxUndo_(tx), marked = restored ? false : roTxMarkRecovery_(tx, operation);
+return jsonResponse_({ success: false, code: restored ? 'REQUEST_MUTATION_ROLLED_BACK' : 'PROCUREMENT_RECOVERY_REQUIRED',
+error: (operation === 'convert' ? 'PO_CREATION_WRITE_FAILED:' : 'REQUEST_MUTATION_WRITE_FAILED:') + String(e && e.message || e), stage: 'write',
+compensated: restored, rollback_verified: restored, retry_safe: restored, requires_owner_review: !restored, recovery_marker_recorded: marked });
+}
+});
+}
 function procTakeLock_() { var l = LockService.getScriptLock(); try { if (l.tryLock(30000)) return l; } catch (e) {} return null; }
 function procLocked_(fn) { var l = procTakeLock_(); if (!l) return jsonResponse_(PROC_LOCK_BUSY_); try { return fn(); } finally { try { l.releaseLock(); } catch (e) {} } }
 // PG12R2 (G-1, Owner batch B r2 2026-11-13): a PO cancel is refused, zero writes, inside the status lock, unless the books PROVE the PO holds nothing:
@@ -2153,6 +2312,12 @@ var ss = SpreadsheetApp.getActiveSpreadsheet();
 var sheet = ss.getSheetByName('purchase_orders');
 if (!sheet) return jsonResponse_({ success: false, error: 'purchase_orders sheet not found', zero_write: true });
 sheetEnsureColumns_(sheet, ['order_status', 'order_date', 'deposit_due_date']);
+var recoveryPo = procurementFindRow_(sheet, 'purchase_order_id', poId);
+if (recoveryPo && recoveryPo.col('request_order_id') >= 0) {
+var recoveryRoSheet = ss.getSheetByName('request_orders'), recoveryRoId = String(recoveryPo.vals[recoveryPo.col('request_order_id')] || '').trim();
+var recoveryRo = recoveryRoSheet && recoveryRoId && procurementFindRow_(recoveryRoSheet, 'request_order_id', recoveryRoId);
+if (recoveryRo && recoveryRo.col('note') >= 0 && String(recoveryRo.vals[recoveryRo.col('note')] || '').split('\n').some(function (s) { return s.indexOf(RO_RECOVERY_MARKER_) === 0; })) return jsonResponse_({ success: false, code: 'PROCUREMENT_RECOVERY_REQUIRED', error: 'The linked Request requires owner-reviewed recovery before changing this PO status.', requires_owner_review: true, zero_write: true });
+}
 
 
 

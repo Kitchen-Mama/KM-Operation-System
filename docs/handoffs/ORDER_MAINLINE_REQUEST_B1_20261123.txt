@@ -1,0 +1,93 @@
+ORDER MAINLINE - CHECKPOINT B1 - REQUEST TRANSACTIONS AND CONVERSION RECOVERY
+Date: 2026-11-23 (Asia/Taipei)
+Base commit: f7843d49878b66cdf2309955cca86287209d969b
+Status: LOCAL REPAIR VERIFIED; DEPLOYMENT DEFERRED; FULL SANDBOX ACCEPTANCE OPEN
+
+SYNC ANSWER
+Sandbox can wait until the current repair series is ready for consolidated UAT.
+No deployment is needed now. Do not copy Production's recent GS files wholesale
+into Sandbox: the schema/target adapters, router policy and private configuration
+are environment-specific. The old Sandbox is still suitable for its existing
+demo, but is NOT evidence that these new repairs passed live acceptance.
+Freeze/deploy a matching Sandbox cumulative package, test the mainline there,
+then approve the Production package. Keep all existing DB headers and backups.
+
+DELIVERED
+- Request status transitions, quantity editing, tier cancellation and RO-to-PO
+  conversion now acquire the same existing ScriptLock before reading mutable facts.
+- Submit/approve/convert require at least one positive, active approved line.
+  Zero-approved lines remain in request history but do not create PO lines or
+  empty bucket POs. Invalid/unknown/negative/fractional quantities refuse edits.
+- A mutation snapshots the affected Request rows and their sources; conversion
+  also covers the relevant PO rows. Existing row IDs and formulas are preserved.
+- New manual allocation/source and PO/header/child IDs are registered before
+  their first append. Compensation deletes only this attempt's declared new IDs,
+  restores affected existing cells/backlinks and checks persisted readback.
+- A write/append which landed before throwing is covered. Existing valid PO
+  groups and unrelated records are not deleted by recovery.
+- Only verified recovery returns compensated=true / retry_safe=true. If recovery
+  is not proven, the response requires owner review and attempts to place a
+  recovery marker in the Request note (actual token below).
+- The actual token is [PROCUREMENT_RECOVERY_REQUIRED]. It blocks further Request
+  mutations/conversion and linked PO status changes, including issue. If the
+  marker itself cannot be saved, recovery_marker_recorded=false is explicit;
+  the owner must stop and review. A marker is not a substitute for a backup.
+- Conversion detects header-only partial results, invalid backlinks and incomplete
+  child linkage instead of treating a partial PO as a complete reusable result.
+- Missing required columns fail closed; this repair provisions no sheet/header.
+
+SCOPE / DEPENDENCIES
+Only runtime file changed this checkpoint: 13_procurement_handlers.gs.
+39_document_runtime_service.gs is unchanged from A1, but is included alongside
+13_ in the environment packages because Sandbox has not yet synced A1.
+No frontend, router, health label, private config/pin, schema or generated 90_ edit.
+No live DB read/write, document/email, receipt, dispatch or Apps Script deployment.
+
+TEST EVIDENCE
+node --test assets/tests/order-mainline-request-transactions.cjs
+46 new tests pass: busy locks, reentrant edit/cancel/approve/convert attempts,
+submit/approve/reject/cancel faults before/after landing, resubmit version restore,
+source/manual allocation rollback, partial tier cancellation, quantity rejection,
+zero filtering/history, PO header/child/backlink/status failure matrix, retry
+exactly once, cleanup which throws after landing, unverified rollback/marker
+failure, preservation of an existing PO group/unrelated rows and original formulas.
+
+Combined focused run: 115 tests pass across B1 (46), A1 documents (27), inventory
+variants (27) and phase-one regression (15). The four original active known-gap
+observations in phase-one are now desired-behavior assertions, not green tests
+which merely reproduce those bugs. One source-drift probe remains: active 66_
+R49 differs from the released R64 baseline; do not sync the old mirror over R64.
+The document test retains a clearly separated frozen-old-release reproduction.
+Carrier R3 (17) and domestic workflow DW2 (40) checks pass as well.
+Each packaged environment independently runs B1's 46 and A1's 27 tests.
+Tests use synthetic Sheets/locks/platform boundaries; live browser/Drive and
+deployment-version acceptance remain pending. No whole-repository green claim:
+the older retired-helper/source-contract harness gaps recorded in A1 still exist.
+
+PACKAGE / DO NOT DEPLOY NOW
+output/order-mainline-request-b1-20261123/release-1/
+  candidate/Sandbox/apps-script/13_procurement_handlers.gs
+  candidate/Sandbox/apps-script/39_document_runtime_service.gs
+  candidate/Production/apps-script/13_procurement_handlers.gs
+  candidate/Production/apps-script/39_document_runtime_service.gs
+Use matching environment only. Both are patched from their own hash-verified A1
+files, retaining the environment adapters. The rollback folder restores A1, not
+the entire app. INSTALL.sha256.txt records exact package/evidence bytes.
+
+This is the CUMULATIVE PO A+B pair, not the final ALL-RECENT-CHANGES Sandbox pack.
+For the final pack we must compare Sandbox's actual current baseline and merge
+the appropriate prior carrier/document, inventory-import and logging deltas.
+Production-only document-retry policy 01_/63_ changes must NOT be copied blindly.
+00_config*, private pins, .env and generated 90_ are outside this sync task.
+
+NEXT CHECKPOINT C
+- Verify Order Planning send/Request browser controls against the current R64
+  release baseline without downgrading 66_.
+- Walk edit -> submit -> reject/resubmit -> approve -> PO -> issue/document ->
+  partial/full receipt -> Overview/Gantt and the shipment allocation boundary.
+- Include pending-production/imported PO cases, reservation preservation,
+  quantity ownership and replay. Measure read/write behavior in Sandbox UAT.
+- Reconcile the exact environment baselines and publish the final cumulative GS
+  lists, frontend delta if needed, hashes, rollback and owner UAT steps.
+Mainline live acceptance is not closed by this synthetic checkpoint.
+After mainline closure: overseas inventory allocation first; B/C routes later.
