@@ -27,6 +27,7 @@
     "document.exportNonce",
     "document.get",
     "document.list",
+    "document.retry",
     "documentTemplate.getFields",
     "documentTemplate.list",
     "factoryStockGuard.get",
@@ -213,5 +214,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "7052919254294efee7f7ae508bd6e162bbb13685ba4fdbbf76be5f509ae84f55"
+  "policy_sha256": "27eedfe4914bcebb1431b7680f5720046e937f49e3f35a7f205212f4c949add8"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();
