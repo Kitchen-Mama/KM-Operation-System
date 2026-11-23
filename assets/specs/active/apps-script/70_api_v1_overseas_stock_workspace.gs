@@ -54,11 +54,14 @@ var OSW_BUILD_VERSION_ = 'F1-7N-FB-4E-R3';
 
 var OSW_WS_SEQ_ = 0;   // server correlation counter (diagnostic layer, not business runtime)
 
+// SITESKU1: add the optional, projected regional identity reference; still one workspace request.
+
 var OSW_WORKSPACE_TABLES_ = [
   { name: 'overseas_inventory_snapshot',  requiredCols: ['warehouse_id', 'sku'] },
   { name: 'overseas_inventory_movements', requiredCols: [], optional: true },
   { name: 'warehouses',                   requiredCols: ['warehouse_id'] },
-  { name: 'sku_details',                  requiredCols: ['sku'] }
+  { name: 'sku_details',                  requiredCols: ['sku'] },
+  { name: 'sku_regional_details',         requiredCols: [], optional: true }
 ];
 
 // The sku_details columns this page can actually use. See the header note for why this exact set.
@@ -130,6 +133,7 @@ function oswWorkspaceBuild_(tables, payload) {
   var movements = oswCap_(rawMovements);
   var warehouses = oswCap_(oswRelevantWarehouses_(rawWarehouses, snapshot.rows, movements.rows));
   var skus = oswCap_(oswProject_(rawSkus, OSW_SKU_COLUMNS_));
+  var regional = oswCap_(oswProject_(tables.sku_regional_details || [], ['sku', 'site_sku']));
 
   return {
     summary: (include.summary === false) ? null : {
@@ -143,6 +147,8 @@ function oswWorkspaceBuild_(tables, payload) {
     overseas_inventory_movements: movements.rows,
     warehouses: warehouses.rows,
     sku_details: skus.rows,
+    // An incomplete alias map could conceal a conflicting target; omit it instead of guessing.
+    sku_regional_details: regional.capped ? [] : regional.rows,
     // What was narrowed, stated in the answer rather than only in this file, so a page can report it and a test
     // can assert it without reading source.
     projection: {
@@ -152,9 +158,9 @@ function oswWorkspaceBuild_(tables, payload) {
       warehouses_total_before_filter: (rawWarehouses || []).length
     },
     capped: { overseas_inventory_snapshot: snapshot.capped, overseas_inventory_movements: movements.capped,
-      warehouses: warehouses.capped, sku_details: skus.capped },
+      warehouses: warehouses.capped, sku_details: skus.capped, sku_regional_details: regional.capped },
     counts: { overseas_inventory_snapshot: snapshot.total, overseas_inventory_movements: movements.total,
-      warehouses: warehouses.total, sku_details: skus.total }
+      warehouses: warehouses.total, sku_details: skus.total, sku_regional_details: regional.total }
   };
 }
 

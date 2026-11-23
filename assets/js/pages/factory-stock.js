@@ -123,7 +123,7 @@ function _fsAfterWrite(cb) {
     var holdsMovements = (_fsMovState_() === 'READY');
     if (!holdsMovements && window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
     if (!_fsReadModel) {
-        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses'])
+        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses', 'sku_regional_details'])
             .then(function (m) { _fsReadModel = m; if (cb) cb(); })
             .catch(function () { if (cb) cb(); });
         return;
@@ -309,7 +309,7 @@ function initFactoryStockPage() {
         // re-render below would then start the next request, which is the loop this round removed.
         // S4-R4 — three tables, not four. factory_stock_movements moved to FS_MOVEMENTS, read when the
         // Movement Log tab is first opened.
-        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses'])
+        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses', 'sku_regional_details'])
             .then(function (m) {
                 if (myGen !== _fsReadGen_) return;          // a newer read owns the model
                 _fsReadModel = m;
@@ -672,9 +672,7 @@ function _getDbFactoryStockData() {
     //   from unrelated statuses). Documented gap: WAREHOUSE_OPERATIONS_SPEC §6A read-only joins not implemented.
     var rows = _fsGet('factoryStock');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
     var whMap = _factoryWarehouseMap();
-    var skuMeta = {};
-    var details = _fsGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
-    details.forEach(function(d) { if (d.sku) skuMeta[d.sku] = { category: d.category || '', series: d.series || '' }; });
+    var skuMeta = _factorySkuMetaMap();
     return rows.map(function(r) {
         var meta = skuMeta[r.sku] || { category: '', series: '' };
         var wh = whMap[r.warehouseId] || {};
@@ -807,6 +805,7 @@ function _factoryWarehouseMap() {
 
 function _factorySkuMetaMap() {
     var details = _fsGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
+    if (window.KM.inventorySkuIdentity) details = window.KM.inventorySkuIdentity.expand(details, _fsGet('skuRegionalDetails'));
     var map = {};
     details.forEach(function(d) { if (d.sku) map[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return map;
@@ -1805,7 +1804,7 @@ function downloadFactoryImportTemplate() {
   var columns = [
     { key: 'warehouse_id', header: 'warehouse_id', kind: 'business', width: 22, comment: 'REQUIRED. Prefilled with the selected factory (' + selId + '). Do NOT change — one file = one factory; the server rejects any other warehouse_id.', dropdown: [selId] },
     { key: 'warehouse_code', header: 'warehouse_code', kind: 'business', width: 18, comment: 'Optional human-readable check — must be the selected factory code' + (selCode ? ' (' + selCode + ')' : '') + '. Conflicting with warehouse_id rejects the row (WAREHOUSE_ID_CODE_MISMATCH).' },
-    { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. Canonical SKU from SKU Details (NOT site_sku).' },
+    { key: 'sku', header: 'sku', kind: 'business', width: 22, comment: 'REQUIRED. SKU Details SKU or an explicitly registered Regional Details site_sku. Stock remains independent.' },
     { key: 'current_stock_qty', header: 'current_stock_qty', kind: 'business', width: 18, comment: 'REQUIRED non-negative whole number. 0 valid; BLANK = missing (not 0); negatives/decimals rejected. SETS current stock.' },
     { key: 'effective_date', header: 'effective_date', kind: 'business', width: 15, comment: 'Optional ISO date YYYY-MM-DD (audit only). Blank → server write date.' },
     { key: 'note', header: 'note', kind: 'business', width: 30, comment: 'Optional note (max 500 chars).' }
@@ -2126,12 +2125,12 @@ function _fiiOpenLegacyBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123-sitesku1').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 function _fiiOpenBatchImport() {
   function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
   if (window.KM && window.KM.poFactoryImport) return go();
-  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123').then(function (ok) {
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123-sitesku1').then(function (ok) {
     if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
     return go();
   }).catch(function (e) { alert(String(e.message || e)); });

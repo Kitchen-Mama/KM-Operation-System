@@ -33,7 +33,7 @@ function _osGet(key) {
     var g = 'get' + key.charAt(0).toUpperCase() + key.slice(1);
     return (window.KM && window.KM.DB && window.KM.DB[g]) ? (window.KM.DB[g]() || []) : [];
 }
-var _OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'];
+var _OS_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details', 'sku_regional_details'];
 // F1-7M-B5 bounded readback: an overseas write can only mutate overseas_inventory_snapshot + overseas_inventory_movements
 // (proven — 05_overseas_inventory_handlers.gs writes only those; warehouses is read-only for validation, sku_details is
 // not referenced at all). warehouses + sku_details are mount-loaded static reference, so re-read ONLY the two mutable
@@ -207,8 +207,8 @@ function _osLoadPrimary_() {
 window._osReadPathDiagnostic_ = function () {
     return {
         primary_action: 'overseasStock.workspace.get',
-        served_by: _osFellBackToFanOut ? 'LEGACY_FAN_OUT_4_REQUESTS' : 'SCOPED_WORKSPACE_1_REQUEST',
-        requests_at_mount: _osFellBackToFanOut ? 4 : 1,
+        served_by: _osFellBackToFanOut ? 'LEGACY_FAN_OUT_5_REQUESTS' : 'SCOPED_WORKSPACE_1_REQUEST',
+        requests_at_mount: _osFellBackToFanOut ? 5 : 1,
         workspace_meta: (_osReadModel && _osReadModel._workspaceMeta) || null,
         note: 'The fan-out is reachable ONLY when the deployment does not carry the action yet. Publish the Apps '
             + 'Script project (70_ + 01_ + 63_) and reload; served_by must then read SCOPED_WORKSPACE_1_REQUEST.'
@@ -415,6 +415,7 @@ function _overseasWarehouseMap() {
 
 function _overseasSkuMetaMap() {
     var details = _osGet('skuDetails');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
+    if (window.KM.inventorySkuIdentity) details = window.KM.inventorySkuIdentity.expand(details, _osGet('skuRegionalDetails'));
     var map = {};
     details.forEach(function(d) { if (d.sku) map[d.sku] = { category: d.category || '', series: d.series || '' }; });
     return map;
@@ -1740,7 +1741,7 @@ function _ovsOpenBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123-sitesku1').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 window._ovsOpenBatchImport = _ovsOpenBatchImport;
 window.openOverseasImportModal = openOverseasImportModal;

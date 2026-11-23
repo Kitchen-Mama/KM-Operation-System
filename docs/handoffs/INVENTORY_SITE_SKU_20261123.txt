@@ -1,0 +1,81 @@
+INVENTORY SITE SKU - CHECKPOINT 1 - 2026-11-23
+
+APPROVED RULE
+Import CO1150-N-TG as its own physical inventory SKU only when an explicit
+sku_regional_details.site_sku -> sku mapping points to a unique sku_details row.
+Inherit product metadata from CO1150-N. Do not merge their quantities or create
+SKU master rows. Exact trimmed identity, no suffix guessing, no Like New feature.
+Unrecognized, dangling or conflicting variant mappings are skipped. Canonical
+SKU Details identities continue to take precedence. Repeated same-base mappings
+across sites are allowed. No DB schema migration or historical stock rewrite.
+
+IMPLEMENTED
+- Factory StockPO: New receipt / opening coverage / Update current data.
+- Direct factory inventory: ADD / SET.
+- Overseas inventory: ADD / SET.
+- Unknown SKU preview counts and list; an all-unknown file refuses with zero writes.
+- Warehouse, transaction, protected-column, quantity, reservations, stock books,
+  optimistic export, preview and idempotency controls remain in place.
+- Alias provenance participates in preview state so remapping cannot reuse a preview.
+- Inventory snapshot/movement category and series inherit from the base master.
+- Overseas workspace returns projected sku/site_sku in the same one-request read.
+- Landed-append compensation: direct inventory imports now use the same existing
+  journal recovery pattern as StockPO if an append lands and then reports a fault.
+- Ordinary purchase_order import does NOT gain variant identities; only the
+  quantity-only StockPO adapter opts in. Supply planning/FIFO does NOT pool variants.
+
+VERIFICATION
+27 focused Node tests passed, including 250 distinct variants per importer,
+ADD/SET/new/existing StockPO, independent base/variant quantities, skipped unknowns,
+remapping after preview, zero-write replay and landed-append rollback.
+Two Chrome viewport checks passed at 1440 and 390 px: actual ExcelJS XLSX parsing,
+preserved SKU identity, escaped skipped-SKU list, review gate, zero network/commits.
+Generated browser matcher matches the server source. Five GS syntax checks passed.
+Shipment Draft marketplace regression: 8 checks passed.
+Order phase-one audit: 15 probes unchanged, including known-gap reproductions;
+these known gaps are NOT fixed by this inventory checkpoint.
+All business tests are synthetic. No Production DB/Drive writes or live UAT performed.
+
+APPS_SCRIPT_SYNC_REQUIRED - PRODUCTION ONLY - REPLACE THESE FIVE FILES
+1. 18_sku_regional_handlers.gs
+2. 70_api_v1_overseas_stock_workspace.gs
+3. 79_api_v1_po_import.gs
+4. 81_api_v1_inventory_import.gs
+5. 82_api_v1_po_factory_import.gs
+
+Sources: assets/specs/active/apps-script/<exact filename above>.
+Frozen copies: output/inventory-site-sku-20261123/release-1/Production/apps-script/.
+Replace all five in the existing Production project, save, and deploy a new
+Web App version. GitHub push does not deploy Apps Script. No router/config/pin,
+health file, generated 90_ bundle, or whole-folder copy is needed.
+Sandbox is untouched. These are Production adapters; do not paste into Sandbox.
+79_/81_ were restored from the previously released DW2 Production source before
+the narrow upgrade because their active-source mirrors had been missing.
+18_/70_/82_ pre-change sources were verified identical to the DW2 Production base.
+The overlay assumes the already released DW2 import journal and 05_/21_ stock
+writers. Legacy active mirrors are NOT a full current Production backend.
+Existing runtime build labels stay compatible; identify this release using the
+SHA-256 entries in MANIFEST.json rather than a health label alone.
+
+UAT AFTER MANUAL DEPLOYMENT
+1. Regional Details: CO1150-N-TG site_sku points to base CO1150-N.
+2. New receipt: preview one base SKU, the special SKU and one unknown SKU.
+   Special SKU must not be skipped; unknown must be skipped. Review independent
+   per-SKU stock/PO quantities and use actual business quantities only.
+3. Export Update current data; update only the special SKU. Base stock, shipped
+   history and existing reservations must remain unchanged.
+4. Overseas ADD/SET: verify independent SKU, inherited category/series and correct
+   skip preview. For SET retain existing gross-available/reservation semantics.
+5. Retry the same committed batch: no second quantity increase.
+6. Conflicting/no mapping: skipped, never guessed or auto-created as a master SKU.
+   Changing Regional Details while a dialog is open requires a fresh validation.
+
+NEXT ORDER MAINLINE CHECKPOINTS - AWAIT OWNER CONFIRMATION BETWEEN CHECKPOINTS
+A. Fix PO document unit_cost/line_amount and canonical completion-date mapping;
+   verify checksum changes with cost and date, plus document-model regressions.
+B. RO approval/reject/edit concurrency and compensation; conversion partial-write
+   recovery and all-zero PO refusal. Keep current DB structure.
+C. End-to-end Request -> review -> PO issue/documents -> partial/full receipt ->
+   stock -> shipment allocation; verify PO Overview production/completion/Gantt.
+D. Owner Sandbox UAT before any requested Production business operation.
+After order closure: overseas inventory allocation first, then B/C routes.

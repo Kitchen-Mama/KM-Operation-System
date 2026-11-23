@@ -270,6 +270,8 @@
         var p = v.preview || {}, c = p.counts || {};
         if (state.adapter.domain !== 'overseas_inventory') {
             var warnings = (p.warnings || []).map(function (w) { return '<p class="km-imb-status km-imb-status--warn">' + esc(w.sku || '') + ': ' + esc(w.message || w.code) + '</p>'; }).join('');
+            var skipped = p.skipped && p.skipped.rows || [];
+            if (skipped.length) warnings += '<details class="km-imb-note"><summary>Skipped SKUs: ' + skipped.length + '</summary>' + skipped.slice(0, 500).map(function (r) { return '<div>Row ' + esc(r.row) + ': ' + esc(r.sku) + '</div>'; }).join('') + '</details>';
             return counts(c) + warnings + routePickerHtml(v) + issuesHtml(v.issues) + previewHtml(p) + '<details class="km-imb-note"><summary>Technical details</summary>' + impactsHtml(p) + '</details>';
         }
         var labels = { create: 'New SKUs', update: 'Updated SKUs', unchanged: 'Unchanged', reject: 'Needs attention', skipped: 'Skipped SKUs' };

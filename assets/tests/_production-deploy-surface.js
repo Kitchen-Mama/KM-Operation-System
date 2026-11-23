@@ -128,6 +128,8 @@ var DECLARED_RUNTIME = [
   // FX1-R4 (R55) — the stored FX coefficients. A new runtime .gs has to be put on this list
   // deliberately; the count that follows from it is what makes forgetting visible.
   '75_api_v1_fx_rate_book.gs',
+  '79_api_v1_po_import.gs',
+  '81_api_v1_inventory_import.gs',
   '90_generated_supply_planning_bundle.gs'
 ];
 

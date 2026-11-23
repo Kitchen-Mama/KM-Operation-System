@@ -10,7 +10,7 @@ function pfiInt_(v, positive) {
   var n = Number(v); return isFinite(n) && n <= 9007199254740991 && n >= (positive ? 1 : 0) ? n : null;
 }
 function pfiRead_(ss) {
-  var issues = [], M = pmiMasters_(ss, issues), stock = pmiTable_(ss, 'factory_stock'), rd = imiFactoryRead_(ss);
+  var issues = [], M = pmiMasters_(ss, issues, true), stock = pmiTable_(ss, 'factory_stock'), rd = imiFactoryRead_(ss);
   if (!M || !stock || issues.length || rd.issues.length) pfiFail_('PFI_MASTER_UNREADABLE', 'Required masters, stock or movement schema cannot be read.');
   return { M: M, stock: stock, rd: rd };
 }
@@ -134,6 +134,24 @@ function pfiTemplate_(ss, o) {
       'NEW_RECEIPT adds PO completed/remaining and stock together. OPENING_PO_FOR_EXISTING_STOCK creates new PO coverage only, without adding stock.',
       'Opening must exactly cover the existing unassigned stock for the affected factory/SKU. Unrelated rows are untouched. No automatic reconciliation.'] };
 }
+function pfiInventoryRows_(req, x, wh) {
+  var skipped = { unknown_sku: 0, rows: [] };
+  var rows = (req.sheets.StockPO || []).filter(function (r) {
+    if (pmiS_(r.row_type) === 'example') return false;
+    if (Object.keys(r).some(function (k) { return k !== '__row' && PFI_FIELDS_.indexOf(k) < 0; })) pfiFail_('PFI_COLUMN_UNKNOWN');
+    if (pmiS_(r.transaction_id) !== req.id) pfiFail_('PFI_TRANSACTION_ID_MISMATCH');
+    if (pmiS_(r.warehouse_id) !== wh) pfiFail_('PFI_FACTORY_SCOPE_MISMATCH');
+    var sku = pmiS_(r.sku);
+    if (sku && !Object.prototype.hasOwnProperty.call(x.M.sku, sku)) {
+      skipped.unknown_sku++;
+      skipped.rows.push({ row: r.__row, sku: sku, code: 'SKU_NOT_FOUND' });
+      return false;
+    }
+    return true;
+  });
+  if (!rows.length) pfiFail_(skipped.unknown_sku ? 'NO_APPLICABLE_SKUS' : 'IMPORT_EMPTY');
+  return { rows: rows, skipped: skipped };
+}
 function pfiValidate_(ss, req) {
   if (req.mode === 'UPDATE_REMAINING') return pfiValidateRemaining_(ss, req);
   var issues = [], empty = { issues: issues, plan: null, preview: { rows: [], counts: { reject: 0 } }, state: {} };
@@ -141,8 +159,7 @@ function pfiValidate_(ss, req) {
     var x = pfiRead_(ss), wh = pfiFactory_(x, req.scope.warehouse_id);
     var effectiveDay = pmiS_(req.scope.as_of_date) || imbNow_().slice(0,10);
     if (Object.keys(req.scope).some(function (k) { return ['warehouse_id','as_of_date'].indexOf(k) < 0; }) || !imbDate_(effectiveDay)) pfiFail_('PFI_SCOPE_INVALID');
-    var rows = (req.sheets.StockPO || []).filter(function (r) { return pmiS_(r.row_type) !== 'example'; });
-    if (!rows.length) pfiFail_('IMPORT_EMPTY');
+    var input = pfiInventoryRows_(req, x, wh), rows = input.rows;
     var heads = {}, lines = [], existing = [], keys = {}, seen = {}, warnings = [], issueRow = null;
     rows.forEach(function (r) {
       issueRow = r;
@@ -235,8 +252,8 @@ function pfiValidate_(ss, req) {
     var sp = { items: [] };
     if (stockRows.length) { var sv = imiFactoryValidate_(ss, { mode: 'ADD', scope: { warehouse_id: wh }, sheets: { Stock: stockRows } }); if (sv.issues.length) return { issues: sv.issues, plan: null, preview: sv.preview, state: sv.state }; sp = sv.plan; }
     return { issues: [], plan: { po: poPlan, stock: sp, expected: expected, effective_day: effectiveDay, rollback: pfiSnapshot_(ss) },
-      state: pfiCanonical_({ effective_day: effectiveDay, po: x.M.T.po.rows, lines: x.M.T.pol.rows, stock: x.stock.rows, warehouses: x.M.T.wh.rows, skus: x.M.T.sku.rows, movements: x.rd.mv, headers: [x.M.T.po.headers,x.M.T.pol.headers,x.stock.headers] }),
-      preview: { warnings: warnings, counts: { create: poPlan.appends.length, update: existing.length, reject: 0 }, rows: expected.map(function (e) { return Object.assign({ action: 'update', po_remaining_after: e.coverage }, e); }),
+      state: pfiCanonical_({ effective_day: effectiveDay, po: x.M.T.po.rows, lines: x.M.T.pol.rows, stock: x.stock.rows, warehouses: x.M.T.wh.rows, skus: x.M.T.sku.rows, skipped: input.skipped, movements: x.rd.mv, headers: [x.M.T.po.headers,x.M.T.pol.headers,x.stock.headers] }),
+      preview: { warnings: warnings, skipped: input.skipped, counts: { create: poPlan.appends.length, update: existing.length, reject: 0, skipped: input.skipped.unknown_sku }, rows: expected.map(function (e) { return Object.assign({ action: 'update', po_remaining_after: e.coverage }, e); }),
         impacts: { receipt_opening_date: effectiveDay, stock_delta: req.mode === 'NEW_RECEIPT' ? Object.keys(keys).reduce(function (s,k) { return s + keys[k]; },0) : 0, reserved_delta: 0, documents: 0, emails: 0 } } };
   } catch (e) { issues.push({ sheet: 'StockPO', row: issueRow && issueRow.__row, code: e.importCode || 'PFI_VALIDATION_FAILED', message: (issueRow ? 'PO ' + pmiS_(issueRow.po_no) + ', SKU ' + pmiS_(issueRow.sku) + ': ' : '') + String(e.message || e) }); empty.preview.counts.reject = 1; return empty; }
 }
@@ -244,8 +261,7 @@ function pfiValidateRemaining_(ss, req) {
   try {
     var x = pfiRead_(ss), wh = pfiFactory_(x, req.scope.warehouse_id), day = pmiS_(req.scope.as_of_date) || imbNow_().slice(0,10);
     if (!imbDate_(day) || Object.keys(req.scope).some(function (k) { return ['warehouse_id','as_of_date'].indexOf(k) < 0; })) pfiFail_('PFI_SCOPE_INVALID');
-    var rows = (req.sheets.StockPO || []).filter(function (r) { return pmiS_(r.row_type) !== 'example'; });
-    if (!rows.length) pfiFail_('IMPORT_EMPTY');
+    var input = pfiInventoryRows_(req, x, wh), rows = input.rows;
     var allocations = pmiTable_(ss, 'shipment_line_allocations');
     if (!allocations || ['purchase_order_line_id','allocation_status','allocated_qty'].some(function (k) { return allocations.col(k) < 0; })) pfiFail_('PFI_ALLOCATION_UNREADABLE');
     var changes = [], newRows = [], seen = {}, delta = {}, changedHeads = {}, warnings = [], unchangedLegacy = 0, issueRow = null, trc12 = {};
@@ -346,8 +362,8 @@ function pfiValidateRemaining_(ss, req) {
     var stock=stockRows.length?imiFactoryValidate_(ss,{mode:'SET',scope:{warehouse_id:wh},sheets:{Stock:stockRows}}):{issues:[],plan:{items:[]}};
     if (stock.issues.length) return {issues:stock.issues,plan:null,preview:stock.preview,state:stock.state};
     return {issues:[],plan:{po:poPlan,stock:stock.plan,expected:expected,effective_day:day,rollback:pfiSnapshot_(ss)},
-      state:pfiCanonical_({effective_day:day,po:x.M.T.po.rows,lines:x.M.T.pol.rows,stock:x.stock.rows,warehouses:x.M.T.wh.rows,skus:x.M.T.sku.rows,movements:x.rd.mv,allocations:allocations.rows,headers:[x.M.T.po.headers,x.M.T.pol.headers,x.stock.headers]}),
-      preview:{warnings:warnings,counts:{create:poPlan.appends.length,update:changes.filter(function(e){return e.changed;}).length,unchanged:unchangedLegacy+changes.filter(function(e){return !e.changed;}).length,reject:0},
+      state:pfiCanonical_({effective_day:day,po:x.M.T.po.rows,lines:x.M.T.pol.rows,stock:x.stock.rows,warehouses:x.M.T.wh.rows,skus:x.M.T.sku.rows,skipped:input.skipped,movements:x.rd.mv,allocations:allocations.rows,headers:[x.M.T.po.headers,x.M.T.pol.headers,x.stock.headers]}),
+      preview:{warnings:warnings,skipped:input.skipped,counts:{create:poPlan.appends.length,update:changes.filter(function(e){return e.changed;}).length,unchanged:unchangedLegacy+changes.filter(function(e){return !e.changed;}).length,reject:0,skipped:input.skipped.unknown_sku},
         rows:expected.map(function(e){return Object.assign({action:e.delta?'update':'unchanged',po_remaining_after:e.coverage},e);}),
         impacts:{receipt_opening_date:day,stock_delta:expected.reduce(function(s,e){return s+e.delta;},0),reserved_delta:0,shipped_delta:0,documents:0,emails:0}}};
   } catch(e) {return {issues:[{sheet:'StockPO',row:issueRow&&issueRow.__row,code:e.importCode||'PFI_VALIDATION_FAILED',message:(issueRow?'PO '+pmiS_(issueRow.po_no)+', SKU '+pmiS_(issueRow.sku)+': ':'')+String(e.message||e)}],plan:null,preview:{rows:[],counts:{reject:1}},state:{}};}

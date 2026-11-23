@@ -2627,7 +2627,8 @@ window.KM.DB.loadOverseasStockWorkspace = async function (opts) {
         overseas_inventory_snapshot: d.overseas_inventory_snapshot || [],
         overseas_inventory_movements: d.overseas_inventory_movements || [],
         warehouses: d.warehouses || [],
-        sku_details: d.sku_details || []
+        sku_details: d.sku_details || [],
+        sku_regional_details: d.sku_regional_details || []
     };
     var scoped = normalizeOperationDb(rawDb);
     scoped._sourceMode = 'google-sheet';

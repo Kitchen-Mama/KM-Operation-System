@@ -23,6 +23,39 @@ var SKU_REGIONAL_DETAILS_HEADERS_ = [
 
 function skuRegionalNorm_(v) { return String(v == null ? '' : v).trim(); }
 
+// Read-only inventory identities. Explicit site_sku mappings never fold physical stock into a master SKU.
+function skuInventoryAliasRows_(masters, regional) {
+  var own = Object.prototype.hasOwnProperty, base = Object.create(null), targets = Object.create(null);
+  function str(v) { return String(v == null ? '' : v).trim(); }
+  var result = (masters || []).slice();
+  result.forEach(function (r) {
+    var sku = str(r.sku); if (!sku) return;
+    if (own.call(base, sku)) base[sku] = null; else base[sku] = r;
+  });
+  (regional || []).forEach(function (r) {
+    var alias = str(r.site_sku == null ? r.siteSku : r.site_sku), sku = str(r.sku);
+    if (!alias || !sku || own.call(base, alias)) return;
+    var set = targets[alias] || (targets[alias] = Object.create(null)); set[sku] = true;
+  });
+  Object.keys(targets).sort().forEach(function (alias) {
+    var keys = Object.keys(targets[alias]);
+    if (keys.length !== 1 || !base[keys[0]]) return;
+    result.push(Object.assign({}, base[keys[0]], { sku: alias, inventory_master_sku: keys[0] }));
+  });
+  return result;
+}
+
+function skuInventoryReadRows_(ss, masters) {
+  var sheet = ss.getSheetByName('sku_regional_details');
+  if (!sheet) return masters.slice();
+  var data = sheet.getDataRange().getValues();
+  if (!data.length) return masters.slice();
+  var headers = data[0].map(function (h) { return String(h).trim().toLowerCase(); });
+  var sku = headers.indexOf('sku'), site = headers.indexOf('site_sku');
+  if (sku < 0 || site < 0) return masters.slice();
+  return skuInventoryAliasRows_(masters, data.slice(1).map(function (r) { return { sku: r[sku], site_sku: r[site] }; }));
+}
+
 // Find the regional row for (sku, company, country, marketplace). Returns
 // { row, headers, col(name), siteSku, marketplaceProductId } or null. Missing-tab/header safe.
 function skuRegionalFind_(ss, sku, company, country, marketplace) {
