@@ -7265,3 +7265,10 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - New tests: actual Production POST -> gate -> R3 handler 9/0; actual browser guard 2/0, including reproduction of the pre-fix refusal before any API call. Root R3 17/0, R2 27/0, R1 24/0, DW2 40/0, import 250-row checks pass; unchanged bundle equivalence passes. No whole-repository/live-generation claim.
 - Owner explicitly authorized GitHub push after passing tests. Apps Script deployment remains manual. JP stays Shipped; after deployment use Retry only, expect detail/PL reuse and missing CI creation. No live retry, Drive file creation, dispatch, inventory mutation or DB cleanup was performed.
 - Tests/build/verify tools = GIT_ONLY; report/ledger = DOCUMENTATION_ONLY. Report: docs/planning/DOCUMENT_RETRY_PRODUCTION_DR4_20261123.md. Publication evidence is verified separately after commit.
+
+## 2026-11-23 - Amazon Health Issue Detail Exclusion (Local Only)
+
+- Owner requested excluding amazon_inventory_health_snapshot from import_sync_issues. Only exact-table detail persistence is suppressed, including fallback logger output. Other reports remain logged; caller issues, API counts, validation, row skipping, deduplication, snapshot writing and import_sync_runs status/error summaries are unchanged.
+- APPS_SCRIPT_SYNC_REQUIRED: 09_amazon_import_writer_logger.gs only, in the project that executes Amazon imports. No config/router/health stamp/policy/schema/frontend change. BUNDLE_REBUILD_REQUIRED: NO. Owner saves source for triggers and updates the existing Web App deployment version if API imports use it.
+- GIT_ONLY: amazon-health-issue-logging.test.cjs, 11 focused synthetic tests. Existing date-key 28, dedup 29, EU/blank-date 28 and zero-write probe 37 assertions pass. No whole-repository or live-import acceptance claim.
+- DOCUMENTATION_ONLY: this entry and AMAZON_HEALTH_ISSUE_LOGGING_20261123.md. Existing rows are untouched; no DB cleanup, live import, Apps Script deployment or order-mainline implementation performed. No current-turn push authorization: local-only checkpoint.

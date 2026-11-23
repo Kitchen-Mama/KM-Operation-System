@@ -203,9 +203,14 @@ function amazonLogRun_(spreadsheetId, run) {
 
 function amazonLogIssues_(spreadsheetId, issues) {
   try {
+    // Health-report detail is intentionally omitted; validation and run summaries remain unchanged.
+    var loggedIssues = issues.filter(function (issue) {
+      return issue.destination_table !== 'amazon_inventory_health_snapshot';
+    });
+    if (!loggedIssues.length) return;
     var sh = SpreadsheetApp.openById(spreadsheetId).getSheetByName('import_sync_issues');
-    if (!sh) { Logger.log('[import_sync_issues missing] ' + JSON.stringify(issues)); return; }
-    for (var i = 0; i < issues.length; i++) amazonAppendByHeader_(sh, issues[i]);
+    if (!sh) { Logger.log('[import_sync_issues missing] ' + JSON.stringify(loggedIssues)); return; }
+    for (var i = 0; i < loggedIssues.length; i++) amazonAppendByHeader_(sh, loggedIssues[i]);
   } catch (e) { Logger.log('amazonLogIssues_ failed: ' + e); }
 }
 
