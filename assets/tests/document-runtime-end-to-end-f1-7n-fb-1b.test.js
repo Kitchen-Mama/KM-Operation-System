@@ -85,7 +85,7 @@ LOAD.push(G39.match(/var DGS_DOC_LABEL_ = \{[\s\S]*?\n\};/)[0]);
 ['dgsStr_', 'dgsLc_', 'dgsUc_', 'dgsNum_', 'dgsBool_', 'dgsCell_', 'dgsEncodeNote_', 'dgsDecodeNote_', 'dgsRowState_',
   'dgsBatchState_', 'dgsFailureClass_', 'dgsRetryable_', 'dgsScopeMatch_', 'dgsScopeExact_', 'dgsInWindow_', 'dgsActive_',
   'dgsClassCandidates_', 'dgsShipmentManifest_', 'dgsSelectPoTemplate_', 'dgsCanonicalJson_', 'dgsChecksum_',
-  'dgsSplitMapped_', 'dgsFillText_', 'dgsFilename_', 'dgsBuildRenderPayload_', 'dgsShipMonth_', 'dgsPoPayloadModel_',
+  'dgsSplitMapped_', 'dgsFillText_', 'dgsFilename_', 'dgsBuildRenderPayload_', 'dgsShipMonth_', 'dgsPoNumber_', 'dgsPoPayloadModel_',
   'dgsDriveReadiness_', 'dgsIdentityKey_', 'dgsPoBatchDate_', 'dgsPlanBatch_', 'dgsRegistryRow_', 'dgsDocumentDto_',
   'dgsDocumentLabel_', 'dgsFolderUrl_', 'dgsClassifyEntry_', 'dgsExecutableManifest_', 'dgsGatingClassKeys_',
   'dgsPoSourceChecksum_', 'dgsPoStatus_'].forEach(function (f) { LOAD.push(extractFn(G39, f)); });

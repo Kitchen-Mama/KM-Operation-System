@@ -619,13 +619,22 @@ return m ? m[1] + '-' + m[2] : '';
 
 function dgsYmd_(v) { var d = dgsDateOnly_(v); return d === null ? dgsStr_(v) : d; }
 function dgsQty_(v) { v = dgsStr_(v); return v && Number(v.replace(/,/g, '')); }
+function dgsPoNumber_(v) {
+if (typeof v === 'boolean' || dgsStr_(v) === '') return '';
+var n = Number(dgsStr_(v).replace(/,/g, ''));
+return isFinite(n) ? n : '';
+}
 function dgsPoPayloadModel_(po, poLines, joins) {
 po = po || {}; joins = joins || {};
 var skuLabel = joins.sku_labels || {};
 var lines = (poLines || []).map(function (l, i) {
 var sku = dgsStr_(l.sku);
 var label = skuLabel[sku] || {};
-var qty = dgsNum_(l.ordered_qty), price = dgsNum_(l.unit_price);
+// Canonical money facts win even when blank or zero; legacy names are read-only aliases.
+var qty = dgsNum_(l.ordered_qty), own = Object.prototype.hasOwnProperty;
+var price = dgsPoNumber_(own.call(l, 'unit_cost') ? l.unit_cost : l.unit_price);
+var amount = own.call(l, 'line_amount') ? dgsPoNumber_(l.line_amount) : (price === '' ? '' : price * qty);
+var ready = dgsYmd_(l.expected_completion_date) || dgsYmd_(l.expected_ready_date) || dgsYmd_(po.expected_completion_date) || dgsYmd_(po.supplier_expected_ready_date);
 return {
 line_no: i + 1,
 purchase_order_line_id: dgsStr_(l.purchase_order_line_id),
@@ -642,8 +651,10 @@ ordered_qty: dgsQty_(l.ordered_qty),
 carton_qty: dgsQty_(l.carton_qty),
 units_per_carton: dgsNum_(l.units_per_carton),
 unit_price: price,
-line_amount: price * qty,
-expected_ready_date: dgsYmd_(l.expected_ready_date) || dgsYmd_(po.supplier_expected_ready_date),
+unit_cost: price,
+line_amount: amount,
+expected_ready_date: ready,
+expected_completion_date: ready,
 expected_ship_date: dgsYmd_(l.expected_ship_date) || dgsYmd_(po.expected_ship_date)
 };
 });
@@ -653,9 +664,11 @@ lines.forEach(function (l) {
 totals.qty += dgsNum_(l.ordered_qty); totals.cartons += dgsNum_(l.carton_qty); totals.amount += dgsNum_(l.line_amount);
 if (typeof l.ordered_qty != 'number') u.q = 1;
 if (typeof l.carton_qty != 'number') u.c = 1;
+if (typeof l.line_amount != 'number') u.a = 1;
 if (l.sku) skuSet[l.sku] = 1;
 });
 totals.sku_count = Object.keys(skuSet).length;
+if (u.a) totals.amount = '';
 
 
 
@@ -684,7 +697,7 @@ factory_name: dgsStr_(joins.factory_name),
 warehouse_id: dgsStr_(po.warehouse_id),
 total_qty: u.q ? '' : totals.qty,
 total_cartons: u.c ? '' : totals.cartons,
-total_amount: totals.amount,
+total_amount: u.a ? '' : totals.amount,
 total_sku: totals.sku_count
 };
 return { ok: true, document_type: 'PO', template_key: 'PURCHASE_ORDER_STANDARD',
@@ -1708,6 +1721,19 @@ function dgsPoSourceChecksum_(po, lines) {
 var built = dgsPoPayloadModel_(po, lines, {});
 return dgsChecksum_({ h: built.header, l: built.lines });
 }
+function dgsPoRecordedChecksum_(row) {
+var m = /\bchecksum (CS[0-9A-F]{8})(?=[;.\s]|$)/.exec(dgsStr_(row && row.note));
+return m ? m[1] : '';
+}
+function dgsPoReusePrepared_(ss, prepared) {
+var loaded = dgsPoLoad_(ss, prepared.purchase_order_id);
+if (!loaded.ok) return { ok: false, reason: loaded.reason };
+if (prepared.require_draft && dgsPoStatus_(loaded.po) !== 'draft') return { ok: false, reason: 'PURCHASE_ORDER_NOT_DRAFT' };
+if (dgsPoSourceChecksum_(loaded.po, loaded.lines) !== prepared.source_checksum) return { ok: false, reason: DGS_PO_DRIFT_, retryable: true };
+var row = dgsGeneratedFor_(ss, 'purchase_order', prepared.purchase_order_id).filter(function (r) { return dgsStr_(r.document_id) === prepared.document_id; })[0];
+if (!row || dgsRowState_(row) !== 'READY' || dgsPoRecordedChecksum_(row) !== prepared.source_checksum) return { ok: false, reason: 'DOCUMENT_REUSE_UNVERIFIED', retryable: true };
+return { ok: true };
+}
 function dgsPoStatus_(po) { return dgsLc_(po.order_status) || dgsLc_(po.status); }
 
 
@@ -1750,10 +1776,11 @@ var checksum = dgsPoSourceChecksum_(po, poLines);
 var now = shipmentTimestamp_(), stale = '';
 var genSheet = prodRequireSheet_(ss, 'generated_documents', GENERATED_DOCUMENTS_HEADERS_);
 
-if (plan.complete && dgsPoStatus_(po) === 'draft' && dgsStr_(plan.reuse[0].row.note).indexOf('doc_date ' + batch.date) < 0) {
+if (plan.complete && dgsPoStatus_(po) === 'draft' && (dgsStr_(plan.reuse[0].row.note).indexOf('doc_date ' + batch.date) < 0 || dgsPoRecordedChecksum_(plan.reuse[0].row) !== checksum)) {
 stale = dgsStr_(plan.reuse[0].row.document_id);
-dgsUpdateRegistry_(genSheet, stale, { status: DGS_ROW_CANCELLED_, updated_at: now,
-note: dgsEncodeNote_('DOCUMENT_DATE_SUPERSEDED', false, 'Not ' + batch.date + '.') }, 1);
+var staleReason = dgsStr_(plan.reuse[0].row.note).indexOf('doc_date ' + batch.date) < 0 ? 'DOCUMENT_DATE_SUPERSEDED' : DGS_PO_DRIFT_;
+if (dgsUpdateRegistry_(genSheet, stale, { status: DGS_ROW_CANCELLED_, updated_at: now,
+note: dgsEncodeNote_(staleReason, false, 'Draft PO document does not match the current date/source. Original files retained.') }, 1) !== true) return { ok: false, reason: 'DOCUMENT_REGISTRY_WRITE_FAILED', purchase_order_id: dgsStr_(poId) };
 plan = { todo: [{}] };
 }
 var base = {
@@ -1766,7 +1793,7 @@ generated_by: dgsStr_(opts.actor), generated_at: now, created_at: now, updated_a
 if (plan.complete) {
 
 return { ok: true, complete: true, purchase_order_id: dgsStr_(poId), document_id: dgsStr_(plan.reuse[0].row.document_id),
-source_checksum: checksum, document_batch_date: batch.ymd, document_date: batch.date, template: entry };
+source_checksum: checksum, document_batch_date: batch.ymd, document_date: batch.date, template: entry, require_draft: opts.require_draft };
 }
 
 

@@ -2216,6 +2216,13 @@ if (poPrepared.complete) return jsonResponse_({ success: false, error: poReg.reg
 return poBlocked(Object.assign({ ok: false, reason: 'LOCK_UNAVAILABLE', retryable: true }, dgsUnregistered_(poPrepared.document_id, poRendered.file, poRendered.folder_id, poReg)), 'finalize');
 }
 if (poPrepared.complete) {
+var poReuse;
+try { poReuse = dgsPoReusePrepared_(ss, poPrepared); }
+catch (eReuse) { poReuse = { ok: false, reason: 'DOCUMENT_REUSE_UNVERIFIED' }; }
+if (!poReuse.ok) {
+try { poIssueLock.releaseLock(); } catch (eReuseUnlock) {}
+return poBlocked(poReuse, 'finalize');
+}
 poDocResult = { ok: true, reused: true, generated: 0, document_id: poPrepared.document_id, document_batch_date: poPrepared.document_batch_date };
 } else {
 var poFin;

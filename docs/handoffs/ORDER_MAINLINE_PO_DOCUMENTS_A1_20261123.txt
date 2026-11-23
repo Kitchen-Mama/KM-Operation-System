@@ -1,0 +1,113 @@
+ORDER MAINLINE - CHECKPOINT A1 - PO DOCUMENT FACTS AND SAFE DRAFT REUSE
+Date: 2026-11-23 (Asia/Taipei)
+Base commit: e020fb4325ba43089012aa57e6b1fe8c2fefd3de
+Status: CHECKPOINT A REPAIRED; FULL MAINLINE ACCEPTANCE STILL OPEN
+
+1. Delivered
+
+PO document prices now consume purchase_order_lines.unit_cost, amounts consume
+persisted line_amount (including the writer's rounding), and the working ready
+date consumes expected_completion_date. The document model exposes both canonical
+names and legacy unit_price/expected_ready_date aliases for saved mappings.
+
+Canonical blank or invalid money remains unknown, not a fabricated zero or a
+stale legacy price. A missing amount makes the total unknown instead of printing
+a partial total. Required template values block before reserving a document or
+creating a folder/file. Actual zero values remain zero. Supplier expected and
+confirmed dates are NOT populated from working completion dates.
+
+Canonical cost, amount and completion-date edits now change the source checksum.
+An existing READY document of a Draft PO is reused only when its recorded source
+checksum and document date match. Otherwise its registry row is superseded and
+a replacement is generated; original Drive files are retained, not deleted.
+Legacy Draft documents without a verifiable checksum are regenerated as well.
+
+Send PO rechecks the source and READY registry row after reacquiring the issue
+lock, including its reuse path. A changed source or invalidated document blocks
+issue and leaves the PO Draft. Existing already-issued document history is not
+silently rewritten by this Draft-only correction.
+
+13_ changed ONLY the Send PO completed-document reuse guard. Request approval,
+conversion compensation and receipt rules are not modified by this checkpoint.
+39_ owns the model mapping, checksum reuse and source verification changes.
+No frontend, router, health manifest, DB schema or generated 90_ bundle change.
+
+2. Verification and limits
+
+New suite: node --test assets/tests/order-mainline-po-documents.cjs
+27 tests pass on active source and independently on each packaged environment.
+The suite executes real Request approval/conversion, saved template mapping,
+PO prepare/render/finalize/issue, partial and full receipt, same-key receipt retry,
+factory stock and PO Overview projection functions. Platform Sheets/Drive/PDF
+boundaries are synthetic; the real matrix renderer is exercised. No cloud PDF,
+live DB, live inventory, live folder, email or Apps Script deployment was used.
+
+Covered: canonical/legacy mappings, zero and unknown prices, rounded persisted
+amounts, missing values, date fallback, source drift, changed Draft regeneration,
+unchanged reuse, registry invalidation across the lock handoff, stale render,
+copy failure and failed registry supersession. Historical issued files remain
+untouched. Pricing edits use the actual PO line-edit handler in regression tests.
+
+Other regression evidence:
+- Inventory special-SKU imports: 27 tests pass, including 250 variant rows.
+- Phase-one audit: 15 probes pass; FOUR still reproduce unfixed active defects,
+  one records source drift, and the repaired document probe additionally checks
+  the frozen old release still reproduces the original mapping error.
+- Carrier document R3: 17 checks pass.
+- Domestic workflow DW2: 40 checks pass.
+- Older document-runtime-end-to-end test cannot start: missing retired
+  dfoSanitize_ extraction. The same failure was reproduced with its pre-change
+  test source. It is NOT counted as a passing suite or fixed here.
+
+Frozen DW2/R3 output packages remain prerequisites for the local combined audit
+and environment package builder. Their verified baseline is not proof of the
+current Apps Script deployment; the owner must verify the target before pasting.
+
+3. APPS_SCRIPT_SYNC_REQUIRED - TWO FILES
+
+13_procurement_handlers.gs
+39_document_runtime_service.gs
+
+Use the matching environment's candidate files:
+output/order-mainline-po-documents-20261123/release-1/candidate/Sandbox/apps-script/
+output/order-mainline-po-documents-20261123/release-1/candidate/Production/apps-script/
+
+Do NOT copy Production adapters into Sandbox or vice versa. Each candidate is
+patched from its own hash-verified previous release. Corresponding rollback files
+are under release-1/rollback/<environment>/. INSTALL.sha256.txt identifies the
+exact candidate and evidence bytes. Existing build labels stay compatible; use
+the file hashes to identify A1, not a health label alone.
+
+Replace BOTH files, save, then deploy a new Web App version. GitHub push alone
+does not update Apps Script. No whole-folder copy, config/pin edit, 66_ downgrade,
+schema migration or 90_ rebuild. Prior special-SKU changes remain in place.
+For the prior inventory upgrade its original five GS files are still required;
+these two PO files are additional, not replacements for that sync list.
+
+4. Owner Sandbox UAT
+
+First back up the correct project and use the Sandbox candidate, not Production.
+- Create a Request with a known nonzero cost, approve and convert to a Draft PO.
+- Verify/edit ordered quantity and unit cost. Send PO and inspect downloaded
+  line price, amount, total and working date against the saved PO, not live RO.
+- Verify the file exists, is readable and the PO becomes In Production only
+  after successful generation. Supplier commitment dates stay blank if unknown.
+- Where a Draft already has a successful generated file, edit price/date before
+  sending. It must regenerate current values and retain the old file as history.
+- Missing required money/date must leave Draft; unknown must not print as zero.
+- Receive partially, retry the same receipt, then receive the balance. Verify
+  inventory and movement counts once, remaining quantity, Overview and Gantt.
+Actual Google permission/template/export behavior and browser interactions remain
+owner UAT; the synthetic matrix/PDF boundary is not live Drive proof.
+
+5. Next checkpoints, not yet complete
+
+B: RO edit/submit/approve/reject concurrency and truthful rollback; RO-to-PO
+conversion write-intent tracking/compensation and zero-positive-line refusal.
+C: Browser-level Order Planning send through review, conversion, PO document,
+production receipt, Overview/Gantt and shipment allocation/dispatch reconciliation.
+Local active 66_ remains R49 while the released Production baseline is R64;
+do not paste R49 over Production or lower the health requirement to mask drift.
+No reviewed defect needs a new DB structure. Keep this staged: checkpoint report,
+owner confirmation, then the next repair. After mainline closure, overseas
+inventory allocation is first; B/C route development remains later.

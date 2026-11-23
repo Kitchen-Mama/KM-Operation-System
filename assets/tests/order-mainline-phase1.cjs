@@ -391,7 +391,7 @@ test('KNOWN GAP: PO header append failure leaves orphan lines despite compensate
   assert.equal(retry.error, 'PO_CREATION_ATOMICITY_GAP');
 });
 
-test('KNOWN GAP: canonical PO unit_cost/completion date do not reach the document line model', () => {
+test('PO document canonical facts are repaired; frozen pre-fix release still reproduces the original gap', () => {
   const h = host(), id = approved(h);
   assert.equal(convert(h, id).success, true);
   const po = h.rows('purchase_orders')[0], lines = h.rows('purchase_order_lines');
@@ -402,12 +402,14 @@ test('KNOWN GAP: canonical PO unit_cost/completion date do not reach the documen
     'output/carrier-document-r3-20261123/release-1/candidate/Production/apps-script/39_document_runtime_service.gs']) {
     vm.runInContext(read(file), h.c, { filename: file });
     const model = h.c.dgsPoPayloadModel_(po, lines, {});
-    assert.equal(model.lines[0].unit_price, 0, 'model reads unit_price, which canonical rows do not store');
-    assert.equal(model.lines[0].line_amount, 0);
-    assert.equal(model.totals.amount, 0);
-    assert.equal(model.lines[0].expected_ready_date, '', 'line expected_completion_date is ignored');
+    const fixed = file === gs + '39_document_runtime_service.gs';
+    assert.equal(model.lines[0].unit_price, fixed ? 2 : 0);
+    assert.equal(model.lines[0].line_amount, fixed ? 80 : 0);
+    assert.equal(model.totals.amount, fixed ? 80 : 0);
+    assert.equal(model.lines[0].expected_ready_date, fixed ? '2026-12-03' : '');
     const checksum = h.c.dgsPoSourceChecksum_(po, lines);
     const changed = lines.map(l => ({ ...l, unit_cost: 3, line_amount: 120 }));
-    assert.equal(h.c.dgsPoSourceChecksum_(po, changed), checksum, 'cost-only changes are invisible to the source checksum');
+    if (fixed) assert.notEqual(h.c.dgsPoSourceChecksum_(po, changed), checksum);
+    else assert.equal(h.c.dgsPoSourceChecksum_(po, changed), checksum, 'historical baseline only');
   }
 });
