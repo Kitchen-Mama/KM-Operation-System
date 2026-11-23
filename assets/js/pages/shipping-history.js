@@ -1459,6 +1459,16 @@ function _shCartonLinesCp2_(pairs) {
     return output;
 }
 
+function _shMarketplaceLabel(s, lines) {
+    var labels = [], seen = Object.create(null);
+    (lines || []).forEach(function (line) {
+        if (line.lineRemoved || (line.shipmentId && line.shipmentId !== s.shipmentId)) return;
+        var label = String(line.sourceMarketplace || '').trim(), key = label.toLowerCase();
+        if (label && !seen[key]) { seen[key] = true; labels.push(label); }
+    });
+    return labels.length ? labels.join(' / ') : s.marketplace || '--';
+}
+
 function _shRenderDbCard(s, planLines, mode) {
     var sid = s.shipmentId;
     var statusLabel = (mode === 'overview') ? _shArrivalStateOf_(s).label : (SH_STATUS_LABEL[s.status] || s.status || '—');   // A-DELTA1 C2 item 1
@@ -1772,7 +1782,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<span style="color:#64748B;font-size:12px;">Plan: ' + _shEsc(s.shippingPlanId || '') + '</span>' +
             '</div>' +
             '<div class="sh-card-heading__facts">' +
-                '<span><strong>Marketplace:</strong> ' + _shEsc(s.marketplace || '--') + '</span>' +
+                '<span><strong>Marketplace:</strong> ' + _shEsc(mode === 'draft' ? _shMarketplaceLabel(s, planLines) : s.marketplace || '--') + '</span>' +
                 '<span><strong>Company:</strong> ' + _shEsc((s.sourceCompanies || []).length > 1 ? s.sourceCompanies.join(' / ') : s.company || '--') + '</span>' +
                 (_shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Display only\"><strong>僅顯示</strong>（不計入供給、不收貨）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +   // A final3 (Owner item 1): no opening concept; display-only stays visible (it changes what the operator may do)
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +

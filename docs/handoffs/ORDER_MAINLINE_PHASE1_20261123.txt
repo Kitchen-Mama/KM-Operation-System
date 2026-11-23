@@ -1,0 +1,149 @@
+ORDER MAINLINE - PHASE 1 REVIEW AND BASELINE
+Date: 2026-11-23 (Asia/Taipei)
+Reviewed source baseline: 15790be645a279b276e76ff8f16fa7b8ae762bf1
+Status: REVIEW COMPLETE; MAINLINE ACCEPTANCE NOT CLOSED
+
+1. Scope and boundaries
+
+Review the existing Order Planning -> Request Order Draft -> Purchase Order
+Workspace -> receiving/factory stock -> Purchase Order Overview/Gantt flow,
+including the boundary with the released shipment chain. No redesign of the DB.
+
+All business executions in this review used isolated synthetic Sheets, locks,
+clock and platform boundaries. No live DB read/write, live PO issue, receipt,
+dispatch, document creation or Apps Script deployment was performed. Schema
+boundaries in the new fixture are mocked, so live schema validation is pending.
+The new tests are a BASELINE AUDIT, not a claim that the defects are repaired.
+
+2. Verified locally
+
+- Request edits, submit, rejection with reason, resubmission/version increment,
+  approval and T1 versus combined T2/T3 conversion preserve the edited quantity.
+- A repeat conversion reuses its canonical POs with zero extra writes.
+- Partial receipt -> same-key replay -> full receipt posts stock only once per
+  receipt, updates completed/remaining quantities and produces completed status.
+- Over-receipt, stale receipt state and receiving an unissued Draft are refused.
+- Receiving additional production preserves an existing shipment reservation.
+- The actual shipment FIFO allocator can consume received PO capacity, including
+  the existing cross-company rule, and subtracts other draft allocations.
+- PO workspace projection reads received/remaining/shipped quantities correctly
+  for the synthetic receipt fixture. Actual dispatch was NOT executed here.
+- The actual Gantt renderer reads inspection/completion/ship dates from PO
+  headers. An empty production_schedule table does not by itself blank this Gantt.
+- Public frontend and Production router policies allow the mainline actions.
+- Document-prepare refusal keeps a Draft PO in Draft; the document preparation
+  boundary is stubbed in that controller test, not a real Drive-generation test.
+
+3. Reproduced findings, ordered for repair
+
+P1 - PO document facts do not consume the canonical procurement columns.
+Owner: 39_document_runtime_service.gs:622,628,646,1707.
+The real conversion persists unit_cost=2, line_amount=80 and
+expected_completion_date=2026-12-03 for 40 units. dgsPoPayloadModel_ reads
+unit_price and expected_ready_date instead, yielding model price/amount 0 and a
+blank line ready date. Changing unit_cost to 3 and line_amount to 120 leaves
+dgsPoSourceChecksum_ unchanged. Reproduced on both current source and the frozen
+R3 Production candidate. Whether a live template blocks or prints these facts
+depends on its saved mappings; no live PDF was produced in this review.
+
+P1 - Request status and line transitions are not one protected transaction.
+Owner: 13_procurement_handlers.gs:957,1043; line editor at 1109 also lacks the
+shared lock and must be included in the concurrency review.
+Injecting a line-write failure while approving leaves request_status=approved
+but the line still submitted. No rollback is performed by that handler.
+
+P1 - A concurrent reject can overwrite an approved/converted request.
+Same owner as above. Under a deterministic interleaving, approve and convert
+succeed while an earlier reject is still running; that reject then sets the RO
+back to draft, despite an existing linked PO. Only conversion acquired the lock.
+These are two manifestations of the same transition-safety ownership problem.
+
+P1 - Failed conversion can leave orphan PO lines with a false compensation flag.
+Owner: 13_procurement_handlers.gs:1566,1769,1915.
+poCreateBucketGroup_ writes PO lines/backlinks before appending the PO header.
+Its PO id is tracked only after the group returns. An injected header append
+failure therefore leaves a child line/backlink with no PO header, even though
+the response says compensated=true. The next retry refuses with
+PO_CREATION_ATOMICITY_GAP. Recovery must track intents before the first write,
+verify actual cleanup and preserve any unrelated/pre-existing PO rows.
+
+P2 - An all-zero approved request can create a zero-quantity PO.
+Owner: the Request submit/approve/conversion boundary in 13_.
+Set approved_qty=0, submit and approve, then convert: a PO and line with
+ordered_qty=0 are created. Decide positive-line eligibility without changing
+historical requested quantities or silently altering valid positive lines.
+
+4. Source/deployment baseline, not a confirmed live outage
+
+Local active 66_api_v1_request_order_send.gs declares R49, while current health
+expects R64. The frozen DW2 Production candidate declares R64 and matches that
+expectation; its pure workset build also passes the new probe. DO NOT paste the
+local R49 over Production or merely lower the health expectation.
+
+13_ matches the frozen DW2 Production file after line-ending normalization.
+Normalized SHA-256: 5a3f13b3ac3b583534dae92873edfbe0b21f341c2e501b277d6776cb9e44c275
+Frozen Production 66_ SHA-256 after line-ending normalization:
+baf571c1ee01d7db89ee746037b825d7420b2b1622c6447a0e867e638ee68eec
+
+Actual deployed source/version and current health remain to be verified before
+the next release. A frozen local package is not proof of today's live source.
+
+5. Test evidence
+
+New audit: node --test assets/tests/order-mainline-phase1.cjs
+15 probes executed successfully: nine ordinary checks, FIVE known-defect
+reproductions and one source-drift probe. Passing a KNOWN GAP probe means the
+defect was reproduced, not fixed. Replace those baseline observations with
+desired-behavior regression assertions when implementing the repair.
+
+Full selected baseline: node assets/tools/check-order-mainline-phase1.cjs
+Prerequisites for this one-time local audit: retain the frozen DW2 release-4
+and R3 release-1 candidate packages under output/. They are local evidence,
+not new Production deployment instructions or fixtures for a clean checkout.
+Output: output/order-mainline-phase1-20261123/BASELINE.json and per-script logs.
+11 scripts exit 0; FOUR scripts retain nonzero baseline results. The runner
+intentionally exits nonzero, with acceptance=NOT_CLOSED_KNOWN_GAPS.
+
+Retained failures:
+- send-orchestration-and-station-scope...: 291 assertions pass, four fail.
+  Old single-quote/manifest regexes miss the current representation; actual local
+  R49/R64 source drift was independently verified. Its strict frontend 22 versus
+  backend 24 assertion also needs review against minimum-version semantics.
+- po-exactly-once...: cannot extract retired procurementResolveFactoryId_.
+- po-receive-factory-stock-handoff...: retired PORCV extraction markers missing.
+- shipment-po-document-automation...: 204 pass, eight older contract/source
+  assertions fail, including yyyyMMdd versus the current folder shape. Do not
+  treat them as either a green suite or eight proven new behavioral regressions.
+
+The new audit executes current functions rather than those retired helpers.
+DW2's current 40 checks pass in this same run. No whole-repository green claim.
+
+6. Next repair/acceptance checklist
+
+[ ] Establish the current Production/Sandbox source baseline, especially 66_.
+[ ] Repair PO canonical price/date mapping and include effective cost/date facts
+    in source-drift checks; verify saved template mappings and generated values.
+[ ] Share a lock across Request status, editable quantities, tier cancellation
+    and RO->PO conversion; validate before writes and define truthful recovery.
+[ ] Fix conversion write-intent tracking, compensation and interrupted retries.
+[ ] Refuse zero-positive-line submit/conversion and avoid empty bucket POs.
+[ ] Run actual browser controls through preview/send -> edit -> reject/resubmit
+    -> approve -> convert -> issue/document -> partial receive -> receive all.
+[ ] Test new and imported pending-production POs; no duplicate opening stock.
+[ ] Verify Overview totals/Gantt after edits, receipts and shipment deductions.
+[ ] Verify dispatch against the received PO and a subsequent receipt, with
+    inventory, reservations, allocations and movement ledgers reconciled.
+[ ] Publish the exact GS sync list, scoped frontend release, rollback and UAT
+    evidence. Owner authorizes actual business test writes and deploys Apps Script.
+
+No finding reviewed so far requires a new DB table or header. Do not rebuild the
+schema, populate factory_stock_allocation_plans, or broaden B/C routes implicitly.
+
+Task order after this mainline closure: OVERSEAS INVENTORY ALLOCATION FIRST;
+B/C route work remains later. Neither is implemented in this phase.
+
+Deployment classification for this review:
+GIT_ONLY: order-mainline-phase1.cjs, check-order-mainline-phase1.cjs.
+DOCUMENTATION_ONLY: this handoff.
+APPS_SCRIPT_SYNC_REQUIRED: NONE for this review; no runtime fix has been made.
+BUNDLE_REBUILD_REQUIRED: NO.

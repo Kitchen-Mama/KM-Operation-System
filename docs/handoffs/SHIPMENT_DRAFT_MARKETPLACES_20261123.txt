@@ -1,0 +1,45 @@
+SHIPMENT DRAFT - CONSOLIDATED MARKETPLACE LABELS
+Date: 2026-11-23 (Asia/Taipei)
+
+The Draft card's Marketplace field now lists the nonblank sourceMarketplace
+values on its active shipment lines, in source order. Values are trimmed and
+deduplicated case-insensitively, preserving the first spelling. Removed lines and
+explicit lines of another shipment cannot contribute labels. With no usable
+line provenance, the original shipment marketplace/-- fallback remains.
+
+The label is HTML-escaped by the existing card renderer. It does not rewrite
+the shipment marketplace, derive source identities from SKU grouping or change
+any quantities, warehouse eligibility, filters, dispatch, documents or inventory.
+Overview retains its existing header label. No new network request is added.
+
+FRONTEND_GITHUB_PAGES_REQUIRED:
+- index.html (shipping-history cache suffix: -sites1)
+- assets/js/pages/shipping-history.js
+
+GIT_ONLY:
+- assets/tests/shipment-draft-marketplaces.cjs
+- assets/tests/shipment-draft-marketplaces-browser.cjs
+
+APPS_SCRIPT_SYNC_REQUIRED: NONE for this display change.
+BUNDLE_REBUILD_REQUIRED: NO. No Sandbox folder or local pin was touched.
+
+Verification:
+- Eight targeted tests pass, including removed-line filtering, immutability and
+  actual line-normalizer provenance validation (stale markers are not displayed).
+- Actual full page source/card renders in Chrome at 1440 and 390 widths, with
+  all three marketplaces, no label/Expand overlap and no network requests.
+- Hostile HTML is displayed as text, not an image/event handler.
+- Screenshots: output/shipment-draft-marketplaces-20261123/draft-1440.png and
+  draft-390.png, visually inspected.
+- Existing Expand/map fidelity 112 and Overview filters 22 assertions pass.
+- Old carrier-name harness: 66 pass/eight fail. Identical failures were reproduced
+  with the unmodified HEAD shipping-history/index source; not a regression from
+  this display-only edit. No whole-repository green claim.
+
+Owner explicitly authorized GitHub push this turn. Publication must be verified
+against the exact new commit. No Apps Script deployment or live DB write.
+
+This push also includes the previously local commit 15790be6, excluding Amazon
+Health detail from future import_sync_issues writes. That older backend change
+still requires Owner manual sync of 09_amazon_import_writer_logger.gs; pushing
+GitHub does not apply it to Apps Script. Existing log rows are not deleted.

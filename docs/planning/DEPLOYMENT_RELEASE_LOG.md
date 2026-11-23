@@ -7272,3 +7272,17 @@ Plan: `docs/planning/PSB_R3_CLOSEOUT_AND_FC1_FINAL.md`.
 - APPS_SCRIPT_SYNC_REQUIRED: 09_amazon_import_writer_logger.gs only, in the project that executes Amazon imports. No config/router/health stamp/policy/schema/frontend change. BUNDLE_REBUILD_REQUIRED: NO. Owner saves source for triggers and updates the existing Web App deployment version if API imports use it.
 - GIT_ONLY: amazon-health-issue-logging.test.cjs, 11 focused synthetic tests. Existing date-key 28, dedup 29, EU/blank-date 28 and zero-write probe 37 assertions pass. No whole-repository or live-import acceptance claim.
 - DOCUMENTATION_ONLY: this entry and AMAZON_HEALTH_ISSUE_LOGGING_20261123.md. Existing rows are untouched; no DB cleanup, live import, Apps Script deployment or order-mainline implementation performed. No current-turn push authorization: local-only checkpoint.
+
+## 2026-11-23 - Consolidated Shipment Draft Marketplace Labels
+
+- Owner requested all source marketplace names on consolidated Draft cards and explicitly authorized GitHub push. Active normalized-line provenance supplies the label, with trimming, deduplication, removed/other-shipment exclusion, escaping and the existing fallback. Overview and persisted marketplace/quantities/dispatch/document/inventory logic are untouched. No extra API requests.
+- FRONTEND_GITHUB_PAGES_REQUIRED: index.html and assets/js/pages/shipping-history.js, cache suffix -sites1. APPS_SCRIPT_SYNC_REQUIRED: NONE for this display change. BUNDLE_REBUILD_REQUIRED: NO. Sandbox folders/pins are untouched.
+- GIT_ONLY: shipment-draft-marketplaces.cjs (eight checks), shipment-draft-marketplaces-browser.cjs (real card/source at 1440/390, wrapping/escaping/zero-network checks). Existing Expand/map 112 and Overview filter 22 assertions pass. Carrier-name harness failures reproduce on unmodified HEAD: 66 pass/eight fail; no whole-repository green claim.
+- DOCUMENTATION_ONLY: docs/handoffs/SHIPMENT_DRAFT_MARKETPLACES_20261123.txt and this entry. Publication evidence follows the commit. Push also includes previously local 15790be6; its 09_ Apps Script manual sync remains separate from this frontend-only release.
+
+## 2026-11-23 - Order Mainline Phase 1 Review Checkpoint
+
+- Owner requested resuming the mainline review with a summary and todo list after the temporary Sandbox Demo interruption. Only local synthetic tests and documentation were added; no order/receipt/document business runtime fix, DB/schema change, live transaction or Apps Script deployment.
+- GIT_ONLY: order-mainline-phase1.cjs and check-order-mainline-phase1.cjs. Fifteen audit probes: nine ordinary checks, five reproduced known defects, one source-drift probe. Successful reproductions are NOT repaired/accepted functionality. Selected baseline: 11 scripts exit zero, four remain nonzero; runner intentionally reports NOT_CLOSED_KNOWN_GAPS.
+- Findings: canonical PO cost/date not consumed by document model/checksum; unprotected Request transitions (interruption and approval/rejection/conversion race); incomplete conversion compensation leaving orphan lines; all-zero PO eligibility. Local 66_ R49 versus frozen/expected Production R64 is source drift, not a proven live outage. Do not downgrade Production.
+- DOCUMENTATION_ONLY: docs/handoffs/ORDER_MAINLINE_PHASE1_20261123.txt. APPS_SCRIPT_SYNC_REQUIRED: NONE for this review. BUNDLE_REBUILD_REQUIRED: NO. Next work is scoped repairs plus cross-page/real document and receipt/dispatch acceptance; overseas inventory allocation follows this task first, B/C routes later.
