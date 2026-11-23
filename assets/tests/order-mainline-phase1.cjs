@@ -313,10 +313,10 @@ test('issued-status controller leaves a Draft unchanged when document preparatio
 
 test('Gantt reads canonical header schedule dates, not a separate production_schedule table', () => {
   const source = read('assets/js/pages/purchase-order-list.js').replace(/^    /gm, '');
-  const names = ['toMs', 'msToDate', 'renderGantt'];
+  const names = ['toMs', 'msToDate', 'syncGanttVisibility', 'renderGantt'];
   const pieces = extract(source, name => names.includes(name), () => false);
   assert.equal(pieces.length, names.length);
-  const body = { innerHTML: '' };
+  const body = { innerHTML: '', classList: { toggle() {} } };
   const c = vm.createContext({ document: { getElementById: () => body }, polGanttOpen: true,
     PO_STATUS_LABEL: { issued: 'Issued' }, num: Number, dateOnly: String, esc: String, dash: String });
   vm.runInContext(pieces.map(p => p.text).join('\n'), c);

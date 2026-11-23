@@ -144,14 +144,14 @@
         }); }
         if (window.KM && window.KM.importBatch) return go();
         var L = window.KM && window.KM.scriptLoader; if (!L) { alert('The import module could not be loaded.'); return; }
-        return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+        return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123-sitesku1').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
     }
     function polRunAction(kind) {
         polCloseActionsMenu();
         if (kind !== 'import') return;
         function go() { return window.KM.poFactoryImport.open({ onCommitted: function () { return _polRefresh_(true); } }); }
         if (window.KM && window.KM.poFactoryImport) return go();
-        return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123').then(function (ok) {
+        return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123-sitesku1').then(function (ok) {
             if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
             return go();
         }).catch(function (e) { alert(String(e.message || e)); });
@@ -515,6 +515,7 @@
     function renderGantt(models) {
         var body = document.getElementById('pol-gantt-body');
         if (!body) return;
+        syncGanttVisibility();
         if (!polGanttOpen) { return; }   // collapsed → skip render work until opened
 
         // Assemble lanes: each PO with ≥1 schedule date.
@@ -579,13 +580,17 @@
         body.innerHTML = legend + axis + '<div class="pol-gantt-lanes">' + lanesHtml + '</div>';
     }
 
-    // Toggle the collapsible Gantt panel.
-    function toggleGantt() {
-        polGanttOpen = !polGanttOpen;
+    function syncGanttVisibility() {
         var panel = document.getElementById('pol-gantt');
         var caret = document.getElementById('pol-gantt-caret');
         if (panel) panel.classList.toggle('is-open', polGanttOpen);
         if (caret) caret.textContent = polGanttOpen ? '▾' : '▸';
+    }
+
+    // Toggle the collapsible Gantt panel.
+    function toggleGantt() {
+        polGanttOpen = !polGanttOpen;
+        syncGanttVisibility();
         if (polGanttOpen) renderRows();   // build lanes on first open / refresh
     }
 

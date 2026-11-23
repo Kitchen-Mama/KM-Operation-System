@@ -576,7 +576,8 @@ select.pc-input:disabled {
 @media (max-width: 640px) {
     #purchase-order-list-section .pol-grouped-table thead th { padding: 8px; }
     #purchase-order-list-section .pol-cell { padding: 8px; }
-    #purchase-order-list-section .pol-gantt-axis, #purchase-order-list-section .pol-gantt-label { margin-left: 0; width: 90px; flex-basis: 90px; }
+    #purchase-order-list-section .pol-gantt-axis { margin-left: 90px; }
+    #purchase-order-list-section .pol-gantt-label { width: 90px; flex-basis: 90px; }
 }
 
 /* R3-IMPORT (2026-10-29): the page's More Options menu - the Factory / Overseas pattern (grey trigger, white panel), scoped here */

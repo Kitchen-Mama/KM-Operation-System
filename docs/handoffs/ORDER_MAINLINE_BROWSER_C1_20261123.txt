@@ -1,0 +1,80 @@
+ORDER MAINLINE - CHECKPOINT C1 - 2026-11-23
+
+SCOPE AND DECISION
+This checkpoint verifies the existing Request Draft -> PO Workspace -> receiving -> PO Overview path
+through actual browser controls. It does not declare the entire Order Planning chain live-accepted.
+The owner approved staged checkpoints; Apps Script deployment remains deferred and owner-operated.
+Sandbox last synchronized baseline is unknown, to be checked before the cumulative package is deployed.
+
+RUNTIME CHANGES
+1. assets/js/pages/purchase-order-list.js
+   - Synchronize Gantt expanded state with newly mounted markup when rendering.
+   - Use the existing site-SKU-aware version tokens for lazy-loaded import modules.
+2. assets/css/pages/procurement.css
+   - Keep the mobile Gantt axis aligned with its timeline track, rather than shrinking it to the label width.
+     This fixes overlapping mobile axis date labels.
+3. index.html
+   - Advance only the affected PO Overview JS and procurement CSS cache tokens.
+No GS, router, policy, schema, shipment controller, generated bundle, or business inventory logic is edited.
+
+REPRODUCIBLE VERIFICATION
+node assets/tests/order-mainline-browser-c1.cjs
+  Real Chrome, desktop 1440x950 and mobile 390x950.
+  Real page markup/controllers, shared filters/document panel, DB API methods/normalizers,
+  and current GS Request/PO/document/receipt/workspace business handlers.
+  Platform boundaries only: in-memory Sheets, template matrix/Drive/PDF IO, synthetic network bridge.
+  Native browser dialogs are accepted as a test operator; all real network requests are blocked.
+  Starting Request is created using the actual createRequestOrderDraft handler with explicit fixture
+  supplier, factory, price and dates. Order Planning/Send is NOT the source of that fixture.
+  PDF export is an injected boundary: this proves rendered matrix, registry and download-link wiring,
+  not Google Drive access, real PDF layout or owner-template compatibility.
+  Positive flows: approved quantity/company allocation edit, Save, Submit, Reject with reason,
+  resubmit/version 2, Approve, Convert, PO dates/note Save, Send PO/registered download artifact,
+  production Update, partial receipt, same-key replay, full receipt, production/completed Overview,
+  backend-owned C/S/R figures, Gantt dates, navigation/remount, import first-entry version.
+  Negative/recovery flows: missing required price refuses issue without writes/files/folders;
+  fast double issue/receipt clicks; over-receipt; concurrent receipt invalidates stale modal;
+  lost response after landed receipt; controller remount recovers the held operation from sessionStorage
+  and resends exactly the same id/10 units even if the operator types a different quantity.
+  Expected final browser checks: 64. No unexpected JS errors or outgoing requests.
+  Evidence: output/order-mainline-c1-20261123/browser-results.json and production/completed PNGs.
+
+node --test assets/tests/order-mainline-phase1.cjs assets/tests/order-mainline-po-documents.cjs assets/tests/order-mainline-request-transactions.cjs assets/tests/inventory-site-sku.cjs
+  115 passed, 0 failed. Existing Gantt extraction updated to include its new presentation helper.
+  These include backend receipt/reservation/FIFO boundary checks, not full browser shipment dispatch.
+node assets/tests/api-purchase-order-workspace-f1-7c-r1.test.js
+  56 passed, 0 failed.
+node assets/tests/carrier-document-r3.cjs
+  17 passed, 0 failed.
+node assets/tests/domestic-workflow-dw2.cjs
+  40 passed, 0 failed.
+This is a focused regression set, not a whole-repository green claim. Historical test/source drift
+described in the earlier A1/B1 handoffs is not relabeled as fixed.
+
+RELEASE
+Builder: node assets/tools/build-order-mainline-c1.cjs
+Local frontend delta: output/order-mainline-c1-20261123/release-1/
+Candidate and rollback contain only the three runtime files listed above; rollback baseline is
+7e88da6793173a1d4a796d92a78d65d8ff6c0cf6. INSTALL.sha256.txt verifies exact file bytes.
+APPS_SCRIPT_SYNC_REQUIRED: NONE FOR C1.
+BUNDLE_REBUILD_REQUIRED: NO.
+Prior A1/B1 13_procurement_handlers.gs and 39_document_runtime_service.gs remain pending owner sync.
+Do not interpret the C1 no-GS delta as cancellation of any earlier pending GS updates.
+No Production/Sandbox Apps Script deployed; no live DB or Drive writes; C:/km-lb untouched.
+Owner authorized GitHub push after passing tests in this checkpoint.
+
+NEXT CHECKPOINTS / NOT YET ACCEPTED
+C2: Order Planning -> persisted allocation -> Send -> Request commercial-data completeness.
+    Review with deployed-compatible R64 source. Active local 66_ is still R49; never deploy that older
+    mirror over R64 or lower health expectations to conceal the mismatch.
+    Source review shows R64 Send writerBody passes site/SKU/quantity/lineage but not unit_cost,
+    supplier or currency, while the Request writer persists commercial values only when provided.
+    This is a concrete audit target, not yet a live-data diagnosis or an implemented pricing rule.
+    Prove authoritative pricing/factory resolution and missing/ambiguous-price behavior before claiming
+    Order Planning -> priced PO documents is closed. Never invent zero costs or select arbitrary prices.
+C3: Broaden actual shipment-dispatch boundary verification after receipt, including reservation release,
+    PO shipped/remaining reconciliation and failure/replay behavior. Existing backend boundary tests pass,
+    but C1 does not execute a complete browser shipment dispatch.
+Final: Verify actual Sandbox health/source baseline, assemble environment-specific cumulative GS delta
+       without config/PIN/credential adapters, then owner manual deployment and Sandbox UAT.
+After mainline acceptance: overseas inventory allocation first; B/C routes afterward.
