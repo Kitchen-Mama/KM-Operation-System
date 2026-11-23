@@ -1,0 +1,67 @@
+SHIPMENT IMPORT SOURCE WAREHOUSE - 2026-11-23
+
+Scope: one narrow Shipment import change. Order mainline remains ON HOLD at the owner's request.
+No live business DB writes, no Apps Script deployment, no credentials/config adapters read or copied.
+Owner explicitly authorized GitHub push after implementation/testing.
+
+Behavior
+- Header source label is now 出貨倉, in Add New and Update templates.
+- Keep old 出貨工廠倉 / 出貨工廠倉 source_warehouse_id labels as parser aliases; stable key remains source_warehouse_id.
+- Existing active factory source eligibility is preserved, including shared factories owned by another company.
+- Also offer active 3PL overseas warehouses whose company exactly equals the selected import company.
+- With no company selected, do not offer overseas sources. Never infer a missing company.
+- Reject pasted/typed cross-company, inactive, ownerless, FBA, RETURN, unknown-type and unknown overseas sources.
+- Unknown/duplicate warehouse ids and source=destination remain refusals.
+- Carrier services must still support the source/destination lane. A dropdown choice does not waive that check.
+- Update source stays read-only: this change cannot move an existing shipment to another source.
+- Destination eligibility, COUNTED vs DISPLAY_ONLY, tracking/receipt logic and import idempotency are unchanged.
+- This imports goods ALREADY in transit. No second source-stock deduction, reservation or PO allocation is made.
+- Optional existing route-position behavior is unchanged; this patch does not add or enable it.
+
+Runtime files
+assets/specs/active/apps-script/80_api_v1_shipment_import.gs
+assets/js/pages/shipping-history.js
+index.html (shipping-history cache token only)
+No schema/router/policy/bundle/stock writer/PO changes.
+
+APPS_SCRIPT_SYNC_REQUIRED: 80_api_v1_shipment_import.gs ONLY FOR THIS PATCH.
+BUNDLE_REBUILD_REQUIRED: NO.
+GitHub push updates frontend assets only. It does NOT update the Apps Script Web App.
+Owner must paste candidate/Production/apps-script/80_api_v1_shipment_import.gs into the correct Production
+project, save and update its Web App deployment. Then reload and download a new template to get the new list.
+Old filled templates remain readable through the old header aliases, provided their existing metadata contract is valid.
+Do not paste Sandbox config/PIN/router files into Production, or Production adapters into Sandbox.
+Sandbox may remain deferred. This package is not the cumulative Sandbox sync package.
+Earlier pending GS updates are not cancelled by this one-file patch list.
+Existing coarse module build stamps remain compatible; use exact package SHA-256 and shiSourceWhIssue_ to
+identify this overlay. A matching health build stamp alone does not prove this patch is deployed.
+
+Package
+node assets/tools/build-shipment-import-source-warehouse.cjs
+output/shipment-import-source-warehouse-20261123/release-2/ (supersedes internal release-1; final ETD field comments also name source warehouse).
+Baseline commit: d613c0be4d9703b1d1ab7d4051aa86f131f2b8f5.
+Each environment's frozen DW2 release-4 80_ baseline is verified equal to that commit before emitting
+the shared business-only delta; each rollback is sourced from its own environment's frozen file.
+No environment-specific difference in this particular 80_ file was found. Never extend that conclusion to other GS files.
+Review any newer deployed edits before using rollback. Do not copy the whole folder.
+INSTALL.sha256.txt verifies the exact normalized file bytes.
+
+Verification (synthetic Sheets/Drive only; no live acceptance claim)
+node --test assets/tests/shipment-import-source-warehouse.cjs
+  20 passed: template lists/company scope, old aliases, full validate/commit/replay, unsupported and ambiguous
+  sources, preview owner drift, unchanged carrier lane checks, COUNTED destinations and frozen Update source.
+node assets/tests/shipment-import-source-warehouse-browser.cjs
+  16 checks, real Chrome at 1440/390: actual import dialog -> server template -> downloaded ExcelJS XLSX;
+  source dropdown inspected; old-label workbook uploaded through the real parser; allowed source passes;
+  cross-company pasted source fails; zero outgoing network, no JS errors/viewport overflow, zero live writes.
+  output/shipment-import-source-warehouse-20261123/browser contains SYNTHETIC test XLSX/screenshots only,
+  not a populated template for Production use. Download the real template from the app after owner deployment.
+Regressions: inventory-site-sku 27; carrier-document-r3 17; domestic-workflow-dw2 40, all passed.
+Full-repository tests and actual Production/Sandbox UAT were not performed.
+
+Suggested owner smoke test after manual deployment
+1. Pick ResUS and download a Shipment Add New template: label 出貨倉; active factories plus ResUS 3PLs only.
+2. Pick KM and download again: overseas choices switch to KM; factories remain available.
+3. Validate an already-in-transit overseas->FBA row with a declared domestic carrier service.
+   Check source id and preview; no stock-deduction operation should be added by this historical import.
+4. Paste another company's warehouse: validation must refuse. Never Apply an intentionally invalid row.

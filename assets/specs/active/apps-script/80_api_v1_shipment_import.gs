@@ -328,10 +328,10 @@ shiF_('Header', 'opening_supply_mode', 'shipments.opening_supply_mode', 'text', 
 shiF_('Header', 'external_shipment_id', 'shipments.external_shipment_id', 'text', 'input', 'req', 'fixed', { header: '外部出貨單號 external_shipment_id', addHeader: '出貨單號', comment: 'Your own shipment number (legacy system / forwarder). Unique per company; ONE number = ONE destination.', addComment: '出貨單號: your own shipment number, typed freely (leading zeros and hyphens are kept). Unique per company; ONE number = ONE destination. Not the system shipment number.' }),
 shiF_('Header', 'country', 'shipments.country', 'ref', 'input', 'req', 'fixed', { header: '國家 country', addHeader: '國家', list: 'country', addComment: '國家: pick from the list, or type / paste the exact code (checked by the server).' }),
 shiF_('Header', 'marketplace', 'shipments.marketplace', 'ref', 'input', 'req', 'fixed', { header: '站點 marketplace', addHeader: '站點', list: 'marketplace', comment: 'One receiver; MULTI is refused.', addComment: '站點: one receiver of this company; pick from the list, or type / paste the exact value. MULTI is refused.' }),
-shiF_('Header', 'source_warehouse_id', 'shipments.source_warehouse_id', 'ref', 'input', 'req', 'fixed', { header: '出貨工廠倉 source_warehouse_id', addHeader: '出貨工廠倉', list: 'source_warehouse', addComment: '出貨工廠倉: an ACTIVE factory warehouse; pick from the list, or type / paste its warehouse id.' }),
+shiF_('Header', 'source_warehouse_id', 'shipments.source_warehouse_id', 'ref', 'input', 'req', 'fixed', { header: '出貨倉 source_warehouse_id', addHeader: '出貨倉', oldHeaders: ['出貨工廠倉 source_warehouse_id', '出貨工廠倉'], list: 'source_warehouse', addComment: '出貨倉: an active factory warehouse or an active 3PL overseas warehouse owned by the selected company; pick from the list, or type / paste its warehouse id.' }),
 shiF_('Header', 'destination_warehouse_id', 'shipments.destination_warehouse_id', 'ref', 'input', 'req', 'fixed', { header: '目的倉 destination_warehouse_id', addHeader: '目的倉', list: 'destination_warehouse', addComment: '目的倉: an ACTIVE FBA or 3PL warehouse of this company; pick from the list, or type / paste its warehouse id.' }),
 shiF_('Header', 'warehouse_code', 'shipments.warehouse_code', 'text', 'derived', 'no', 'fixed', { comment: 'Derived from the destination warehouse master.' }),
-shiF_('Header', 'etd', 'shipments.etd', 'date', 'input', 'req', 'fixed', { header: '工廠實際出貨日 etd', addHeader: 'ETD', comment: 'R4: the date the goods left the FACTORY (yyyy-MM-dd), not after the import time (or 資料時間 when given). No other logistics date is derived from it.', addComment: 'ETD: the date the goods left the FACTORY only (yyyy-MM-dd), not after the import time (or 資料時間 when given).' }),
+shiF_('Header', 'etd', 'shipments.etd', 'date', 'input', 'req', 'fixed', { header: '工廠實際出貨日 etd', addHeader: 'ETD', comment: 'The date the goods left the source warehouse (yyyy-MM-dd), not after the import time (or 資料時間 when given). No other logistics date is derived from it.', addComment: 'ETD: the date the goods left the source warehouse (yyyy-MM-dd), not after the import time (or 資料時間 when given).' }),
 shiF_('Header', 'eta', 'shipments.eta', 'date', 'input', 'req', 'edit', { header: 'ETA（未知請留白） eta', addHeader: 'ETA', comment: 'Blank = unknown (never guessed; not counted as dated supply until filled). Update Existing may fill or change it, never clear it.', addComment: 'ETA (yyyy-MM-dd): REQUIRED on Add New (Owner 2026-11-20); not before ETD. Never guessed by the system.' }),   // A fix1: Add New 'opt' -> 'req'; Update unchanged
 shiF_('Header', 'reference_id', 'shipments.reference_id', 'text', 'input', 'req', 'fixed', { addHeader: 'Reference ID', addComment: 'Reference ID: REQUIRED on Add New; your reference text (stored in shipments.reference_id; not a system id).' }),   // A fix1: Add New 'opt' -> 'req'
 shiF_('Header', 'carrier_id', 'shipments.carrier_id', 'ref', 'input', 'req', 'fixed', { list: 'carrier', addHeader: 'Carrier', addComment: 'Carrier: REQUIRED on Add New (Owner 2026-11-21); an ACTIVE carrier id - pick from the list, or type / paste the exact id. Shipping method and last mile are resolved from this carrier\'s rate cards.' }),   // A-delta1 B (P0-2): opt -> req (Add New only; Update keeps fixed)
@@ -428,6 +428,15 @@ if (!mk.length) return { code: 'SHIPMENT_COMPANY_HAS_NO_MARKETPLACE', message: '
 return { code: null, company: c };
 }
 function shiIsFactoryWh_(w) { return w.is_factory_warehouse === true || shiLc_(w.is_factory_warehouse) === 'true' || shiLc_(w.warehouse_type) === 'factory'; }
+// One source rule for both the template list and validation of typed / pasted warehouse ids.
+function shiSourceWhIssue_(w, company) {
+if (shiIsFactoryWh_(w)) return shiActive_(w) ? null : { code: 'SHIPMENT_SOURCE_FACTORY_INACTIVE', message: 'the source factory warehouse is inactive in the master' };
+if (shiLc_(w.warehouse_type) !== '3pl') return { code: 'SHIPMENT_SOURCE_TYPE_NOT_ALLOWED', message: 'the source must be a factory or a 3PL overseas warehouse' };
+if (!imbStr_(w.company)) return { code: 'SHIPMENT_SOURCE_COMPANY_UNKNOWN', message: 'the source overseas warehouse has no company in the master - its owner is never guessed' };
+if (!imbStr_(company) || imbStr_(w.company) !== imbStr_(company)) return { code: 'SHIPMENT_SOURCE_COMPANY_MISMATCH', message: 'the source overseas warehouse must belong to the selected import company' };
+if (!shiActive_(w)) return { code: 'SHIPMENT_SOURCE_INACTIVE', message: 'the source overseas warehouse is inactive in the master' };
+return null;
+}
 // 'yyyy-MM-dd HH:mm' (or the browser's yyyy-MM-ddTHH:mm) -> 'yyyy-MM-dd HH:mm'; anything else -> ''
 function shiCutoff_(v) {
 if (v instanceof Date) return Utilities.formatDate(v, shiTz_(), 'yyyy-MM-dd HH:mm');
@@ -454,8 +463,8 @@ var mk = shiRowsOf_(ss, 'marketplaces'); if (!mk) unreadable.push('marketplaces'
 var wh = shiRowsOf_(ss, 'warehouses'); if (!wh) unreadable.push('warehouses');
 (wh || []).forEach(function (r) { var lab = imbStr_(r.warehouse_name) + ' (' + (imbStr_(r.warehouse_code) || '-') + ' / ' + (imbStr_(r.warehouse_type) || '-') + ' / ' + (imbStr_(r.company) || '-') + ')';   // A final S3: no comma in the label (display only; the id is the identity)
 add('warehouse', r.warehouse_id, lab, act(r));
-if (shiIsFactoryWh_(r)) { if (shiActive_(r)) add('source_warehouse', r.warehouse_id, lab, act(r)); }   // r5.2 (Owner): an inactive factory is not offered as an Add New source
-else if (!company || imbStr_(r.company) === company) add('destination_warehouse', r.warehouse_id, lab, act(r)); });
+if (!shiSourceWhIssue_(r, company)) add('source_warehouse', r.warehouse_id, lab, act(r));
+if (!shiIsFactoryWh_(r) && (!company || imbStr_(r.company) === company)) add('destination_warehouse', r.warehouse_id, lab, act(r)); });
 (mk || []).forEach(function (r) { if (company && imbStr_(r.company) !== company) return; add('country', r.country); add('marketplace', r.marketplace, imbStr_(r.marketplace_display_name) || r.marketplace, act(r)); add('currency', r.currency); });
 var sk = shiRowsOf_(ss, 'sku_details'); if (!sk) unreadable.push('sku_details');
 (sk || []).forEach(function (r) { add('sku', r.sku, imbStr_(r.sku) + (imbStr_(r.product_name) ? ' - ' + imbStr_(r.product_name) : ''), act(r)); });
@@ -570,11 +579,11 @@ notes.push('Carrier + Shipping method (label) show the Add New texts and stay re
 notes.push('Amazon display-only shipments: 在途中數量（僅顯示） may only go down or stay, with a LATER 資料時間 (not in the future). Only the shown number changes. Other shipments change quantity only through receipts.');
 notes.push('Status, quantities, SKU, company / receiver, warehouses and system columns are read-only: a different value is refused (Carrier / Shipping method too - see below). Receipts: shipment.receipt.update.');   // A-delta2
 } else {
-notes.push('Add New = shipments already on the way (left the factory, not fully received). Type only the quantity still not received (在途中數量) - not the original total, not what was already received.');
-notes.push('Required on Header: 出貨單號, 國家, 站點, 出貨工廠倉, 目的倉, ETD, ETA, Reference ID, Shipping method. Required on Lines: 出貨單號, SKU, 在途中數量 (whole number > 0). List cells accept a picked value or the same value typed / pasted; the server checks every value.');
+notes.push('Add New = shipments already on the way (left the source warehouse, not fully received). Type only the quantity still not received (在途中數量) - not the original total, not what was already received.');
+notes.push('Required on Header: 出貨單號, 國家, 站點, 出貨倉, 目的倉, ETD, ETA, Reference ID, Shipping method. Required on Lines: 出貨單號, SKU, 在途中數量 (whole number > 0). Source = an active factory or the selected company\'s active 3PL overseas warehouse. List cells accept a picked value or the same value typed / pasted; the server checks every value.');
 notes.push('No factory stock deduction, reservation, PO allocation, PO change, route, event, receipt, document or e-mail is created. Lines link to their Header row by 出貨單號.');
 notes.push('One shipment may carry several different SKUs (one line each); the same SKU twice in one shipment is refused. A row whose content equals another shipment under a different number is SUSPECTED_DUPLICATE: if it really is a different shipment, set 確認為不同出貨 = TRUE and give 不同出貨原因 (recorded in the audit); FALSE or blank does not acknowledge. Never change dates or quantities to get past it.');
-notes.push('One 出貨單號 = one shipment = one destination (no transfers, no split). ETD is the FACTORY departure date only; ETA is required and never guessed.');
+notes.push('One 出貨單號 = one shipment = one destination (no split). ETD is the source warehouse departure date; ETA is required and never guessed.');
 notes.push('Amazon (FBA) destination: shown only - not supply, cannot be received. Overseas 3PL destination: counted once and received normally. The server records the import time; 資料時間 stays blank unless the source gives one.');
 }
 var outScope = { company: company }; if (mode === 'ADD_NEW') { outScope.opening_as_of = cut; outScope.timezone = shiTz_(); outScope.template_contract = SHI_ADD_CONTRACT_; }   // A fix1: the Add New contract travels in _SYSTEM.scope
@@ -774,7 +783,7 @@ v[f.key] = t.ok ? t.value : (t.value === undefined ? '' : t.value);
 });
 if (v.etd && cut && v.etd > cut.slice(0, 10)) imbIssue_(issues, sn, r.__row, 'etd', 'SHIPMENT_SHIPPED_AFTER_CUTOFF', 'ETD ' + v.etd + ' is after 資料時間 ' + cut, v.etd);
 else if (v.etd && !cut && state.import_time && v.etd > state.import_time.slice(0, 10)) imbIssue_(issues, sn, r.__row, 'etd', 'SHIPMENT_ETD_AFTER_IMPORT_TIME', 'ETD ' + v.etd + ' is after the import time ' + state.import_time, v.etd);   // A final3 (c): the batch time
-if (v.etd && v.eta && v.etd > v.eta) imbIssue_(issues, sn, r.__row, 'eta', 'SHIPMENT_DATES_CONTRADICT', 'eta is before the factory ship date', v.eta);
+if (v.etd && v.eta && v.etd > v.eta) imbIssue_(issues, sn, r.__row, 'eta', 'SHIPMENT_DATES_CONTRADICT', 'eta is before the source warehouse departure date', v.eta);
 if (!v.eta) h.warnings.push({ code: 'SHIPMENT_ETA_UNKNOWN', message: 'ETA unknown: shown as unknown and not dated (never guessed)' });
 var mk0 = null;
 if (company && v.country && v.marketplace && !multi) { mk0 = mkRows.filter(function (m) { return imbStr_(m.company) === company && imbStr_(m.country) === v.country && imbStr_(m.marketplace) === v.marketplace; })[0] || null;
@@ -787,8 +796,7 @@ var src = whBy[v.source_warehouse_id] || [], dst = whBy[v.destination_warehouse_
 if (v.source_warehouse_id) {
 if (!src.length) imbIssue_(issues, sn, r.__row, 'source_warehouse_id', 'REFERENCE_UNKNOWN', 'no warehouse ' + v.source_warehouse_id, v.source_warehouse_id);
 else if (src.length > 1) imbIssue_(issues, sn, r.__row, 'source_warehouse_id', 'REFERENCE_AMBIGUOUS', 'warehouse ' + v.source_warehouse_id + ' appears more than once - fix the master first', v.source_warehouse_id);
-else if (shiIsFactoryWh_(src[0]) && !shiActive_(src[0])) imbIssue_(issues, sn, r.__row, 'source_warehouse_id', 'SHIPMENT_SOURCE_FACTORY_INACTIVE', 'factory warehouse ' + v.source_warehouse_id + ' is inactive in the master - an Add New shipment is refused for it (r5.2, Owner); existing shipments keep their stored source', v.source_warehouse_id);   // r5.2
-else if (!shiIsFactoryWh_(src[0])) imbIssue_(issues, sn, r.__row, 'source_warehouse_id', 'SHIPMENT_SOURCE_NOT_FACTORY', 'the source must be a factory warehouse; ' + v.source_warehouse_id + ' is not one', v.source_warehouse_id);
+else { var srcIssue = shiSourceWhIssue_(src[0], company); if (srcIssue) imbIssue_(issues, sn, r.__row, 'source_warehouse_id', srcIssue.code, srcIssue.message, v.source_warehouse_id); }
 }
 if (v.destination_warehouse_id) {
 if (!dst.length) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'REFERENCE_UNKNOWN', 'no warehouse ' + v.destination_warehouse_id, v.destination_warehouse_id);
@@ -1138,7 +1146,7 @@ var snDup = snPlan.filter(function (n) { return snTaken[n]; });
 if (snDup.length) throw new Error('SHIPMENT_NO_NOT_UNIQUE: ' + snDup.join(', ') + ' already on a shipments row - nothing was written; validate again (the same batch may be applied again)');
 // SHIP-OPEN: an imported shipment = shipments + shipment_lines only. shipment_qty = the remaining quantity, shipment_received_qty = 0,
 // status in_transit, record_origin IMPORT_HISTORICAL, opening_supply_mode COUNTED (overseas 3PL) or DISPLAY_ONLY (Amazon FBA).
-// R4 (Owner rule 2): etd = the FACTORY departure date only; no other logistics date is written.
+// ETD is the source warehouse departure date; no other logistics date is written.
 // R4 (review M2): the LINES are written FIRST, the headers second. Every reader joins lines to a shipments row, so an interruption between
 // the two writes leaves only lines nobody reads (found by their import_batch_id; shipOpenCleanupDryRun lists them) - never a visible
 // in-transit header without lines.
