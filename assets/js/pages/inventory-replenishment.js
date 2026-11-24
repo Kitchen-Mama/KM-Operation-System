@@ -197,6 +197,7 @@ if (typeof module !== 'undefined' && module.exports) {
 }
 
 function openReplenAddSkuModal() {
+  if (_replenSkuSavePending) return;
   const modal = document.getElementById('replen-add-sku-modal');
   const overlay = document.getElementById('replen-modal-overlay');
 
@@ -1196,6 +1197,7 @@ function _irThirdPartyTitle(plan) {
 }
 
 function closeReplenModal() {
+  if (_replenSkuSavePending) return;
   const modal = document.getElementById('replen-add-sku-modal');
   const overlay = document.getElementById('replen-modal-overlay');
   
@@ -1229,7 +1231,27 @@ function resetReplenAddSkuForm() {
 }
 window.resetReplenAddSkuForm = resetReplenAddSkuForm;
 
+var _replenSkuSavePending = null;
+function _replenSkuSubmit_(send) {
+  if (_replenSkuSavePending) return _replenSkuSavePending;
+  var btn = document.getElementById('replen-add-submit');
+  var modal = document.getElementById('replen-add-sku-modal');
+  var controls = modal ? Array.prototype.map.call(modal.querySelectorAll('input,select,textarea,button'), function (el) {
+    var state = { el: el, disabled: el.disabled }; el.disabled = true; return state;
+  }) : [];
+  if (btn) { btn.disabled = true; btn.textContent = 'Adding...'; btn.setAttribute('aria-busy', 'true'); }
+  function release() {
+    _replenSkuSavePending = null;
+    controls.forEach(function (state) { state.el.disabled = state.disabled; });
+    if (btn) { btn.disabled = false; btn.textContent = 'Add SKU'; btn.removeAttribute('aria-busy'); }
+  }
+  _replenSkuSavePending = Promise.resolve().then(send).then(function (result) {
+    release(); return result;
+  }, function (err) { release(); throw err; });
+  return _replenSkuSavePending;
+}
 function saveReplenSku() {
+  if (_replenSkuSavePending) return _replenSkuSavePending;
   const sku = document.getElementById('replen-add-sku')?.value.trim();
   let siteSku = (document.getElementById('replen-add-site-sku')?.value || '').trim();
   const status = 'active';
@@ -1287,10 +1309,10 @@ function saveReplenSku() {
       fulfillment_model: fulfillmentModel,
       launch_date: launchDate
     };
-    window.KM.DB.importMarketplaceSkusBatch([oneRow], {
+    return _replenSkuSubmit_(function () { return window.KM.DB.importMarketplaceSkusBatch([oneRow], {
       priceStatusDefault: 'draft',
       forecastStatusDefault: 'active'
-    }).then(function(result) {
+    }); }).then(function(result) {
       if (!result || result.success === false) {
         alert('Could not add SKU. ' + (result && result.error ? result.error : 'Please check the API connection and try again.'));
         return;
@@ -1313,14 +1335,14 @@ function saveReplenSku() {
 
   // Fallback: legacy single-row upsert (only if import method is unavailable).
   if (window.KM && window.KM.DB && window.KM.DB.upsertMarketplaceSku) {
-    window.KM.DB.upsertMarketplaceSku({
+    return _replenSkuSubmit_(function () { return window.KM.DB.upsertMarketplaceSku({
       sku: sku,
       country: country,
       marketplace: marketplace,
       marketplace_sku_status: status,
       replenishment_model: model,
       launch_date: launchDate
-    }).then(function(result) {
+    }); }).then(function(result) {
       if (result && result.success === false) {
         alert('Could not add SKU. ' + (result.error || 'Please check the API connection and try again.'));
         return;

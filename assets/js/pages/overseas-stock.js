@@ -825,6 +825,7 @@ function _showOverseasModal(id) {
 }
 
 function closeOverseasModals() {
+    if (_overseasAdjustSubmitting) return;
     if (_ovsImportUi_().active()) return;
     var root = document.querySelector('#overseas-stock-section');
     if (!root) return;
@@ -1295,6 +1296,13 @@ function _ovsProcessImportCells(cells, runBtn) {
 var _overseasAdjustRecords = [];
 var _overseasAdjustSelected = null;
 var _overseasAdjustSubmitting = false;
+var _overseasAdjustDone = false;
+function _overseasAdjustLockFields_(locked) {
+    ['overseas-adjust-record', 'overseas-adjust-new', 'overseas-adjust-note', 'overseas-adjust-reference'].forEach(function (id) {
+        var el = document.getElementById(id);
+        if (el) el.disabled = locked || (id === 'overseas-adjust-new' && !_overseasAdjustSelected);
+    });
+}
 
 // Signed quantity display: +N for increases, -N for decreases (Movement Log requirement, Part G).
 function _ovsSignedQty(n) {
@@ -1303,6 +1311,7 @@ function _ovsSignedQty(n) {
 }
 
 function openOverseasAdjustModal() {
+    if (_overseasAdjustSubmitting) return;
     // Records = real snapshot rows (must already exist). Each option is a unique warehouse_id + sku pair.
     _overseasAdjustRecords = _getDbOverseasSnapshotData() || [];
     var sel = document.getElementById('overseas-adjust-record');
@@ -1317,6 +1326,8 @@ function openOverseasAdjustModal() {
     }
     _overseasAdjustSelected = null;
     _overseasAdjustSubmitting = false;
+    _overseasAdjustDone = false;
+    _overseasAdjustLockFields_(false);
     ['overseas-adjust-sku', 'overseas-adjust-sitesku', 'overseas-adjust-wh-name', 'overseas-adjust-company', 'overseas-adjust-country', 'overseas-adjust-current', 'overseas-adjust-delta']
         .forEach(function(id) { var el = document.getElementById(id); if (el) el.textContent = '—'; });
     var newEl = document.getElementById('overseas-adjust-new'); if (newEl) { newEl.value = ''; newEl.disabled = true; }
@@ -1386,6 +1397,7 @@ function onOverseasAdjustQtyInput() {
 function _overseasAdjustUpdateValidity() {
     var btn = document.getElementById('overseas-adjust-run-btn');
     if (!btn) return;
+    if (_overseasAdjustDone) { btn.disabled = false; btn.textContent = 'Done'; return; }
     var rec = _overseasAdjustSelected;
     var nv = _overseasAdjustNewValue();
     var noteEl = document.getElementById('overseas-adjust-note');
@@ -1403,6 +1415,7 @@ function _ovsRenderAdjustResult(html, isError) {
 
 function runOverseasAdjust() {
     if (_overseasAdjustSubmitting) return;              // double-submit guard (Part D rule 5)
+    if (_overseasAdjustDone) { closeOverseasModals(); return; }
     var rec = _overseasAdjustSelected;
     var nv = _overseasAdjustNewValue();
     var noteEl = document.getElementById('overseas-adjust-note');
@@ -1418,19 +1431,21 @@ function runOverseasAdjust() {
     if (!(window.KM && window.KM.DB && window.KM.DB.adjustOverseasInventory)) { _ovsRenderAdjustResult('Adjustment API is not available.', true); return; }
 
     _overseasAdjustSubmitting = true;
+    _overseasAdjustLockFields_(true);
     var runBtn = document.getElementById('overseas-adjust-run-btn');
     if (runBtn) { runBtn.disabled = true; runBtn.textContent = 'Applying…'; }
 
-    window.KM.DB.adjustOverseasInventory({
+    return Promise.resolve().then(function () { return window.KM.DB.adjustOverseasInventory({
         warehouse_id: rec.warehouseId,
         sku: rec.sku,
         new_available: nv.value,
         note: note,
         reference_id: reference,
         created_by: 'operation-system'          // Phase 1 runtime identity; not user-entered
-    }).then(function(result) {
+    }); }).then(function(result) {
         _overseasAdjustSubmitting = false;
         if (!result || result.success === false) {
+            _overseasAdjustLockFields_(false);
             if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Confirm Adjustment'; }
             _ovsRenderAdjustResult(result && result.error ? result.error : 'Adjustment failed. API may not be configured.', true);
             return;
@@ -1443,7 +1458,8 @@ function runOverseasAdjust() {
             '<div>Available: ' + _ovsEscapeHtml(String(d.before_available)) + ' &rarr; ' + _ovsEscapeHtml(String(d.after_available)) + ' (' + _ovsSignedQty(d.quantity) + ')</div>',
             false
         );
-        if (runBtn) { runBtn.textContent = 'Done'; }
+        _overseasAdjustDone = true;
+        if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Done'; }
         // F1-7J-A3: canonical → scoped re-read before re-render (writer refreshed the broad cache the page no longer reads).
         var root = document.querySelector('#overseas-stock-section');
         _osAfterWrite(function () {
@@ -1453,6 +1469,7 @@ function runOverseasAdjust() {
         });
     }).catch(function(err) {
         _overseasAdjustSubmitting = false;
+        _overseasAdjustLockFields_(false);
         if (runBtn) { runBtn.disabled = false; runBtn.textContent = 'Confirm Adjustment'; }
         _ovsRenderAdjustResult(err && err.message ? err.message : 'Adjustment request failed.', true);
     });

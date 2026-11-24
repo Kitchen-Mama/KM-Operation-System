@@ -7947,3 +7947,45 @@ function _kmScNote13_(note) { return String(note || '').replace(/(?:^|\n)\[SC13_
 function _kmScSource13_(r) { var m = String(r.note || '').match(/(?:^|\n)\[SC13_SOURCE:([^\]]+)\]/); if (!m) return {}; try { var s = JSON.parse(decodeURIComponent(m[1])); return s.sku === String(r.sku || '').trim() && s.plan_line_id === String(r.shipping_plan_line_id || '').trim() && s.qty === Number(r.shipment_qty) ? s : {}; } catch(e) { return {}; } }
 
 // CODEX-TAX-SPLIT-1: local candidate, Owner fractional rates and separate currencies.
+
+// One concurrent invocation per environment, command and JSON payload. This is not a
+// retry or a success cache: existing server idempotency and unknown-outcome guards still apply.
+var _kmWriteFlights_ = new Map();
+function _kmWriteFlightKey_(name, args) {
+    var environment = window.KM.DB.envId();
+    return JSON.stringify([environment, name, args], function (key, value) {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return value;
+        var sorted = Object.create(null);
+        Object.keys(value).sort().forEach(function (k) { sorted[k] = value[k]; });
+        return sorted;
+    });
+}
+function _kmGuardWriteCommand_(name, fn) {
+    var wrapped = function () {
+        var args = Array.prototype.slice.call(arguments), key;
+        try { key = _kmWriteFlightKey_(name, args); }
+        catch (err) { return Promise.reject(err); }
+        if (_kmWriteFlights_.has(key)) return _kmWriteFlights_.get(key);
+        var resolve, reject, flight = new Promise(function (yes, no) { resolve = yes; reject = no; });
+        _kmWriteFlights_.set(key, flight);
+        function settle(ok, value) {
+            _kmWriteFlights_.delete(key);
+            if (ok) resolve(value); else reject(value);
+        }
+        try {
+            Promise.resolve(fn.apply(this, args)).then(function (value) { settle(true, value); }, function (err) { settle(false, err); });
+        } catch (err) { settle(false, err); }
+        return flight;
+    };
+    Object.keys(fn).forEach(function (key) { wrapped[key] = fn[key]; });
+    wrapped.__kmWriteCommandGuard = true;
+    return wrapped;
+}
+function _kmInstallWriteCommandGuards_() {
+    var db = window.KM.DB, names = Object.keys(_KM_SOURCE_WRITE_FAMILIES_).concat(['saveShipmentConsolidationPolicy']);
+    names.forEach(function (name) {
+        var fn = db[name];
+        if (typeof fn === 'function' && !fn.__kmWriteCommandGuard) db[name] = _kmGuardWriteCommand_(name, fn);
+    });
+}
+_kmInstallWriteCommandGuards_();

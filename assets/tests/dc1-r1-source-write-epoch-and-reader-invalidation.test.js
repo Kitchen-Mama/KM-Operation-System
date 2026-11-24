@@ -177,19 +177,18 @@ function partA() {
       });
     });
   }).then(function () {
-    // A9 - DUPLICATE / CONCURRENT notifications: two writes in the air together. Strictly monotonic.
+    // A9 - user-requested command protection (2026-11-24): concurrent identical writes share one dispatch.
     var cd = makeClient({ hold: true });
     var seen = [];
     var pa = Promise.resolve(cd.DB.upsertFcTargetRule({ rule_id: 'R1' })).catch(function () {}); seen.push(cd.epoch().planning);
     var pb = Promise.resolve(cd.DB.upsertFcTargetRule({ rule_id: 'R1' })).catch(function () {}); seen.push(cd.epoch().planning);
-    // Both are now in the air together. The writer awaits its own gates before its fetch, so the held
-    // responses are released for as long as either is still outstanding.
+    // Both callers await the same write. Release its held network response until they settle.
     var releaser = setInterval(function () { cd.release(); }, 5);
     return within(Promise.all([pa, pb]), 3000).then(function (v) { clearInterval(releaser); return v; })
       .then(function () {
         seen.push(cd.epoch().planning);
-        ok(seen[0] < seen[1] && seen[1] < seen[2], 'A9  two identical writes in flight: every notification moves the counter forward, none resets it', seen);
-        eq(cd.epoch().planning, 4, 'A9b and the repeat is NOT de-duplicated away - two dispatches, two settles');
+        ok(seen[0] === seen[1] && seen[1] < seen[2], 'A9  duplicate callers share one dispatch epoch; the actual write still advances at settle', seen);
+        eq(cd.epoch().planning, 2, 'A9b identical concurrent commands dispatch once and settle once');
       });
   }).then(function () {
     // A10 - RELOAD: the cache it invalidates survives a reload, so the signal must too.

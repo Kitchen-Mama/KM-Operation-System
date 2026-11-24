@@ -687,6 +687,8 @@
     text-overflow: ellipsis;
 }
 
+#replen-add-submit { min-width: 110px; }
+
 #ops-section .replen-cache-status {
     flex-basis: 100%;
     font-size: 12px;
