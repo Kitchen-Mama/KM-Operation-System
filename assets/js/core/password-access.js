@@ -53,7 +53,26 @@
     }
     window.KM = window.KM || {};
     window.KM.passwordAccess = { whenSignedIn: ready, isSignedIn: function () { return !locked(); }, assertWriteAllowed: function () { if (locked()) { show('Please sign in again.'); throw authError(); } } };
-    window.KM.passwordAccess.lastFailure = function () { return lastFailure ? { code: lastFailure.code, at: lastFailure.at } : null; };
+    window.KM.passwordAccess.lastFailure = function () { return lastFailure ? { code: lastFailure.code, phase: lastFailure.phase || 'request', at: lastFailure.at } : null; };
+    function failureCode(r, fallback) { return r && typeof r.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(r.code) ? r.code : fallback; }
+    function loginMessage(code) {
+        if (/^AUTH_(BUSY|LOCK_UNAVAILABLE|LOCK_TIMEOUT|SERVICE_UNAVAILABLE)$/.test(code)) return 'Sign-in service is busy. Please wait a moment and try again. (' + code + ')';
+        if (code === 'AUTH_RATE_LIMIT') return 'Please wait a minute and try again. (AUTH_RATE_LIMIT)';
+        if (code === 'AUTH_INVALID_PASSWORD') return 'Incorrect password. Please try again. (AUTH_INVALID_PASSWORD)';
+        if (/^AUTH_(NOT_CONFIGURED|MODULE_MISSING|CONFIG_UNAVAILABLE)$/.test(code)) return 'Sign-in service is unavailable. Please contact the administrator. (' + code + ')';
+        if (code === 'AUTH_NETWORK_ERROR') return 'Could not reach the sign-in service. Please try again. (AUTH_NETWORK_ERROR)';
+        return 'Unable to sign in. Please try again. (' + code + ')';
+    }
+    async function requestLogin(derived) {
+        for (var attempt = 0; attempt < 3; attempt++) {
+            var r = await postAuth({ action: 'auth.login', password_key: derived });
+            // Only an explicit busy refusal with zero business writes is retryable. Never replay business requests.
+            if (!r || r.success !== false || r.code !== 'AUTH_BUSY' || r.business_writes !== 0 || attempt === 2) return r;
+            lastFailure = { code: 'AUTH_BUSY', phase: 'login', at: Date.now() };
+            error.textContent = 'Sign-in service is busy. Retrying (' + (attempt + 2) + '/3)...';
+            await new Promise(function (resolve) { setTimeout(resolve, (attempt + 1) * 1000); });
+        }
+    }
     function postAuth(body) {
         if (!endpointOk) return Promise.reject(new Error('Sign in is not available.'));
         var ctrl = new AbortController(), timer = setTimeout(function () { ctrl.abort(); }, 30000);
@@ -73,23 +92,30 @@
     async function login(event) {
         event.preventDefault(); if (busy) return;
         busy = true; form.querySelector('button').disabled = true; error.textContent = '';
-        var password = field.value; field.value = '';
+        var password = field.value, derived = '', c = null; field.value = '';
         try {
-            var c = await configForLogin();
+            c = await configForLogin();
             if (!c) throw new Error('not ready');
             var salt = Uint8Array.from(c.salt.match(/../g), function (v) { return parseInt(v, 16); });
             var key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']); password = '';
             var bytes = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: 600000, hash: 'SHA-256' }, key, 256));
-            var derived = Array.from(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); bytes.fill(0);
-            var r = await postAuth({ action: 'auth.login', password_key: derived }); derived = '';
+            derived = Array.from(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); bytes.fill(0);
+            var r = await requestLogin(derived); derived = '';
             if (!r || !r.success || !/^[0-9a-f]{64}$/.test(r.access_session) || !isFinite(r.expires_at) || r.expires_at <= Date.now()) {
                 configFlight = null;
-                error.textContent = r && r.code === 'AUTH_RATE_LIMIT' ? 'Please wait a minute and try again.' : 'Unable to sign in. Check your password or try again.'; return;
+                var code = failureCode(r, 'AUTH_RESPONSE_INVALID');
+                lastFailure = { code: code, phase: 'login', at: Date.now() };
+                error.textContent = loginMessage(code); return;
             }
-            session = r.access_session; expires = r.expires_at; rememberSession(); cover.hidden = true;
+            session = r.access_session; expires = r.expires_at; lastFailure = null; rememberSession(); cover.hidden = true;
             var q = waiting; waiting = []; q.forEach(function (w) { w.resolve(); });
-        } catch (e) { configFlight = null; error.textContent = 'Unable to sign in. Please try again.'; }
-        finally { password = ''; busy = false; form.querySelector('button').disabled = false; }
+        } catch (e) {
+            configFlight = null;
+            var failedCode = c ? 'AUTH_NETWORK_ERROR' : 'AUTH_CONFIG_UNAVAILABLE';
+            lastFailure = { code: failedCode, phase: c ? 'login' : 'config', at: Date.now() };
+            error.textContent = loginMessage(failedCode);
+        }
+        finally { password = ''; derived = ''; busy = false; form.querySelector('button').disabled = false; }
     }
     window.fetch = function (input, init) {
         var u; try { u = new URL(typeof input === 'string' ? input : input.url, location.href); } catch (e) { return Promise.reject(e); }
