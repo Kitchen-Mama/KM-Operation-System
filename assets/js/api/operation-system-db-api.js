@@ -1134,14 +1134,47 @@ function customsTypeLabelFallback_(code) {
 // Display source priority: (1) canonical enum→Label map (customs); (2) a humanized Code fallback. A future
 // shared Enum Display Dictionary / Code Dictionary table can extend this without touching callers or the DB.
 // ============================================================
-function _codeHumanize_(code) {
+function _codeHumanize_(code, scope) {
     var s = String(code == null ? '' : code).trim();
     if (!s) return '';
+    // Finite presentation vocabularies: unknown names/IDs keep their spelling, never generic title case.
+    if (scope) {
+        var dictionaries = {
+            shippingMethod: {
+                air: 'Air', sea: 'Sea', sea_express: 'Sea Express', seaexpress: 'Sea Express', 'sea express': 'Sea Express',
+                truck: 'Truck', parcel: 'Parcel', rail: 'Rail', courier: 'Courier', express: 'Express',
+                road: 'Road', ground: 'Ground', ocean: 'Ocean', fcl: 'FCL', lcl: 'LCL'
+            },
+            lastMileDelivery: { parcel: 'Parcel', truck: 'Truck', pallet: 'Pallet', courier: 'Courier', spd: 'SPD', ltl: 'LTL', ftl: 'FTL' },
+            status: {
+                draft: 'Draft', planned: 'Planned', ready_to_ship: 'Ready to Ship', shipped: 'Shipped',
+                in_transit: 'In Transit', arrived: 'Arrived', partially_received: 'Partially Received',
+                partial_received: 'Partial Received', received: 'Received', closed: 'Closed', cancelled: 'Cancelled',
+                stuck: 'Stuck', delivered: 'Delivered', completed: 'Completed', active: 'Active', inactive: 'Inactive',
+                pending: 'Pending', current: 'Current', upcoming: 'Upcoming', exception: 'Exception', skipped: 'Skipped'
+            }
+        };
+        var labels = scope === 'enumLabel'
+            ? Object.assign({}, dictionaries.shippingMethod, dictionaries.lastMileDelivery, dictionaries.status)
+            : dictionaries[scope] || {};
+        var key = s.toLowerCase();
+        return Object.prototype.hasOwnProperty.call(labels, key) ? labels[key] : s;
+    }
     return s.split(/[_\s]+/).map(function (w) { return w ? (w.charAt(0).toUpperCase() + w.slice(1)) : w; }).join(' ');
 }
 var codeDisplay_ = {
-    shippingMethod: function (code) { return _codeHumanize_(code); },
-    lastMileDelivery: function (code) { return _codeHumanize_(code); },
+    enumLabel: function (code, scope) { return _codeHumanize_(code, scope || 'enumLabel'); },
+    shippingMethod: function (code) { return _codeHumanize_(code, 'shippingMethod'); },
+    lastMileDelivery: function (code) { return _codeHumanize_(code, 'lastMileDelivery'); },
+    status: function (code) { return _codeHumanize_(code, 'status'); },
+    shippingService: function (service) {
+        var s = service || {};
+        var label = s.shipping_method_label == null ? s.shippingMethodLabel : s.shipping_method_label;
+        if (String(label == null ? '' : label).trim()) return String(label);
+        return [codeDisplay_.shippingMethod(s.shipping_method == null ? s.shippingMethod : s.shipping_method),
+            codeDisplay_.lastMileDelivery(s.last_mile_delivery == null ? s.lastMileDelivery : s.last_mile_delivery)]
+            .filter(Boolean).join(' \u00b7 ');
+    },
     customsType: function (code) { return customsTypeLabelFallback_(code) || _codeHumanize_(code); }
 };
 // Public render-time resolver. carrierName is looked up LIVE from the carriers master (carrier_id →
@@ -1149,8 +1182,11 @@ var codeDisplay_ = {
 if (typeof window !== 'undefined') {
     window.KM = window.KM || {};
     window.KM.display = {
+        enumLabel: codeDisplay_.enumLabel,
         shippingMethod: codeDisplay_.shippingMethod,
         lastMileDelivery: codeDisplay_.lastMileDelivery,
+        status: codeDisplay_.status,
+        shippingService: codeDisplay_.shippingService,
         customsType: codeDisplay_.customsType,
         // S7-R2A — THE ONE CARRIER PRESENTATION RESOLVER, repaired.
         //

@@ -6,14 +6,14 @@
  *   action = "weeklyShipping.workspace.get"  (dispatched from 01_router.gs doPost; a body-carrying READ, no write).
  *
  * Contract:
- *   - reads ONLY the Weekly tables (shipping_plans, shipping_plan_lines, warehouses, carriers) — NEVER the
- *     whole-DB getOperationDb (44 tabs);
+ *   - default reads only Weekly tables and page SKU logistics; optional include.siteMetrics reads eight
+ *     canonical source tables once for page-scoped display sidecars, never the whole-DB getOperationDb;
  *   - one server execution: open+validate the exact bound Spreadsheet ONCE, read each required table ONCE,
  *     build header maps once, filter/join/group in memory, return ONE bounded page-oriented View Model;
  *   - preserves S0/S0.5: exact Spreadsheet-ID gate, validate-only sheet/column presence (NEVER create/repair/
  *     append/migrate). Missing Sheet / missing required column / wrong target FAIL CLOSED with a token;
- *   - authors NO business logic: no status transition, no quantity math beyond summing existing line qty for a
- *     display total, no recommendation, no submit, no reservation, no write.
+ *   - no status transition, recommendation, submit, reservation or write. Optional current site metrics
+ *     reuse the existing stock/source and canonical sales owners; persisted decision snapshots never change.
  *
  * Testability: every pure builder below is a `function` declaration (extract+eval friendly). The one impure
  * orchestrator `handleWeeklyShippingWorkspaceGet_(body, io)` takes an injectable `io` (now/nextSeq/openTarget/
@@ -49,6 +49,9 @@ var WEEKLY_WS_STATUS_LABELS_ = {
 
 var WEEKLY_WS_PAGE_MAX_ = 100;
 var WEEKLY_WS_PAGE_DEFAULT_ = 25;
+var WEEKLY_SITE_METRICS_MAX_KEYS_ = 1000;
+var WEEKLY_SITE_METRICS_KEYS_ = ['marketplaces', 'marketplaceSkus', 'amazonInventorySnapshot',
+  'amazonDailySalesSnapshot', 'amazonWeeklySalesSnapshot', 'campaigns', 'campaignSkuLines', 'fcSpecialEvents'];
 
 // --------------------------------------------------------------------------------------------------------
 // PURE helpers (deterministic; no clock / no Spreadsheet)
@@ -291,10 +294,150 @@ function weeklyRowsToObjects_(sheet) {
   return out;
 }
 
+function weeklySiteCountry_(value) {
+  var c = weeklyWsStr_(value).toUpperCase();
+  return typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function' ? KMCID.canonicalCountryCode(c) : c === 'GB' ? 'UK' : c;
+}
+function weeklySiteNumber_(value) {
+  if (typeof value === 'boolean' || weeklyWsStr_(value) === '') return null;
+  var n = Number(value); return isFinite(n) && n >= 0 ? n : null;
+}
+function weeklySiteDay_(value) {
+  var s = weeklyWsStr_(value);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return '';
+  var d = new Date(s + 'T00:00:00Z');
+  return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === s ? s : '';
+}
+function weeklySiteMetricsEmpty_(scope, sku, warning) {
+  return { company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku,
+    currentStock: null, avgSalesPerDay: null, daysOfSupply: null, source: '', date: '', calculationDate: '',
+    state: 'UNKNOWN', scopeValidated: false, warning: warning || '' };
+}
+function weeklySiteRows_(read, key) {
+  var snap = read && read.snapshots && read.snapshots[key];
+  if (!snap || !Array.isArray(snap.headers) || !Array.isArray(snap.rows)) return [];
+  return snap.rows.map(function (row) { var out = {}; snap.headers.forEach(function (h, i) { out[weeklyWsStr_(h)] = row[i]; }); return out; });
+}
+
+// Read-only sidecars: one minimal canonical read per workspace, then reuse its rows for every page scope/SKU.
+function weeklyEnrichSiteMetrics_(ss, model, tables, io, diagnostics) {
+  diagnostics = diagnostics || {}; diagnostics.tablesRead = 0;
+  var plans = {}, duplicate = {}, scopes = {}, work = [], count = 0;
+  (tables.shipping_plans || []).forEach(function (p) { var id = weeklyWsStr_(p.shipping_plan_id); if (plans[id]) duplicate[id] = true; else plans[id] = p; });
+  Object.keys(model.detailsByPlanId || {}).forEach(function (id) {
+    var p = plans[id] || {}, headerMarket = weeklyWsStr_(p.marketplace), multi = headerMarket.toUpperCase() === 'MULTI';
+    (model.detailsByPlanId[id].lines || []).forEach(function (line) {
+      var raw = line.raw || {}, market = weeklyWsStr_(line.marketplace) || (multi ? '' : headerMarket);
+      var scope = { company: weeklyWsStr_(p.company), country: weeklyWsStr_(p.country), marketplace: market };
+      var sku = weeklyWsStr_(line.sku), bad = duplicate[id] || !scope.company || !scope.country || !market || market.toUpperCase() === 'MULTI' || !sku
+        || (!multi && weeklyWsLc_(market) !== weeklyWsLc_(headerMarket))
+        || (weeklyWsStr_(raw.company) && weeklyWsLc_(raw.company) !== weeklyWsLc_(scope.company))
+        || (weeklyWsStr_(raw.country) && weeklySiteCountry_(raw.country) !== weeklySiteCountry_(scope.country));
+      line.liveSiteMetrics = weeklySiteMetricsEmpty_(scope, sku, bad ? 'SITE_METRICS_SCOPE_INVALID' : '');
+      if (bad) return;
+      var key = JSON.stringify([weeklyWsLc_(scope.company), weeklySiteCountry_(scope.country), weeklyWsLc_(market)]);
+      var group = scopes[key], sk = weeklyWsLc_(sku), job = group && group.jobs[sk];
+      if (!job) {
+        if (count >= WEEKLY_SITE_METRICS_MAX_KEYS_) { line.liveSiteMetrics.warning = 'SITE_METRICS_PAGE_LIMIT'; return; }
+        if (!group) group = scopes[key] = { scope: scope, skus: {}, jobs: {} };
+        job = group.jobs[sk] = { sku: sku, lines: [] }; group.skus[sk] = sku; count++; work.push(job);
+      }
+      job.lines.push(line);
+    });
+  });
+  function refuse(warning) { work.forEach(function (job) { job.lines.forEach(function (l) { l.liveSiteMetrics.warning = warning; }); }); }
+  if (!count) return { keys: 0, scopes: 0, tablesRead: 0 };
+  if (typeof sadSiteScopeActive1k_ !== 'function' || typeof sadSiteSourceUnknown13_ !== 'function'
+      || typeof sadSiteCompanies13_ !== 'function' || typeof sadSiteCurrentStock1g_ !== 'function'
+      || typeof sadSiteBlankOnly16_ !== 'function') {
+    refuse('SITE_METRICS_RUNTIME_UNAVAILABLE'); return { keys: count, scopes: Object.keys(scopes).length, tablesRead: 0 };
+  }
+  if (!sadSiteScopeActive1k_()) {
+    refuse('SITE_SOURCE_SCOPE_UNDECIDED'); return { keys: count, scopes: Object.keys(scopes).length, tablesRead: 0 };
+  }
+  var read, calcDate = '', readCount = 0;
+  try {
+    read = io.readSiteMetrics ? io.readSiteMetrics(ss) : weeklyWorkspaceDefaultIo_().readSiteMetrics(ss);
+    if (!read || !read.snapshots) throw new Error('SITE_METRICS_READ_UNAVAILABLE');
+    readCount = Object.keys((read && read.snapshots) || {}).length;
+    diagnostics.tablesRead = readCount;
+  } catch (e) { refuse('SITE_METRICS_READ_FAILED'); return { keys: count, scopes: Object.keys(scopes).length, tablesRead: readCount }; }
+  try { calcDate = weeklySiteDay_(io.siteMetricsDate ? io.siteMetricsDate() : weeklyWorkspaceDefaultIo_().siteMetricsDate()); } catch (eDate) { calcDate = ''; }
+  var rows = {};
+  WEEKLY_SITE_METRICS_KEYS_.forEach(function (key) { rows[key] = weeklySiteRows_(read, key); });
+  Object.keys(scopes).forEach(function (key) {
+    var group = scopes[key], scope = group.scope;
+    var owner = sadSiteCompanies13_(ss, scope, rows.marketplaces), why = sadSiteSourceUnknown13_(owner, scope, '');
+    var stock = {}, scoped = { snapshots: read.snapshots || {}, __rowCache: {} }, rateScope = scope;
+    if (!why) {
+      // Use the unique master's spelling for the canonical resolver's exact identity comparisons.
+      var master = rows.marketplaces.filter(function (r) { return weeklySiteCountry_(r.country) === weeklySiteCountry_(scope.country) && weeklyWsLc_(r.marketplace) === weeklyWsLc_(scope.marketplace); })[0];
+      rateScope = { company: weeklyWsStr_(master.company), country: weeklyWsStr_(master.country), marketplace: weeklyWsStr_(master.marketplace) };
+      function sameCompany(r) { return !weeklyWsStr_(r.company) || weeklyWsLc_(r.company) === weeklyWsLc_(scope.company); }
+      function sameMarket(r) { return weeklyWsLc_(r.marketplace) === weeklyWsLc_(scope.marketplace); }
+      function pageSku(r) { return !!group.skus[weeklyWsLc_(r.sku)]; }
+      function skuRow(r) { return Object.assign({}, r, { sku: group.skus[weeklyWsLc_(r.sku)] }); }
+      stock = sadSiteCurrentStock1g_(ss, scope, rows.amazonInventorySnapshot.filter(function (r) { return pageSku(r) && weeklyWsStr_(r.country) && sameCompany(r); }), group.skus);
+      var sourceSet = typeof KMCID !== 'undefined' && KMCID && typeof KMCID.sourceCountriesForScope === 'function'
+        ? KMCID.sourceCountriesForScope(scope.country, scope.marketplace).members : [scope.country];
+      var countries = {}; sourceSet.forEach(function (c) { countries[weeklySiteCountry_(c)] = true; });
+      ['amazonDailySalesSnapshot', 'amazonWeeklySalesSnapshot'].forEach(function (name) {
+        scoped.__rowCache[name] = rows[name].filter(function (r) { return pageSku(r) && sameCompany(r) && sameMarket(r) && countries[weeklySiteCountry_(r.country)]; })
+          .map(function (r) { return Object.assign(skuRow(r), { marketplace: rateScope.marketplace }); });
+      });
+      scoped.__rowCache.marketplaces = [master];
+      scoped.__rowCache.marketplaceSkus = rows.marketplaceSkus.filter(function (r) { return pageSku(r) && weeklyWsLc_(r.company) === weeklyWsLc_(scope.company)
+        && weeklySiteCountry_(r.country) === weeklySiteCountry_(scope.country) && sameMarket(r); })
+        .map(function (r) { return Object.assign(skuRow(r), rateScope); });
+      var mskuIds = {}, campaignIds = {};
+      scoped.__rowCache.marketplaceSkus.forEach(function (r) { if (weeklyWsStr_(r.marketplace_sku_id)) mskuIds[weeklyWsStr_(r.marketplace_sku_id)] = true; });
+      rows.campaignSkuLines.forEach(function (r) { if (pageSku(r) || mskuIds[weeklyWsStr_(r.marketplace_sku_id)]) campaignIds[weeklyWsStr_(r.campaign_id)] = true; });
+      // Keep the full line identity of each relevant campaign, matching the canonical owner.
+      scoped.__rowCache.campaignSkuLines = rows.campaignSkuLines.filter(function (r) { return campaignIds[weeklyWsStr_(r.campaign_id)]; })
+        .map(function (r) { return pageSku(r) ? skuRow(r) : Object.assign({}, r); });
+      scoped.__rowCache.campaigns = rows.campaigns.filter(function (r) { return campaignIds[weeklyWsStr_(r.campaign_id)]; });
+      scoped.__rowCache.fcSpecialEvents = rows.fcSpecialEvents.filter(pageSku).map(skuRow);
+    }
+    Object.keys(group.jobs).forEach(function (sk) {
+      var job = group.jobs[sk], result = weeklySiteMetricsEmpty_(scope, job.sku, why);
+      if (!why) {
+        var blank = sadSiteBlankOnly16_(stock, job.sku), s = stock[sk], qty = s && weeklySiteDay_(s.date) ? weeklySiteNumber_(s.qty) : null;
+        if (blank) result.warning = blank;
+        else {
+          result.scopeValidated = true; result.currentStock = qty;
+          result.date = qty === null ? calcDate : s.date; result.calculationDate = calcDate;
+          var rate;
+          if (typeof recoWsResolveSalesRate_ !== 'function') rate = { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' };
+          else if (!calcDate) rate = { ok: false, reason: 'CALCULATION_DATE_NOT_CONFIGURED' };
+          else if (!['campaigns', 'campaignSkuLines', 'fcSpecialEvents'].every(function (k) { return !!scoped.snapshots[k]; })) rate = { ok: false, reason: 'CONTAMINATION_SOURCE_UNAVAILABLE' };
+          else { try { rate = recoWsResolveSalesRate_(scoped, rateScope, job.sku, calcDate); } catch (eRate) { rate = { ok: false, reason: 'SALES_RUNTIME_UNAVAILABLE' }; } }
+          var avg = rate && rate.ok ? weeklySiteNumber_(rate.avgSalesPerDay) : null;
+          result.avgSalesPerDay = avg;
+          result.state = qty !== null || avg !== null ? 'READY' : 'UNKNOWN';
+          result.daysOfSupply = qty !== null && avg !== null && avg > 0 ? Math.round(qty / avg * 10) / 10 : null;
+          result.source = avg !== null ? weeklyWsStr_(rate.source) : qty !== null ? 'amazon_inventory_snapshot' : '';
+          result.warning = [qty === null ? 'SITE_STOCK_ROW_NOT_FOUND' : '', avg === null ? weeklyWsStr_(rate && rate.reason) || 'SALES_BASIS_UNAVAILABLE' : weeklyWsStr_(rate.warning)].filter(function (x) { return x; }).join('; ');
+        }
+      }
+      job.lines.forEach(function (line) { line.liveSiteMetrics = Object.assign({}, result, { sku: line.sku }); });
+    });
+  });
+  return { keys: count, scopes: Object.keys(scopes).length, tablesRead: readCount };
+}
+
 function weeklyWorkspaceDefaultIo_() {
   return {
     now: function () { return Date.now(); },                              // API diagnostic layer only
     nextSeq: function () { WEEKLY_WS_SEQ_++; return WEEKLY_WS_SEQ_; },
+    siteMetricsDate: function () {
+      var context = typeof recoWsDailyInventoryContext_ === 'function' ? recoWsDailyInventoryContext_() : null;
+      return context && context.ok ? context.calculationDate : '';
+    },
+    readSiteMetrics: function (ss) {
+      if (typeof KMPS === 'undefined' || !KMPS || typeof KMPS.readCanonicalSnapshots !== 'function'
+          || typeof KMPS.tablesFor !== 'function' || KMPS.tablesFor({ only: [] }).length !== 0) throw new Error('SITE_METRICS_READER_UNAVAILABLE');
+      return KMPS.readCanonicalSnapshots(ss, { only: WEEKLY_SITE_METRICS_KEYS_ });
+    },
     openTarget: function () {
       var id = prodExpectedDbId_();
       if (!id) throw prodSchemaError_('WRONG_SPREADSHEET_TARGET', '', null);   // fail closed on empty config
@@ -324,7 +467,24 @@ function handleWeeklyShippingWorkspaceGet_(body, io) {
       readCount++;
     }
     var vm = weeklyWorkspaceBuild_(tables, payload);
-    return weeklyBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount });
+    var siteMetrics = null;
+    if (payload.include && payload.include.siteMetrics === true && payload.include.details !== false) {
+      siteMetrics = { tablesRead: 0 };
+      try { siteMetrics = weeklyEnrichSiteMetrics_(ss, vm, tables, io, siteMetrics); }
+      catch (metricError) {
+        var metricPlans = weeklyIndexBy_(tables.shipping_plans, 'shipping_plan_id');
+        Object.keys(vm.detailsByPlanId).forEach(function (id) {
+          var p = metricPlans[id] || {};
+          vm.detailsByPlanId[id].lines.forEach(function (line) {
+            line.liveSiteMetrics = weeklySiteMetricsEmpty_({ company: weeklyWsStr_(p.company), country: weeklyWsStr_(p.country),
+              marketplace: weeklyWsStr_(line.marketplace || p.marketplace) }, line.sku, 'SITE_METRICS_ENRICHMENT_FAILED');
+          });
+        });
+        siteMetrics.warning = 'SITE_METRICS_ENRICHMENT_FAILED';
+      }
+      readCount += siteMetrics.tablesRead;
+    }
+    return weeklyBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount, siteMetrics: siteMetrics });
   } catch (e) {
     var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'WEEKLY_WORKSPACE_BUILD_FAILED';
     return weeklyBuildEnvelope_(false, null, [{ code: code, message: String(e && e.message || e), details: (e && e.schemaDetail) || null }],

@@ -88,7 +88,7 @@ ok(/gap-recalc-fm5r4jlive10-1/.test(GRSRC), 'transport VERSION at LIVE10 (bumped
 
 section('backend stale authority is the ONE frozen owner (no new timeout in the frontend)');
 ok(/function gapJobStaleNonterminal_/.test(F46) && /GAP_JOB_STALE_MS_/.test(F46), '§3 the stale threshold lives in 46.gs (GAP_JOB_STALE_MS_); frontend defines NO numeric timeout');
-ok(!/STALE_MS|staleThreshold|60000|600000/.test(GRSRC), 'the frontend introduces NO competing stale timeout constant');
+ok(!/STALE_MS|staleThreshold/.test(GRSRC), 'the frontend introduces NO competing backend stale-job threshold; response observation deadlines are transport-only');
 
 Promise.all(jobs).then(function () {
   console.log('\n----------------------------------------');

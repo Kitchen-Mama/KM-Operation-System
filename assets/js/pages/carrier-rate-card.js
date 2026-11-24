@@ -501,17 +501,13 @@
         return list;
     }
     function _crcValOpts(vals) { return vals.map(function (v) { return { value: v, label: v }; }); }
-    // Method filter DISPLAY labels (Filter Consistency Repair). The option VALUE stays the raw DB enum
-    // (air / sea / sea_express / truck / rail / …); ONLY the shown label is the formal frontend text.
-    // Selection state, filter payload and the .filter() match (`c.shippingMethod`) all keep the canonical
-    // enum — nothing is sent to the backend as a label. An unmapped-but-legal enum is title-cased (never
-    // dropped or renamed) so new enums still read cleanly without a schema/label change.
-    var CRC_METHOD_LABELS = { air: 'Air', sea: 'Sea', sea_express: 'Sea Express', truck: 'Truck', rail: 'Rail', courier: 'Courier' };
+    // Labels only; selection state, matching and editor values keep the exact DB tokens.
+    function _crcEnumDisplay_(kind, v) {
+        var d = window.KM && window.KM.display;
+        return d && typeof d[kind] === 'function' ? d[kind](v) : String(v == null ? '' : v);
+    }
     function _crcMethodLabel(v) {
-        var key = String(v == null ? '' : v).trim().toLowerCase();
-        if (!key) return String(v == null ? '' : v);
-        if (CRC_METHOD_LABELS[key]) return CRC_METHOD_LABELS[key];
-        return key.split(/[_\s]+/).map(function (w) { return w ? w.charAt(0).toUpperCase() + w.slice(1) : w; }).join(' ');
+        return _crcEnumDisplay_('shippingMethod', v);
     }
     function _crcMethodOpts(vals) { return vals.map(function (v) { return { value: v, label: _crcMethodLabel(v) }; }); }
     // F5 — Carrier options from rate-card rows (never hide a card): value = carrier_id, label = carrier_name
@@ -658,7 +654,7 @@
         var mileRows = carrierRows.filter(function (c) { return !caSel.length || caSel.indexOf(String(c.carrierId || '')) !== -1; });
         var mileVals = _crcDistinct(mileRows, 'lastMileDelivery');
         _crcPruneState('lastMile', mileVals);
-        if (skipKind !== 'lastMile') _crcRenderFilterOptions('lastMile', _crcValOpts(mileVals));
+        if (skipKind !== 'lastMile') _crcRenderFilterOptions('lastMile', mileVals.map(function (v) { return { value: v, label: _crcEnumDisplay_('lastMileDelivery', v) }; }));
 
         CRCF_ORDER.forEach(_crcUpdateFilterLabel);
     }
@@ -770,8 +766,8 @@
                 '<td>' + esc(nameById[c.carrierId] || c.carrierId || '') + '</td>' +
                 '<td>' + esc(shipFrom(c)) + '</td>' +
                 '<td>' + esc(shipTo(c)) + '</td>' +
-                '<td>' + dash(c.shippingMethod) + '</td>' +
-                '<td>' + dash(c.lastMileDelivery) + '</td>' +
+                '<td>' + dash(_crcMethodLabel(c.shippingMethod)) + '</td>' +
+                '<td>' + dash(_crcEnumDisplay_('lastMileDelivery', c.lastMileDelivery)) + '</td>' +
                 '<td data-crc-lt="' + _i + '">' + _crcLtCellHtml_(c, ltMap) + '</td>' +
                 '<td>' + dash(c.chargeType) + '</td>' +
                 '<td>' + dash(c.chargeUnit) + '</td>' +
@@ -784,11 +780,11 @@
                 '<td class="crc-num">' + numDisp(c.fuelSurcharge) + '</td>' +
                 '<td class="crc-num">' + numDisp(c.customsFee) + '</td>' +
                 '<td class="crc-num">' + numDisp(c.docFee) + '</td>' +
-                '<td>' + dash(c.transitType) + '</td>' +
+                '<td>' + dash(_crcMethodLabel(c.transitType)) + '</td>' +
                 '<td>' + dash(c.batteryType) + '</td>' +
                 '<td>' + dash(c.customsType) + '</td>' +
                 '<td>' + effDate(c) + '</td>' +
-                '<td>' + dash(c.status) + '</td>' +
+                '<td>' + dash(_crcEnumDisplay_('status', c.status)) + '</td>' +
                 '<td>' + dash(c.currency) + '</td>' +
                 '<td>' + dash(c.note) + '</td>' +
             '</tr>';
@@ -1342,10 +1338,10 @@
     // The lane an operator reads, in the planner's own terms. '(any)' is not decoration: a blank axis is a
     // WILDCARD that the planner matches against every value, which is why it may not be left silent.
     function _crcLtLane(lt) {
-        return [String(lt.shippingMethod || '').trim() || '(no method)',
+        return [_crcMethodLabel(lt.shippingMethod) || '(no method)',
             up(lt.originCountry) || '(any origin)',
             up(lt.destinationCountry) || '(any destination)',
-            String(lt.lastMileDelivery || '').trim() || '(any last mile)'].join(' · ');
+            _crcEnumDisplay_('lastMileDelivery', lt.lastMileDelivery) || '(any last mile)'].join(' · ');
     }
     function _crcLtDaysCell(lt) {
         function f(v) { return (v === '' || v == null) ? '—' : v; }
@@ -1392,8 +1388,8 @@
                 '<td>' + carrier + '</td>' +
                 '<td>' + esc(up(lt.originCountry) || '(any)') + '</td>' +
                 '<td>' + esc(up(lt.destinationCountry) || '(any)') + '</td>' +
-                '<td>' + esc(String(lt.shippingMethod || '')) + '</td>' +
-                '<td>' + esc(String(lt.lastMileDelivery || '') || '(any)') + '</td>' +
+                '<td>' + esc(_crcMethodLabel(lt.shippingMethod)) + '</td>' +
+                '<td>' + esc(_crcEnumDisplay_('lastMileDelivery', lt.lastMileDelivery) || '(any)') + '</td>' +
                 '<td style="white-space:nowrap;">' + esc(_crcLtDaysCell(lt)) + '</td>' +
                 '<td><button type="button" class="crc-btn crc-btn--ghost" onclick="crcLtOpenEdit(\'' + esc(lt.leadTimeId) + '\')">Edit</button></td>' +
             '</tr>';

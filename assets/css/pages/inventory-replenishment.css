@@ -1354,8 +1354,7 @@
         minmax(72px, 1.1fr)      /* From */
         minmax(74px, 1.4fr)      /* To — the longest warehouse names live here */
         56px                     /* Qty — fixed: 1 to 5 digits must not move a column */
-        minmax(84px, 1.2fr)      /* Method */
-        minmax(68px, 1fr)        /* Last Mile */
+        minmax(132px, 2.2fr)     /* Shipping service: method and last mile */
         minmax(96px, 1.15fr)     /* Expected Arrival — never `auto`: a content-sized track was the R6-R3 defect */
         40px;                    /* Action */
     column-gap: 8px;

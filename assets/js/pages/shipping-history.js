@@ -549,7 +549,7 @@ function _shSyncFilterOptions(shipments) {
 function _shSetFilterOptions(key, mountId, vals) {
     var mount = document.getElementById(mountId);
     if (!mount || !mount.__kmfCtl) return;
-    mount.__kmfCtl.setOptions((vals || []).map(function (v) { return { value: v, label: v }; }));
+    mount.__kmfCtl.setOptions((vals || []).map(function (v) { return { value: v, label: key === 'method' ? _shEnumDisplay_('shippingMethod', v) : v }; }));
     shOverviewFilterState[key] = mount.__kmfCtl.getSelected(); // re-sync after cascade prune
 }
 
@@ -611,7 +611,7 @@ function renderHistoryCard(shipment) {
                 </div>
                 <div style="display: flex; gap: 16px; align-items: center; font-size: 13px;">
                     <span><strong>Country:</strong> ${shipment.country}</span>
-                    <span><strong>Method:</strong> ${shipment.method}</span>
+                    <span><strong>Method:</strong> ${_shEsc(_shEnumDisplay_('shippingMethod', shipment.method))}</span>
                     <span><strong>Total Pcs:</strong> ${shipment.totalPcs.toLocaleString()}</span>
                     <span><strong>Cost:</strong> $${shipment.totalCost.toLocaleString()}</span>
                     <button type="button" class="history-expand-btn" aria-expanded="false" style="padding: 6px 12px; border: 1px solid #E2E8F0; border-radius: 4px; background: white; cursor: pointer; font-size: 13px; color: #3B82F6;" onclick="event.stopPropagation(); toggleHistoryCard('${shipment.id}', event)">
@@ -693,6 +693,10 @@ function _shEsc(s) {
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 function _shNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function _shEnumDisplay_(kind, code) {
+    var d = window.KM && window.KM.display;
+    return d && typeof d[kind] === 'function' ? d[kind](code) : String(code == null ? '' : code);
+}
 
 var SH_STATUS_LABEL = {
     draft: 'Draft', ready_to_ship: 'Ready to Ship', shipped: 'Shipped',
@@ -1631,7 +1635,7 @@ function _shRenderDbCard(s, planLines, mode) {
     function methodFld() {
         var cur = String(s.shippingMethod || '').trim();
         return '<div style="display:flex;flex-direction:column;gap:2px;"><label style="font-size:11px;color:#64748B;">Shipping Method</label>' +
-            '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(s.shippingMethodDisplay || cur) || '--') +
+            '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(_shEnumDisplay_('shippingMethod', cur || s.shippingMethodDisplay)) || '--') +
             '</div></div>';
     }
     function customsFld() {
@@ -1849,7 +1853,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 (mode !== 'overview' && _shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Amazon receipt tracking\"><strong>Amazon 收貨紀錄</strong>（不增加庫存）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
-                '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
+                '<span><strong>Method:</strong> ' + _shEsc(_shEnumDisplay_('shippingMethod', s.shippingMethod) || '--') + '</span>' +
                 '<span><strong>Customs Type:</strong> ' + _shEsc(_customsVal || '--') + '</span>' +
                 '<span><strong>Pcs:</strong> ' + _shNum(s.totalQty) + '</span>' +
                 '<span><strong>ETD:</strong> ' + _shEsc(s.etd || '--') + '</span>' +
@@ -2714,17 +2718,18 @@ function _shRcRender_(sid) {
             '<option value=""' + (selC ? '' : ' selected') + '>-- Choose carrier --</option>' +
             cars.map(function (c) { return '<option value="' + _shEsc(c.id) + '"' + (c.id === selC ? ' selected' : '') + '>' + _shEsc(c.name) + (c.name !== c.id ? ' (' + _shEsc(c.id) + ')' : '') + '</option>'; }).join('') +
         '</select>' +
-        '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Shipping Method</label>' +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Shipping Service</label>' +
         '<select class="sh-rc-method" onchange="shRcPickMethod(\'' + _shEsc(sid) + '\', this.value)"' + (selC ? '' : ' disabled') + ' style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
             '<option value=""' + (o ? '' : ' selected') + '>' + (selC ? '-- Choose method --' : '-- Choose a carrier first --') + '</option>' +
-            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _shEsc(x.o.shipping_method_label || '(no label)') + ' \u00b7 ' + _shRcRateText15c_(x.o) + _shLtTag12_(x.o.lead_time) + '</option>'; }).join('') +
+            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _shEsc(_shSvcServiceLabel_(x.o) || '(no label)') + ' \u00b7 ' + _shRcRateText15c_(x.o) + _shLtTag12_(x.o.lead_time) + '</option>'; }).join('') +
         '</select>' +
         '<div class="sh-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? _shLtLine12_(o.lead_time, 'This card') : '') + '</div>' + _shRcPendingHtml15c_(o, cur) +   // AGL02-SH
         '<button type="button" class="sh-rc-confirm" onclick="shRateCardConfirm(this)"' + (o ? '' : ' disabled') + ' style="margin-top:4px;background:#1E293B;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:132px;">Use this rate card</button> <span class="sh-rc-note"></span>' + _shEtaBox12_(sid, r) + _shUnpricedHtml_(sid, r) + _shSvcHtml_(sid, r);   // AD3 D   // R71-FE-12
 }
 // AD3 D (Owner decisions 8 / 9 / 10; Author B contract 1-3) - SERVICE WITHOUT A RATE CARD, and SKIP QUOTE / COST PENDING.
 // The lists come ONLY from the server's service_vocabulary (carriers = ACTIVE carriers master rows; method / last mile = stored tokens), never
-// from rate-card options, so a carrier with ZERO rate cards can be chosen. Carrier, method, last mile and delivery type are SEPARATE fields;
+// from rate-card options, so a carrier with ZERO rate cards can be chosen. Declared service tuples use one picker; unknown capabilities
+// and TBA keep explicit token inputs. Method / last mile remain separate canonical payload fields;
 // "To be assigned / manual logistics" is an explicit choice (carrier_assignment TO_BE_ASSIGNED: carrier_id written blank, never a placeholder
 // id). SPD / LTL is a delivery type (parcel / pallet) that maps to the server's (method, last mile) tuple - domestic only, the server checks.
 // The Save sends ONLY these fields (plus the row version) through the existing updateShipment; a refusal is shown beside the box, an answer
@@ -2740,26 +2745,20 @@ function _shSvcHtml_(sid, r) {
     function opt(val, label, sel) { return '<option value="' + _shEsc(val) + '"' + (sel ? ' selected' : '') + '>' + _shEsc(label) + '</option>'; }
     var cars = v.carriers.filter(function (c) { var id = String((c && c.carrier_id) || '').trim(); if (!id || seen[id]) return false; seen[id] = 1; return true; });
     var curKnown = !curC || cars.some(function (c) { return String(c.carrier_id).trim() === curC; });
-    var mets = v.shipping_method.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lms = v.last_mile_delivery.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
-    var dts = _shSvcDeliveryTypes_(v, tba ? '' : curC);   // AD3 D r3: per carrier when the vocabulary says so
-    var dtCur = ''; dts.forEach(function (d) { if (!dtCur && curM && curL && d.shipping_method === curM && d.last_mile_delivery === curL) dtCur = d.value; });
     var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
     var a = r && r.unpriced_approval, canSkip = !!(a && a.enabled === true && (a.available === true || a.recoverable === true || (a.card_not_applied && a.card_not_applied.available === true)) && a.carrier_id);
     var qs = r && r.current && r.current.quote_state;
     return '<div class="sh-svc" data-sid="' + e + '" data-vocab="' + _shEsc(v.version || '') + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
         '<div style="font-size:11px;font-weight:600;color:#334155;">' + (r.customs_applicable === false ? 'Domestic Transport' : 'Shipping Service') + '</div>' +
         '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
-        '<select class="sh-svc-carrier" aria-label="Carrier" onchange="shSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', false) +
+        '<select class="sh-svc-carrier" aria-label="Carrier" onchange="shSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', !curC && !tba || !curKnown) +
             cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm || id, !tba && id === curC); }).join('') +
             opt(SH_SVC_TBA_, 'To be assigned / manual logistics', tba) + '</select>' +
         (tba ? '<div class="sh-svc-tba-state" style="font-size:11px;color:#475569;">To be assigned' + (caud ? ' - recorded ' + _shEsc(caud.at || '') + (caud.actor ? ' by ' + _shEsc(caud.actor) + ' (reported, unverified)' : '') + (caud.reason ? ': ' + _shEsc(caud.reason) : '') : ' (server marker)') + '</div>' : '') +
         (carMissing ? '<div class="sh-svc-missing" style="font-size:11px;color:#B91C1C;">No carrier, and not marked to be assigned: choose a carrier, or "To be assigned" with a reason.</div>' : '') +
         '<input class="sh-svc-tba-reason" type="text" maxlength="500" aria-label="Reason for to be assigned" placeholder="Reason for assigning the carrier later" style="' + sel + 'margin-top:4px;display:' + (tba ? 'block' : 'none') + ';">' +
         (curKnown ? '' : '<div class="sh-svc-note-carrier" style="font-size:11px;color:#B91C1C;">The saved carrier ' + _shEsc(curC) + ' is not an active carrier (' + _shEsc(sv.carrier_state || 'unknown') + '); choose one.</div>') +
-        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
-        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sh-svc-method" aria-label="Shipping method" style="' + sel + '">' + opt('', '--', !curM) + mets.map(function (m) { return opt(m, m, m === curM); }).join('') + '</select></label>' +
-        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sh-svc-lastmile" aria-label="Last mile" style="' + sel + '">' + opt('', '--', !curL) + lms.map(function (m) { return opt(m, m, m === curL); }).join('') + '</select></label>' +
-        '</div>' +
+        '<div class="sh-svc-fields">' + _shSvcFieldsHtml_(sid, v, tba ? '' : curC, curM, curL, sel) + '</div>' +
         '<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center;">' +
         '<button type="button" class="sh-svc-save" onclick="shSvcSave(\'' + e + '\', this)" style="background:#0F766E;color:#fff;border:none;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;min-width:110px;">Save service</button>' +
         (canSkip && r.current && r.current.state !== 'COST_PENDING_AUTO' ? '<button type="button" class="sh-svc-skip" onclick="shSvcSkipQuote(\'' + e + '\')" style="background:#FFFBEB;color:#92400E;border:1px solid #B45309;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Continue without quote</button>' : '') +
@@ -2784,7 +2783,52 @@ function _shSvcCarrierServices_(v, carrierId) {
     var c = null; ((v && v.carriers) || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === String(carrierId || '').trim()) c = x; });
     return (c && c.services_known === true && Array.isArray(c.services)) ? c.services.filter(Boolean) : null;
 }
-function _shSvcPairOptions_(all, allowed, cur) { var list = allowed ? all.filter(function (m) { return allowed.indexOf(m) !== -1; }) : all; return '<option value=""' + (cur && list.indexOf(cur) !== -1 ? '' : ' selected') + '>--</option>' + list.map(function (m) { return '<option value="' + _shEsc(m) + '"' + (m === cur ? ' selected' : '') + '>' + _shEsc(m) + '</option>'; }).join(''); }
+function _shSvcPairOptions_(all, allowed, cur, kind) { var list = allowed ? all.filter(function (m) { return allowed.indexOf(m) !== -1; }) : all; return '<option value=""' + (cur && list.indexOf(cur) !== -1 ? '' : ' selected') + '>--</option>' + list.map(function (m) { return '<option value="' + _shEsc(m) + '"' + (m === cur ? ' selected' : '') + '>' + _shEsc(_shEnumDisplay_(kind || 'shippingMethod', m)) + '</option>'; }).join(''); }
+function _shSvcServiceLabel_(service) {
+    var d = window.KM && window.KM.display;
+    return d && typeof d.shippingService === 'function' ? d.shippingService(service)
+        : service.shipping_method_label || [_shEnumDisplay_('shippingMethod', service.shipping_method), _shEnumDisplay_('lastMileDelivery', service.last_mile_delivery)].filter(Boolean).join(' \u00b7 ');
+}
+function _shSvcDeclaredPairs_(v, carrierId) {
+    var services = _shSvcCarrierServices_(v, carrierId);
+    if (services === null) return null; // Unknown is not an empty declaration or permission to invent tuples.
+    var seen = {};
+    return services.filter(function (s) {
+        if (!s.shipping_method || !s.last_mile_delivery) return false;
+        var key = JSON.stringify([s.shipping_method, s.last_mile_delivery]);
+        if (seen[key]) return false;
+        seen[key] = true; return true;
+    });
+}
+function _shSvcFieldsHtml_(sid, v, carrierId, method, mile, style) {
+    var pairs = _shSvcDeclaredPairs_(v, carrierId), e = _shEsc;
+    style = style || 'width:100%;max-width:100%;padding:4px 6px;box-sizing:border-box;';
+    if (pairs !== null) {
+        var current = pairs.filter(function (p) { return p.shipping_method === method && p.last_mile_delivery === mile; })[0];
+        return '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;margin-top:4px;">Shipping Service' +
+            '<select class="sh-svc-service" aria-label="Shipping Service" onchange="shSvcPickService(\'' + e(sid) + '\')" style="' + style + '">' +
+            '<option value=""' + (current ? '' : ' selected') + '>' + (pairs.length ? '-- Choose service --' : '-- No declared services --') + '</option>' +
+            pairs.map(function (p) { return '<option value="' + e(JSON.stringify([p.shipping_method, p.last_mile_delivery])) + '" data-method="' + e(p.shipping_method) + '" data-lastmile="' + e(p.last_mile_delivery) + '"' + (p === current ? ' selected' : '') + '>' + e(_shSvcServiceLabel_(p)) + '</option>'; }).join('') + '</select></label>' +
+            '<input type="hidden" class="sh-svc-method" value="' + e(current ? current.shipping_method : '') + '">' +
+            '<input type="hidden" class="sh-svc-lastmile" value="' + e(current ? current.last_mile_delivery : '') + '">';
+    }
+    // The server permits explicit vocabulary values for TBA / undeclared capabilities. Keep that legal path.
+    function values(key) { return (v[key] || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean); }
+    return '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sh-svc-method" aria-label="Shipping method" style="' + style + '">' + _shSvcPairOptions_(values('shipping_method'), null, method, 'shippingMethod') + '</select></label>' +
+        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sh-svc-lastmile" aria-label="Last mile" style="' + style + '">' + _shSvcPairOptions_(values('last_mile_delivery'), null, mile, 'lastMileDelivery') + '</select></label></div>';
+}
+function shSvcPickService(sid) {
+    var box = _shSvcBox_(sid); if (!box) return false;
+    var picker = box.querySelector('.sh-svc-service'), option = picker && picker.options[picker.selectedIndex];
+    if (!picker) return false;
+    box.querySelector('.sh-svc-method').value = picker.value && option ? option.getAttribute('data-method') || '' : '';
+    box.querySelector('.sh-svc-lastmile').value = picker.value && option ? option.getAttribute('data-lastmile') || '' : '';
+    var note = box.querySelector('.sh-svc-note');
+    if (picker.value && note && note.textContent === 'Choose a shipping service.') note.textContent = '';
+    return false;
+}
+if (typeof window !== 'undefined') window.shSvcPickService = shSvcPickService;
 function _shSvcDtypeOptions_(dts, cur) {
     return '<option value=""' + (cur ? '' : ' selected') + '>-- none --</option>' + dts.map(function (d) { return '<option value="' + _shEsc(d.value) + '" data-method="' + _shEsc(d.shipping_method || '') + '" data-lastmile="' + _shEsc(d.last_mile_delivery || '') + '"' + (d.value === cur ? ' selected' : '') + '>' + _shEsc(d.value + (d.value === 'SPD' ? ' - parcel' : d.value === 'LTL' ? ' - pallet' : '')) + '</option>'; }).join('');
 }
@@ -2793,10 +2837,8 @@ function shSvcCarrierChanged(sid) {   // rebuild the delivery-type list for the 
     var d = box.querySelector('.sh-svc-dtype'), c = box.querySelector('.sh-svc-carrier').value;
     var reason = box.querySelector('.sh-svc-tba-reason'); if (reason) reason.style.display = c === SH_SVC_TBA_ ? 'block' : 'none';
     if (d) { var list = _shSvcDeliveryTypes_(r.service_vocabulary, c === SH_SVC_TBA_ ? '' : c), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : ''; d.innerHTML = _shSvcDtypeOptions_(list, keep); d.value = keep; }
-    var v = r.service_vocabulary, svc = _shSvcCarrierServices_(v, c === SH_SVC_TBA_ ? '' : c), mEl = box.querySelector('.sh-svc-method'), lEl = box.querySelector('.sh-svc-lastmile');   // AD3 D r4
-    var mAll = (v.shipping_method || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lAll = (v.last_mile_delivery || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
-    if (mEl) { var mc = mEl.value; mEl.innerHTML = _shSvcPairOptions_(mAll, svc ? svc.map(function (x) { return x.shipping_method; }) : null, mc); }
-    if (lEl) { var lc = lEl.value; lEl.innerHTML = _shSvcPairOptions_(lAll, svc ? svc.map(function (x) { return x.last_mile_delivery; }) : null, lc); }
+    var mEl = box.querySelector('.sh-svc-method'), lEl = box.querySelector('.sh-svc-lastmile'), fields = box.querySelector('.sh-svc-fields');
+    if (fields) fields.innerHTML = _shSvcFieldsHtml_(sid, r.service_vocabulary, c === SH_SVC_TBA_ ? '' : c, mEl ? mEl.value : '', lEl ? lEl.value : '');
     return false;
 }
 if (typeof window !== 'undefined') window.shSvcCarrierChanged = shSvcCarrierChanged;
@@ -2822,6 +2864,13 @@ function shSvcSave(sid, btn) {
     note.style.color = '#B91C1C';
     if (_shExecDirty(sid).length) { note.textContent = 'Save the shipment field changes first.'; return false; }
     if (!c) { note.textContent = 'Choose a carrier, or "To be assigned / manual logistics".'; return false; }
+    var picker = box.querySelector('.sh-svc-service');
+    if (picker) {
+        var chosen = picker.options[picker.selectedIndex];
+        if (!picker.value || !chosen || chosen.getAttribute('data-method') !== m || chosen.getAttribute('data-lastmile') !== l) {
+            note.textContent = 'Choose a shipping service.'; return false;
+        }
+    }
     if (!m || !l) { note.textContent = 'Choose the shipping method and the last mile (or a delivery type).'; return false; }
     var p = { shipment_id: sid, actor: 'operation-system', shipping_method: m, last_mile_delivery: l };
     var tok = _shTok_(sid); if (tok) p.expected_updated_at = tok;
@@ -3656,7 +3705,7 @@ function shConfirmShipment(shipmentId) {
             if (d.state === 'RESOLVED') return d.carrierName;
             return d.carrierId;
         })(),
-        method: s.shippingMethodDisplay || payload.shipping_method || s.shippingMethod || '—',
+        method: _shEnumDisplay_('shippingMethod', payload.shipping_method || s.shippingMethod || s.shippingMethodDisplay) || '—',
         tracking: payload.tracking_number || s.trackingNumber || '—',
         container: payload.container_no || s.containerNo || '—',
         etd: payload.etd || s.etd || '—', eta: payload.eta || s.eta || '—'

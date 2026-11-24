@@ -178,7 +178,7 @@ function renderPlanCards(containerId, plans, statusType, startIndex) {
                         </div>
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Submitted Date</span>
-                            <span class="sp-summary-value">${planData.date}</span>
+                            <span class="sp-summary-value">${_spEsc(_spSubmittedDate_(Object.assign({}, planData, { createdAt: planData.createdAt || planData.date })))}</span>
                         </div>
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Country</span>
@@ -190,11 +190,15 @@ function renderPlanCards(containerId, plans, statusType, startIndex) {
                         </div>
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Shipping Method</span>
-                            <span class="sp-summary-value">${method}</span>
+                            <span class="sp-summary-value">${_spEsc(_spEnumLabel_('shippingMethod', method))}</span>
                         </div>
                         <div class="sp-summary-item">
-                            <span class="sp-summary-label">Total SKU</span>
-                            <span class="sp-summary-value">${skus.length}</span>
+                            <span class="sp-summary-label">Ship From</span>
+                            <span class="sp-summary-value">${_spEsc(_spResolveShipFrom_(planData))}</span>
+                        </div>
+                        <div class="sp-summary-item">
+                            <span class="sp-summary-label">Destination</span>
+                            <span class="sp-summary-value">${_spEsc(_spWk1DestLabel_(planData))}</span>
                         </div>
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Total Pcs</span>
@@ -207,10 +211,6 @@ function renderPlanCards(containerId, plans, statusType, startIndex) {
                         <div class="sp-summary-item">
                             <span class="sp-summary-label">Total Cost</span>
                             <span class="sp-summary-value">$${totalCost.toFixed(2)}</span>
-                        </div>
-                        <div class="sp-summary-item">
-                            <span class="sp-summary-label">Unit Cost</span>
-                            <span class="sp-summary-value">$${unitCost.toFixed(2)}</span>
                         </div>
                     </div>
                     <div class="sp-card-actions">
@@ -261,7 +261,7 @@ function renderPlanCards(containerId, plans, statusType, startIndex) {
                             </h4>
                             <div class="sp-rationale-text">
                                 <div class="sp-rationale-item"><strong>Target Days:</strong> ${planData.targetDays}</div>
-                                <div class="sp-rationale-item"><strong>Method:</strong> ${method}</div>
+                                <div class="sp-rationale-item"><strong>Shipping Service:</strong> ${_spEsc(_spServiceLabel_({ shipping_method: method, last_mile_delivery: planData.lastMileDelivery }))}</div>
                                 <div id="note-input-${cardIndex}" style="display: none; margin-top: 8px;">
                                     <textarea id="note-text-${cardIndex}" style="width: 100%; min-height: 60px; padding: 8px; border: 1px solid #E2E8F0; border-radius: 4px; font-size: 13px; resize: vertical;"></textarea>
                                     <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px;">
@@ -702,6 +702,10 @@ function _spWorkspacePlanRecord(p) {
     return {
         shippingPlanId: p.planId, shippingPlanNo: p.planNo, planName: p.planName,
         company: p.company, country: p.country, marketplace: p.marketplace,
+        shipFrom: p.shipFrom || String(raw.ship_from || '').trim(),
+        sourceWarehouseId: p.sourceWarehouseId || String(raw.source_warehouse_id || '').trim() || (p.sourceWarehouse && p.sourceWarehouse.id) || '',
+        sourceWarehouse: p.sourceWarehouse || null,
+        shipFromType: p.shipFromType || String(raw.ship_from_type || '').trim(),
         status: p.status, planVersion: _spNum(p.planVersion) || 1,
         shippingMethod: p.shippingMethod, lastMileDelivery: p.lastMileDelivery, customsType: p.customsType,
         // WK1: the saved To (Site Inventory -> Plan) travels in the raw row; the Workspace record dropped it, so the header read '--'
@@ -716,6 +720,7 @@ function _spWorkspacePlanRecord(p) {
         estimatedDuty: (raw.estimated_duty == null ? '' : raw.estimated_duty),
         currency: p.currency || '',
         createdAt: String(raw.created_at || ''), note: String(raw.note || ''),
+        submittedAt: p.submittedAt || String(raw.submitted_at || ''),
         completedAt: String(raw.completed_at || ''),
         transferredShipmentId: String(raw.transferred_shipment_id || ''),
         transferredToShipmentAt: String(raw.transferred_to_shipment_at || ''),
@@ -733,6 +738,7 @@ function _spWorkspaceLineRecord(l, planId) {
         snapshotCurrentStock: _spNum(raw.snapshot_current_stock), snapshotAvgSalesPerDay: _spNum(raw.snapshot_avg_sales_per_day),
         snapshotDaysOfSupply: (raw.snapshot_days_of_supply == null ? '' : raw.snapshot_days_of_supply),
         snapshotTargetDays: _spNum(raw.snapshot_target_days),
+        liveSiteMetrics: l.liveSiteMetrics || null,
         note: l.note || '', raw: raw
     };
 }
@@ -749,7 +755,7 @@ function _spAdaptWorkspaceToRecords(data) {
     // SAME canonical normalizer as the broad getSkuDetails() → BEFORE == AFTER for _spLineLogistics carton dims/weights.
     var norm = (typeof window !== 'undefined' && window.KM && window.KM.DB && window.KM.DB.normalizeSkuDetail) ? window.KM.DB.normalizeSkuDetail : function(x){ return x; };
     var skuDetails = ((data && data.skuDetails) || []).map(function(r){ return norm(r); }).filter(function(r){ return r && r.sku; });
-    return { plans: plans, lines: lines, skuDetails: skuDetails };
+    return { plans: plans, lines: lines, skuDetails: skuDetails, warehouses: Array.isArray(data && data.warehouses) ? data.warehouses : null };
 }
 function _spBuildLegacyLiveMaps_() {
     var shipmentMap = {};
@@ -781,13 +787,13 @@ function loadWeeklyShippingReadModel_() {
             return Promise.resolve({ source: 'workspace', error: { code: 'WORKSPACE_UNAVAILABLE', message: 'Weekly Workspace is enabled but the API client is unavailable.' } });
         }
         var params = { filters: _spCurrentFilters_(), sort: [{ field: 'updated_at', direction: 'desc' }],
-            page: { number: 1, size: 100 }, include: { summary: true, plans: true, details: true, filterOptions: true } };
+            page: { number: 1, size: 100 }, include: { summary: true, plans: true, details: true, filterOptions: true, siteMetrics: true } };
         return Promise.resolve(window.KM.api.getWorkspace('weeklyShipping', params)).then(function(env) {
             if (env && env.success) {
                 var rec = _spAdaptWorkspaceToRecords(env.data);
                 // Workspace mode: shipmentMap empty (plan transferred_* drives Done) + live=null (snapshot-primary).
                 // skuDetails = the bounded SKU logistics projection (F1-7J-A2) for the line-editor recompute.
-                return { source: 'workspace', plans: rec.plans, lines: rec.lines, skuDetails: rec.skuDetails, shipmentMap: {}, live: null, meta: env.meta };
+                return { source: 'workspace', plans: rec.plans, lines: rec.lines, skuDetails: rec.skuDetails, warehouses: rec.warehouses, shipmentMap: {}, live: null, meta: env.meta };
             }
             return { source: 'workspace', error: (env && env.errors && env.errors[0]) || { code: 'WORKSPACE_ERROR', message: 'Weekly Workspace request failed.' }, meta: env && env.meta };
         });
@@ -1021,13 +1027,30 @@ function _spRestoreCardState_(st) {
     if (lost.length) _spNotify_('Some unsaved values were not put back because the plan changed on the server: ' + lost.join('; ') + '. Nothing was sent - check the plan and type them again if they are still wanted.');
 }
 
-// Resolve the three SKU-detail display values per spec §7 priority (snapshot → live → 0 / --).
+function _spLiveSiteMetrics_(line, plan) {
+    var metrics = line && line.liveSiteMetrics;
+    if (!metrics || metrics.state !== 'READY') return null;
+    var scope = { company: plan.company, country: plan.country, marketplace: line.marketplace || plan.marketplace, sku: line.sku };
+    function identity(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+    if (!Object.keys(scope).every(function (key) { return identity(scope[key]) && identity(metrics[key]) === identity(scope[key]); })) return null;
+    function measured(v) {
+        if ((typeof v !== 'number' && typeof v !== 'string') || String(v).trim() === '') return null;
+        var n = Number(v); return isFinite(n) && n >= 0 ? n : null;
+    }
+    var values = { currentStock: measured(metrics.currentStock), avgSales: measured(metrics.avgSalesPerDay), daysOfSupply: measured(metrics.daysOfSupply) };
+    return values.currentStock == null && values.avgSales == null && values.daysOfSupply == null ? null : values;
+}
+
+// Fresh, exact-site metrics are presentation-only; immutable decision snapshots remain unchanged.
 // R71-FE-15 (N8 = 16_ gate-1j): the Legacy fallback uses the Owner-confirmed source scope + the marketplaces master, as 16_ does
 function _spLineDisplay(line, plan, live) {
     // Current Stock: snapshot → available_qty + fc_transfer_qty + fc_processing_qty → 0
     // R71-FE-13 (N8, fail closed): the server stored no site value because it cannot be attributed to this company - say so, never fall back
     var _w13 = String((line && line.raw && line.raw.snapshot_avg_sales_warning) || '');
-    if (/^SITE_SOURCE_(COMPANY_UNKNOWN|COMPANY_NOT_LISTED|NO_MARKETPLACE_SKU|NO_MARKETPLACE_ROW|NOT_CONFIRMED|MARKETPLACE_BLANK|SCOPE_UNDECIDED)/.test(_w13)) {   // R71-FE-15 / R71-FE-16: + the gate-1j / 1k reasons
+    var fresh = _spLiveSiteMetrics_(line, plan);
+    var sourceBlocked = /^SITE_SOURCE_(COMPANY_UNKNOWN|COMPANY_NOT_LISTED|NO_MARKETPLACE_SKU|NO_MARKETPLACE_ROW|NOT_CONFIRMED|MARKETPLACE_BLANK|SCOPE_UNDECIDED)/.test(_w13);
+    var protectedSource = /SITE_SOURCE_(COMPANY_UNKNOWN|COMPANY_NOT_LISTED|NO_MARKETPLACE_SKU|NO_MARKETPLACE_ROW|NOT_CONFIRMED|MARKETPLACE_BLANK)/.test(_w13);
+    if (sourceBlocked && !(fresh && /^SITE_SOURCE_SCOPE_UNDECIDED(?:\b|:)/.test(_w13) && !protectedSource)) {   // only a fresh, confirmed exact-site reading can recover the obsolete environment gate
         var _why13 = /^SITE_SOURCE_COMPANY_UNKNOWN/.test(_w13) ? 'source unknown (report row cannot be attributed to this company)'
             : /^SITE_SOURCE_NOT_CONFIRMED/.test(_w13) ? 'source not confirmed for this account'
             : /^SITE_SOURCE_SCOPE_UNDECIDED/.test(_w13) ? 'source not confirmed (no source scope decided for this environment)'
@@ -1037,15 +1060,23 @@ function _spLineDisplay(line, plan, live) {
         var _u13 = '<span class="sp-src-unknown" title="Data is not available for this site.">\u2014 <small style="color:#94A3B8;">Not available</small></span>';
         return { currentStock: _u13, avgSales: _u13, daysOfSupply: '\u2014' };
     }
+    if (fresh) {
+        var unknown = '<span class="sp-src-unknown" title="No current reading for this site metric; unknown, not zero.">\u2014</span>';
+        return { currentStock: fresh.currentStock == null ? unknown : fresh.currentStock,
+            avgSales: fresh.avgSales == null ? unknown : fresh.avgSales.toFixed(1),
+            daysOfSupply: fresh.daysOfSupply == null ? '--' : fresh.daysOfSupply.toFixed(1),
+            sourceNote: 'Current site metrics; exact company / country / marketplace / SKU. Decision snapshots unchanged.' };
+    }
     var currentStock, _amb10 = false;   // R71-FE-10
+    var lineMarketplace = line.marketplace || plan.marketplace;
     var _site10 = (live && live.mpCompanies) ? (live.mpCompanies[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || []) : [];
     // R71-FE-15 (N8 = 16_ gate-1j): the Legacy live fallback uses the same rule - "Amazon" is the only Owner-confirmed source scope, and the
     // marketplaces master must hold exactly ONE row for this country + marketplace, the plan's company. Inline, so a reader that lifts this function alone keeps the rule
-    _site10 = (function () { var lo = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); }, me = lo(plan && plan.company), c0 = lo(plan && plan.country), mk = lo(plan && plan.marketplace); if (c0 === 'gb') c0 = 'uk'; var SCOPE16 = { marketplace: 'amazon' }; if (mk !== 'amazon') return ['(not confirmed)', '(not confirmed 2)'];   /* R71-FE-16 (A-3): the Sandbox acceptance scope */ var list = ((live && live.mpRows15) || {})[c0 + '||' + mk] || []; return (list.length === 1 && lo(list[0]) === me) ? list : ['(unknown)', '(unknown 2)']; })();
+    _site10 = (function () { var lo = function (v) { return String(v == null ? '' : v).trim().toLowerCase(); }, me = lo(plan && plan.company), c0 = lo(plan && plan.country), mk = lo(lineMarketplace); if (c0 === 'gb') c0 = 'uk'; var SCOPE16 = { marketplace: 'amazon' }; if (mk !== 'amazon') return ['(not confirmed)', '(not confirmed 2)'];   /* R71-FE-16 (A-3): the Sandbox acceptance scope */ var list = ((live && live.mpRows15) || {})[c0 + '||' + mk] || []; return (list.length === 1 && lo(list[0]) === me) ? list : ['(unknown)', '(unknown 2)']; })();
     if (_spHasRaw(line, 'snapshot_current_stock')) {
         currentStock = _spNum(line.snapshotCurrentStock);
     } else {
-        var inv = live && _spLookup(live.inv, plan.country, plan.marketplace, line.sku, plan.company, _site10);
+        var inv = live && _spLookup(live.inv, plan.country, lineMarketplace, line.sku, plan.company, _site10);
         if (inv && inv.__ambiguousCompany) { _amb10 = true; inv = null; }
         currentStock = inv ? (_spNum(inv.availableQty) + _spNum(inv.fcTransferQty) + _spNum(inv.fcProcessingQty)) : null;   // R71-FE-9 (W5): unknown, not 0
     }
@@ -1054,7 +1085,7 @@ function _spLineDisplay(line, plan, live) {
     if (_spHasRaw(line, 'snapshot_avg_sales_per_day')) {
         avgSales = _spNum(line.snapshotAvgSalesPerDay);
     } else {
-        var wk = live && _spLookup(live.weekly, plan.country, plan.marketplace, line.sku, plan.company, _site10);
+        var wk = live && _spLookup(live.weekly, plan.country, lineMarketplace, line.sku, plan.company, _site10);
         if (wk && wk.__ambiguousCompany) { _amb10 = true; wk = null; }
         avgSales = wk ? (_spNum(wk.salesUnits7d) / 7) : null;   // R71-FE-9 (W5): unknown, not 0
     }
@@ -1102,9 +1133,6 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(4));
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
-        // Company: persisted snapshot first; live-join marketplaces ONLY as a legacy fallback when blank.
-        var _cl10 = (live && live.mpCompanies) ? (live.mpCompanies[String(plan.country || '').trim().toLowerCase() + '||' + String(plan.marketplace || '').trim().toLowerCase()] || []) : [];
-        var companyDisp = plan.company || (_cl10.length === 1 ? _cl10[0] : '');   // R71-FE-10: never the first of several
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
         var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
 
@@ -1203,12 +1231,12 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
             '<div class="sp-card-header">' +
                 '<div class="sp-card-summary">' +
                     _spSummary('Status', '<span class="plan-status-badge plan-status-badge--' + (statusType === 'pending_approval' ? 'pendingApproval' : statusType) + '">' + statusLabel + ' (v' + _spNum(plan.planVersion) + ')</span>') +
-                    _spSummary('Submitted Date', _spEsc(plan.createdAt || '')) +
-                    _spSummary('Company', _spEsc(companyDisp)) +
+                    _spSummary('Submitted Date', _spEsc(_spSubmittedDate_(plan))) +
                     _spSummary('Country', _spEsc(plan.country || '')) +
                     _spSummary('Marketplace', _spEsc(plan.marketplace || '')) +
+                    _spSummary('Shipping Method', _spEsc(_spEnumLabel_('shippingMethod', plan.shippingMethod))) +
+                    _spSummary('Ship From', _spEsc(_spResolveShipFrom_(plan))) +
                     _spSummary('Destination', '<span id="sp-dest-header14-' + _spEsc(pid) + '">' + _spEsc(_spWk1DestLabel_(plan)) + '</span>') +
-                    _spSummary('Shipping Method', _spEsc(plan.shippingMethod || '')) +
                     _spSummary('Total Pcs', '<span id="sp-total-pcs-' + _spEsc(pid) + '">' + totalPcs + '</span>') +
                     _spSummary('Total Cartons', '<span id="sp-total-cartons-' + _spEsc(pid) + '">' + totalCartons + '</span>') +
                     // Total CBM / Gross Wt / Net Wt are HIDDEN from the Layer-1 Approval/Review summary
@@ -1273,6 +1301,53 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
 function _spSummary(label, valueHtml) {
     return '<div class="sp-summary-item"><span class="sp-summary-label">' + label + '</span>' +
         '<span class="sp-summary-value">' + valueHtml + '</span></div>';
+}
+
+function _spEnumLabel_(kind, value) {
+    var display = window.KM && window.KM.display;
+    return display && typeof display[kind] === 'function' ? display[kind](value) : String(value || '').trim();
+}
+function _spServiceLabel_(service) {
+    var display = window.KM && window.KM.display;
+    if (display && typeof display.shippingService === 'function') return display.shippingService(service);
+    var label = String((service && service.shipping_method_label) || '').trim();
+    if (label) return label;
+    var m = _spEnumLabel_('shippingMethod', service && service.shipping_method);
+    var l = _spEnumLabel_('lastMileDelivery', service && service.last_mile_delivery);
+    return m && l ? m + ' \u00b7 ' + l : (m || l || '--');
+}
+function _spSubmittedDate_(plan) {
+    var raw = plan.raw || {}, s = String(plan.submittedAt || raw.submitted_at || plan.createdAt || raw.created_at || '').trim();
+    if (!s) return '--';
+    // Sheets wall-clock text is already Asia/Taipei; never parse it in the browser's local timezone.
+    var wall = s.match(/^(\d{4}-\d{2}-\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/);
+    if (wall) {
+        var day = new Date(wall[1] + 'T00:00:00Z');
+        return isFinite(day.getTime()) && day.toISOString().slice(0, 10) === wall[1] &&
+            (!wall[2] || (Number(wall[2]) < 24 && Number(wall[3]) < 60 && Number(wall[4] || 0) < 60)) ? wall[1] : '--';
+    }
+    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s) && !/\bGMT/i.test(s)) return '--';
+    var d = new Date(s);
+    if (!isFinite(d.getTime())) return '--';
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    function part(type) { return parts.filter(function (p) { return p.type === type; })[0].value; }
+    return part('year') + '-' + part('month') + '-' + part('day');
+}
+function _spResolveShipFrom_(plan) {
+    var raw = plan.raw || {}, ref = plan.sourceWarehouse, id = String(plan.sourceWarehouseId || raw.source_warehouse_id || (ref && ref.id) || '').trim();
+    if (!id) return String(plan.shipFrom || raw.ship_from || '').trim() || '--';
+    var projected = _spLastModel && Array.isArray(_spLastModel.warehouses);
+    var rows = projected ? _spLastModel.warehouses : [];
+    var matches = (rows || []).filter(function (w) { return String(w.warehouseId || w.warehouse_id || '').trim() === id; });
+    if (matches.length > 1) return id;
+    if (!matches.length && ref && String(ref.id || '').trim() === id) return String(ref.name || ref.code || id).trim();
+    if (!projected && !matches.length) {
+        rows = window.KM && window.KM.DB && typeof window.KM.DB.getWarehouses === 'function' ? window.KM.DB.getWarehouses() : [];
+        matches = (rows || []).filter(function (w) { return String(w.warehouseId || w.warehouse_id || '').trim() === id; });
+    }
+    if (matches.length !== 1) return id;
+    var w = matches[0];
+    return String(w.warehouseName || w.warehouse_name || w.warehouseCode || w.warehouse_code || id).trim();
 }
 
 function toggleSpDbCard(planId) {
@@ -2057,14 +2132,14 @@ function _spMoney_(v, cur) { if (v === '' || v == null || !isFinite(Number(v))) 
 function _spRcPanelHtml_(plan, statusType) {
     var pid = plan.shippingPlanId, editable = (statusType === 'draft');
     var cur = '<div class="sp-rationale-item"><strong>Carrier:</strong> ' + (plan.carrierId ? _spEsc(plan.carrierName || plan.carrierId) : '--') + '</div>' +
-        '<div class="sp-rationale-item"><strong>Method:</strong> ' + _spEsc(plan.shippingMethod || '--') + '</div>';
+        '<div class="sp-rationale-item"><strong>Shipping Service:</strong> ' + _spEsc(_spServiceLabel_({ shipping_method: plan.shippingMethod, last_mile_delivery: plan.lastMileDelivery })) + '</div>';
     if (!editable) return cur;
     return '<div id="sp-rc-' + _spEsc(pid) + '" data-plan-id="' + _spEsc(pid) + '" data-rc-editable="1" class="sp-rc-panel" style="margin:6px 0;padding:8px;border:1px solid #E2E8F0;border-radius:6px;">' +
         cur + '<div class="sp-rc-body" style="font-size:12px;color:#64748B;margin-top:4px;">' + _spRcLoadingHtml_('Loading rate cards...') + '</div></div>';
 }
 function _spRcLoadingHtml_(message) {
     return '<label style="display:block;margin-top:4px;">Carrier</label><select aria-label="Carrier" disabled style="width:100%;height:30px;"><option>Loading...</option></select>' +
-        '<label style="display:block;margin-top:4px;">Shipping Method</label><select aria-label="Shipping Method" disabled style="width:100%;height:30px;"><option>Loading...</option></select>' +
+        '<label style="display:block;margin-top:4px;">Shipping Service</label><select aria-label="Shipping Service" disabled style="width:100%;height:30px;"><option>Loading...</option></select>' +
         '<div role="status" style="min-height:20px;">' + _spEsc(message) + '</div>';
 }
 function _spCostBreakdownHtml_(plan, totalPcs) {
@@ -2172,8 +2247,8 @@ function spRcRefresh(planId) {
         }
         if (keep9) { var oo9 = r.options || [];
             if (keep9.carrier && oo9.some(function (x) { return x.carrier_id === keep9.carrier; })) host.setAttribute('data-sel-carrier', keep9.carrier);
-            if (keep9.rate_card_id) { for (var i9 = 0; i9 < oo9.length; i9++) if (oo9[i9].rate_card_id === keep9.rate_card_id && oo9[i9].carrier_id === keep9.carrier) { host.setAttribute('data-sel-card', String(i9)); break; } }
-            if (keep9.service_key) { for (var j15 = 0; j15 < oo9.length; j15++) if (oo9[j15].service_only && JSON.stringify([oo9[j15].carrier_id, oo9[j15].shipping_method, oo9[j15].last_mile_delivery]) === keep9.service_key) { host.setAttribute('data-sel-card', String(j15)); break; } }
+            if (keep9.rate_card_id) { var keptCards = oo9.map(function (o, i) { return { o: o, i: i }; }).filter(function (x) { return x.o.rate_card_id === keep9.rate_card_id && x.o.carrier_id === keep9.carrier; }); if (keptCards.length === 1) host.setAttribute('data-sel-card', String(keptCards[0].i)); }
+            if (keep9.service_key) { var keptServices = oo9.map(function (o, i) { return { o: o, i: i }; }).filter(function (x) { return x.o.service_only && JSON.stringify([x.o.carrier_id, x.o.shipping_method, x.o.last_mile_delivery]) === keep9.service_key; }); if (keptServices.length === 1) host.setAttribute('data-sel-card', String(keptServices[0].i)); }
             if (keep9.customs && ((r.lane && r.lane.customs) || []).some(function (c) { return c.id === keep9.customs; })) host.setAttribute('data-sel-customs', keep9.customs); }
         _spRcRender_(planId);
         try { _spReholdBusy_(planId); } catch (eRh2) {}   // R15C-UI batch 2: the Save of a plan still saving stays held
@@ -2225,6 +2300,7 @@ function _spRcRenderBase13_(planId) {
     var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body'), r = SP_RC_[planId];
     if (!host || !body || !r) return;
     var plan = _spRcPlan_(planId), routeM = String((r.current && r.current.shipping_method) || plan.shippingMethod || '').trim();
+    var routeL = String((r.current && r.current.last_mile_delivery) || plan.lastMileDelivery || '').trim();
     if (_spCustomsNa_(r)) { body.innerHTML = _spSvcHtml_(planId, r); return; }
     var opts = r.options || [], cars = [], seen = {};
     opts.forEach(function (o) { if (!seen[o.carrier_id]) { seen[o.carrier_id] = 1; cars.push({ id: o.carrier_id, name: o.carrier_name || o.carrier_id }); } });
@@ -2232,13 +2308,11 @@ function _spRcRenderBase13_(planId) {
     var selC = host.getAttribute('data-sel-carrier');
     if (selC == null) {
         selC = (r.current && r.current.carrier_id && seen[r.current.carrier_id]) ? r.current.carrier_id : '';
-        if (!selC) { var withM = cars.filter(function (c) { return opts.some(function (o) { return o.carrier_id === c.id && o.shipping_method === routeM; }); }); if (withM.length === 1) selC = withM[0].id; }
     }
     var mine = opts.map(function (o, i) { return { o: o, i: i }; }).filter(function (x) { return x.o.carrier_id === selC; });
     var selI = host.getAttribute('data-sel-card');
-    if (selI == null || !opts[Number(selI)] || opts[Number(selI)].carrier_id !== selC) {
-        var same = mine.filter(function (x) { return x.o.shipping_method === routeM && (!r.current || x.o.last_mile_delivery === String(r.current.last_mile_delivery || '')); });
-        if (same.length !== 1) same = mine.filter(function (x) { return x.o.shipping_method === routeM; });
+    if (selI !== '' && (selI == null || !opts[Number(selI)] || opts[Number(selI)].carrier_id !== selC)) {
+        var same = mine.filter(function (x) { return x.o.shipping_method === routeM && x.o.last_mile_delivery === routeL; });
         selI = same.length === 1 ? String(same[0].i) : '';
     }
     var o = selI !== '' ? opts[Number(selI)] : null, st = (r.current && r.current.state) || 'NONE';
@@ -2252,10 +2326,10 @@ function _spRcRenderBase13_(planId) {
             '<option value=""' + (selC ? '' : ' selected') + '>-- Choose carrier --</option>' +
             cars.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === selC ? ' selected' : '') + '>' + _spEsc(c.name) + '</option>'; }).join('') +
         '</select>' +
-        '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Shipping Method</label>' +
-        '<select class="sp-rc-method" onchange="spRcPickMethod(\'' + _spEsc(planId) + '\', this.value)"' + (selC ? '' : ' disabled') + ' style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
-            '<option value=""' + (o ? '' : ' selected') + '>' + (selC ? '-- Choose method --' : '-- Choose a carrier first --') + '</option>' +
-            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _spEsc(x.o.shipping_method_label || '(no label)') + (x.o.quote && x.o.quote.priced ? ' \u00b7 ' + (x.o.quote.split_currency ? ('Freight ' + _spMoney_(x.o.quote.freight, x.o.quote.currency) + ' / Duty ' + _spMoney_(x.o.quote.duty, x.o.quote.duty_currency)) : _spMoney_(x.o.quote.total, x.o.quote.currency)) : ' \u00b7 quote at Shipment Draft') + _spEuLead15e_(x.o) + '</option>'; }).join('') +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Shipping Service</label>' +
+        '<select class="sp-rc-method" aria-label="Shipping Service" onchange="spRcPickMethod(\'' + _spEsc(planId) + '\', this.value)"' + (selC ? '' : ' disabled') + ' style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
+            '<option value=""' + (o ? '' : ' selected') + '>' + (selC ? '-- Choose service --' : '-- Choose a carrier first --') + '</option>' +
+            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _spEsc(_spServiceLabel_(x.o)) + (x.o.quote && x.o.quote.priced ? ' \u00b7 ' + (x.o.quote.split_currency ? ('Freight ' + _spMoney_(x.o.quote.freight, x.o.quote.currency) + ' / Duty ' + _spMoney_(x.o.quote.duty, x.o.quote.duty_currency)) : _spMoney_(x.o.quote.total, x.o.quote.currency)) : ' \u00b7 quote at Shipment Draft') + _spEuLead15e_(x.o) + '</option>'; }).join('') +
         '</select>' +
         '<details class="sp-rc-token" style="font-size:11px;color:#64748B;margin-top:2px;"><summary>Details</summary>' + (o ? ('method token: ' + _spEsc(o.shipping_method) + (o.last_mile_delivery ? ' \u00b7 last mile: ' + _spEsc(o.last_mile_delivery) : '') + ' \u00b7 card ' + _spEsc(o.rate_card_id)) : '') + '</details>' +
         '<div class="sp-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? ((o.lead_time && o.lead_time.state === 'MATCHED') ? '<span style="color:#475569;">Lead time: ' + _spEsc(o.lead_time.days) + ' days \u00b7 ' + _spEsc(o.lead_time.origin_country || '?') + ' \u2192 ' + _spEsc(o.lead_time.destination_country || '?') + '</span>' : '<span style="color:#B45309;">Lead time: UNKNOWN for this carrier / method (' + _spEsc((o.lead_time && o.lead_time.reason) || 'no match') + ')</span>') : '') + '</div>' +
@@ -2268,7 +2342,7 @@ function _spWk1KnownHtml_(r) {
     var c = (r && r.current) || {}, k = c.card_check || {};
     if (!c.carrier_id || c.state === 'PENDING' || c.state === 'PREVIEW_CUSTOMS') return '';
     var cost = c.cost_saved ? ('Saved cost: ' + _spEsc(String(c.currency || '')) + ' ' + _spEsc(String(c.total)) + ' (known)') : 'Saved cost: none (unpriced)';
-    var card = { UNIQUE: 'Rate card: ' + _spEsc(String(k.rate_card_id || '')) + ' (verified: the only card with the saved terms, valid today)', AMBIGUOUS: 'Rate card: NOT verifiable (' + _spEsc(String(k.cards_with_saved_terms)) + ' cards carry the saved terms)', NO_CURRENT_CARD: 'Rate card: no current card carries the saved terms' }[k.status] || 'Rate card: not checked';
+    var card = { UNIQUE: 'Rate card: ' + _spEsc(String(k.rate_card_id || '')) + ' (verified: the only card with the saved terms, valid today)', CURRENT_EQUIVALENT: 'Current eligible quote verified; original rate card not recorded', AMBIGUOUS: 'Rate card: NOT verifiable (' + _spEsc(String(k.cards_with_saved_terms)) + ' cards carry the saved terms)', NO_CURRENT_CARD: 'Rate card: no current card carries the saved terms' }[k.status] || 'Rate card: not checked';
     return '<div class="sp-rc-known" data-card-check="' + _spEsc(String(k.status || 'NOT_CHECKED')) + '" style="font-size:11px;color:#475569;margin-bottom:6px;">' + cost + ' | ' + card + '</div>';
 }
 function _spWk1CxPicked_(host, r) { var b = String((r.lane && r.lane.customs_type) || ''), cs = host.getAttribute('data-sel-customs') || (r.preview_customs_type != null ? r.preview_customs_type : b); return (cs && cs !== b) ? cs : ''; }
@@ -2310,7 +2384,7 @@ function _spWk1Base_(r) { var c = (r && r.current) || {}; return JSON.stringify(
 function _spWk1Remember_(planId, patch) { var c = SP_RC_SEL_[planId] || {}; if (!c.base) c.base = _spWk1Base_(SP_RC_[planId]); Object.keys(patch).forEach(function (k) { c[k] = patch[k]; }); SP_RC_SEL_[planId] = c; }   // WK1 r2 (m-7): base = the server's choice when the first unsaved pick was made
 function spRcPickCustoms(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { customs: v || '' }); spRcRefresh(planId); }
 function spRcPickCarrier(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; _spWk1Remember_(planId, { carrier: v || '', rate_card_id: '' }); h.setAttribute('data-sel-carrier', v || ''); h.removeAttribute('data-sel-card'); _spRcRender_(planId); }
-function spRcPickMethod(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; var rr = SP_RC_[planId], oo = rr && rr.options && rr.options[Number(v)]; _spWk1Remember_(planId, { carrier: oo ? oo.carrier_id : ((SP_RC_SEL_[planId] || {}).carrier || ''), rate_card_id: oo ? oo.rate_card_id : '', service_key: oo && oo.service_only ? JSON.stringify([oo.carrier_id, oo.shipping_method, oo.last_mile_delivery]) : '' }); h.setAttribute('data-sel-card', v || ''); _spRcRender_(planId); }
+function spRcPickMethod(planId, v) { var h = document.getElementById('sp-rc-' + planId); if (!h) return; var rr = SP_RC_[planId], oo = v !== '' && rr && rr.options && rr.options[Number(v)]; _spWk1Remember_(planId, { carrier: oo ? oo.carrier_id : ((SP_RC_SEL_[planId] || {}).carrier || ''), rate_card_id: oo ? oo.rate_card_id : '', service_key: oo && oo.service_only ? JSON.stringify([oo.carrier_id, oo.shipping_method, oo.last_mile_delivery]) : '' }); h.setAttribute('data-sel-card', v || ''); _spRcRender_(planId); }
 // AD3 D r2 (Owner decision 10; Author B contract 5) - WEEKLY PLAN EXPLICIT SERVICE, for a carrier with ZERO rate cards.
 // Lists come only from the server's service_vocabulary (shippingPlan.rateCardOptions): active carriers master rows, method / last mile tokens,
 // SPD / LTL delivery types (domestic only; the server checks the plan's warehouse countries). Save = the existing unified plan Save
@@ -2323,18 +2397,17 @@ function _spSvcHtml_(planId, r) {
     var cC = String(cur.carrier_id || '').trim(), cM = String(cur.shipping_method || '').trim(), cL = String(cur.last_mile_delivery || '').trim();
     function opt(val, label, sel) { return '<option value="' + _spEsc(val) + '"' + (sel ? ' selected' : '') + '>' + _spEsc(label) + '</option>'; }
     var cars = v.carriers.filter(function (c) { var id = String((c && c.carrier_id) || '').trim(); if (!id || seen[id]) return false; seen[id] = 1; return true; });
-    var mets = v.shipping_method.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lms = v.last_mile_delivery.map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
-    var dts = _spSvcDeliveryTypes_(v, cC);   // AD3 D r3: per carrier when the vocabulary names them (e.g. BestWay = LTL)
+    var services = _spSvcChoices_(v, cC);
+    var selected = services.filter(function (s) { return s.shipping_method === cM && s.last_mile_delivery === cL; })[0];
     var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
     return '<div class="sp-svc" data-plan-id="' + e + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
         '<div style="font-size:11px;font-weight:600;color:#334155;">' + (_spCustomsNa_(r) ? 'Domestic Transport' : 'Shipping Service') + '</div>' +
         '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
         '<select class="sp-svc-carrier" aria-label="Carrier (explicit service)" onchange="spSvcCarrierChanged(\'' + e + '\')" style="' + sel + '">' + opt('', '-- Choose carrier --', !cC) +
             cars.map(function (c) { var id = String(c.carrier_id).trim(), nm = String(c.carrier_name || '').trim(); return opt(id, nm || id, id === cC); }).join('') + '</select>' +
-        '<div style="display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:6px;margin-top:4px;">' +
-        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Shipping method<select class="sp-svc-method" aria-label="Shipping method (explicit service)" style="' + sel + '">' + opt('', '--', !cM) + mets.map(function (m) { return opt(m, m, m === cM); }).join('') + '</select></label>' +
-        '<label style="display:flex;flex-direction:column;font-size:11px;color:#64748B;">Last mile<select class="sp-svc-lastmile" aria-label="Last mile (explicit service)" style="' + sel + '">' + opt('', '--', !cL) + lms.map(function (m) { return opt(m, m, m === cL); }).join('') + '</select></label>' +
-        '</div>' +
+        '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Shipping Service<select class="sp-svc-service" data-field="shipping_service" aria-label="Shipping Service" onchange="spSvcServiceChanged(\'' + e + '\')" style="' + sel + '">' + _spSvcOptionsHtml_(services, selected ? _spSvcKey_(selected) : '') + '</select></label>' +
+        '<input type="hidden" class="sp-svc-method" data-field="shipping_method" value="' + _spEsc(selected ? cM : '') + '">' +
+        '<input type="hidden" class="sp-svc-lastmile" data-field="last_mile_delivery" value="' + _spEsc(selected ? cL : '') + '">' +
         '<button type="button" class="sp-btn sp-svc-save" onclick="spSvcSave(\'' + e + '\')" style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save Transport</button>' +
         '<div class="sp-svc-note" role="status" style="font-size:11px;margin-top:3px;color:#475569;overflow-wrap:anywhere;"></div></div>';
 }
@@ -2347,28 +2420,46 @@ function _spSvcDeliveryTypes_(v, carrierId) {
     var ok = c.delivery_types.map(function (t) { return String(t || '').trim().toUpperCase(); });
     return all.filter(function (d) { return ok.indexOf(String(d.value).toUpperCase()) !== -1; });
 }
-function _spSvcPairOptions_(all, allowed, cur) { var list = allowed ? all.filter(function (m) { return allowed.indexOf(m) !== -1; }) : all; return '<option value="">--</option>' + list.map(function (m) { return '<option value="' + _spEsc(m) + '"' + (m === cur ? ' selected' : '') + '>' + _spEsc(m) + '</option>'; }).join(''); }
+function _spSvcKey_(s) { return JSON.stringify([s.shipping_method, s.last_mile_delivery]); }
+function _spSvcChoices_(v, carrierId) {
+    var carriers = ((v && v.carriers) || []).filter(function (c) { return c && c.carrier_id === carrierId; });
+    if (carriers.length !== 1 || carriers[0].services_known !== true || !Array.isArray(carriers[0].services)) return [];
+    var seen = {};
+    // Separate vocabularies are not permission to generate a Cartesian product of services.
+    return carriers[0].services.filter(function (s) {
+        if (!s || !(v.shipping_method || []).some(function (m) { return m.value === s.shipping_method; }) ||
+            !(v.last_mile_delivery || []).some(function (l) { return l.value === s.last_mile_delivery; })) return false;
+        var key = _spSvcKey_(s); if (seen[key]) return false; seen[key] = true; return true;
+    });
+}
+function _spSvcOptionsHtml_(services, selected) {
+    return '<option value="">-- Choose service --</option>' + services.map(function (s) {
+        var key = _spSvcKey_(s);
+        return '<option value="' + _spEsc(key) + '"' + (key === selected ? ' selected' : '') + '>' + _spEsc(_spServiceLabel_(s)) + '</option>';
+    }).join('');
+}
 function spSvcCarrierChanged(planId) {
     var b = document.querySelector('.sp-svc[data-plan-id="' + String(planId).replace(/"/g, '') + '"]'), r = SP_RC_[planId]; if (!b || !r) return;
-    var d = b.querySelector('.sp-svc-dtype'); if (d) {
-    var list = _spSvcDeliveryTypes_(r.service_vocabulary, b.querySelector('.sp-svc-carrier').value), keep = list.some(function (x) { return x.value === d.value; }) ? d.value : '';
-    d.innerHTML = '<option value="">-- none --</option>' + list.map(function (x) { return '<option value="' + _spEsc(x.value) + '" data-method="' + _spEsc(x.shipping_method || '') + '" data-lastmile="' + _spEsc(x.last_mile_delivery || '') + '">' + _spEsc(x.value + (x.value === 'SPD' ? ' - parcel' : x.value === 'LTL' ? ' - pallet' : '')) + '</option>'; }).join('');
-    d.value = keep;
-    }
-    var v = r.service_vocabulary, cid = b.querySelector('.sp-svc-carrier').value, cr = null;   // r4 (B 13 / 16): method / last mile limited to the carrier's declared tuples
-    (v.carriers || []).forEach(function (x) { if (x && String(x.carrier_id || '').trim() === cid) cr = x; });
-    var svc = (cr && cr.services_known === true && Array.isArray(cr.services)) ? cr.services.filter(Boolean) : null;
-    var mAll = (v.shipping_method || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean), lAll = (v.last_mile_delivery || []).map(function (x) { return String((x && x.value) || '').trim(); }).filter(Boolean);
-    var mEl = b.querySelector('.sp-svc-method'), lEl = b.querySelector('.sp-svc-lastmile');
-    var mc = mEl.value, lc = lEl.value;
-    mEl.innerHTML = _spSvcPairOptions_(mAll, svc ? svc.map(function (x) { return x.shipping_method; }) : null, mc);
-    lEl.innerHTML = _spSvcPairOptions_(lAll, svc ? svc.map(function (x) { return x.last_mile_delivery; }) : null, lc);
+    var services = _spSvcChoices_(r.service_vocabulary, b.querySelector('.sp-svc-carrier').value), picker = b.querySelector('.sp-svc-service');
+    picker.innerHTML = _spSvcOptionsHtml_(services, '');
+    spSvcServiceChanged(planId);
 }
 window.spSvcCarrierChanged = spSvcCarrierChanged;
+function spSvcServiceChanged(planId) {
+    var h = document.getElementById('sp-rc-' + planId), b = h && h.querySelector('.sp-svc'), r = SP_RC_[planId];
+    if (!b || !r) return;
+    var key = b.querySelector('.sp-svc-service').value;
+    var selected = _spSvcChoices_(r.service_vocabulary, b.querySelector('.sp-svc-carrier').value).filter(function (s) { return _spSvcKey_(s) === key; })[0];
+    b.querySelector('.sp-svc-method').value = selected ? selected.shipping_method : '';
+    b.querySelector('.sp-svc-lastmile').value = selected ? selected.last_mile_delivery : '';
+    var note = b.querySelector('.sp-svc-note'); if (note) note.textContent = '';
+}
+window.spSvcServiceChanged = spSvcServiceChanged;
 function spSvcPickDeliveryType(planId, val) {
     var b = document.querySelector('.sp-svc[data-plan-id="' + String(planId).replace(/"/g, '') + '"]'); if (!b) return;
-    var o = b.querySelector('.sp-svc-dtype option[value="' + String(val).replace(/"/g, '') + '"]');
-    if (o && val) { b.querySelector('.sp-svc-method').value = o.getAttribute('data-method') || ''; b.querySelector('.sp-svc-lastmile').value = o.getAttribute('data-lastmile') || ''; }
+    var r = SP_RC_[planId], dt = r && _spSvcDeliveryTypes_(r.service_vocabulary, b.querySelector('.sp-svc-carrier').value).filter(function (d) { return d.value === val; })[0];
+    b.querySelector('.sp-svc-service').value = dt ? _spSvcKey_(dt) : '';
+    spSvcServiceChanged(planId);
 }
 function spSvcSave(planId) {
     var h = document.getElementById('sp-rc-' + planId), r = SP_RC_[planId], b = h ? h.querySelector('.sp-svc') : null;
@@ -2376,7 +2467,8 @@ function spSvcSave(planId) {
     var note = b.querySelector('.sp-svc-note'), c = b.querySelector('.sp-svc-carrier').value, m = b.querySelector('.sp-svc-method').value, l = b.querySelector('.sp-svc-lastmile').value;
     var dEl = b.querySelector('.sp-svc-dtype'), dt = dEl ? dEl.value : '';
     note.style.color = '#B91C1C';
-    if (!c || !m || !l) { note.textContent = 'Select a carrier, shipping method and last mile.'; return; }
+    var choice = _spSvcChoices_(r.service_vocabulary, c).filter(function (s) { return _spSvcKey_(s) === b.querySelector('.sp-svc-service').value && s.shipping_method === m && s.last_mile_delivery === l; });
+    if (!c || !m || !l || choice.length !== 1) { note.textContent = 'Select a carrier and shipping service.'; return; }
     var cSel = h.querySelector('.sp-rc-customs'), cx = cSel ? String(cSel.value || '') : '';
     if (!_spCustomsNa_(r) && r.lane && (r.lane.customs || []).length && !cx) { note.textContent = 'Choose a customs type first. Nothing was sent.'; return; }   // AD4
     if (!_spPlanTok_(planId)) { note.textContent = 'This plan has no edit token on screen - it is being re-read. Nothing was sent.'; try { _spReadbackAfterWrite_(); } catch (eT) {} return; }

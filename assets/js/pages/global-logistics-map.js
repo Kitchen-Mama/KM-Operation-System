@@ -145,6 +145,10 @@
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); }
   function num(n) { var v = parseFloat(n); return isFinite(v) ? v.toLocaleString('en-US') : '0'; }
   function low(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
+  function enumDisplay(kind, code) {
+    var d = window.KM && window.KM.display;
+    return d && typeof d[kind] === 'function' ? d[kind](code) : String(code == null ? '' : code);
+  }
   function validCoord(lat, lng) { return (typeof lat === 'number') && (typeof lng === 'number') && lat >= -90 && lat <= 90 && lng >= -180 && lng <= 180 && !(lat === 0 && lng === 0); }
   function root() { return document.getElementById('global-logistics-map-section'); }
   function body() { var r = root(); return r ? r.querySelector('[data-glm="body"]') : null; }
@@ -599,7 +603,7 @@
         // filteredVms compares it. carrierLabel is what a person reads; it falls back to the id, never to a
         // blank, so an unresolved carrier is still identified.
         carrier: s.carrierId || '', carrierLabel: glmCarrierLabel_(s.carrierId, idx.carriers),
-        method: s.shippingMethodDisplay || s.shippingMethod || '',
+        method: s.shippingMethod || s.shippingMethodDisplay || '',
         originCountry: originCountry, origin: origin, destCountry: glmDestinationCountry_(s, idx), destWarehouseId: s.warehouseId || '',
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',
@@ -1154,7 +1158,7 @@
       selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, PC) +
       selHtml('Destination Country', 'destCountry', optSet(vms, function (v) { return v.destCountry; }), f.destCountry, PC) +
       selHtml('Carrier', 'carrier', optPairs(vms, function (v) { return v.carrier; }, function (v) { return v.carrierLabel; }), f.carrier, PC) +
-      selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, PC) +
+      selHtml('Method', 'method', optPairs(vms, function (v) { return v.method; }, function (v) { return enumDisplay('shippingMethod', v.method); }), f.method, PC) +
       '<label class="glm-field glm-field--panel glm-field--eta"><span>ETA Date</span><span class="glm-eta-range">' +
         '<input type="date" data-filter="etaFrom" value="' + esc(f.etaFrom) + '" aria-label="ETA from">' +
         '<span class="glm-eta-range__sep" aria-hidden="true">–</span>' +
@@ -1253,14 +1257,14 @@
       // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
       var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
       if (v.display && v.display.key === 'arrived') stCls = 'arrived';   // A-DELTA1 C2 item 1
-      var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '"' + (v.display && v.display.projected ? ' title="依路線判定（狀態欄未寫入）"' : '') + '>' + esc((v.display && v.display.key === 'arrived') ? v.display.label : (v.status || '—')) + '</span>';
+      var statusPill = '<span class="glm-ship__status glm-ship__status--' + stCls + '"' + (v.display && v.display.projected ? ' title="依路線判定（狀態欄未寫入）"' : '') + '>' + esc((v.display && v.display.key === 'arrived') ? v.display.label : (enumDisplay('status', v.status) || '—')) + '</span>';
       // R11 §9/§12 — ROW 1: Shipment ID alone (full card width). ROW 2: compact badges (status · flags · issue ·
       // coord pending) — never competing with the ID width. ROW 3+: route / method / stage · ETA.
       return '<div class="glm-ship' + (state.selectedShipmentId === v.shipmentId ? ' is-selected' : '') + '" data-ship="' + esc(v.shipmentId) + '" tabindex="0" role="button" aria-label="' + esc(glmAccessibleName_(v)) + '">' +
         '<div class="glm-ship__idrow"><span class="glm-ship__no">' + esc(v.displayNo) + '</span>' + (v.displayNoShared ? ' <span class="glm-muted">· ' + esc(v.shipmentId) + '</span>' : '') + '</div>' +
         '<div class="glm-ship__badges">' + statusPill + flag + glmTrackBadge_(v) + issueBadge + posBadge + '</div>' +
         '<div class="glm-ship__route">' + esc(glmOriginText_(v)) + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
-        '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
+        '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(enumDisplay('shippingMethod', shipMode(v))) + '</div>' +
         receiptProgress +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || (v.opening ? '未知 (unknown)' : '—')) + '</div>' +
         '</div>';
@@ -1468,7 +1472,7 @@
     var html = '';
     if (id.indexOf('loc:') === 0) { var l = lookupLoc(id.slice(4)); if (l) html = '<strong>' + esc(l.locationName || l.locationCode) + '</strong><br>' + esc([l.country, l.locationType].filter(Boolean).join(' · ')); }
     else if (id.indexOf('tnode:') === 0) { html = '<strong>Route template node</strong>'; }
-    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' (' + esc(vm.shipmentId) + ')' : '') + '<br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(vm.status || '') + ' · ' + esc(shipMode(vm)) + '<br>ETA ' + esc(vm.eta || '—'); }
+    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' (' + esc(vm.shipmentId) + ')' : '') + '<br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(enumDisplay('status', vm.status)) + ' · ' + esc(enumDisplay('shippingMethod', shipMode(vm))) + '<br>ETA ' + esc(vm.eta || '—'); }
     if (!html) { tip.setAttribute('aria-hidden', 'true'); return; }
     tip.innerHTML = html; tip.setAttribute('aria-hidden', 'false');
   }
@@ -1798,7 +1802,7 @@
       var dst4_ = glmDestinationNodeOf_(vm);   // A final4 P1: the REAL destination node (lineage), not the highest sequence or a label
       var opts = nodes.map(function (n) {
         var backward = n.sequenceNo < curSeq;   // backward moves are blocked by the backend; disable in UI
-        var lbl = '#' + n.sequenceNo + ' · ' + glmNodeName_(n) + (dst4_.id && nodeIdentity(n) === dst4_.id ? ' · 目的倉' : '') + (n.status ? ' (' + n.status + ')' : '');   // A final4: readable name; the value stays nodeIdentity(n)
+        var lbl = '#' + n.sequenceNo + ' · ' + glmNodeName_(n) + (dst4_.id && nodeIdentity(n) === dst4_.id ? ' · 目的倉' : '') + (n.status ? ' (' + enumDisplay('status', n.status) + ')' : '');   // A final4: readable name; the value stays nodeIdentity(n)
         return '<option value="' + esc(nodeIdentity(n)) + '"' + (low(n.status) === 'current' ? ' selected' : '') + (backward ? ' disabled' : '') + '>' + esc(lbl) + '</option>';
       }).join('');
       routeSection = '<label class="glm-field"><span>Current Position (route node)</span><select data-route-select>' + opts + '</select></label>' +
@@ -1853,7 +1857,7 @@
 
     return '<section class="glm-dsec"><h4>Current Position</h4>' + routeSection + etaSection +
         kv('物流狀態', vm.arrival && vm.arrival.arrived ? ('Delivered · 已送達（' + (vm.track && vm.track.receipt === 'partial' ? '部分收貨' : '待收貨') + '）') : (vm.nodes && vm.nodes.length ? 'In Transit · 運送中' : '—')) +   // A final4 P1: display only - shipments.status is never set to delivered
-        kv('Shipment Status', low(vm.status) === 'arrived' ? 'arrived · Delivered / 已送達（待收貨）' : (vm.display && vm.display.projected ? vm.display.label + '（依路線判定；狀態欄未寫入' + (vm.display.display_only ? '：僅顯示的匯入紀錄' : '') + '）' : (vm.status || '—'))) +   // A-DELTA1 P0-1 + C2 item 1
+        kv('Shipment Status', low(vm.status) === 'arrived' ? 'Arrived · Delivered / 已送達（待收貨）' : (vm.display && vm.display.projected ? vm.display.label + '（依路線判定；狀態欄未寫入' + (vm.display.display_only ? '：僅顯示的匯入紀錄' : '') + '）' : (enumDisplay('status', vm.status) || '—'))) +   // A-DELTA1 P0-1 + C2 item 1
         '<p class="glm-muted">Shipment Status is system-derived (never set directly on the map).</p>' +
       '</section>' +
       '<section class="glm-dsec"><details class="glm-recv"' + (autoExpand ? ' open' : '') + ' data-glm="receiving-details">' +
@@ -2132,7 +2136,7 @@
   function glmRtiForm_(r, vm, rt) {
     var st = glmRtiSt_(vm.shipmentId), f = st.facts, multi = rt.candidates.length > 1;
     var tpl = '<select data-rti="tpl">' + (multi ? '<option value="">請選擇路線（' + rt.candidates.length + ' 個適用）</option>' : '') + rt.candidates.map(function (c) { return '<option value="' + esc(c.route_template_id) + '">' + esc(c.template_name || c.route_template_id) + ' (' + esc(c.route_template_id) + ')</option>'; }).join('') + '</select>';
-    glmRtiMsg_(r, '<div class="glm-dsec"><p class="glm-muted">來源 ' + esc(f.source || '—') + ' → 目的倉 ' + esc(f.dest || '—') + ' · carrier ' + esc(f.carrier || '—') + ' · method ' + esc(f.method || '—') + '</p>' + glmRtiSkipped_(rt) +
+    glmRtiMsg_(r, '<div class="glm-dsec"><p class="glm-muted">來源 ' + esc(f.source || '—') + ' → 目的倉 ' + esc(f.dest || '—') + ' · carrier ' + esc(f.carrier || '—') + ' · method ' + esc(enumDisplay('shippingMethod', f.method) || '—') + '</p>' + glmRtiSkipped_(rt) +
       '<label class="glm-field"><span>路線</span>' + tpl + '</label><label class="glm-field"><span>目前位置（節點）</span><select data-rti="node"></select></label>' +
       '<label class="glm-field"><span>回報時間（以系統時區解讀；不可晚於現在、不可早於 ETD）</span><input type="datetime-local" data-rti="at"></label><label class="glm-field"><span>位置來源（例如貨代通知）</span><input type="text" maxlength="200" data-rti="src"></label>' +
       '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-preview">預覽</button></div><div data-rti="out"></div></div>');
@@ -2276,10 +2280,10 @@
         // every join and support conversation is actually about.
         kv('Shipment ID (external)', vm.externalShipmentId) + kv('Shipment No.', vm.originalNo) + kv('Internal ID', vm.shipmentId) + kv('Company', vm.company) +
         kv('Carrier', vm.carrierLabel === vm.carrier ? vm.carrier : (vm.carrierLabel + '  ·  ' + vm.carrier)) +
-        kv('Shipping Method', vm.method) +
+        kv('Shipping Method', enumDisplay('shippingMethod', vm.method)) +
         kv('Origin → Destination', glmOriginText_(vm) + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
         kv('Destination Warehouse', vm.destWarehouse) + kv('Tracking / Container', [vm.tracking, vm.container].filter(Boolean).join(' / ')) +
-        kv('Status', vm.status) + kv('Route Template', vm.routeTemplateId) + '</section>' +
+        kv('Status', enumDisplay('status', vm.status)) + kv('Route Template', vm.routeTemplateId) + '</section>' +
       '<section class="glm-dsec"><h4>Live Position</h4>' +
         kv('Current Stage', vm.stage) +
         '<div class="glm-kv"><span class="glm-kv__k">Map Position</span><span class="glm-kv__v">' + posLine + '</span></div>' +

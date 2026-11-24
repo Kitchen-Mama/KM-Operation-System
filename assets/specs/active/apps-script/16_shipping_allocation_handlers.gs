@@ -3179,6 +3179,16 @@ function sadReadActiveHeaderRows_(sh) {
 // Returns { status:'CREATE'|'REUSE'|'CONFLICT'|'BLOCK', reason?, id, conflictIds, k2:bool, legacyReconcile? }.
 function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
   header = header || {}; opts = opts || {};
+  // Submitted tickets are immutable history, not owners of the next round's entity identity.
+  // Active rows still replay normally; cancelled/expired identities retain their existing refusal.
+  function createForRound(id, k4) {
+    var held = procurementFindRow_(sh, 'allocation_draft_id', id);
+    if (held && String(sadRowToObject_(sh, held.row).status || '').trim().toLowerCase() === 'submitted') {
+      id = sadMintNewHeaderId_(sh, header, k4);
+      if (!id) return { status: 'BLOCK', reason: 'ROUTE_IDENTITY_MINT_FAILED', id: '', conflictIds: [], k2: true, k4: k4 };
+    }
+    return { status: 'CREATE', id: id, conflictIds: [], k2: true, k4: k4 };
+  }
   if (sadHeaderRouteIsComplete_(header)) {
     var activeRows = sadReadActiveHeaderRows_(sh);
 
@@ -3246,11 +3256,11 @@ function sadResolveActiveDraftK2OrK3_(sh, header, opts) {
         return { status: 'BLOCK', reason: 'K4_IDENTITY_RECONCILIATION_REQUIRED', id: (rivalK2.allocation_draft_id || ''),
           conflictIds: rivalK2.conflictIds || [], k2: true, k4: true };
       }
-      return { status: 'CREATE', id: r4.allocation_draft_id, conflictIds: [], k2: true, k4: true };
+      return createForRound(r4.allocation_draft_id, true);
     }
 
     var r = sadK2ResolveActiveDraft_(activeRows, header);
-    if (r.status === 'CREATE') return { status: 'CREATE', id: r.allocation_draft_id, conflictIds: [], k2: true };
+    if (r.status === 'CREATE') return createForRound(r.allocation_draft_id, false);
     if (r.status === 'REUSE') return { status: 'REUSE', id: r.allocation_draft_id, conflictIds: [], k2: true };
     return { status: 'CONFLICT', id: '', conflictIds: r.conflictIds || [], k2: true };
   }
@@ -3883,19 +3893,20 @@ function sadAtomicCancelRouteLines_(hSh, lSh, body) {
 // (a tie keeps the first row in sheet order); value = available_qty + fc_transfer_qty + fc_processing_qty, a blank cell counting 0
 // exactly as the page's num() does. Not the factory stock, not a site quota, not the 42_ supply projection. Returns { sku: {qty, date} }.
 // ============================================================================================================
-function sadSiteCurrentStock1g_(ss, scope) {
+function sadSiteCurrentStock1g_(ss, scope, sourceRows, skuSet) {
   function S(v) { return String(v == null ? '' : v).trim(); }
   function lo(v) { return S(v).toLowerCase(); }
   function num(v) { var n = Number(v); return (S(v) !== '' && isFinite(n)) ? n : 0; }
   function ymd(v) { if (v instanceof Date && !isNaN(v)) { try { return Utilities.formatDate(v, Session.getScriptTimeZone(), 'yyyy-MM-dd'); } catch (e) { return v.toISOString().slice(0, 10); } } return S(v).slice(0, 10); }
   function ctry(a, b) { var x = lo(a), y = lo(b); if (x === 'gb') x = 'uk'; if (y === 'gb') y = 'uk'; return x === y; }
-  var sh = ss.getSheetByName('amazon_inventory_snapshot'), out = {}, blank16 = {};
+  var sh = Array.isArray(sourceRows) ? null : ss.getSheetByName('amazon_inventory_snapshot'), out = {}, blank16 = {};
   Object.defineProperty(out, '__blank16', { value: blank16, enumerable: false });   // SANDBOX-GATE-1k (A-1): SKUs that had ONLY excluded blank-marketplace rows
-  if (!sh) return out;
-  shippingPlanReadObjects_(sh).forEach(function (r) {
+  if (!Array.isArray(sourceRows) && !sh) return out;
+  (Array.isArray(sourceRows) ? sourceRows : shippingPlanReadObjects_(sh)).forEach(function (r) {
     var sku = lo(r.sku); if (!sku) return;
+    if (skuSet && !skuSet[sku]) return;
     if (scope.company && S(r.company) && lo(r.company) !== lo(scope.company)) return;
-    if (scope.country && S(r.country) && !ctry(r.country, scope.country)) return;
+    if (scope.country && !ctry(r.country, scope.country)) return;
     if (!S(r.marketplace)) { blank16[sku] = 1; return; }   // SANDBOX-GATE-1k (A-1): no source rule says blank = Amazon - a blank-marketplace row is EXCLUDED
     if (scope.marketplace && lo(r.marketplace) !== lo(scope.marketplace)) return;
     var d = ymd(r.snapshot_date), cur = out[sku];
@@ -3946,22 +3957,25 @@ function sadPrefetchSiteSnapshot1g_(ss, ids) {
 var SAD_SITE_SOURCE_BLANK_ = '(blank company)';
 // SANDBOX-GATE-1k (A-3): the confirmed source scope is this explicit set and nothing else (the same values in Site Inventory and Weekly).
 var SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_ = { marketplace: 'amazon', note: 'Original Amazon account reports; all countries confirmed by Owner 2026-11-06. KM Amazon excluded.' };
-// SANDBOX ACCEPTANCE scope, Sandbox-only by TWO means: it exists only in the Sandbox package lineage (km-gs-...-sandbox-gate-*; the base
-// package has no RTR_SANDBOX_GATE_), AND it applies only while THIS deployment's Sandbox gate says KM_SANDBOX. Anywhere else the answer
-// is the explicit SITE_SOURCE_SCOPE_UNDECIDED (blank + reason): the scope is never silently carried over and never silently dropped.
-function sadSandboxScopeActive1k_() { try { return typeof RTR_SANDBOX_GATE_ !== 'undefined' && !!RTR_SANDBOX_GATE_ && RTR_SANDBOX_GATE_.env === 'KM_SANDBOX'; } catch (e) { return false; } }
+// Same original-Amazon/master authority as Site Inventory, in either explicitly installed profile.
+// An absent/unrecognized profile still cannot attribute accountless source rows to a company.
+function sadSiteScopeActive1k_() {
+  var sandbox = typeof RTR_SANDBOX_GATE_ !== 'undefined' && RTR_SANDBOX_GATE_ && RTR_SANDBOX_GATE_.env === 'KM_SANDBOX';
+  var production = typeof RTR_PRODUCTION_PROFILE_ !== 'undefined' && RTR_PRODUCTION_PROFILE_ && RTR_PRODUCTION_PROFILE_.environment === 'KM_PRODUCTION';
+  return !!(sandbox || production);
+}
 function sadSiteBlankOnly16_(stock, sku) {
   var k = String(sku == null ? '' : sku).trim().toLowerCase(), b = stock && stock.__blank16;
   if (!b || !b[k] || stock[k]) return '';
   return 'SITE_SOURCE_MARKETPLACE_BLANK: the only amazon_inventory_snapshot rows for this SKU have a blank marketplace; no source rule says blank means Amazon, so they are excluded (' + SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_.note + ')';
 }
-function sadSiteCompanies13_(ss, scope) {
+function sadSiteCompanies13_(ss, scope, sourceRows) {
   function S(v) { return String(v == null ? '' : v).trim(); }
   function lo(v) { return S(v).toLowerCase(); }
   function ctry(a, b) { var x = lo(a), y = lo(b); if (x === 'gb') x = 'uk'; if (y === 'gb') y = 'uk'; return x === y; }
-  var sh = ss.getSheetByName('marketplaces'), out = { basis: 'MARKETPLACES_MASTER_1J', rows: [] };
-  if (!sh) return out;
-  shippingPlanReadObjects_(sh).forEach(function (r) {
+  var sh = Array.isArray(sourceRows) ? null : ss.getSheetByName('marketplaces'), out = { basis: 'MARKETPLACES_MASTER_1J', rows: [] };
+  if (!Array.isArray(sourceRows) && !sh) return out;
+  (Array.isArray(sourceRows) ? sourceRows : shippingPlanReadObjects_(sh)).forEach(function (r) {
     if (!S(r.marketplace) || !ctry(r.country, scope.country) || lo(r.marketplace) !== lo(scope.marketplace)) return;
     out.rows.push(lo(r.company) || SAD_SITE_SOURCE_BLANK_);   // one entry per ROW (a duplicate row is not silently merged)
   });
@@ -3970,7 +3984,7 @@ function sadSiteCompanies13_(ss, scope) {
 function sadSiteSourceUnknown13_(co, scope, sku) {
   function lo(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   var sc = SAD_SANDBOX_ACCEPTANCE_SOURCE_SCOPE_1K_, why = ' (' + sc.note + ')';
-  if (!sadSandboxScopeActive1k_()) return 'SITE_SOURCE_SCOPE_UNDECIDED: the confirmed source scope is a SANDBOX acceptance scope (KM_SANDBOX only); no source scope has been decided by the Owner for this environment, so the report rows are not attributed';
+  if (!sadSiteScopeActive1k_()) return 'SITE_SOURCE_SCOPE_UNDECIDED: no recognized KM_SANDBOX or KM_PRODUCTION profile is installed, so the report rows are not attributed';
   if (lo(scope.marketplace) !== sc.marketplace) return 'SITE_SOURCE_NOT_CONFIRMED: no confirmed Amazon feed for this marketplace account';
   var rows = (co && co.basis === 'MARKETPLACES_MASTER_1J' && co.rows) || [], me = lo(scope.company), distinct = [];
   rows.forEach(function (x) { if (distinct.indexOf(x) < 0) distinct.push(x); });

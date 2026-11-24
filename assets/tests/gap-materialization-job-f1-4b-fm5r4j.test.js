@@ -371,7 +371,7 @@ ok(eLegacy._processed.length === 0, 'SN9 the normalization ran NO calculation');
 section('poller — runJob: START once → READ-ONLY status poll → refresh on DONE (fake clock)');
 var immediate = function () { return Promise.resolve(); };
 (function () {
-  var startCalls = 0, statusSeq = [{ status: 'PENDING', scopesProcessed: 0, scopesTotal: 3 }, { status: 'RUNNING', scopesProcessed: 2, scopesTotal: 3 }, { status: 'DONE', scopesProcessed: 3, scopesTotal: 3 }], i = 0;
+  var startCalls = 0, statusSeq = [{ runId: 'R1', status: 'PENDING', scopesProcessed: 0, scopesTotal: 3 }, { runId: 'R1', status: 'RUNNING', scopesProcessed: 2, scopesTotal: 3 }, { runId: 'R1', status: 'DONE', scopesProcessed: 3, scopesTotal: 3 }], i = 0;
   var refreshed = 0, ui = { events: [] };
   var startFn = function () { startCalls++; return Promise.resolve({ success: true, data: { runId: 'R1', status: 'PENDING', scopesTotal: 3 } }); };
   var statusFn = function () { return Promise.resolve({ success: true, data: statusSeq[Math.min(i++, statusSeq.length - 1)] }); };
@@ -430,7 +430,7 @@ section('R4J-LIVE2 §5 — the STALL guard: a stuck 0/N EXITS Calculating (never
 (function () {
   var startCalls = 0, ev = [];
   var startFn = function () { startCalls++; return Promise.resolve({ success: true, data: { runId: 'RS', status: 'PENDING', scopesTotal: 5 } }); };
-  var statusFn = function () { return Promise.resolve({ success: true, data: { status: 'RUNNING', scopesProcessed: 0, scopesTotal: 5 } }); };
+  var statusFn = function () { return Promise.resolve({ success: true, data: { runId: 'RS', status: 'RUNNING', scopesProcessed: 0, scopesTotal: 5 } }); };
   GR.runJob(startFn, statusFn, { wait: immediate, interval: 1, maxStallPolls: 3, ui: { starting: function () { ev.push('starting'); }, progress: function () { ev.push('progress'); }, failed: function (st) { ev.push('failed:' + (st && st.status)); } } }).then(function (r) {
     ok(startCalls === 1 && ev.indexOf('failed:STALLED') !== -1, 'P11 runJob on a stuck 0/N → START exactly once, then ui.failed(STALLED) (exit Calculating; NO automatic write retry)');
     ok(r.finalState && r.finalState.status === 'STALLED', 'P11b runJob surfaces the STALLED terminal to the caller');

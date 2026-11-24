@@ -76,8 +76,13 @@ GR.recover('Order Planning', PRE, scenario(0).refetch, function () { return PRE;
 section('A/B — page outcome mapping (R4J cutover: START→poll job; READ-only recovery kept as transitional §15)');
 var invHandler = INV.slice(INV.indexOf('function handleRecalcAllInventoryGap'), INV.indexOf('window.handleRecalcAllInventoryGap'));
 // R4J §12/§20 — the button no longer POSTs the 14-min batch and waits; it STARTS the backend job and polls STATUS.
-// On DONE the shared poller runs the READ-only refresh (refreshInventoryGapAfterRecalc_). SUCCESS = terminal DONE.
-ok(/startInventoryReplenishmentGapJob/.test(invHandler) && /refreshInventoryGapAfterRecalc_/.test(invHandler) && /gr\.runJob\(/.test(invHandler), 'A1 success path = START job → poll → READ refresh on DONE (via gapRecalc.runJob)');
+// On DONE the wrapper verifies the actual materialized read state before permitting completion.
+var invRefreshStart = INV.indexOf('function _irManualGapRefresh_(');
+var invRefresh = invRefreshStart < 0 ? '' : INV.slice(invRefreshStart, INV.indexOf('\nfunction ', invRefreshStart + 1));
+ok(/startInventoryReplenishmentGapJob/.test(invHandler) && /_irManualGapRefresh_\(scopeSpec\)/.test(invHandler) && /gr\.runJob\(/.test(invHandler)
+  && /refreshInventoryGapAfterRecalc_\(scope\)/.test(invRefresh) && /state\.loadedOk/.test(invRefresh) && /READY\|EMPTY/.test(invRefresh)
+  && /state\.error/.test(invRefresh) && /state\.scopeKey/.test(invRefresh) && /state\.appliedScopeKey/.test(invRefresh),
+  'A1 success path = START job → poll → validated materialized READ refresh on DONE (via gapRecalc.runJob)');
 // R4J-LIVE2: the truthful message now lives in the shared helper _irGapJobFailMsg_ — a hard "recalculation failed"
 // for a real FAILED, or the recoverable "could not be confirmed … before retrying" for STALLED/POLL_TIMEOUT (§5).
 ok(/ui\s*:\s*\{[\s\S]*failed\s*:\s*function[\s\S]*_irGapJobFailMsg_\('Inventory'/.test(invHandler) && /recalculation failed/.test(INV) && /No automatic retry/.test(INV) && /could not be confirmed/.test(INV), 'B1 a non-completing job → truthful ui.failed via _irGapJobFailMsg_ (hard failure OR recoverable "unconfirmed"; no fabricated success, no automatic retry)');

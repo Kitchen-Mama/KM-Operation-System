@@ -166,8 +166,8 @@ var INDEX = read(path.join('..', 'index.html'));
 // job-status read inside this file and rotated it with the application family. The claim is unchanged
 // - a CHANGED asset must be cache-versioned so browsers refetch it - and asking the series makes it
 // survive every future rotation rather than needing an edit per round.
-var REL_ = require('./_release-order.js');
-ok(INDEX.indexOf('gap-recalc-transport.js?v=' + REL_.currentAppToken()) > -1,
+var appToken_ = (INDEX.match(/assets\/js\/app\.js\?v=([^"\s]+)/) || [])[1];
+ok(!!appToken_ && INDEX.indexOf('gap-recalc-transport.js?v=' + appToken_) > -1,
   'index.html loads gap-recalc-transport.js with the bumped token');
 ok(!/\?v=aiscope-20260811/.test(INDEX), 'no stale ?v=aiscope-20260811 remains');
 

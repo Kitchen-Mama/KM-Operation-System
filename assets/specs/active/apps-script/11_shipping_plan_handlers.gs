@@ -145,12 +145,13 @@ function shippingPlanSkuLogisticsMap_(ss) {
   for (var i = 1; i < data.length; i++) {
     var s = String(data[i][cSku] || '').trim();
     if (!s) continue;
+    var cartonWeight = cWt === -1 ? null : spRcTierNumber_(data[i][cWt]);
     map[s] = {
       cartonL: cL === -1 ? 0 : (parseFloat(data[i][cL]) || 0),
       cartonW: cW === -1 ? 0 : (parseFloat(data[i][cW]) || 0),
       cartonH: cH === -1 ? 0 : (parseFloat(data[i][cH]) || 0),
       cartonDimUnit: cDU === -1 ? '' : String(data[i][cDU] || '').trim().toLowerCase(),
-      cartonWeight: cWt === -1 ? 0 : (parseFloat(data[i][cWt]) || 0),
+      cartonWeight: cartonWeight === null ? '' : cartonWeight,
       itemWeight: iWt === -1 ? 0 : (parseFloat(data[i][iWt]) || 0),
       upc: cUpc === -1 ? 0 : (parseFloat(data[i][cUpc]) || 0)
     };
@@ -171,10 +172,12 @@ function shippingPlanLineLogistics_(logi, approvedQty, cartonQty) {
   var unit = logi.cartonDimUnit || 'cm';
   var cartonCbm = (unit === 'cm' || unit === '') ? (logi.cartonL * logi.cartonW * logi.cartonH) / 1000000 : 0;
   cartonCbm = shippingPlanRound_(cartonCbm, 6);
+  var weight = spRcTierNumber_(logi.cartonWeight), cartons = spRcTierNumber_(cartonQty);
+  var grossKnown = weight !== null && cartons !== null && !(approvedQty > 0 && !(cartons > 0));
   return {
     carton_cbm: cartonCbm,
     cbm: shippingPlanRound_(cartonQty * cartonCbm, 4),
-    gross_weight: shippingPlanRound_(cartonQty * (logi.cartonWeight || 0), 3),
+    gross_weight: grossKnown ? shippingPlanRound_(cartons * weight, 3) : '',
     net_weight: shippingPlanRound_(approvedQty * (logi.itemWeight || 0), 3)
   };
 }
@@ -319,13 +322,14 @@ function shippingPlanLineSortKey_(l) { return [l.sku, l.site_sku, l.marketplace,
 
 // F1-7N-FA-4B2(A) — PURE physical shipment-compatibility group key (company already resolved). Determines which lines may
 // share one Shipping Plan: company + country + source_warehouse_id + ship_from + destination_warehouse_id + destination +
-// shipping_method + last_mile_delivery + planning_cycle. Marketplace EXCLUDED (→ MULTI header, real marketplace per line);
-// CARRIER DEFERRED (not authoritative at plan creation). Every dimension is spfp-1-bound (header FP for the route fields
+// shipping_method + last_mile_delivery + planning_cycle + carrier_id + customs_type. Marketplace EXCLUDED (MULTI header,
+// real marketplace per line). Unchosen carrier/customs stay blank; explicit incompatible choices must not collapse.
+// Groups ONLY the current Submit's lines, never an older plan. Every dimension is spfp-1-bound (header FP for the route fields
 // incl. last_mile_delivery; planning_cycle via each line's source_reason `cyc:`).
 function shippingPlanRouteGroupKey_(ln, company) {
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
   ln = ln || {};
-  return [company, ln.country, ln.source_warehouse_id, ln.ship_from, ln.destination_warehouse_id, ln.destination, ln.shipping_method, ln.last_mile_delivery, ln.planning_cycle].map(lc).join('||');
+  return [company, ln.country, ln.source_warehouse_id, ln.ship_from, ln.destination_warehouse_id, ln.destination, ln.shipping_method, ln.last_mile_delivery, ln.planning_cycle, ln.carrier_id, ln.customs_type].map(lc).join('||');
 }
 
 // PURE projector: flat plan/line row objects → canonical, sorted, fixed-key-order structure (ids/audit excluded).
@@ -336,10 +340,11 @@ function shippingPlanProjectBatch_(planObjs, lineObjs) {
     var h = {}; SP_HDR_FP_STR_.forEach(function (f) { h[f] = shippingPlanFpStr_(p[f]); }); SP_HDR_FP_NUM_.forEach(function (f) { h[f] = shippingPlanFpNum_(p[f]); });
     var pid = String(p.shipping_plan_id || '').trim();
     var ls = (linesByPlan[pid] || []).map(function (l) { var o = {}; SP_LINE_FP_STR_.forEach(function (f) { o[f] = shippingPlanFpStr_(l[f]); }); SP_LINE_FP_NUM_.forEach(function (f) { o[f] = shippingPlanFpNum_(l[f]); }); return o; });
-    ls.sort(function (a, b) { var ka = shippingPlanLineSortKey_(a), kb = shippingPlanLineSortKey_(b); return ka < kb ? -1 : (ka > kb ? 1 : 0); });
+    ls.sort(function (a, b) { var ka = shippingPlanLineSortKey_(a), kb = shippingPlanLineSortKey_(b); if (ka === kb) { ka = JSON.stringify(a); kb = JSON.stringify(b); } return ka < kb ? -1 : (ka > kb ? 1 : 0); });
     return { header: h, lines: ls };
   });
-  headers.sort(function (a, b) { var ka = shippingPlanHdrSortKey_(a.header), kb = shippingPlanHdrSortKey_(b.header); return ka < kb ? -1 : (ka > kb ? 1 : 0); });
+  // Equal display routes may differ in customs, last mile or cycle; sort ties by the complete canonical payload.
+  headers.sort(function (a, b) { var ka = shippingPlanHdrSortKey_(a.header), kb = shippingPlanHdrSortKey_(b.header); if (ka === kb) { ka = JSON.stringify(a); kb = JSON.stringify(b); } return ka < kb ? -1 : (ka > kb ? 1 : 0); });
   return headers;
 }
 function shippingPlanCanonicalFingerprint_(planObjs, lineObjs) {
@@ -358,8 +363,8 @@ function shippingPlanLinesSchemaComplete_(lineObjs) {
  * F1-7N-FA-3C-R6E1A — PURE find-or-reuse classifier over already-read plan/line row objects for one execution key.
  * Returns { state, planIds[], lineCount, fingerprint }. States:
  *   CREATE               — no plan header carries this key → proceed to create exactly one batch.
- *   DUPLICATE_CONFLICT   — two headers under the key share a route group (a corrupt double-write; the lock+reuse
- *                          normally prevents this) → fail closed, do not reconstruct.
+ *   DUPLICATE_CONFLICT   — headers share a final route but the complete batch differs from the trusted incoming
+ *                          payload (unexpected duplicate content) → fail closed, do not reconstruct.
  *   COMMITTED_UNVERIFIED — header(s) exist but zero lines while the payload has lines → no blind retry.
  *   RECONCILIATION_REQUIRED — persisted lines are schema-incomplete (e.g. pre-migration rows lacking canonical fields)
  *                          so a COMPLETE fingerprint cannot be computed → never a false REUSE.
@@ -374,13 +379,27 @@ function shippingPlanClassifyBatch_(persistedPlans, persistedLines, batchId, inc
   var planIds = Object.keys(planIdSet);
   if (!plansForKey.length) return { state: 'CREATE', planIds: [], lineCount: 0, fingerprint: '' };
   var routes = {}, dupRoute = false;
-  plansForKey.forEach(function (p) { var r = [p.company, p.country, p.ship_from, p.destination, p.shipping_method].map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }).join('||'); if (routes[r]) dupRoute = true; routes[r] = 1; });
-  if (dupRoute) return { state: 'DUPLICATE_CONFLICT', planIds: planIds, lineCount: 0, fingerprint: '' };
+  // Headers omit planning_cycle; recover it from immutable line provenance for replay grouping.
+  plansForKey.forEach(function (p) {
+    var cycles = {};
+    (persistedLines || []).forEach(function (l) {
+      if (String(l.shipping_plan_id || '').trim() !== String(p.shipping_plan_id || '').trim()) return;
+      var m = /(?:^|\|)cyc:([^|]*)/.exec(String(l.source_reason || ''));
+      cycles[m ? m[1].trim().toLowerCase() : ''] = 1;
+    });
+    var r = JSON.stringify([p.company, p.country, p.source_warehouse_id, p.ship_from, p.destination_warehouse_id,
+      p.destination, p.shipping_method, p.last_mile_delivery, Object.keys(cycles).sort().join('|'), p.carrier_id, p.customs_type]
+      .map(function (x) { return String(x == null ? '' : x).trim().toLowerCase(); }));
+    if (routes[r]) dupRoute = true; routes[r] = 1;
+  });
   var linesForKey = (persistedLines || []).filter(function (l) { return planIdSet[String(l.shipping_plan_id || '').trim()]; });
   if (linesForKey.length === 0 && incomingLineCount > 0) return { state: 'COMMITTED_UNVERIFIED', planIds: planIds, lineCount: 0, fingerprint: '' };
   if (!shippingPlanLinesSchemaComplete_(linesForKey)) return { state: 'RECONCILIATION_REQUIRED', planIds: planIds, lineCount: linesForKey.length, fingerprint: '' };
   var fp = shippingPlanCanonicalFingerprint_(plansForKey, linesForKey);
-  if (fp === incomingFingerprint) return { state: 'REUSED', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
+  // Blank and explicit carrier/service groups can converge after quote defaults. Equal final routes alone are
+  // not corruption: require exact full-batch content AND cardinality before reusing, otherwise fail closed below.
+  if (fp === incomingFingerprint && linesForKey.length === incomingLineCount) return { state: 'REUSED', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
+  if (dupRoute) return { state: 'DUPLICATE_CONFLICT', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
   return { state: 'CONFLICT', planIds: planIds, lineCount: linesForKey.length, fingerprint: fp };
 }
 
@@ -645,7 +664,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     'import_duty_treatment', 'estimated_freight_cost', 'estimated_duty', 'estimated_customs_fee',
     'estimated_total_cost', 'currency', 'rejected_comment']);
 
-  var readStageS2 = shipWriteReadStage_(ss, ['sku_details', 'warehouses', 'marketplace_skus', 'sites', 'carrier_rate_cards', 'tax_referral_rates']); ss = readStageS2.ss; // CODEX-S2: caller owns lock
+  var readStageS2 = shipWriteReadStage_(ss, ['sku_details', 'warehouses', 'marketplace_skus', 'sites', 'carriers', 'carrier_rate_cards', 'carrier_lead_times', 'tax_referral_rates', 'tax_rate_components']); ss = readStageS2.ss; // CODEX-S2: caller owns lock
   var upcMap = shippingPlanUpcMap_(ss);
   var companyMaps = shippingPlanCompanyMaps_(ss);
   var logisticsMap = shippingPlanSkuLogisticsMap_(ss);
@@ -657,10 +676,10 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
 
   // F1-7N-FA-4B2(A) — group by the PHYSICAL shipment-compatibility key so incompatible plans NEVER combine:
   //   company + country + source_warehouse_id + ship_from + destination_warehouse_id + destination + shipping_method
-  //   + last_mile_delivery + planning_cycle.
+  //   + last_mile_delivery + planning_cycle + explicitly chosen carrier/customs.
   // Marketplace stays EXCLUDED → compatible marketplace lines consolidate and the Header may become MULTI (each line keeps
   // its real marketplace). CARRIER is DEFERRED: it is not authoritative at Shipping Plan creation (derived later by the
-  // rough-quote / approval-routing layer), so it is NOT a grouping dimension and is never fabricated into the key. Every
+  // rough-quote / approval-routing layer). Blank choices are never fabricated, but different explicit choices separate. Every
   // grouping dimension is checksum-bound in spfp-1 (header FP: company/country/ship_from/source_warehouse_id/destination/
   // destination_warehouse_id/shipping_method/last_mile_delivery; planning_cycle via each line's source_reason `cyc:`).
   function lc(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
@@ -693,7 +712,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
         destination_type: String(ln.destination_type || '').trim(),
         last_mile_delivery: lastMile,
         planning_cycle: planningCycle,
-        carrier_id: String(ln.carrier_id || '').trim(),   // carried for the rough-quote layer; NOT a grouping dimension
+        carrier_id: String(ln.carrier_id || '').trim(),   // blank is deferred; an explicit choice participates in grouping
         customs_type: String(ln.customs_type || '').trim()
       }, lines: [] };
       order.push(key);
@@ -720,7 +739,7 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
     var planName = [meta.company, meta.country, (headerMarketplace || ''), meta.shipping_method, today].filter(String).join(' / ');
 
     // Rough carrier/cost snapshot (only when a carrier is chosen for this route). Never throws.
-    var quote = shippingPlanRoughQuote_(ss, meta, grp.lines, today);
+    var quote = shippingPlanRoughQuote_(ss, Object.assign({}, meta, { marketplace: headerMarketplace }), grp.lines, today);
 
     derivedHeaderObjs.push({
       shipping_plan_id: planId,
@@ -736,8 +755,8 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
       destination: meta.destination,
       destination_warehouse_id: meta.destination_warehouse_id,
       destination_type: meta.destination_type,
-      shipping_method: meta.shipping_method,
-      last_mile_delivery: meta.last_mile_delivery,
+      shipping_method: quote.shipping_method || meta.shipping_method,
+      last_mile_delivery: quote.last_mile_delivery == null ? meta.last_mile_delivery : quote.last_mile_delivery,
       customs_type: quote.customs_type,
       carrier_id: quote.carrier_id,
       carrier_unit_rate: quote.carrier_unit_rate,
@@ -891,62 +910,31 @@ function shippingPlanCommitFromLines_(ss, lines, ctx) {
 }
 
 /**
- * Rough carrier + cost snapshot for a Weekly Shipping Plan group. Returns blanks (Not Applied) when no
- * carrier is chosen for the route or no active rate-card candidate exists (e.g. overseas → FBA has no rate
- * system yet) — estimated_* stay '' (never 0). When a carrier IS chosen, resolves the rough candidate
- * (country + method + last_mile + battery + active + effective; postal/route NOT required) and snapshots
- * carrier_unit_rate / carrier_rate_type (= charge_type) / import_duty_treatment, then computes Phase-1 cost.
- * Never throws.
+ * Creation-only service default and cost snapshot. Exactly one eligible carrier/method/last-mile may
+ * supply a missing service; customs is never inferred. Ambiguous or unresolved prices remain blank.
+ * Called while building the existing locked write batch, never by a read. Never throws.
  */
 function shippingPlanRoughQuote_(ss, meta, groupLines, today) {
-  var blank = { carrier_id: String(meta.carrier_id || '').trim(), carrier_unit_rate: '', carrier_rate_type: '',
+  var blank = { carrier_id: String(meta.carrier_id || '').trim(), shipping_method: meta.shipping_method, last_mile_delivery: meta.last_mile_delivery, carrier_unit_rate: '', carrier_rate_type: '',
     import_duty_treatment: '', customs_type: String(meta.customs_type || '').trim(),
     estimated_freight_cost: '', estimated_duty: '', estimated_duty_currency: '', estimated_customs_fee: '',
     estimated_total_cost: '', currency: '' };
   try {
-    var carrierId = String(meta.carrier_id || '').trim();
-    if (!carrierId) return blank;   // no carrier chosen → rough estimate not applicable yet
-    var skus = groupLines.map(function (l) { return String(l.sku || '').trim(); }).filter(String);
-    var battery = shippingBatteryClass_(ss, skus);
-    var candidates = shippingMatchRateCards_(ss, {
-      originCountry: '', destinationCountry: meta.country, shippingMethod: meta.shipping_method,
-      lastMile: meta.last_mile_delivery, batteryType: battery, quoteDate: today
-    }, false).filter(function (rc) { return String(rc.carrier_id || '').trim() === carrierId; });
-    if (!candidates.length) return blank;   // no candidate → Not Applied (blank)
-    var rc = candidates[0];
-    // Measures from the plan lines (approved_qty = requested at submit). gross weight in kg.
     var upcMap = shippingPlanUpcMap_(ss), logisticsMap = shippingPlanSkuLogisticsMap_(ss);
-    var totCartons = 0, totCbm = 0, totGross = 0, dutyLines = [], rqU = {};   // R15C-AGL
-    groupLines.forEach(function (l) {
-      var sku = String(l.sku || '').trim();
-      var qty = shippingPlanNum_(l.requested_qty);
+    var lines = groupLines.map(function (l) {
+      var sku = spRcStr_(l.sku), qty = shippingPlanNum_(l.requested_qty);
       var upc = shippingPlanNum_(l.units_per_carton) || upcMap[sku] || 0;
       var carton = upc > 0 ? Math.ceil(qty / upc) : 0;
-      var logi = shippingPlanLineLogistics_(logisticsMap[sku], qty, carton);
-      totCartons += carton;
-      if (shippingMeasureKnown_(logi.cbm)) totCbm += shippingPlanNum_(logi.cbm); else rqU.cbm = 1;   // R15C-AGL
-      if (shippingMeasureKnown_(logi.gross_weight)) totGross += shippingPlanNum_(logi.gross_weight); else rqU.gw = 1;
-      dutyLines.push({ sku: sku, qty: qty });
+      return Object.assign({ sku: sku, approved_qty: qty, plan_carton_qty: carton }, shippingPlanLineLogistics_(logisticsMap[sku], qty, carton));
     });
-    var freight = shippingFreight_(rc, { grossWeightKg: rqU.gw ? '' : totGross, cbm: rqU.cbm ? '' : totCbm, cartons: totCartons });
-    if (freight.freight === '') return blank;   // R15C-AGL: unknown rate -> Not Applied (never 0)
-    var customsFee = shippingCustomsFee_(rc);
-    var treat = String(rc.import_duty_treatment || '').trim();
-    var tax = shippingTaxQuote_(ss, dutyLines, treat, meta.country, today, { originCountry: rc.origin_country, freightCurrency: rc.currency, includePortTax: true });
-    var duty = tax.known ? tax.amount : '';
-    var total = !tax.known || tax.currency !== String(rc.currency || '').trim().toUpperCase() ? '' : freight.freight + customsFee + duty;   // R15C-AGL
-    return {
-      carrier_id: carrierId,
-      carrier_unit_rate: shippingPlanNum_(rc.unit_rate),
-      carrier_rate_type: String(rc.charge_type || '').trim(),
-      import_duty_treatment: treat,
-      customs_type: String(meta.customs_type || rc.customs_type || '').trim(),
-      estimated_freight_cost: freight.freight,
-      estimated_duty: duty, estimated_duty_currency: tax.currency,
-      estimated_customs_fee: customsFee,
-      estimated_total_cost: total === '' ? '' : shippingPlanRound_(total, 2),
-      currency: String(rc.currency || '').trim()
-    };
+    var plan = Object.assign({}, meta), lane = spRcLaneCards_(ss, plan, lines, today);
+    if (!blank.carrier_id) {
+      var service = spRcUniqueService_(ss, plan, lane.cards);
+      if (!service) return blank;
+      plan.carrier_id = service.carrier_id; plan.shipping_method = service.shipping_method; plan.last_mile_delivery = service.last_mile_delivery;
+      blank.carrier_id = plan.carrier_id; blank.shipping_method = plan.shipping_method; blank.last_mile_delivery = plan.last_mile_delivery;
+    }
+    return Object.assign(blank, spRcPricingSnapshot_(ss, plan, lines, today, lane).fields);
   } catch (e) {
     return blank;
   }
@@ -1706,11 +1694,32 @@ function spUpdateLineQtyCore_(body) {
       wdlCheckStock_(ss,stockPlans[pid],ls,stockEdits[pid]);
     });
   }catch(stockError){return jsonResponse_({success:false,zero_write:true,code:stockError.importCode||String(stockError.message||'WEEKLY_STOCK_UNKNOWN'),error:String(stockError.message||stockError)});}
+  var qtyPricing = [];
+  try {
+    Object.keys(stockEdits).forEach(function (pid) {
+      var plan = spRcPlanRow_(ss, pid);
+      if (!plan || plan.dup) throw new Error('SHIPPING_PLAN_NOT_UNIQUE');
+      if (spRcStr_(plan.v.carrier_rate_type).indexOf(SP_RC_PENDING_1G_) === 0) throw new Error('RATE_CARD_SELECTION_PENDING');
+      var edits = {};
+      stockEdits[pid].forEach(function (e) { edits[spRcStr_(e.line.shipping_plan_line_id)] = e.values.approved_qty; });
+      var nextLines = spRcPlanLines_(ss, pid).map(function (l) {
+        var id = spRcStr_(l.shipping_plan_line_id);
+        if (!Object.prototype.hasOwnProperty.call(edits, id)) return l;
+        var q = edits[id], upc = shippingPlanNum_(l.units_per_carton), cartons = upc > 0 ? Math.ceil(q / upc) : 0;
+        return Object.assign({}, l, { approved_qty: q, plan_carton_qty: cartons }, shippingPlanLineLogistics_(logisticsMap[spRcStr_(l.sku)], q, cartons));
+      });
+      var pricing = spRcPricingSnapshot_(ss, plan.v, nextLines, shippingPlanToday_());
+      if (Object.keys(pricing.fields).concat(['updated_at']).some(function (k) { return plan.headers.indexOf(k) < 0; })) throw new Error('SHIPPING_PLAN_COLUMNS_MISSING');
+      qtyPricing.push({ plan: plan, pricing: pricing });
+    });
+  } catch (pricingError) { return spRcNo_(String(pricingError.message || 'RATE_CARD_COST_UNRESOLVED')); }
   var now = shippingPlanTimestamp_();
   // R71 (D4): one stamp for every line written (it is also the returned token), strictly later than each of their current stamps
   if (updatedCol !== -1) now = editNextStamp_(now, reqLines.map(function (q0) { var x0 = rowById[String((q0 || {}).shipping_plan_line_id || '').trim()];
     return x0 && statusById[planIdCol !== -1 ? String(x0.vals[planIdCol]).trim() : ''] === 'draft' ? x0.vals[updatedCol] : ''; }));
   var updated = 0, skipped = 0;
+  // An interrupted quantity/quote write must not leave a formerly valid quote looking current.
+  qtyPricing.forEach(function (x) { x.plan.sheet.getRange(x.plan.row, x.plan.headers.indexOf('carrier_rate_type') + 1).setValue(SP_RC_PENDING_1G_ + 'QUANTITY'); });
   for (var r = 0; r < reqLines.length; r++) {
     var rq = reqLines[r] || {};
     var lineId = String(rq.shipping_plan_line_id || '').trim();
@@ -1734,7 +1743,16 @@ function spUpdateLineQtyCore_(body) {
     updated++;
   }
 
-  (function () { var pid = String((body && body.shipping_plan_id) || '').trim(), pu = planHeaders.indexOf('updated_at'); if (pu === -1 || String(body && body.expected_plan_updated_at == null ? '' : body.expected_plan_updated_at).trim() !== '') return; for (var i = 1; i < planData.length; i++) if (pIdCol !== -1 && String(planData[i][pIdCol]).trim() === pid) { if (!editEpochs_(planData[i][pu]).ok) planSheet.getRange(i + 1, pu + 1).setValue(editNextStamp_(now, [''])); break; } })();   /* R15F2 step 30 (P1-2): a versionless Plan is stamped by its controlled first write */ return jsonResponse_({ success: true, data: { updated: updated, skipped: skipped, updated_at: editTokWritten15f2_(now) } });   // r7: the new line token; R15F2: as a read would return it
+  var repriced = qtyPricing.map(function (x) {
+    var p = x.plan, fields = x.pricing.fields, stamp = editNextStamp_(now, [p.v.updated_at]);
+    Object.keys(fields).forEach(function (k) { if (k !== 'carrier_rate_type') p.sheet.getRange(p.row, p.headers.indexOf(k) + 1).setValue(fields[k]); });
+    p.sheet.getRange(p.row, p.headers.indexOf('updated_at') + 1).setValue(stamp);
+    p.sheet.getRange(p.row, p.headers.indexOf('carrier_rate_type') + 1).setValue(fields.carrier_rate_type);
+    return { shipping_plan_id: p.v.shipping_plan_id, priced: x.pricing.priced, unpriced_reason: x.pricing.unpriced_reason,
+      rate_card_id: x.pricing.rate_card_id, updated_at: editTokWritten15f2_(stamp) };
+  });
+
+  return jsonResponse_({ success: true, data: { updated: updated, skipped: skipped, updated_at: editTokWritten15f2_(now), repriced_plans: repriced } });
 }
 
 // ---- completeShippingPlan (Decision Layer Completion) -------------
@@ -1941,14 +1959,84 @@ function spRcDestCode_(ss, p) {
 }
 function spRcTotals_(lines) {
   var t = { gw: 0, cbm: 0, cartons: 0, qty: 0, items: [] }, unk = {};   // R15C-AGL: one blank line makes that total unknown (''), never 0
-  var add = function (k, v) { if (shippingMeasureKnown_(v)) t[k] += shippingPlanNum_(v); else unk[k] = 1; };
+  var add = function (k, v) { var n = spRcTierNumber_(v); if (n !== null) t[k] += n; else unk[k] = 1; };
   lines.forEach(function (l) {
     var q = shippingPlanNum_(spRcStr_(l.approved_qty) !== '' ? l.approved_qty : l.requested_qty);
     add('gw', l.gross_weight); add('cbm', l.cbm); add('cartons', spRcStr_(l.plan_carton_qty) !== '' ? l.plan_carton_qty : l.carton_qty); t.qty += q;
     t.items.push({ sku: spRcStr_(l.sku), qty: q });
   });
   Object.keys(unk).forEach(function (k) { t[k] = ''; });
+  if (!lines.length) t.gw = t.cbm = t.cartons = '';
   return t;
+}
+// Only the threshold and its price vary within a tier ladder. Distinct service/lane/terms stay choices.
+function spRcTierKey_(c) {
+  return JSON.stringify(['carrier_id', 'origin_country', 'origin_city', 'destination_country', 'destination_city',
+    'destination_postal_code_start', 'destination_postal_code_end', 'destination_warehouse_code', 'marketplace',
+    'shipping_method', 'last_mile_delivery', 'currency', 'customs_type', 'battery_type', 'transit_type',
+    'charge_type', 'charge_unit', 'dim_divisor', 'min_box_weight', 'min_box_weight_unit', 'min_charge',
+    'fuel_surcharge', 'customs_fee', 'doc_fee', 'import_duty_treatment'].map(function (k) { return k === 'carrier_id' ? spRcStr_(c[k]) : spRcStr_(c[k]).toLowerCase(); }));
+}
+function spRcTierNumber_(v) {
+  if (typeof v === 'boolean' || spRcStr_(v) === '') return null;
+  var n = Number(v); return isFinite(n) && n >= 0 ? n : null;
+}
+function spRcTierWeightKg_(c, tot) {
+  // Display eligibility uses the existing physical gross-kg snapshot. Freight remains engine-owned.
+  // Dimensional/min-box fields are distinct terms, not a reason to hide an otherwise eligible card.
+  return spRcTierNumber_(tot.gw);
+}
+function spRcApplicableTiers_(cards, tot) {
+  var best = {}, eligible = [];
+  (cards || []).forEach(function (c) {
+    var tier = spRcStr_(c.weight_tier) === '' ? 0 : spRcTierNumber_(c.weight_tier);
+    var unit = spRcStr_(c.weight_tier_unit).toLowerCase(), weight = spRcTierWeightKg_(c, tot);
+    if (tier === null || weight === null || (tier > 0 && unit !== 'kg' && unit !== 'lb')) return;
+    if (unit === 'lb') tier /= 2.20462; // Same kg/lb conversion as shippingFreight_.
+    if (tier > weight) return;
+    var key = spRcTierKey_(c);
+    if (best[key] == null || tier > best[key]) best[key] = tier;
+    eligible.push({ card: c, key: key, tier: tier });
+  });
+  return eligible.filter(function (e) { return e.tier === best[e.key]; }).map(function (e) { return e.card; });
+}
+// A blank card axis covers a stated plan preference; a blank plan never matches a specific card implicitly.
+function spRcLastMileMatches_(cardLast, planLast) {
+  var card = spRcStr_(cardLast).toLowerCase(), plan = spRcStr_(planLast).toLowerCase();
+  return !card || card === plan;
+}
+function spRcUniqueService_(ss, p, cards) {
+  var seen = {}, choices = [], method = spRcMethod15_(p.shipping_method), last = spRcStr_(p.last_mile_delivery).toLowerCase();
+  // A plan without an intended method is not enough evidence to choose a service.
+  if (!method || typeof shipCarrierCheck_ !== 'function') return null;
+  (cards || []).forEach(function (c) {
+    if (spRcMethod15_(c.shipping_method) !== method || (last && !spRcLastMileMatches_(c.last_mile_delivery, last))) return;
+    var carrier = shipCarrierCheck_(ss, spRcStr_(c.carrier_id)); if (!carrier.ok) return;
+    var effectiveLast = spRcStr_(p.last_mile_delivery) || spRcStr_(c.last_mile_delivery);
+    var key = JSON.stringify([spRcStr_(c.carrier_id), method, effectiveLast.toLowerCase()]);
+    if (seen[key]) return; seen[key] = true;
+    choices.push({ carrier_id: spRcStr_(c.carrier_id), shipping_method: method, last_mile_delivery: effectiveLast });
+  });
+  return choices.length === 1 ? choices[0] : null;
+}
+function spRcPricingSnapshot_(ss, p, lines, day, lane) {
+  var fields = { carrier_unit_rate: '', carrier_rate_type: '', import_duty_treatment: '', currency: '',
+    estimated_freight_cost: '', estimated_duty: '', estimated_duty_currency: '', estimated_customs_fee: '', estimated_total_cost: '' };
+  lane = lane || spRcLaneCards_(ss, p, lines, day);
+  var fit = lane.cards.filter(function (c) { return spRcStr_(c.carrier_id) === spRcStr_(p.carrier_id)
+    && spRcMethod15_(c.shipping_method) === spRcMethod15_(p.shipping_method)
+    && spRcLastMileMatches_(c.last_mile_delivery, p.last_mile_delivery); });
+  var why = !spRcStr_(p.carrier_id) ? 'NO_CARRIER' : !fit.length ? 'NO_APPLICABLE_CARD' : fit.length > 1 ? 'CARD_CHOICE_REQUIRED' : '';
+  if (!why && !spRcStr_(p.customs_type) && (typeof shipCustomsApplicability_ !== 'function'
+      || shipCustomsApplicability_(ss, p, { allow_planned_destination: true }).applicable !== false)) why = 'PLAN_CUSTOMS_REQUIRED';
+  if (!why) {
+    var c = fit[0], q = spRcStr_(c.shipping_method_label) ? spRcQuote_(ss, p, c, lines, spRcTotals_(lines), day, lane.origin, lane) : null;
+    if (!q || q.rateCardId !== spRcStr_(c.rate_card_id) || !shippingQuoteComplete_(q)) why = 'RATE_CARD_COST_UNRESOLVED';
+    else fields = { carrier_unit_rate: c.unit_rate, carrier_rate_type: spRcStr_(c.charge_type), import_duty_treatment: spRcStr_(c.import_duty_treatment), currency: q.currency,
+      estimated_freight_cost: q.estimatedFreightCost, estimated_duty: q.estimatedDuty, estimated_duty_currency: q.estimatedDutyCurrency,
+      estimated_customs_fee: q.estimatedCustomsFee, estimated_total_cost: q.estimatedTotalCost };
+  }
+  return { fields: fields, priced: !why, unpriced_reason: why, rate_card_id: !why ? spRcStr_(fit[0].rate_card_id) : '' };
 }
 function spRcLaneCards_(ss, p, lines, day) {   // WK1 r3 (D-6): + the plan's origin country (its From warehouse); unresolved -> nothing listed or priced
   var org = spRcOrigin15_(ss, p);
@@ -1959,10 +2047,14 @@ function spRcLaneCards_(ss, p, lines, day) {   // WK1 r3 (D-6): + the plan's ori
   var c = shippingMatchRateCards_(ss, { originCountry: org, destinationCountry: p.country, shippingMethod: '', lastMile: '', customsType: spRcStr_(p.customs_type),
     marketplace: multi ? 'MULTI' : mk, destinationWarehouseCode: shipRateDestination_(ss, p).code,
     destinationCity: shipRateDestination_(ss, p).city, destinationPostalCode: shipRateDestination_(ss, p).postal, batteryType: bc.cls, quoteDate: day }, true);
-  return { cards: multi ? c.filter(function (x) { return spRcStr_(x.marketplace) === ''; }) : c, unclassified: [], origin: org };
+  c = multi ? c.filter(function (x) { return spRcStr_(x.marketplace) === ''; }) : c;
+  return { cards: spRcApplicableTiers_(c, spRcTotals_(lines)), unclassified: [], origin: org };
 }
-function spRcQuote_(ss, p, rc, lines, tot, day, org) {   // WK1 r3 (D-6): priced only with the plan's origin; no origin -> not priced
-  if (!spRcStr_(org)) return { rateCardId: '', currency: '', estimatedFreightCost: '', estimatedDuty: '', estimatedCustomsFee: '', estimatedTotalCost: '', estimatedUnitCost: '' };
+function spRcQuote_(ss, p, rc, lines, tot, day, org, lane) {   // WK1 r3 (D-6): priced only with the plan's origin; no origin -> not priced
+  lane = lane || spRcLaneCards_(ss, p, lines, day);
+  if (!spRcStr_(org) || !lane.cards.some(function (c) { return spRcStr_(c.rate_card_id) === spRcStr_(rc.rate_card_id); })
+      || ['weight', 'volume', 'carton', 'shipment', 'container'].indexOf(spRcStr_(rc.charge_type).toLowerCase()) < 0)
+    return { rateCardId: '', currency: '', estimatedFreightCost: '', estimatedDuty: '', estimatedCustomsFee: '', estimatedTotalCost: '', estimatedUnitCost: '' };
   return shipmentExactRateAndCost_(ss, { originCountry: spRcStr_(org), planRateCardId: spRcStr_(rc.rate_card_id), carrierId: spRcStr_(rc.carrier_id), country: p.country, marketplace: p.marketplace,
     shippingMethod: spRcStr_(rc.shipping_method), lastMile: spRcStr_(rc.last_mile_delivery), importDutyTreatment: spRcStr_(rc.import_duty_treatment) /* R15F2 duty (i): the card's own value only */,
     destinationWarehouseCode: shipRateDestination_(ss, p).code, destinationCity: shipRateDestination_(ss, p).city,
@@ -1984,14 +2076,19 @@ function spRcWk1Customs_(ss, p, body) {
 function spRcWk1CardCheck_(ss, p0, curOpt, org) {   // WK1 r3 (review R2-M1 + Owner card identity): never picks a card; reports what is known
   var low = function (v) { return spRcStr_(v).toLowerCase(); };
   var same = function (a, b) { a = spRcStr_(a); b = spRcStr_(b); return a === b || (a !== '' && b !== '' && isFinite(Number(a)) && isFinite(Number(b)) && Number(a) === Number(b)); };
-  var terms = function (c) { return spRcStr_(c.carrier_id) === spRcStr_(p0.carrier_id) && low(c.shipping_method) === low(p0.shipping_method) && low(c.last_mile_delivery) === low(p0.last_mile_delivery)
+  var terms = function (c) { return spRcStr_(c.carrier_id) === spRcStr_(p0.carrier_id) && low(c.shipping_method) === low(p0.shipping_method) && spRcLastMileMatches_(c.last_mile_delivery, p0.last_mile_delivery)
     && same(c.unit_rate, p0.carrier_unit_rate) && spRcStr_(c.charge_type) === spRcStr_(p0.carrier_rate_type) && (low(c.customs_type) === '' || low(c.customs_type) === low(p0.customs_type))
     && (spRcStr_(c.currency) === '' || spRcStr_(c.currency) === spRcStr_(p0.currency)) && (spRcStr_(c.destination_country) === '' || low(c.destination_country) === low(p0.country)) && (spRcStr_(c.origin_country) === '' || low(c.origin_country) === low(org)); };
   var table = shippingReadRateCards_(ss).filter(terms);   // every card with the saved terms - any status / validity / destination code / battery / threshold
   var live = curOpt.filter(terms);   // the ones that apply to this plan today
-  var splitRep = function (o) { return o.quote && o.quote.priced && o.quote.split_currency && spRcStr_(p0.estimated_total_cost) === '' && spRcStr_(p0.estimated_duty_currency) === o.quote.duty_currency && same(p0.estimated_duty, o.quote.duty) && same(p0.estimated_freight_cost, o.quote.freight) && same(p0.estimated_customs_fee, o.quote.customs_fee) && spRcStr_(p0.currency) === o.quote.currency; };
-  var rep = live.filter(function (o) { if (splitRep(o)) return true; return o.quote && o.quote.priced && spRcStr_(p0.estimated_total_cost) !== '' && isFinite(Number(spRcStr_(p0.estimated_total_cost))) && Math.round(Number(spRcStr_(p0.estimated_total_cost)) * 100) === Math.round(shippingPlanNum_(o.quote.total) * 100) && spRcStr_(p0.currency) === o.quote.currency; });
-  var status = !live.length ? 'NO_CURRENT_CARD' : table.length > 1 ? 'AMBIGUOUS' : 'UNIQUE';
+  var money = function (a, b) { return spRcTierNumber_(a) !== null && spRcTierNumber_(b) !== null && Math.round(Number(a) * 100) === Math.round(Number(b) * 100); };
+  var rep = live.filter(function (o) {
+    var q = o.quote;
+    if (!q || !q.priced || spRcStr_(p0.currency) !== q.currency || spRcStr_(p0.estimated_duty_currency) !== (q.duty_currency || q.currency)
+        || !money(p0.estimated_freight_cost, q.freight) || !money(p0.estimated_duty, q.duty) || !money(p0.estimated_customs_fee, q.customs_fee)) return false;
+    return q.split_currency ? spRcStr_(p0.estimated_total_cost) === '' : money(p0.estimated_total_cost, q.total);
+  });
+  var status = !live.length ? 'NO_CURRENT_CARD' : live.length > 1 ? 'AMBIGUOUS' : table.length > 1 ? (rep.length === 1 ? 'CURRENT_EQUIVALENT' : 'AMBIGUOUS') : 'UNIQUE';
   return { status: status, basis: 'SAVED_TERMS_NO_CARD_ID', cards_with_saved_terms: table.length, applicable_with_saved_terms: live.length, cost_reproduced: rep.length > 0,
     rate_card_id: (status === 'UNIQUE' && rep.length === 1) ? spRcStr_(rep[0].rate_card_id) : '' };
 }
@@ -2030,9 +2127,9 @@ function spRcWk1CustomsOnly_(body) { if (typeof editP1Gate15f2_ !== 'function' |
     if (lane.unclassified.length && exp15) lane = { cards: [], unclassified: [], origin: lane.origin };   // AD3-B: battery unknown -> the explicit service stays, only the quote is undecidable (unpriced)
   if (lane.unclassified.length) return spRcNo_('RATE_CARD_BATTERY_UNCLASSIFIED');
     if (body.service_only === true && !exp15 && !spRcServiceAllowed15_(ss, p, lines, lane, day, curC, curM, curL)) return spRcNo_('PLAN_SERVICE_NOT_APPLICABLE');
-    var fit = curC ? lane.cards.filter(function (c) { return spRcStr_(c.carrier_id) === curC && spRcStr_(c.shipping_method).toLowerCase() === curM && spRcStr_(c.last_mile_delivery).toLowerCase() === curL; }) : [];
+    var fit = curC ? lane.cards.filter(function (c) { return spRcStr_(c.carrier_id) === curC && spRcStr_(c.shipping_method).toLowerCase() === curM && spRcLastMileMatches_(c.last_mile_delivery, curL); }) : [];
     var rc = null, q = null, why = !curC ? 'NO_CARRIER' : !fit.length ? 'NO_APPLICABLE_CARD' : fit.length > 1 ? 'CARD_CHOICE_REQUIRED' : '';
-    if (!why) { rc = fit[0]; q = spRcStr_(rc.shipping_method_label) ? spRcQuote_(ss, p, rc, lines, tot, day, lane.origin) : null;
+    if (!why) { rc = fit[0]; q = spRcStr_(rc.shipping_method_label) ? spRcQuote_(ss, p, rc, lines, tot, day, lane.origin, lane) : null;
       if (!q || q.rateCardId !== spRcStr_(rc.rate_card_id) || !shippingQuoteComplete_(q)) { why = q ? 'RATE_CARD_COST_UNRESOLVED' : 'RATE_CARD_LABEL_BLANK'; rc = null; q = null; } }
     var w = rc ? { carrier_unit_rate: (rc.unit_rate === '' || rc.unit_rate == null) ? '' : rc.unit_rate, carrier_rate_type: spRcStr_(rc.charge_type), currency: q.currency,
         estimated_freight_cost: q.estimatedFreightCost, estimated_duty: q.estimatedDuty, estimated_duty_currency: q.estimatedDutyCurrency, estimated_customs_fee: q.estimatedCustomsFee, estimated_total_cost: q.estimatedTotalCost }
@@ -2076,6 +2173,7 @@ function spRcServices15_(ss, p, lines, lane, day) {
   var set15e = spRcSetMembers15e_(p.country), byKey15e = {};   // R15C-EU: the plan country is a planning set -> the member countries' union
   function add(c, m, l, label, ct) {
     m = spRcMethod15_(m);
+    l = spRcStr_(l) || spRcStr_(p.last_mile_delivery);
     var car = names[low(c)]; if (!car || !spRcStr_(m)) return;
     var key = JSON.stringify([low(c),low(m),low(l)]);
     if (set15e) { ct = spRcStr_(ct).toUpperCase(); var o0 = byKey15e[key]; if (o0) { if (ct && o0.destination_countries.indexOf(ct) === -1) { o0.destination_countries.push(ct); o0.destination_countries.sort(); o0.lead_time.by_country[ct] = shipLt1g_(ss,car.id,m,l,lane.origin,ct); } return; } }
@@ -2108,7 +2206,7 @@ function spRcDisplayOptions15_(ss,p,lines,lane,day,priced,names) {
 }
 function spRcServiceAllowed15_(ss,p,lines,lane,day,c,m,l) {
   var low=function(v){return spRcStr_(v).toLowerCase();};
-  return spRcServices15_(ss,p,lines,lane,day).some(function(o){return low(o.carrier_id)===low(c)&&low(o.shipping_method)===low(m)&&low(o.last_mile_delivery)===low(l);});
+  return spRcServices15_(ss,Object.assign({},p,{last_mile_delivery:l}),lines,lane,day).some(function(o){return low(o.carrier_id)===low(c)&&low(o.shipping_method)===low(m)&&spRcLastMileMatches_(o.last_mile_delivery,l);});
 }
 
 function spRcNo_(code, more) { return jsonResponse_(Object.assign({ success: false, code: code, error: code, zero_write: true }, more || {})); }
@@ -2123,24 +2221,24 @@ function handleShippingPlanRateCardOptions_(body) {
   var names = {}, cs = ss.getSheetByName('carriers'); if (cs) shippingPlanReadObjects_(cs).forEach(function (c) { names[spRcStr_(c.carrier_id)] = spRcStr_(c.carrier_name); });
   var org1g = shipOriginCountry1g_(ss, p.source_warehouse_id || p.ship_from);   // SANDBOX-GATE-1g
   var opts = lane.cards.map(function (c) {
-    var q = spRcQuote_(ss, p, c, lines, tot, day, lane.origin);
+    var q = spRcQuote_(ss, p, c, lines, tot, day, lane.origin, lane);
     return { rate_card_id: spRcStr_(c.rate_card_id), rate_card_version: shipRateCardVersion_(c), carrier_id: spRcStr_(c.carrier_id), carrier_name: names[spRcStr_(c.carrier_id)] || '',
-      shipping_method: spRcStr_(c.shipping_method), shipping_method_label: spRcStr_(c.shipping_method_label), last_mile_delivery: spRcStr_(c.last_mile_delivery), customs_type: spRcStr_(c.customs_type),
-      charge_type: spRcStr_(c.charge_type), unit_rate: c.unit_rate, effective_from: spRcStr_(c.effective_from), effective_to: spRcStr_(c.effective_to),
+      shipping_method: spRcStr_(c.shipping_method), shipping_method_label: spRcStr_(c.shipping_method_label), last_mile_delivery: spRcStr_(c.last_mile_delivery) || spRcStr_(p.last_mile_delivery), customs_type: spRcStr_(c.customs_type),
+      charge_type: spRcStr_(c.charge_type), unit_rate: c.unit_rate, weight_tier: c.weight_tier, weight_tier_unit: spRcStr_(c.weight_tier_unit), effective_from: spRcStr_(c.effective_from), effective_to: spRcStr_(c.effective_to),
       quote: { cost_unknown: q.costUnknown || '', priced: q.rateCardId === spRcStr_(c.rate_card_id) && shippingQuoteComplete_(q), duty_currency: q.estimatedDutyCurrency || '', split_currency: !!q.splitCurrency, tax_reason: q.taxReason || '', currency: q.currency, freight: q.estimatedFreightCost, duty: q.estimatedDuty, customs_fee: q.estimatedCustomsFee, total: q.estimatedTotalCost, unit_cost: q.estimatedUnitCost },
-      lead_time: shipLt1g_(ss, c.carrier_id, c.shipping_method, c.last_mile_delivery, org1g, p.country) };
+      lead_time: shipLt1g_(ss, c.carrier_id, c.shipping_method, spRcStr_(c.last_mile_delivery) || spRcStr_(p.last_mile_delivery), org1g, p.country) };
   });
   var curC = spRcStr_(p0.carrier_id), curM = spRcStr_(p0.shipping_method), curL = spRcStr_(p0.last_mile_delivery);
-  var curOpt = opts.filter(function (o) { return o.carrier_id === curC && o.shipping_method.toLowerCase() === curM.toLowerCase() && o.last_mile_delivery === curL; });
+  var curOpt = opts.filter(function (o) { return o.carrier_id === curC && o.shipping_method.toLowerCase() === curM.toLowerCase() && spRcLastMileMatches_(o.last_mile_delivery, curL); });
   var stored = { carrier_id: curC, shipping_method: curM, last_mile_delivery: curL, currency: spRcStr_(p0.currency), freight: p0.estimated_freight_cost, duty: p0.estimated_duty, duty_currency: spRcStr_(p0.estimated_duty_currency),
     customs_fee: p0.estimated_customs_fee, total: p0.estimated_total_cost, carrier_unit_rate: p0.carrier_unit_rate, carrier_rate_type: spRcStr_(p0.carrier_rate_type), customs_type: spRcStr_(p0.customs_type) };
   var priced = curC && spRcStr_(p0.estimated_duty_currency) !== '' && shippingTaxNumber_(p0.estimated_duty) !== null && shippingTaxNumber_(p0.estimated_freight_cost) !== null;
   var cc = (curC && priced && curOpt.length) ? spRcWk1CardCheck_(ss, p0, curOpt, lane.origin) : null;   // WK1 r3: what is known about the saved card
   var available15 = spRcDisplayOptions15_(ss, p, lines, lane, day, opts, names);
-  var hasService15 = available15.some(function(o) { return o.carrier_id === curC && o.shipping_method === curM && o.last_mile_delivery === curL; });
+  var hasService15 = available15.some(function(o) { return o.carrier_id === curC && o.shipping_method === curM && spRcLastMileMatches_(o.last_mile_delivery, curL); });
   var preview = cxv.asked && cxv.customs_type !== spRcStr_(p0.customs_type);   // WK1: a customs that is not the stored one is a PREVIEW
   var state = (spRcStr_(p0.carrier_rate_type).indexOf(SP_RC_PENDING_1G_) === 0) ? 'PENDING' : preview ? 'PREVIEW_CUSTOMS' : !curC ? 'NONE' : (!priced && hasService15) ? 'NOT_PRICED' : !curOpt.length ? 'NOT_APPLICABLE' : !priced ? 'NOT_PRICED'
-    : !cc.cost_reproduced ? 'NEEDS_REPRICING' : cc.status === 'UNIQUE' ? 'PRICED' : 'COST_SAVED_CARD_UNVERIFIED';   // WK1 r3: never PRICED through a card that is not provably the saved one
+    : !cc.cost_reproduced ? 'NEEDS_REPRICING' : (cc.status === 'UNIQUE' || cc.status === 'CURRENT_EQUIVALENT') ? 'PRICED' : 'COST_SAVED_CARD_UNVERIFIED';   // A current equivalent verifies today's quote, not the unrecorded historical card identity.
   return jsonResponse_({ success: true, shipping_plan_id: planId, quote_date: day, status: spRcStr_(p0.status), editable: spRcStr_(p0.status).toLowerCase() === 'draft',
     service_vocabulary: (typeof shipServiceVocabulary_ === 'function') ? shipServiceVocabulary_(ss) : null,   // AD3-B: explicit service choices (carriers master + server vocabulary), never derived from cards
     preview_customs_type: cxv.asked ? cxv.customs_type : null, lane: sc13PlanLaneOptions_(ss, p0), totals: { gross_weight: tot.gw, cbm: tot.cbm, cartons: tot.cartons, qty: tot.qty }, current: Object.assign({ state: state, lead_time: shipLt1g_(ss, curC, curM, curL, org1g, p.country), cost_saved: !!priced, card_check: cc || { status: 'NOT_CHECKED', basis: 'SAVED_TERMS_NO_CARD_ID' } }, stored), options: available15 });
@@ -2174,9 +2272,9 @@ function handleShippingPlanSelectRateCard_(body) { if (typeof editP1Gate15f2_ !=
     if (lane.originUnresolved) return spRcNo_('PLAN_ORIGIN_COUNTRY_UNRESOLVED', { correction: 'the plan From warehouse has no country - no rate card is listed or priced' });
   if (lane.unclassified.length) return spRcNo_('RATE_CARD_BATTERY_UNCLASSIFIED');
     if (!lane.cards.some(function (x) { return spRcStr_(x.rate_card_id) === id; })) return spRcNo_('RATE_CARD_NOT_APPLICABLE');
-    var q = spRcQuote_(ss, p, rc, lines, tot, day, lane.origin);
+    var q = spRcQuote_(ss, p, rc, lines, tot, day, lane.origin, lane);
     if (q.rateCardId !== id || !shippingQuoteComplete_(q)) return spRcNo_('RATE_CARD_COST_UNRESOLVED');
-    var w = { carrier_id: spRcStr_(rc.carrier_id), shipping_method: spRcStr_(rc.shipping_method), last_mile_delivery: spRcStr_(rc.last_mile_delivery),
+    var w = { carrier_id: spRcStr_(rc.carrier_id), shipping_method: spRcStr_(rc.shipping_method), last_mile_delivery: spRcStr_(rc.last_mile_delivery) || spRcStr_(p.last_mile_delivery),
       carrier_unit_rate: (rc.unit_rate === '' || rc.unit_rate == null) ? '' : rc.unit_rate, carrier_rate_type: spRcStr_(rc.charge_type), currency: q.currency,
       estimated_freight_cost: q.estimatedFreightCost, estimated_duty: q.estimatedDuty, estimated_duty_currency: q.estimatedDutyCurrency, estimated_customs_fee: q.estimatedCustomsFee, estimated_total_cost: q.estimatedTotalCost,
       updated_by: actor, updated_at: editNextStamp_(shippingPlanTimestamp_(), [p0.updated_at]) };
@@ -2194,7 +2292,7 @@ function handleShippingPlanSelectRateCard_(body) { if (typeof editP1Gate15f2_ !=
       r.sheet.getRange(r.row, cRt + 1).setValue(w.carrier_rate_type); n++;
       SpreadsheetApp.flush();
       var b = spRcPlanRow_(ss, planId).v;
-      var bad = ['carrier_id', 'shipping_method', 'currency', 'estimated_duty_currency', 'estimated_duty', 'estimated_freight_cost', 'estimated_customs_fee', 'estimated_total_cost', 'carrier_rate_type'].concat(cxs.asked ? ['customs_type'] : []).filter(function (k) { return shipRcCanon_(b[k]) !== shipRcCanon_(w[k]); });
+      var bad = ['carrier_id', 'shipping_method', 'last_mile_delivery', 'currency', 'estimated_duty_currency', 'estimated_duty', 'estimated_freight_cost', 'estimated_customs_fee', 'estimated_total_cost', 'carrier_rate_type'].concat(cxs.asked ? ['customs_type'] : []).filter(function (k) { return shipRcCanon_(b[k]) !== shipRcCanon_(w[k]); });
       if (bad.length) return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_UNVERIFIED', error: 'RATE_CARD_SELECTION_UNVERIFIED', zero_write: false, writes: n, data: { fields: bad } });
     } catch (eW) { return jsonResponse_({ success: false, code: 'RATE_CARD_SELECTION_INTERRUPTED', error: 'RATE_CARD_SELECTION_INTERRUPTED', zero_write: n === 0, writes: n }); }
     return jsonResponse_({ success: true, verified: true, shipping_plan_id: planId, rate_card_id: id, carrier_id: w.carrier_id, shipping_method: w.shipping_method,

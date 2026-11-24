@@ -116,9 +116,16 @@
       var value = str(rc.shippingMethod);
       if (!value) return;
       var k = value.toLowerCase(), cid = str(rc.carrierId);
-      if (seen[k]) { if (cid && seen[k].pricedCarrierIds.indexOf(cid) === -1) seen[k].pricedCarrierIds.push(cid); return; }
-      seen[k] = { value: value, label: str(rc.shippingMethodLabel) || value, carrierId: cid, pricedCarrierIds: cid ? [cid] : [] };   // MC1: every pricing carrier
-      out.push(seen[k]);
+      if (!seen[k]) {
+        seen[k] = { value: value, label: str(rc.shippingMethodLabel) || value, carrierId: cid, pricedCarrierIds: [], serviceOptions: [] };
+        out.push(seen[k]);
+      }
+      var m = seen[k], lm = str(rc.lastMileDelivery), label = str(rc.shippingMethodLabel);
+      if (cid && m.pricedCarrierIds.indexOf(cid) === -1) m.pricedCarrierIds.push(cid);
+      var service = m.serviceOptions.filter(function (s) { return lo(s.method) === lo(value) && lo(s.lastMileDelivery) === lo(lm); })[0];
+      if (!service) { service = { method: value, lastMileDelivery: lm, labels: [], carrierIds: [] }; m.serviceOptions.push(service); }
+      if (label && service.labels.indexOf(label) < 0) service.labels.push(label);
+      if (cid && service.carrierIds.indexOf(cid) < 0) service.carrierIds.push(cid);
     });
     out.sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
     return out;
@@ -277,6 +284,15 @@
       var mine = profilesForMethod(profiles, m.value);
       var facts = lastMileFacts(mine);
       m.profiles = mine;
+      m.serviceOptions = m.serviceOptions || [];
+      var wildcard = m.serviceOptions.filter(function (s) { return !str(s.lastMileDelivery); });
+      if (mine.some(function (p) { return !!str(p.lastMileDelivery); }))
+        m.serviceOptions = m.serviceOptions.filter(function (s) { return !!str(s.lastMileDelivery); });
+      mine.forEach(function (p) {
+        if (!m.serviceOptions.some(function (s) { return lo(s.lastMileDelivery) === lo(p.lastMileDelivery); }))
+          m.serviceOptions.push({ method: p.method, lastMileDelivery: p.lastMileDelivery,
+            labels: wildcard.reduce(function (a, s) { return a.concat(s.labels || []); }, []), carrierIds: p.carrierIds.slice() });
+      });
       m.lastMileOptions = facts.lastMileOptions;
       m.lastMileDelivery = facts.lastMileDelivery;
       m.lastMileAmbiguous = facts.lastMileAmbiguous;
@@ -320,6 +336,7 @@
       m.lastMileDelivery = facts.lastMileDelivery;
       m.lastMileAmbiguous = facts.lastMileAmbiguous;
       m.transitProfileCount = m.profiles.length;
+      m.serviceOptions = m.profiles.map(function (p) { return { method: p.method, lastMileDelivery: p.lastMileDelivery, labels: [], carrierIds: p.carrierIds.slice() }; });
       return m;
     }).sort(function (a, b) { return a.label.localeCompare(b.label) || a.value.localeCompare(b.value); });
   }
@@ -442,6 +459,9 @@
     declarations.forEach(function (d) {
       if (m.carrierIds.indexOf(d.carrierId) < 0) m.carrierIds.push(d.carrierId);
       if (m.lastMileOptions.indexOf(d.lastMileDelivery) < 0) m.lastMileOptions.push(d.lastMileDelivery);
+      m.serviceOptions = m.serviceOptions || [];
+      if (!m.serviceOptions.some(function (s) { return lo(s.lastMileDelivery) === lo(d.lastMileDelivery); }))
+        m.serviceOptions.push({ method: d.shippingMethod, lastMileDelivery: d.lastMileDelivery, labels: [], carrierIds: [d.carrierId] });
     });
     m.carrierIds.sort(); m.lastMileOptions.sort();
     m.lastMileDelivery = m.lastMileOptions.length === 1 ? m.lastMileOptions[0] : '';

@@ -1,0 +1,102 @@
+Site Inventory Per-Submit Shipping Plans
+Date: 2026-11-24
+
+OWNERSHIP / SAFETY
+- No production connections, business writes, deploys, or git commands.
+- Modified backend sections only:
+  11_shipping_plan_handlers.gs: shippingPlanRouteGroupKey_, shippingPlanProjectBatch_
+  comparator tie handling, shippingPlanClassifyBatch_, related grouping comments.
+  16_shipping_allocation_handlers.gs: sadResolveActiveDraftK2OrK3_ only.
+- No spRc*, quote pricing, shipment handlers, frontend, index/app/global display,
+  sadSite* helpers, snapshot readers, or 40_ enrichment edits.
+- Parent owns inventory main and the newly identified production snapshot gate issue.
+- Another agent's quote call Object.assign({}, meta, { marketplace: headerMarketplace })
+  remains untouched. One concurrent whole-file write temporarily erased the first
+  11_ grouping patch; it was reapplied locally and verified after the pricing change.
+
+BEHAVIOR
+- Existing shippingPlanCommitFromLines_ already creates fresh header/line objects
+  for each new providedKey, persists it as submit_batch_id, and never route-finds
+  or appends an older batch. This boundary is preserved and exercised, not replaced.
+- Compatible lines group within the current Submit only. Explicit carrier/customs
+  differences now separate, alongside existing source/destination/method/last-mile/
+  planning-cycle dimensions. Blank choices remain deferred to the quote owner.
+- Replay classification now uses those full dimensions. planning_cycle is recovered
+  from persisted source_reason cyc: provenance, because it has no header column.
+  Two legal groups sharing display route no longer look like corrupt duplicates.
+- Same key and unchanged payload reuses with zero writes; changed payload conflicts.
+  Partial batches never append blindly; true duplicate groups remain fail-closed.
+- A deterministic K2/K4 ID held by a submitted historical header no longer blocks
+  new generation: the existing mint authority allocates a fresh identity. Active
+  rows still reuse their own IDs. No historical row is revived, rekeyed, or edited.
+  Cancelled/expired deterministic-ID refusals are intentionally unchanged.
+- Fresh Submit still requires fresh draft IDs after prior drafts were submitted.
+  Reusing submitted draft IDs with a new execution key remains a conflict.
+
+SORTING / BACKWARD COMPATIBILITY
+- Original shippingPlanHdrSortKey_ and shippingPlanLineSortKey_ remain unchanged.
+- Only exact sort-key ties gain a canonical-payload tie-break. Original ordering
+  for all non-tied keys is unchanged. This is needed for reverse-order retries of
+  legitimate groups differing only by customs/last-mile/cycle, and duplicate-SKU
+  lines with distinct provenance.
+- New test executes the old comparator: reversing same-display-route customs
+  groups produces different old fingerprints, proving the false retry conflict.
+- Both incoming and persisted fingerprints are recomputed from rows. No persisted
+  shipping_plans fingerprint column is rewritten or required. The test replays old
+  insertion-order rows under the current algorithm and gets REUSED. Single-group
+  old fingerprints remain equal. Diagnostic hashes for tied groups can change.
+
+FRONTEND FINDINGS FOR PARENT (INSPECTED / TESTED, NOT EDITED)
+- inventory-replenishment.js success path calls _irKeepUnsubmittedRoutesDw2_.
+  It removes submitted bySku routes, allocationDraftIds/allocationDraftId, deletes
+  submitExecutionKey, and persists remaining routes. UNKNOWN/timeout keeps the key.
+- _irPersistOneRouteGroup_ decides CREATE/UPDATE from g.routes' own persisted IDs,
+  not the global primary header. A new instance sends CREATE_NEW_ROUTE, no header
+  ID, and its new instance ID as create_idempotency_key.
+- Real reset/stamp/persist functions tested with old terminal/line/version maps
+  deliberately retained. A delayed OLD-instance acknowledgement cannot bind a
+  NEW-instance row. New row remains CREATE and then adopts only NEW-H.
+- Normal completion needs no additional new-round reset patch based on this test.
+
+LATER SHIPMENT MERGE (12_ UNCHANGED)
+- sc13Key_ and xcdMergeKey_ omit Submit batch, planning cycle, recommendation group,
+  and allocation draft IDs. Physical identity still includes source/destination,
+  country, carrier, method, last-mile, customs, duty treatment, and existing flags.
+- A SAME_COMPANY policy test uses actual 16_->11_ commits from two Submit batches.
+  It marks plans approved in synthetic sheets, leaves first in an existing draft,
+  verifies different customs finds no merge target, edits second customs to match,
+  and executes real sc13Prepare_ + sc13MergeLocked_ + sc13Verify_ + sc13Source_.
+- Result: one shipment, two plan links, two separate signed v2 lineage markers,
+  both original plan-line IDs preserved, 160 total units, combined reservation
+  target 160, and both original submit_batch_id values unchanged.
+- Availability/quote/environment adapters are synthetic test boundaries; no live
+  pricing or stock correctness is claimed. Existing approval/policy guards remain.
+
+VERIFICATION
+node assets/tests/site-inventory-per-submit-plans.test.cjs
+  12/12 passed. Actual 16_->11_ commits for three rounds; each K2 and K4 route also
+  runs three complete rounds with fresh IDs and same-key zero-write retries.
+node assets/tests/domestic-workflow-submit-dw2.cjs
+  6/6 passed.
+node assets/tests/shipping-plan-canonical-fingerprint-cumulative-release-f1-7n-fa-3c-r6e1a.test.js
+  105/105 passed.
+node assets/tests/shipping-plan-runtime.test.js
+  25/25 passed.
+node assets/tests/shipping-allocation-draft-persistence.test.js
+  24/24 passed.
+11_, 16_, and 12_ parse successfully with node:vm Script.
+
+OLDER SUITES NOT GREEN (NOT REPAIRED / NO BASELINE-GIT COMPARISON)
+- atomic-add-route-and-create-idempotency-f1-7n-fb-4g-a2-r3.test.js aborts on
+  missing harness dependency procurementRequireKnownLayoutSc1_.
+- submit-plan-readiness-and-carrier-eligibility-f1-7n-fb-4g-a3.test.js fails stale
+  release/cache and lock expectations, then its submit fixture fails and dereferences
+  missing submitted_drafts. No changes made to this suite or unrelated authorities.
+- inventory-ai-plan-submit-authority-f1-7n-fa-4b.test.js: 34 passed, 1 failed;
+  expects IN_PROGRESS_SAME_EXECUTION_KEY, current handler returns LOCK_UNAVAILABLE.
+
+NEXT OWNER
+- Integrate shared 11_ changes using local patches, never a stale whole-file copy.
+- Keep submit_batch_id out of sc13Key_/xcdMergeKey_ and physical draft locking.
+- Parent may proceed independently with sadSiteSourceUnknown13_ production gate
+  and 40_ snapshot enrichment. No deployment or production verification performed.

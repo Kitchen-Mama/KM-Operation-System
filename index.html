@@ -45,14 +45,14 @@
     <!-- Core: reusable Sticky Header Framework (CSS variables + .km-sticky-* classes) -->
     <link rel="stylesheet" href="assets/css/core/km-sticky-header.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/home.css?v=donenotice-20260811">
-    <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=write-flight-done-20261124">
+    <link rel="stylesheet" href="assets/css/pages/inventory-replenishment.css?v=shipping-service-metrics-20261124">
     <link rel="stylesheet" href="assets/css/pages/factory-stock.css?v=r76-a2sad3-20261129">
     <link rel="stylesheet" href="assets/css/pages/overseas-ops.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/overseas-stock.css?v=r76-a2sad3-20261129">
     <link rel="stylesheet" href="assets/css/pages/fc-overview.css?v=r65-dc2r2-20261022">
     <link rel="stylesheet" href="assets/css/pages/request-order.css?v=r65-dc2r2-20261022">
     <link rel="stylesheet" href="assets/css/pages/sku-details.css?v=r76-a2sad3-20261129">
-    <link rel="stylesheet" href="assets/css/pages/shipping-plan.css?v=donenotice-20260811">
+    <link rel="stylesheet" href="assets/css/pages/shipping-plan.css?v=shipping-service-metrics-20261124">
     <link rel="stylesheet" href="assets/css/pages/shipping-history.css?v=shipment-overview-20261124">
     <link rel="stylesheet" href="assets/css/pages/supply-chain-canvas.css?v=donenotice-20260811">
     <link rel="stylesheet" href="assets/css/pages/sku-handbook.css?v=donenotice-20260811">
@@ -541,13 +541,13 @@
     <script src="assets/js/utils/inventory-compat.js?v=r76-a2sad3-20261129-ds2-dw1-dw2-20261122" defer></script>
     <script src="assets/js/utils/inventory-sku-identity.js?v=sitesku1-20261123" defer></script>
     <!-- F1-4B-FM5-R4T: shared manual-recalc transport-recovery contract (Inventory + Order Planning) -->
-    <script src="assets/js/utils/gap-recalc-transport.js?v=r76-a2sad3-20261129" defer></script>
+    <script src="assets/js/utils/gap-recalc-transport.js?v=shipping-service-metrics-20261124" defer></script>
     <!-- F1-7N-FB-4C - the ONE canonical Country/Marketplace scope registry. Must load BEFORE any consumer
          (the scope modal and the Site Inventory page both read window.KM.scopeRegistry). -->
     <script src="assets/js/core/scope-registry.js?v=r76-a2sad3-20261129" defer></script>
     <!-- F1-7N-FB-4C - the scoped shipping-method registry (Execution Plan Method picker owner). -->
     <script src="assets/js/core/boot-read-arbiter.js?v=r76-a2sad3-20261129" defer></script>
-    <script src="assets/js/core/method-registry.js?v=a2sad3-method-registry-20261129-ds1" defer></script>
+    <script src="assets/js/core/method-registry.js?v=shipping-service-metrics-20261124" defer></script>
     <!-- F1-7N-FC-1B-E3-R4-A2-R1-R6-R2 §2: KMARC, the ONE answer to "is this persisted allocation-draft header
          part of this station's current plan". The page and the read-only census both consume it, which is what
          makes their two totals comparable instead of two independent opinions. Must load before the page. -->
@@ -584,7 +584,7 @@
          holds the resource->action map and the two adapters, and it depends on the transport above it. -->
     <script src="assets/js/api/km-transport.js?v=r76-a2sad3-20261129" defer></script>
     <script src="assets/js/api/km-data-access.js?v=r76-a2sad3-20261129" defer></script>
-    <script src="assets/js/api/operation-system-db-api.js?v=write-flight-done-20261124" defer></script>
+    <script src="assets/js/api/operation-system-db-api.js?v=shipping-service-metrics-20261124" defer></script>
     <!-- Shared loading-state contract (F1-7B) — transport/UI only; no business data -->
     <script src="assets/js/api/km-loading-state.js?v=r76-a2sad3-20261129" defer></script>
     <!-- API Foundation (Phase API-1) — weeklyShipping READ now canonical; wraps the legacy transport otherwise -->
@@ -632,8 +632,8 @@
     <script src="assets/js/pages/forecast.js?v=r76-a2sad3-20261129" defer></script>
     <script src="assets/js/pages/request-order.js?v=manual-allocation-20261124" defer></script>
     <script src="assets/js/pages/sku-details.js?v=r76-a2sad3-20261129" defer></script>
-    <script src="assets/js/pages/shipping-plan.js?v=r76-a2sad3-20261129-ds2-dw1" defer></script>
-    <script src="assets/js/pages/shipping-history.js?v=country-amazon-receipt-20261124" defer></script>
+    <script src="assets/js/pages/shipping-plan.js?v=shipping-service-metrics-20261124" defer></script>
+    <script src="assets/js/pages/shipping-history.js?v=shipping-service-metrics-20261124" defer></script>
     <script src="assets/js/pages/supplychain.js?v=r76-a2sad3-20261129" defer></script>
     <script src="assets/js/pages/sku-handbook.js?v=r76-a2sad3-20261129" defer></script>
     <script src="assets/js/i18n/sku-handbook.js?v=r76-a2sad3-20261129" defer></script>
@@ -675,7 +675,7 @@
     <script src="assets/js/pages/fx-rate-book.js?v=r76-a2sad3-20261129" defer></script>
 
     <!-- App (Global) -->
-    <script src="assets/js/app.js?v=inventory-return-warning-20261124" defer></script>
+    <script src="assets/js/app.js?v=shipping-service-metrics-20261124" defer></script>
     
     <!-- Shared Date Picker Modal -->
     <div class="fr-date-backdrop" id="frDateBackdrop"></div>

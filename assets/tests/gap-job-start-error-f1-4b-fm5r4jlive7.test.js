@@ -61,9 +61,9 @@ function startOk(runId, scopesTotal) { return { success: true, data: { runId: ru
 var jobs = [];
 
 section('A1/A2 — a successful START flows to PENDING → poll → DONE (never ui.failed)');
-jobs.push(runStart(startOk('R-INV', 5), [{ status: 'RUNNING', scopesProcessed: 2, scopesTotal: 5 }, { status: 'DONE', scopesProcessed: 5, scopesTotal: 5 }], { product: 'INVENTORY' })
+jobs.push(runStart(startOk('R-INV', 5), [{ runId: 'R-INV', status: 'RUNNING', scopesProcessed: 2, scopesTotal: 5 }, { runId: 'R-INV', status: 'DONE', scopesProcessed: 5, scopesTotal: 5 }], { product: 'INVENTORY' })
   .then(function (r) { ok(r.ev.indexOf('failed') === -1 && r.ev.indexOf('done') !== -1 && r.res.started === true, 'A1 Inventory START success → poll → DONE (no failure)'); }));
-jobs.push(runStart(startOk('R-OP', 3), [{ status: 'DONE', scopesProcessed: 3, scopesTotal: 3 }], { product: 'ORDER_PLANNING' })
+jobs.push(runStart(startOk('R-OP', 3), [{ runId: 'R-OP', status: 'DONE', scopesProcessed: 3, scopesTotal: 3 }], { product: 'ORDER_PLANNING' })
   .then(function (r) { ok(r.ev.indexOf('failed') === -1 && r.ev.indexOf('done') !== -1, 'A2 Order Planning START success → DONE (no failure)'); }));
 
 section('B1–B4 — a named START failure is surfaced VERBATIM (alert lastError + [GapJob] START_ERROR diagnostic)');

@@ -3245,7 +3245,7 @@ function _irExecPlanCardInnerHtml_(sku, ready) {
     // just proposed, and the two were being read as one thing.
     var head = '<div class="replen-card__title-row"><h4 class="replen-card__title" style="margin: 0;">Current Execution Plan</h4>'
         + _irScopeCompanyBadgeHtml_() + addBtn + '</div>'
-        + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Method</span><span>Last Mile</span><span>Expected Arrival</span><span>Action</span></div>';
+        + '<div class="ir-exec-plan__grid ir-exec-plan__grid--head"><span>From</span><span>To</span><span class="ir-exec-plan__qty">Qty</span><span>Shipping Service</span><span>Expected Arrival</span><span>Action</span></div>';
     if (!ready) return head + _irRevealExecSkeletonHtml_();
     return head
         + '<div id="shipping-methods-' + sku + '" class="exec-routes-list"></div>'
@@ -4600,7 +4600,7 @@ function _irSetSubmitPhase_(phase) {
         var bs = document.querySelectorAll('[onclick*="submitReplenishmentPlans"]');
         Array.prototype.forEach.call(bs, function (b) {
             if (!b.hasAttribute('data-ir-submit-label')) b.setAttribute('data-ir-submit-label', b.textContent);
-            if (_irSubmitPhase_) { b.textContent = _IR_SUBMIT_PHASE_LABEL_[_irSubmitPhase_] || b.getAttribute('data-ir-submit-label'); b.disabled = true; b.setAttribute('aria-busy', 'true'); b.setAttribute('data-ir-submit-phase', _irSubmitPhase_); }
+            if (_irSubmitPhase_) { b.textContent = _IR_SUBMIT_PHASE_LABEL_[_irSubmitPhase_] || b.getAttribute('data-ir-submit-label'); b.disabled = true; if (_irSubmitPhase_ === 'UNKNOWN') b.removeAttribute('aria-busy'); else b.setAttribute('aria-busy', 'true'); b.setAttribute('data-ir-submit-phase', _irSubmitPhase_); }
             else { b.textContent = b.getAttribute('data-ir-submit-label'); b.removeAttribute('aria-busy'); b.removeAttribute('data-ir-submit-phase'); b.disabled = false; }
         });
         if (!_irSubmitPhase_) { if (typeof _irSaveBusySync_ === 'function') _irSaveBusySync_(); if (typeof _irRevealSyncActionAvailability_ === 'function' && !(typeof _irAnySaveInFlight_ === 'function' && _irAnySaveInFlight_())) _irRevealSyncActionAvailability_(); }
@@ -4917,8 +4917,17 @@ function _irConfirmSubmit_(conf) {
 }
 window._irConfirmSubmit_ = _irConfirmSubmit_;
 
+function _irObserveSubmit_(invoke, onLate) {
+    var gr = window.KM && window.KM.gapRecalc;
+    if (gr && typeof gr.boundedCall === 'function') return gr.boundedCall(invoke, 120000, onLate);
+    return new Promise(function (resolve, reject) {
+        var expired = false, timer = setTimeout(function () { expired = true; reject(new Error('Submit response deadline; outcome unknown')); }, 120000);
+        Promise.resolve().then(invoke).then(function (result) { clearTimeout(timer); if (expired) { if (onLate) onLate(result); } else resolve(result); }, function (err) { clearTimeout(timer); if (!expired) reject(err); });
+    });
+}
 function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount, selection) {
     if (_replenSubmitInFlight[execKey]) return _replenSubmitInFlight[execKey];   // share the in-flight Promise (no 2nd mutation)
+    if (_irSubmitPhase_ === 'UNKNOWN') return Promise.resolve({ success: false, code: 'SUBMIT_OUTCOME_UNKNOWN' });
     if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_('SUBMITTING');   // R71-FE-6
     var _irUnknown = false;
     _replenSetSubmitButtonDisabled(true);
@@ -4927,12 +4936,7 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount, selection)
     // no server-side check could otherwise see. Scope identity on the server still comes from the persisted
     // header, never from this declaration — the payload cannot assert a station it does not own.
     var _appliedScope = (typeof _irAppliedSubmitScope_ === 'function') ? _irAppliedSubmitScope_() : null;
-    var p = window.KM.DB.submitAllocationDraftsToShippingPlans({
-        allocation_draft_ids: draftIds, execution_key: execKey, submitted_by: 'inventory-replenishment',
-        expected_line_ids: selection && selection.lineIds,
-        expected_versions: selection && selection.expectedVersions,
-        applied_scope: _appliedScope || undefined
-    }).then(function (result) {
+    function handleResult(result) {
         result = result || {};
         if (result.success) {
             var d = result.data || {};
@@ -4955,9 +4959,9 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount, selection)
         var code = result.code || '';
         if (!code && result.error && typeof result.error === 'object' && result.error.code) code = String(result.error.code);   // R71-FE-6: the transport's error shape
         if (!code && Array.isArray(result.errors) && result.errors[0] && result.errors[0].code) code = String(result.errors[0].code);   // A2: a structured 16_ refusal
-        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'IN_PROGRESS_SAME_EXECUTION_KEY') _irUnknown = true;
+        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'NON_JSON_RESPONSE' || code === 'IN_PROGRESS_SAME_EXECUTION_KEY') _irUnknown = true;
         try { if (typeof _execApplyServerRouteNotices_ === 'function') _execApplyServerRouteNotices_(result); } catch (_eSrn) {}   // A-delta2 F: refusal reasons beside the From field
-        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR') {
+        if (code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE' || code === 'HTTP_TRANSPORT_ERROR' || code === 'NON_JSON_RESPONSE') {
             alert('Submit outcome UNKNOWN (' + code + ').' + NL2 + 'The request may or may not have been applied. It was NOT sent again and the same execution key is kept.' + NL2 +
                 'Reload the page and check the Weekly Shipping Plan before doing anything else. Submitting again later reuses the same key, so it cannot create a second plan.');
         } else if (code === 'IN_PROGRESS_SAME_EXECUTION_KEY') {
@@ -4999,16 +5003,29 @@ function _replenCanonicalSubmit(draftIds, execKey, expectedLineCount, selection)
             alert('Could not create Weekly Shipping Plan (' + (code || 'error') + '). ' + (result.error || '') + '\nThe draft is kept so you can retry.');   // keep draft
         }
         return result;
-    }).catch(function (err) {
+    }
+    function finish(result) {
+        delete _replenSubmitInFlight[execKey];
+        if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_(_irUnknown ? 'UNKNOWN' : '');
+        _replenSetSubmitButtonDisabled(_irUnknown);
+        return result;
+    }
+    var p = _irObserveSubmit_(function () {
+        return window.KM.DB.submitAllocationDraftsToShippingPlans({
+            allocation_draft_ids: draftIds, execution_key: execKey, submitted_by: 'inventory-replenishment',
+            expected_line_ids: selection && selection.lineIds,
+            expected_versions: selection && selection.expectedVersions,
+            applied_scope: _appliedScope || undefined
+        });
+    }, function (late) {
+        if (_irSubmitPhase_ !== 'UNKNOWN' || !late || late.success !== true) return;
+        _irUnknown = false;
+        try { finish(handleResult(late)); } catch (eLate) { _irUnknown = true; finish(late); }
+    }).then(handleResult).catch(function (err) {
         _irUnknown = true;   // R71-FE-6: a thrown request has no determined outcome
         alert('Error creating Weekly Shipping Plan: ' + (err && err.message ? err.message : err) + '\nThe draft is kept so you can retry.' + '\nThe outcome is UNKNOWN: nothing is re-sent and the execution key is kept. Reload the page and check before submitting again.');
         return { success: false, error: String(err && err.message ? err.message : err) };
-    }).then(function (r) {
-        delete _replenSubmitInFlight[execKey];
-        if (typeof _irSetSubmitPhase_ === 'function') _irSetSubmitPhase_(_irUnknown ? 'UNKNOWN' : '');   // R71-FE-6: restored only on a definite terminal state
-        _replenSetSubmitButtonDisabled(_irUnknown);
-        return r;
-    });
+    }).then(finish);
     _replenSubmitInFlight[execKey] = p;
     return p;
 }
@@ -8718,14 +8735,8 @@ function _execRateCardMethods(originCountry, destCountry, marketplace) {
 // cell is built from the option list AND from the calculator's own candidate list, so a round that reintroduces
 // a disagreement produces a CONTROL, not a dead-end sentence.
 //
-// WHY NOT ONE COMPOUND METHOD OPTION PER SERVICE PROFILE. The catalogue does define distinct profiles, and a
-// compound option is the shape §2 prefers — but the option's DOM value cannot express one. `ricK4GroupKey_`
-// takes the canonical service and the last mile as TWO SEPARATE route-identity axes, and the header stores
-// them in two columns (`recommended_shipping_method`, `recommended_last_mile_delivery`). A value carrying both
-// would be persisted as the method, corrupting one axis and leaving the other blank — which is the exact defect
-// R6-R1 §5 existed to repair. Two profiles of one method therefore share one option VALUE and cannot be told
-// apart by a <select>, so the honest design is the explicit control §2 calls Design B: it appears only when
-// there is a real fork, and a method that runs exactly one last mile still carries it without asking anyone.
+// The current service picker has a UI-only pair key. Hidden canonical method/last-mile controls keep
+// the two persistence axes separate; the legacy helpers below remain for older row consumers.
 // ================================================================================================================
 
 // The eligible last miles for the chosen method on this lane, and whether a person must choose between them.
@@ -8831,6 +8842,52 @@ function _execLastMileOptionsHtml(methods, selectedMethod, selectedLastMile, eta
 }
 window._execLastMileOptionsHtml = _execLastMileOptionsHtml;
 
+function _execServiceChoices_(methods) {
+    var byKey = Object.create(null);
+    (methods || []).forEach(function (m) {
+        var pairs = m.serviceOptions || (m.profiles || []).map(function (p) { return { method: p.method || m.value, lastMileDelivery: p.lastMileDelivery, labels: [] }; });
+        if (!pairs.length) pairs = (m.lastMileOptions && m.lastMileOptions.length ? m.lastMileOptions : [m.lastMileDelivery || '']).map(function (lm) {
+            return { method: m.value, lastMileDelivery: lm, labels: m.label && m.label !== m.value ? [m.label] : [] };
+        });
+        pairs.forEach(function (p) {
+            var method = String(p.method || m.value || '').trim(), lm = String(p.lastMileDelivery || '').trim();
+            if (!method) return;
+            var key = JSON.stringify([method.toLowerCase(), lm.toLowerCase()]);
+            var c = byKey[key] || (byKey[key] = { key: key, method: method, lastMile: lm, labels: [] });
+            (p.labels || []).forEach(function (label) { if (label && c.labels.indexOf(label) < 0) c.labels.push(label); });
+        });
+    });
+    function display(v) {
+        var d = window.KM && window.KM.display;
+        return d && typeof d.enumLabel === 'function' ? d.enumLabel(v) : String(v).replace(/_/g, ' ').replace(/\b[a-z]/g, function (c) { return c.toUpperCase(); });
+    }
+    return Object.keys(byKey).sort().map(function (key) {
+        var c = byKey[key];
+        c.label = c.labels.length ? c.labels.slice().sort().join(' / ') : display(c.method) + (c.lastMile ? ' / ' + display(c.lastMile) : '');
+        if (Object.keys(byKey).some(function (k) { return k !== key && byKey[k].labels.length && byKey[k].labels.slice().sort().join(' / ') === c.label; }))
+            c.label += ' / ' + display(c.lastMile);
+        return c;
+    });
+}
+function _execServiceOptionsHtml_(resolution, method, lastMile) {
+    var choices = _execServiceChoices_((resolution && resolution.methods) || []);
+    if (!choices.length) return _execMethodOptionsHtml(resolution, '');
+    var matches = window.IRService && window.IRService.matches ? window.IRService.matches : function (a, b) { return String(a).toLowerCase() === String(b).toLowerCase(); };
+    var html = '<option value="">Shipping service...</option>';
+    choices.forEach(function (c) {
+        var selected = matches(method || '', c.method) && String(lastMile || '').toLowerCase() === c.lastMile.toLowerCase();
+        html += '<option value="' + _execEsc(c.key) + '" data-shipping-method="' + _execEsc(c.method) + '" data-last-mile="' + _execEsc(c.lastMile) + '"' +
+            (selected ? ' selected' : '') + '>' + _execEsc(c.label) + '</option>';
+    });
+    return html;
+}
+function _execApplyServiceSelection_(row, select) {
+    if (!row || !select) return;
+    var opt = select.options && select.options[select.selectedIndex];
+    var method = row.querySelector('[data-field="shipping_method"]'), lm = row.querySelector('[data-field="last_mile_delivery"]');
+    if (method) method.value = opt ? String(opt.getAttribute('data-shipping-method') || '') : '';
+    if (lm) lm.value = opt ? String(opt.getAttribute('data-last-mile') || '') : '';
+}
 function _execMethodOptionsHtml(resolution, selected) {
     var res = (resolution && resolution.status) ? resolution
         : { status: (resolution && resolution.length) ? 'READY' : 'EMPTY_CONFIGURATION', methods: resolution || [] };
@@ -8933,6 +8990,16 @@ function _execRebuildMethodOptions(sku) {
         }
         var res = _execResolveMethods(_execMethodRouteCtx(originCountry, scope.country, scope.marketplace, sourceId, destCode));
         var methods = res.methods || [];
+        var serviceEl = rowEl.querySelector('[data-field="shipping_service"]');
+        if (serviceEl) {
+            var lmEl = rowEl.querySelector('[data-field="last_mile_delivery"]');
+            var heldMethod = String(methodEl.value || ''), heldMile = lmEl ? String(lmEl.value || '') : '';
+            serviceEl.innerHTML = _execServiceOptionsHtml_(res, heldMethod, heldMile);
+            serviceEl.disabled = !methods.length || !(fromEl && fromEl.value && toEl && toEl.value);
+            serviceEl.setAttribute('data-method-state', res.status);
+            if (res.status === 'READY' && !serviceEl.value) _execApplyServiceSelection_(rowEl, serviceEl);
+            return;
+        }
         // F1-7N-FB-4G-A0-R1 §C.4 — THIS IS WHERE THE PERSISTED METHOD WAS DESTROYED, and it needed no spelling
         // mismatch to happen. The route's method lives in the ROUTE MODEL; this function read it from the
         // <select>. On the FIRST paint of an expanded row the carrier catalogue is usually still in flight
@@ -9931,7 +9998,7 @@ function _renderExecutionRoute(sku, route) {
     var _mres = _execResolveMethods(_execMethodRouteCtx(originCountry, destCountry, scope.marketplace,
         fromSelId || '', toWh ? (toWh.warehouseCode || '') : ''));
     var methods = _mres.methods || [];
-    var methodOpts = _execMethodOptionsHtml(_mres, route.shipping_method);
+    var methodOpts = _execServiceOptionsHtml_(_mres, route.shipping_method, route.last_mile_delivery);
     // R6-R1 §5 / R6-R4 §2 — the last mile that belongs to the chosen method. Both the choices and the single
     // carried value are now resolved by _irLastMileChoices_, which is also what the repaint and the arrival
     // refresher use, so the three cannot form three opinions about one route.
@@ -9998,18 +10065,12 @@ function _renderExecutionRoute(sku, route) {
         '' +
         '</span>' +
         '<input class="replen-card__input" type="number" data-field="qty" aria-label="Qty" title="Qty" value="' + qty + '" oninput="' + _editFn + '(\'' + sku + '\'' + _editArg + ')" onclick="event.stopPropagation()">' +
-        // R6-R1 §5 — the Method cell holds the SERVICE, and a service is (method, last mile). The second
-        // control appears only when the chosen method actually runs on more than one last mile; otherwise the
-        // single value rides invisibly on the option and is collected from the hidden field beside it.
+        // The paired option is presentation only; the collector reads the two canonical hidden fields.
         '<span class="replen-card__method-cell">' +
-        '<select class="replen-card__select" data-field="shipping_method" aria-label="Method" title="' + (methodDisabled ? 'Choose From and To first' : 'Method') + '" onchange="' + (_isComposer ? 'onExecutionComposerEdit' : 'onExecutionMethodEdit') + '(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        '<select class="replen-card__select" data-field="shipping_service" aria-label="Shipping service" title="' + (methodDisabled ? 'Choose From and To first' : 'Shipping service') + '" onchange="onExecutionMethodEdit(\'' + sku + '\', this)" onclick="event.stopPropagation()"' + methodDisabled + '>' + methodOpts + '</select>' +
+        '<input type="hidden" data-field="shipping_method" value="' + _execEsc(route.shipping_method || '') + '">' +
+        '<input type="hidden" data-field="last_mile_delivery" value="' + _execEsc(route.last_mile_delivery || '') + '">' +
         '</span>' +
-        // R6-R4 §6 — the Last Mile gets a TRACK, not a corner of the Method cell. It is a route-identity axis
-        // in its own right (ricK4GroupKey_ counts it separately from the service), and while it lived inside
-        // the Method cell it was invisible on every row that had no choice to make — so an operator could not
-        // see what a saved route's last mile actually was. The cell is ALWAYS rendered, so the seven columns
-        // line up whether this row shows a picker, a single value, or a lane that names none.
-        '<span class="replen-card__lastmile-cell">' + _irLastMileCellHtml_(methods, route.shipping_method, route.last_mile_delivery, eta, sku, _isComposer) + '</span>' +
         // F1-7N-FB-4F-B6-R1 §C — the cell carries the STRUCTURED date in data-eta and the human sentence in its
         // text. A later collect reads the attribute; nothing ever parses the sentence. data-eta-persisted keeps
         // the stored snapshot with the row so an async recompute cannot quietly replace it with a live figure.
@@ -10035,7 +10096,12 @@ function _renderExecutionRoute(sku, route) {
 // edit path, unchanged.
 function onExecutionMethodEdit(sku, el) {
     try {
-        var row = el && el.closest ? el.closest('.exec-route-row') : null;
+        var row = el && el.closest ? el.closest('.exec-route-row, .exec-route-composer') : null;
+        if (row && el.getAttribute('data-field') === 'shipping_service') {
+            _execApplyServiceSelection_(row, el);
+            row.setAttribute('data-lastmile-dirty', '1');
+            if (_irIsComposerEl_(row)) { onExecutionComposerEdit(sku, el); return; }
+        }
         // R6-R2 §4 — THE LAST MILE PICKER ALSO ARRIVES HERE, and it used to mark the METHOD dirty. That
         // is not a cosmetic mislabel: `data-method-dirty` is what tells the async catalogue rebuild that an
         // empty Method <select> means 'the operator cleared it' rather than 'the options had not loaded',
@@ -13345,6 +13411,68 @@ window._irApplySearch_ = _irApplySearch_;
 var _irRecalcAllBusy = false;
 var _irActiveRunId = null;         // LIVE4 — the backend runId of the in-flight job (for a targeted Cancel)
 var _irCancelRequested = false;    // LIVE4 — set once by the Cancel button so the poller stops cooperatively
+var _irManualGap = null;
+function _irManualGapKey_() { return 'km.ir.manualGap.' + ((window.KM.DB.envId && window.KM.DB.envId()) || 'default'); }
+function _irManualGapStore_(state) {
+  try { if (state) sessionStorage.setItem(_irManualGapKey_(), JSON.stringify({ scope: state.scope, runId: state.runId || null, dispatched: true })); else sessionStorage.removeItem(_irManualGapKey_()); } catch (e) {}
+}
+function _irManualGapHeld_() {
+  if (_irManualGap) return _irManualGap;
+  try { var saved = JSON.parse(sessionStorage.getItem(_irManualGapKey_()) || 'null'); if (saved) { saved.unknown = true; _irManualGap = saved; } } catch (e) {}
+  return _irManualGap;
+}
+function _irManualGapUnknown_(message) {
+  if (_irManualGap) { _irManualGap.unknown = true; _irManualGap.active = false; }
+  _irRecalcAllBusy = true; _irShowCancel_(false);
+  var btn = _irRecalcBtn_(); if (btn) { btn.disabled = true; btn.textContent = 'Status unconfirmed'; }
+  _irAiSupportTriggerBusy_('recalc', 'Status unconfirmed');
+  var trigger = _irAiSupportTriggerEl_(); if (trigger) trigger.removeAttribute('aria-busy');
+  _irAiSupportNotice_('warn', 'Recalculate', message || 'Completion is not confirmed. No second start was sent. Check status before starting another calculation.');
+  var notice = _irAiSupportNoticeEl_();
+  if (notice) { var check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check status'; check.onclick = _irManualGapCheck_; notice.appendChild(check); }
+}
+function _irManualGapRelease_() {
+  _irManualGapStore_(null); _irManualGap = null; _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false);
+  var btn = _irRecalcBtn_(); if (btn) { btn.disabled = false; btn.textContent = (btn.dataset && btn.dataset.idleLabel) || 'Recalculate All Sites'; }
+  _irAiSupportTriggerIdle_('recalc');
+}
+function _irManualGapAccept_(state, scope) {
+  var actual = state && state.requestedScope;
+  if (!actual || !scope) return false;
+  return ['mode', 'company', 'country', 'marketplace'].every(function (k) { return String(actual[k] || '') === String(scope[k] || ''); });
+}
+function _irManualGapRefresh_(scope) {
+  var expected = _irRecoScopeRequest(), appliedKey = _irAppliedScopeKey_();
+  return Promise.resolve(refreshInventoryGapAfterRecalc_(scope)).then(function () {
+    var state = _irMatState;
+    if (!expected || !state || !state.loadedOk || !/^(READY|EMPTY)$/.test(state.status || '') || state.error ||
+        state.scopeKey !== JSON.stringify(expected) || state.appliedScopeKey !== appliedKey) {
+      throw new Error('Materialized results were not read successfully for the displayed scope.');
+    }
+    return { success: true };
+  });
+}
+function _irManualGapCheck_() {
+  var held = _irManualGapHeld_(), gr = window.KM && window.KM.gapRecalc;
+  if (!held || held.checking || !gr || !gr.boundedCall) return Promise.resolve();
+  if (!held.runId) { _irManualGapUnknown_('The start response has not identified a run. A previous or unrelated job cannot prove this write finished. No second start was sent.'); return Promise.resolve(); }
+  held.checking = true;
+  return gr.pollJob(function () { return window.KM.DB.getGapJobStatus('INVENTORY', held.runId); }, {
+    runId: held.runId, maxPolls: 3, maxStallPolls: 3, readTimeoutMs: 30000
+  }).then(function (st) {
+    if (_irManualGap !== held) return;
+    if (!st || st.runId !== held.runId || !/^(DONE|CANCELLED|FAILED|ERROR|BLOCKED)$/.test(st.status || '')) { _irManualGapUnknown_(); return; }
+    if (st.status === 'DONE' || st.status === 'CANCELLED') {
+      return gr.boundedCall(function () { return _irManualGapRefresh_(held.scope); }, 30000).then(function (result) {
+        if (result && result.success === false) throw new Error('Readback failed');
+        _irAiSupportNotice_('ok', 'Recalculate', st.status === 'DONE' ? 'Recalculation completed; materialized results refreshed.' : 'Cancellation confirmed; completed results refreshed.');
+        _irManualGapRelease_();
+      });
+    }
+    _irAiSupportNotice_('bad', 'Recalculate', _irGapJobFailMsg_('Inventory', st)); _irManualGapRelease_();
+  }).catch(function () { _irManualGapUnknown_('The status or result read did not complete. No second start was sent.'); })
+    .then(function () { held.checking = false; });
+}
 function _irRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null; }
 function _irCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-cancel-recalc-btn') : null; }
 function _irShowCancel_(show) { var c = _irCancelBtn_(); if (c) { c.style.display = show ? '' : 'none'; if (show) c.disabled = false; } }
@@ -13352,6 +13480,10 @@ function _irShowCancel_(show) { var c = _irCancelBtn_(); if (c) { c.style.displa
 // 'CURRENT_SCOPE', company?, country?, marketplace? }; omitted ⇒ ALL_SITES (the existing button, unchanged). The
 // scope is passed to the backend job START; nothing else about the lifecycle changes (one START → poll → refresh).
 function handleRecalcAllInventoryGap(scopeSpec) {
+  if (_irManualGapHeld_()) {
+    if (!_irManualGap.unknown) { _irAiSupportNotice_('info', 'Recalculate', 'A status check or recalculation is already running. Nothing has been started twice.'); return; }
+    _irManualGapUnknown_(); return _irManualGapCheck_();
+  }
   // F1-7N-FB-4E-R4B-R3 §4 - every one of these early returns used to end the click in silence, because the only
   // surface they had was a menu item the click itself had already hidden.
   if (_irRecalcAllBusy) {
@@ -13374,7 +13506,13 @@ function handleRecalcAllInventoryGap(scopeSpec) {
   var btn = _irRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : '');
   if (btn && btn.dataset) btn.dataset.idleLabel = label || 'Recalculate All Sites';
+  var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
+  if (!gr || typeof gr.runJob !== 'function' || typeof gr.boundedCall !== 'function' || typeof window.KM.DB.getGapJobStatus !== 'function') {
+    _irAiSupportTriggerIdle_('recalc');
+    _irAiSupportNotice_('bad', 'Recalculate', 'The job status observer is unavailable. Nothing was started. Reload the updated application.'); return;
+  }
   _irRecalcAllBusy = true; _irActiveRunId = null; _irCancelRequested = false;
+  var attempt = _irManualGap = { scope: scopeSpec || { mode: 'ALL_SITES' }, runId: null, active: true };
   // The menu item lives inside a panel the click already hid, so every state it is given is MIRRORED onto the
   // trigger, which stays on screen. Without this the whole progress lifecycle is painted where nobody can see it.
   function setBtn(txt, disabled) {
@@ -13382,25 +13520,32 @@ function handleRecalcAllInventoryGap(scopeSpec) {
     if (disabled) _irAiSupportTriggerBusy_('recalc', txt); else _irAiSupportTriggerIdle_('recalc');
   }
   // §8 the ONE deterministic reset — always hides Cancel and returns the button to idle (used by every terminal path).
-  function restore() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label || 'Recalculate All Sites', false); _irAiSupportTriggerIdle_('recalc'); }
+  function restore() { if (_irManualGap !== attempt) return; _irShowCancel_(false); _irManualGapRelease_(); setBtn(label || 'Recalculate All Sites', false); }
   var _recalcTitle = (_scopeMode === 'CURRENT_SCOPE') ? 'Recalculate Current Scope' : 'Recalculate All Sites';
-  var gr = (window.KM && window.KM.gapRecalc) ? window.KM.gapRecalc : null;
-  var startFn = function () { return window.KM.DB.startInventoryReplenishmentGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); };   // the WRITE POST — exactly ONCE (optional bounded scope §13)
-  var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY'); };            // READ-ONLY poll
+  var startFn = function () { attempt.dispatched = true; _irManualGapStore_(attempt); return window.KM.DB.startInventoryReplenishmentGapJob(scopeSpec ? { payload: { scope: scopeSpec } } : {}); }; // persist only at the single dispatch boundary
+  var statusFn = function () { return window.KM.DB.getGapJobStatus('INVENTORY', _irActiveRunId); }; // target the acknowledged run
   // CP2X-R2 §A2 - the job's OWN scope is handed to the invalidation. This handler is the one call site
   // that knows what was recalculated; the resumed-job and retry sites do not, and pass nothing.
-  var refreshFn = function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(scopeSpec); };
-  if (!gr || typeof gr.runJob !== 'function') {                                                // module absent → start + single refresh
-    setBtn('Starting…', true);
-    return Promise.resolve(startFn()).then(function () { refreshFn(); restore(); }).catch(function () { restore(); });
-  }
+  var refreshFn = function () { return _irManualGapRefresh_(scopeSpec); };
   return gr.runJob(startFn, statusFn, {
     product: 'INVENTORY',   // LIVE7 §3 — names the product in the [GapJob] START_ERROR DevTools diagnostic
     refresh: refreshFn,
-    onRunId: function (rid) { _irActiveRunId = rid; },
+    observeBeforeStart: true,
+    startTimeoutMs: 30000, readTimeoutMs: 30000,
+    acceptRecoveredStart: function (st) { return _irManualGapAccept_(st, attempt.scope); },
+    onLateStart: function (res) {
+      if (_irManualGap !== attempt || !res) return;
+      if (res.success && res.data && res.data.runId) { attempt.runId = _irActiveRunId = res.data.runId; _irManualGapStore_(attempt); if (attempt.unknown) _irManualGapCheck_(); }
+      else if (res.success === false && res.error && res.error.code && !gr.isTransportError(res.error) && res.error.code !== 'REQUEST_TIMEOUT_WRITE_INDETERMINATE') {
+        _irAiSupportNotice_('bad', _recalcTitle, 'Start was refused: ' + res.error.code); restore();
+      }
+    },
+    onRunId: function (rid) { attempt.runId = _irActiveRunId = rid; _irManualGapStore_(attempt); },
     isCancelled: function () { return _irCancelRequested; },
     ui: {
+      checking: function () { setBtn('Checking status...', true); },
       starting: function () { setBtn('Starting…', true); },
+      recovering: function () { setBtn('Checking status...', true); },
       progress: function (st) { if (!(st && st.status)) return; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn((st && st.recovering ? 'Recovering… ' : 'Calculating… ') + n + ' / ' + m, true); _irShowCancel_(true); },   // LIVE10 §11 guard non-status polls; §7 show Recovering while the backend self-heals
       refreshing: function () { _irShowCancel_(false); setBtn('Refreshing…', true); },
       // F1-SMALL-GAP-JOB-DONE-NOTICE-R1: this MANUAL runJob done() fires only on terminal DONE, AFTER refresh() — so the
@@ -13408,7 +13553,12 @@ function handleRecalcAllInventoryGap(scopeSpec) {
       // resume-on-mount done() below deliberately does NOT announce, so scheduled/resumed jobs stay silent.
       done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} var _oc = (gr && typeof gr.doneOutcome === 'function') ? gr.doneOutcome('Inventory', scopeSpec, finalState) : { tone: 'ok' }; _irAiSupportNotice_(_oc.tone, _recalcTitle, _oc.tone === 'ok' ? 'Recalculation completed and the materialized replenishment gap was refreshed.' : _oc.text + ' The gap was refreshed.'); /* R66 AI notice: the actual outcome */ if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} _irAiSupportNotice_('warn', _recalcTitle, 'Recalculation was cancelled. The latest completed results are preserved.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
-      failed: function (st) { _irAiSupportNotice_('bad', _recalcTitle, _irGapJobFailMsg_('Inventory', st)); alert(_irGapJobFailMsg_('Inventory', st)); restore(); }
+      failed: function (st) {
+        if (!attempt.dispatched) { _irAiSupportNotice_('bad', _recalcTitle, 'The status observer could not start. Nothing was sent.'); restore(); return; }
+        if (gr.isUnconfirmedJob((st && st.status) || '')) { _irManualGapUnknown_(); return; }
+        if (st && st.status === 'READBACK_FAILED') { _irAiSupportNotice_('warn', _recalcTitle, 'The job finished, but refreshed results could not be read. Refresh the data; no job was restarted.'); restore(); return; }
+        _irAiSupportNotice_('bad', _recalcTitle, _irGapJobFailMsg_('Inventory', st)); alert(_irGapJobFailMsg_('Inventory', st)); restore();
+      }
     }
   });
 }
@@ -13478,6 +13628,7 @@ function _irResumeGapJobOnMount_() {
 }
 var _irGapResumeDeferred_ = false;
 function _irResumeGapJobNow_() {
+  if (_irManualGapHeld_()) { if (_irManualGap.active) return Promise.resolve(); _irManualGapUnknown_(); return _irManualGapCheck_(); }
   var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
   if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
   var btn = _irRecalcBtn_();

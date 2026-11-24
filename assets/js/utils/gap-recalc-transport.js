@@ -126,6 +126,24 @@
   // A non-DONE poll result the UI must treat as "could not confirm completion" (recoverable) rather than a hard
   // business failure — no automatic WRITE retry is ever issued for either (§5).
   function isUnconfirmedJob(status) { return status === 'STALLED' || status === 'POLL_TIMEOUT'; }
+
+  // Bound the complete caller promise, including response-body reads. Never abort or retry a write.
+  function boundedCall(fn, timeoutMs, onLate) {
+    return new Promise(function (resolve, reject) {
+      var expired = false;
+      var timer = setTimeout(function () {
+        expired = true;
+        var err = new Error('The response did not complete before the observation deadline.');
+        err.code = 'RESPONSE_DEADLINE'; err.indeterminate = true;
+        reject(err);
+      }, timeoutMs || 120000);
+      Promise.resolve().then(fn).then(function (value) {
+        clearTimeout(timer);
+        if (expired) { if (typeof onLate === 'function') { try { onLate(value); } catch (e) {} } }
+        else resolve(value);
+      }, function (err) { clearTimeout(timer); if (!expired) reject(err); });
+    });
+  }
   // ===========================================================================================================
   // S4-R3 §7 — WHETHER TO ASK AT ALL.
   //
@@ -182,12 +200,13 @@
     var interval = opts.interval || DEFAULT_JOB_POLL_MS;
     var maxPolls = opts.maxPolls || DEFAULT_JOB_MAX_POLLS;
     var maxStallPolls = opts.maxStallPolls || DEFAULT_JOB_MAX_STALL_POLLS;
-    var bestProgress = -1, stall = 0, bestLiveness = '';
+    var bestProgress = -1, stall = 0, bestLiveness = '', beganAt = Date.now();
     function loop(n) {
+      if (Date.now() - beganAt >= (opts.maxDurationMs || 2400000)) return Promise.resolve({ status: 'POLL_TIMEOUT', lastError: 'OBSERVATION_DEADLINE' });
       // §6 cooperative CANCEL — the page sets this once its backend cancel write has been issued; stop polling now
       // (backend has/there will persist CANCELLED). READ-only: this never issues a write itself.
       if (typeof opts.isCancelled === 'function' && opts.isCancelled()) { _log('CLIENT_RESET', { status: JOB_STATUS.CANCELLED }); return Promise.resolve({ status: JOB_STATUS.CANCELLED, cancelledByClient: true }); }
-      return Promise.resolve(statusFn()).then(function (res) {
+      return boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
         // §11 a LOST status response is NOT progress and NOT a stall — keep observing (bounded by maxPolls only). Never
         // surfaced as progress (so the button keeps its last-known N/M) and never inferred as a failed calculation.
         if (_isTransportLost(res)) {
@@ -196,6 +215,7 @@
           return wait(interval).then(function () { return loop(n + 1); });
         }
         var st = _stateOf(res);
+        if (opts.runId && st.runId !== opts.runId) return { status: 'POLL_TIMEOUT', lastError: 'JOB_ID_MISSING_OR_MISMATCH', last: st };
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
         if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) { _log('CLIENT_TERMINAL', st); return st; }
         // §5/§7 stall detection — a scope-count advance, an active self-heal, OR any liveness change (long single
@@ -209,10 +229,11 @@
         if (stall >= maxStallPolls) { _log('STALLED', st); return { status: 'STALLED', last: st, polls: n + 1 }; }
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', last: st };
         return wait(interval).then(function () { return loop(n + 1); });
-      }).catch(function () {
+      }).catch(function (err) {
         // §11 a THROWN/rejected status call is a transport loss, never a calculation failure — keep observing to the
         // bounded max (only maxPolls ends it, as POLL_TIMEOUT); a single lost response never freezes or fails the UI.
         _log('POLL_EXCEPTION', null);
+        if (err && err.code === 'RESPONSE_DEADLINE') return { status: 'POLL_TIMEOUT', transportLost: true, lastError: 'STATUS_RESPONSE_DEADLINE' };
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', transportLost: true };
         return wait(interval).then(function () { return loop(n + 1); });
       });
@@ -226,8 +247,30 @@
   function runJob(startFn, statusFn, opts) {
     opts = opts || {};
     var ui = opts.ui || {};
-    if (typeof ui.starting === 'function') ui.starting();
-    return Promise.resolve(startFn()).then(function (startRes) {
+    var priorRunId = null, priorObserved = false, activeRunId = null, stage = 'START';
+    if (opts.observeBeforeStart && typeof ui.checking === 'function') { try { ui.checking(); } catch (eChecking) {} }
+    var before = opts.observeBeforeStart ? boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
+      if (res && res.success === true) { priorObserved = true; priorRunId = (_stateOf(res).runId || null); }
+    }, function () {}) : Promise.resolve();
+    return before.then(function () {
+      if (typeof ui.starting === 'function') ui.starting();
+      return boundedCall(startFn, opts.startTimeoutMs || 120000, opts.onLateStart).then(function (res) {
+        var code = res && ((res.error && res.error.code) || res.code);
+        if (!res || isTransportError(res.error || code) || code === 'REQUEST_TIMEOUT_WRITE_INDETERMINATE') { var err = new Error('START response was not acknowledged.'); err.response = res; throw err; }
+        if (res.success === true && !(res.data && typeof res.data.runId === 'string' && res.data.runId.trim())) throw new Error('START response has no run identity.');
+        return res;
+      }).catch(function (err) {
+        if (!priorObserved || typeof opts.acceptRecoveredStart !== 'function') throw err;
+        if (typeof ui.recovering === 'function') ui.recovering();
+        return boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
+          var st = _stateOf(res);
+          if (res && res.success === true && typeof st.runId === 'string' && st.runId.trim() && st.runId !== priorRunId && opts.acceptRecoveredStart(st)) {
+            return { success: true, data: st, recoveredStart: true };
+          }
+          throw err;
+        });
+      });
+    }).then(function (startRes) {
       if (!startRes || startRes.success !== true) {
         // R4J-LIVE7 §0/§3 — a failed START must carry a TRUTHFUL named code (never a bare "status: ERROR"). The
         // DB API surfaces the backend envelope's structured code/message in startRes.error {code,message,details};
@@ -245,22 +288,23 @@
         return { started: false, code: _code, message: _msg, error: _err };
       }
       var runId = (startRes.data && startRes.data.runId) || null;
+      activeRunId = runId; stage = 'STATUS';
       if (typeof opts.onRunId === 'function') { try { opts.onRunId(runId); } catch (e) {} }   // §6 give the page the runId for a targeted cancel
       // §7 — a job now exists that a later mount, or another tab, has to be able to pick up.
       markJobMayBeActive(opts.product, runId);
       _log('START', startRes.data);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: runId, readTimeoutMs: opts.readTimeoutMs,
         onProgress: function (st) { if (typeof ui.progress === 'function') ui.progress(st); } }).then(function (finalState) {
         var status = finalState && finalState.status;
-        // §7 — the poll has ended. Whatever the outcome, nobody is waiting on this job any more, so the
-        // marker goes. An UNCONFIRMED end clears it too: the next mount then asks once, learns the truth
-        // from the backend, and that is a better answer than a marker that never expires.
-        clearJobLiveness(opts.product);
+        // An observation deadline is not a backend terminal state. Keep liveness for read-only recovery.
+        if (!isUnconfirmedJob(status)) clearJobLiveness(opts.product);
         _log(status === JOB_STATUS.DONE ? 'COMPLETED' : status === JOB_STATUS.CANCELLED ? 'CANCELLED' : (isUnconfirmedJob(status) ? 'UNCONFIRMED' : 'FAILED'), (finalState && finalState.last) ? finalState.last : finalState);
         // DONE or CANCELLED → refresh the materialized READ (cancelled keeps whatever completed); then reset the button.
         if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {
+          stage = 'REFRESH';
           if (typeof ui.refreshing === 'function') ui.refreshing();
-          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () {
+          return boundedCall(function () { return opts.refresh ? opts.refresh() : null; }, opts.readTimeoutMs || 60000).then(function (readback) {
+            if (readback && readback.success === false) throw new Error('Materialized readback failed.');
             if (status === JOB_STATUS.CANCELLED && typeof ui.cancelled === 'function') ui.cancelled(finalState);
             else if (typeof ui.done === 'function') ui.done(finalState);
             return { started: true, runId: runId, finalState: finalState };
@@ -274,7 +318,9 @@
       // failure. Surface it as UNCONFIRMED (recoverable, no auto write retry); the page's mount-resume will pick up the
       // backend job if it did start. This guarantees the button never freezes at "Starting…".
       try { if (typeof console !== 'undefined' && console.error) console.error('[GapJob] START_TRANSPORT_LOST', startErr && startErr.message ? startErr.message : startErr); } catch (e) {}
-      if (typeof ui.failed === 'function') ui.failed({ status: 'POLL_TIMEOUT', transportLost: true, lastError: 'START_TRANSPORT_LOST' });
+      if (stage !== 'REFRESH') markJobMayBeActive(opts.product, activeRunId);
+      var failure = { status: stage === 'REFRESH' ? 'READBACK_FAILED' : 'POLL_TIMEOUT', runId: activeRunId, transportLost: true, lastError: stage === 'REFRESH' ? 'RESULT_READBACK_UNCONFIRMED' : 'START_TRANSPORT_LOST' };
+      try { if (typeof ui.failed === 'function') ui.failed(failure); } catch (eUi) { /* the observation still terminates */ }
       return { started: false, transportLost: true, error: startErr };
     });
   }
@@ -291,12 +337,12 @@
       _log('RESUME_SKIPPED_NO_KNOWN_JOB', { product: opts.product });
       return Promise.resolve({ status: 'NONE', skipped: 'NO_KNOWN_ACTIVE_JOB', product: opts.product });
     }
-    return Promise.resolve(statusFn()).then(function (res) {
+    return boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
       var st = _stateOf(res);
       _log('RESUME_CHECK', st);
       // §4 a page reload must NOT resurrect a terminal job. If the backend already says DONE, refresh the
       // materialized READ once and leave the button in its NORMAL idle state — never flash/keep Calculating.
-      if (st.status === JOB_STATUS.DONE) { clearJobLiveness(opts.product); _log('RESUME_SKIPPED', st); return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () { return st; }); }
+      if (st.status === JOB_STATUS.DONE) { clearJobLiveness(opts.product); _log('RESUME_SKIPPED', st); return boundedCall(function () { return opts.refresh ? opts.refresh() : null; }, opts.readTimeoutMs || 60000).then(function () { return st; }); }
       // §1 Any terminal / none status (FAILED / BLOCKED / ERROR / CANCELLED / STALLED / NONE) → stay idle. Backend authoritative.
       if (st.status !== JOB_STATUS.PENDING && st.status !== JOB_STATUS.RUNNING) { clearJobLiveness(opts.product); _log('RESUME_SKIPPED', st); return st; }
       // §1/§4 do NOT infer active state merely because a PENDING/RUNNING Script Property exists — require worker/
@@ -304,12 +350,12 @@
       if (!_hasLiveness(st)) { _log('RESUME_SKIPPED', st); return st; }
       _log('RESUME_ACTIVE', st);
       if (typeof ui.resume === 'function') ui.resume(st);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: st.runId, readTimeoutMs: opts.readTimeoutMs,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
         var status = finalState && finalState.status;
         if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {
           if (typeof ui.refreshing === 'function') ui.refreshing();
-          return Promise.resolve(opts.refresh ? opts.refresh() : null).then(function () {
+          return boundedCall(function () { return opts.refresh ? opts.refresh() : null; }, opts.readTimeoutMs || 60000).then(function () {
             if (status === JOB_STATUS.CANCELLED && typeof ui.cancelled === 'function') ui.cancelled(finalState);
             else if (typeof ui.done === 'function') ui.done(finalState);
             return finalState;
@@ -319,6 +365,9 @@
         if (typeof ui.failed === 'function') ui.failed(finalState || { status: JOB_STATUS.ERROR });
         return finalState;
       });
+    }).catch(function (err) {
+      try { if (typeof ui.failed === 'function') ui.failed({ status: 'POLL_TIMEOUT', transportLost: true, lastError: String((err && err.message) || err) }); } catch (eUi) {}
+      return { status: 'POLL_TIMEOUT', transportLost: true };
     });
   }
 
@@ -403,7 +452,7 @@
 
   return {
     CLASSIFICATION: CLASSIFICATION, OUTCOME: OUTCOME, DEFAULT_SCHEDULE: DEFAULT_SCHEDULE.slice(),
-    isTransportError: isTransportError, verify: verify, recover: recover,
+    isTransportError: isTransportError, verify: verify, recover: recover, boundedCall: boundedCall,
     announceManualDone: announceManualDone, formatDoneMessage: formatDoneMessage,   // F1-SMALL-GAP-JOB-DONE-NOTICE-R1 (manual terminal-DONE notice; dedup by runId)
     doneOutcome: doneOutcome,   // R66 AI notice: the counts / reasons a DONE run actually produced
     // R4J job lifecycle (backend-owned; browser only starts + read-only polls)
@@ -414,6 +463,6 @@
     // S4-R3 §7 — the liveness marker, exposed so a page can clear it on an explicit refresh and the
     // regression suite can name the state. Read/clear only; only a START may declare a job live.
     mayHaveActiveJob: mayHaveActiveJob, clearJobLiveness: clearJobLiveness,
-    VERSION: 'gap-recalc-fm5r4jlive10-1'
+    VERSION: 'gap-recalc-fm5r4jlive10-1', responseDeadlines: true
   };
 });

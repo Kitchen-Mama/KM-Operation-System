@@ -53,6 +53,8 @@
 
 #shippingplan-section .sp-card-header {
     display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md);
     justify-content: space-between;
     align-items: flex-start;
     padding: var(--space-lg);
@@ -61,15 +63,19 @@
 
 #shippingplan-section .sp-card-summary {
     display: grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(5, minmax(110px, 1fr));
     gap: var(--space-md);
     flex: 1;
+    min-width: 0;
+    overflow-x: auto;
 }
 
 #shippingplan-section .sp-summary-item {
     display: flex;
     flex-direction: column;
     gap: 4px;
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 #shippingplan-section .sp-summary-label {
@@ -111,6 +117,18 @@
     display: flex;
     gap: var(--space-sm);
     margin-left: var(--space-lg);
+    flex-wrap: wrap;
+    max-width: 100%;
+}
+
+#shippingplan-section .sp-recovery-banner { flex-basis: 100%; order: 2; }
+#shippingplan-section .sp-details-grid > .sp-section { min-width: 0; overflow-x: auto; }
+#shippingplan-section .sp-svc label { min-width: 0; }
+#shippingplan-section .sp-svc select { min-width: 0; }
+
+@media (max-width: 1100px) {
+    #shippingplan-section .sp-card-summary { flex-basis: 100%; }
+    #shippingplan-section .sp-card-actions { margin-left: 0; }
 }
 
 #shippingplan-section .sp-btn {
@@ -235,12 +253,13 @@
     font-weight: 600;
 }
 
-/* R15C-UI batch 2: phone width */
-/* At 375 px the card header (5-column summary + a no-wrap action row) and the 3-column details grid made the page 653 px wide.
-   Below 640 px: the summary takes 2 columns, the actions wrap under it, the details stack, and the SKU table scrolls inside its section. */
+/* Keep the five-column, two-row metadata order; narrow screens scroll the summary locally. */
 @media (max-width: 640px) {
+    #shippingplan-section .shipping-plan__header-row { flex-wrap: wrap; gap: var(--space-sm); }
+    #shippingplan-section .shipping-plan__filters { flex-wrap: wrap; max-width: 100%; }
+    #shippingplan-section .shipping-plan__filter { min-width: 0; max-width: 100%; }
     #shippingplan-section .sp-card-header { flex-direction: column; gap: var(--space-sm); }
-    #shippingplan-section .sp-card-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+    #shippingplan-section .sp-card-summary { width: 100%; box-sizing: border-box; }
     #shippingplan-section .sp-card-actions { flex-wrap: wrap; margin-left: 0; }
     #shippingplan-section .sp-details-grid { grid-template-columns: minmax(0, 1fr); }
     #shippingplan-section .sp-section { min-width: 0; overflow-x: auto; }
