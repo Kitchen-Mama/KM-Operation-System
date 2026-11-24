@@ -342,7 +342,7 @@ shiF_('Header', 'record_origin', 'shipments.record_origin', 'text', 'system', 'n
 shiF_('Header', 'status', 'shipments.status', 'enum', 'system', 'no', 'fixed', { comment: 'Derived by the system (an imported shipment starts in_transit); moved only by receipts.' }),
 shiF_('Header', 'company', 'shipments.company', 'ref', 'scope', 'no', 'fixed', { list: 'company', comment: 'Chosen once in the import dialog; never typed per row.' }),
 shiF_('Header', 'opening_as_of', 'shipments.opening_as_of', 'text', 'scope', 'no', 'display', { header: '資料時間 opening_as_of', comment: 'The basis time (yyyy-MM-dd HH:mm, project time zone) of the remaining quantity. Add New: chosen once in the dialog. Update Existing: may move FORWARD only, and only on an Amazon display-only record (with its remaining quantity).' }),
-shiF_('Header', 'opening_supply_mode', 'shipments.opening_supply_mode', 'text', 'system', 'no', 'fixed', { comment: 'R4: COUNTED (overseas 3PL: in-transit supply, receivable) or DISPLAY_ONLY (Amazon FBA destination: shown only - no supply, no receipt). Set by the server from the destination warehouse type.' }),
+shiF_('Header', 'opening_supply_mode', 'shipments.opening_supply_mode', 'text', 'system', 'no', 'fixed', { comment: 'COUNTED (3PL: in-transit supply and stock posting) or DISPLAY_ONLY (Amazon FBA: receipt tracking allowed, no stock or supply posting). Set by the server from the destination warehouse type.' }),
 shiF_('Header', 'external_shipment_id', 'shipments.external_shipment_id', 'text', 'input', 'req', 'fixed', { header: '外部出貨單號 external_shipment_id', addHeader: '出貨單號', comment: 'Your own shipment number (legacy system / forwarder). Unique per company; ONE number = ONE destination.', addComment: '出貨單號: your own shipment number, typed freely (leading zeros and hyphens are kept). Unique per company; ONE number = ONE destination. Not the system shipment number.' }),
 shiF_('Header', 'country', 'shipments.country', 'ref', 'input', 'req', 'fixed', { header: '國家 country', addHeader: '國家', list: 'country', addComment: '國家: pick from the list, or type / paste the exact code (checked by the server).' }),
 shiF_('Header', 'marketplace', 'shipments.marketplace', 'ref', 'input', 'req', 'fixed', { header: '站點 marketplace', addHeader: '站點', list: 'marketplace', comment: 'One receiver; MULTI is refused.', addComment: '站點: one receiver of this company; pick from the list, or type / paste the exact value. MULTI is refused.' }),
@@ -593,7 +593,7 @@ flagRows.__transport = trFlags.Header;
 notes.push('UPDATE: only the editable columns may change (tracking / booking / invoice numbers, ETA, actual dates, actual costs, notes). A blank keeps the current value; [CLEAR] clears a clearable field (ETA is never cleared).');
 notes.push('Updatable = shipped / in_transit / arrived (已送達待收貨). Shipments whose receipt has started or that are finished (partially_received, received, closed, completed, delivered, cancelled), drafts and ready_to_ship are not exported and an Update row for them is refused.');
 notes.push('Carrier, Shipping method token and Last mile stay read-only in Update: a different value is refused. No route or event is deleted or rebuilt.');
-notes.push('Amazon display-only shipments: 在途中數量（僅顯示） may only go down or stay, with a LATER 資料時間 (not in the future). Only the shown number changes. Other shipments change quantity only through receipts.');
+notes.push('Amazon shipments: receipts record Received / Remaining without increasing Current Stock. Before any receipt, 在途中數量（僅顯示） may go down with a LATER 資料時間. After receiving starts, record quantities through receipts, not by changing the imported total.');
 notes.push('Status, quantities, SKU, company / receiver, warehouses and system columns are read-only: a different value is refused (Carrier / Shipping method too - see below). Receipts: shipment.receipt.update.');   // A-delta2
 } else {
 notes.push('Add New = shipments already on the way (left the source warehouse, not fully received). Type only the quantity still not received (在途中數量) - not the original total, not what was already received.');
@@ -998,8 +998,8 @@ var tg = {}, counts = { update: 0, unchanged: 0 };
 // shipments.opening_as_of) of an AMAZON imported shipment (IMPORT_HISTORICAL + DISPLAY_ONLY) may be updated - nothing else may. Rules:
 // the quantity may only go DOWN or stay (an increase would invent goods that were never on the way; an upward correction is a separate
 // Owner action), never below what is received; the basis time may only move FORWARD and never into the future; a quantity change needs a
-// later basis time in the same row (the new number must say "as of when"). DISPLAY_ONLY rows feed no supply reader and 31_ refuses
-// them, so the change moves no stock, supply, PO, reservation or receipt. The row_version check (STALE_EXPORT) applies as for any edit.
+// later basis time in the same row (the new number must say "as of when"). Once any receipt is recorded, the imported total is frozen.
+// DISPLAY_ONLY rows feed no supply reader. This edit moves no stock, supply, PO, reservation or receipt; row_version still applies.
 function displayChangeOf(f, r, sn, cur, status, row, line) {
 var c = imbCell_(r, f.key), nv;
 if (!c.clear && imbStr_(c.value) === cur) return null;   // r5.4 (legacy): the exported value sent back unchanged is never parsed or refused
@@ -1009,6 +1009,7 @@ else { var t = shiTyped_(f, r, issues, sn, L, false); if (!t.ok) return null; nv
 if (nv === cur) return null;
 var origin = imbStr_(row && row.record_origin), mode = imbStr_(row && row.opening_supply_mode);
 if (origin !== SHI_ORIGIN_HISTORICAL_ || mode !== 'DISPLAY_ONLY') { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_OPENING_DISPLAY_FIELD_NOT_EDITABLE', f.key + ' may be updated only on an Amazon display-only shipment; this shipment is ' + (origin === SHI_ORIGIN_HISTORICAL_ ? 'an imported shipment counted as supply (' + (mode || 'blank') + ') - its quantity changes only through receipts' : 'not an imported shipment'), nv); return null; }
+if ((db.linesBy[imbStr_(row.shipment_id)] || []).some(function (l) { return Number(l.shipment_received_qty) > 0; })) { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_OPENING_RECEIPT_STARTED', 'Receiving has started. Record received quantities through shipment receipts; the imported total and its basis time are no longer editable.', nv); return null; }
 if (status !== 'in_transit') { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_FIELD_NOT_FOR_STATUS', f.key + ' is updated only while the record is in_transit; this one is ' + (status || 'blank'), nv); return null; }
 if (f.key === 'opening_as_of') {
 if (cur && nv <= cur) { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_OPENING_BASIS_TIME_NOT_FORWARD', '資料時間 may only move forward (current ' + cur + ', file ' + nv + ')', nv); return null; }

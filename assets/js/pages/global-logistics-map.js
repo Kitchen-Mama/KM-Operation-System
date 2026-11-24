@@ -80,7 +80,7 @@
     loading: true, error: '', partial: '',
     mode: 'runtime',                 // 'runtime' (primary) | 'template' | 'global'
     rm: null, idx: null, vms: null,
-    filters: { search: '', company: '', originCountry: '', destCountry: '', destWarehouse: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' },
+    filters: { search: '', company: '', originCountry: '', destCountry: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' },
     selectedShipmentId: '',
     selectedTemplateId: '',
     ref: { search: '', country: '', type: '' },
@@ -210,7 +210,7 @@
     facts = facts || {};
     var types = [];
     // SHIP-OPEN (Owner Q7): an opening record has no route history by design - it is labelled, not flagged, and nothing is fabricated
-    if (!facts.nodeCount && facts.opening) types.push({ code: 'OPENING_NO_ROUTE_HISTORY', label: '無路線資料', detail: '此單沒有路線節點；系統不補造路線或事件。' + (facts.displayOnly ? ' 僅顯示：不計入供給、不收貨 · 資料時間 ' + (facts.asOf || '未提供') + '。' : '') });   // A final3 (Owner item 1): code kept, text short
+    if (!facts.nodeCount && facts.opening) types.push({ code: 'OPENING_NO_ROUTE_HISTORY', label: '無路線資料', detail: '此單沒有路線節點；系統不補造路線或事件。' + (facts.displayOnly ? ' Amazon 收貨紀錄不增加庫存 · 資料時間 ' + (facts.asOf || '未提供') + '。' : '') });
     else if (!facts.nodeCount) types.push({ code: 'NO_ROUTE_NODES', label: 'Route Issue', detail: 'Route history incomplete — no route nodes are currently available for this shipment.' });
     if (facts.placementKind === 'pending') types.push({ code: 'COORDINATE_PENDING', label: 'Coordinate Pending', detail: 'No map coordinates are available yet, so this shipment cannot be plotted. It stays listed and selectable.' });
     return { hasIssue: types.some(function (t) { return t.code !== 'OPENING_NO_ROUTE_HISTORY'; }), types: types };
@@ -429,7 +429,7 @@
   //     Shipment cards and the counts. A shipment leaves active tracking ONLY on authoritative full receipt: every line full, the server-
   //     written status received / completed, the server's 'received' lifecycle event present (31_ writes it last; a receipt that stopped part
   //     way has none), and no receipt of this page still held (unanswered / incomplete). Anything else stays visible with its reason code.
-  //     IMPORT_HISTORICAL + DISPLAY_ONLY is never received by the system: it stays visible (DISPLAY_ONLY_NO_RECEIPT_HOLD - Owner decision open).
+  //     Amazon opening records use the same receipt confirmation; DISPLAY_ONLY excludes stock/supply posting, not receipt tracking.
   // r8b: a recorded shipments.delivered_date (an explicit, Owner-typed logistics date - the r5.2 Owner decision H9 item 2) also counts as
   // arrival when the route cannot prove it (route-less imports: route initialisation is not in final3). It is still NOT a receipt and it never
   // gives a position. A label, a node name, a status word or an event text never does.
@@ -480,7 +480,6 @@
   function glmTrackingOf_(vm, lines, held) {
     var st = low(vm.status), rf = glmReceiptFacts_(lines);
     var out = { active: true, receipt: rf.status === 'received' ? 'full' : (rf.status ? 'partial' : 'none'), code: rf.code, diag: '' };
-    if (vm.openingDisplayOnly) { out.code = 'DISPLAY_ONLY_NO_RECEIPT_HOLD'; return out; }
     if (held) { out.code = held.incomplete ? 'RECEIPT_INCOMPLETE_HELD' : 'RECEIPT_UNCONFIRMED_HELD'; return out; }
     if (rf.status === 'received') {
       if (st !== 'received' && st !== 'completed') { out.code = 'RECEIPT_STATUS_NOT_CONFIRMED'; return out; }
@@ -506,7 +505,7 @@
     if (A && typeof A.stateFromVerdict === 'function') return A.stateFromVerdict(ship, v.arrival || null, null);
     var st = low(v.status);
     if (st === 'arrived') return { key: 'arrived', label: 'Delivered / 已送達（待收貨）', projected: false };
-    if ((st === 'shipped' || st === 'in_transit') && v.arrival && v.arrival.arrived) return { key: 'arrived', label: v.openingDisplayOnly ? 'Delivered / 已送達（僅顯示，不在本系統收貨）' : 'Delivered / 已送達（待收貨）', projected: true, display_only: !!v.openingDisplayOnly };
+    if ((st === 'shipped' || st === 'in_transit') && v.arrival && v.arrival.arrived) return { key: 'arrived', label: 'Delivered / 已送達（待收貨）', projected: true, display_only: !!v.openingDisplayOnly };
     return { key: st, label: v.status || '—', projected: false };
   }
   function glmTrackBadge_(v) {
@@ -601,7 +600,7 @@
         // blank, so an unresolved carrier is still identified.
         carrier: s.carrierId || '', carrierLabel: glmCarrierLabel_(s.carrierId, idx.carriers),
         method: s.shippingMethodDisplay || s.shippingMethod || '',
-        originCountry: originCountry, origin: origin, destCountry: s.country || '', destWarehouseId: s.warehouseId || '',
+        originCountry: originCountry, origin: origin, destCountry: glmDestinationCountry_(s, idx), destWarehouseId: s.warehouseId || '',
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',
         tracking: s.trackingNumber || '', container: s.containerNo || '', eta: s.eta || '', etaMs: etaMs,
@@ -736,6 +735,11 @@
   }
   // FE-EXT-1 — display number: external shipment id, else shipment_no, else the internal id (blank = whitespace).
   function glmTrim_(v) { return v == null ? '' : String(v).trim(); }
+  function glmDestinationCountry_(s, idx) {
+    var id = glmTrim_(s.destinationWarehouseId || s.warehouseId), rows = (idx.whRowsById || {})[id] || [];
+    var country = glmTrim_(rows.length === 1 ? rows[0].country : '') || glmTrim_(s.country);
+    country = country.toUpperCase(); return country === 'UK' ? 'GB' : country;
+  }
   function glmDisplayNo_(s) { return glmTrim_(s.externalShipmentId) || glmTrim_(s.shipmentNo) || glmTrim_(s.shipmentId); }
   function glmAccessibleName_(v) { return 'Shipment ' + v.displayNo + (v.displayNoShared ? ' (internal ' + v.shipmentId + ')' : ''); }
   // search keeps every number a person may hold: external, shipment_no and the internal id
@@ -743,13 +747,12 @@
   function filteredVms() {
     var f = state.filters, q = f.search.trim().toLowerCase();
     return allVms().filter(function (v) {
-      if (v.track && !v.track.active && f.kpi !== 'deliveredToday') return false;   // A final3 (TC-C): ONE active-tracking predicate; 'Received Today' is the one named view of exited shipments
+      if (v.track && !v.track.active) return false;   // Fully received records belong to Overview, never the active map list.
       if (f.kpi && !v.flags[f.kpi]) return false;
       if (q) { var hay = glmSearchHay_(v); if (hay.indexOf(q) < 0) return false; }
       if (f.company && v.company !== f.company) return false;
       if (f.originCountry && v.originCountry !== f.originCountry) return false;
       if (f.destCountry && v.destCountry !== f.destCountry) return false;
-      if (f.destWarehouse && v.destWarehouse !== f.destWarehouse) return false;
       if (f.carrier && v.carrier !== f.carrier) return false;
       if (f.method && v.method !== f.method) return false;
       if (f.status && low((v.display && v.display.key) || v.status) !== low(f.status)) return false;   // A-DELTA1 C2 item 1: the same key as the summary
@@ -864,10 +867,10 @@
     }
     return '<div class="glm-kpi-tile' + accent + '"' + title + '>' + inner + '</div>';
   }
-  // §2 — Attention shows ALL categories, ALWAYS (no More/collapse); each is a clickable KPI-filter tile (§16).
+  // Received Today remains a statistic; completed shipments are never returned to the active map list.
   function renderAttentionRow() {
     var all = attentionIndicators();
-    var tiles = all.map(function (k) { return glmKpiTileHtml({ accent: k.tone, value: k.value, label: k.label, clickable: true, kpi: k.id }); }).join('');
+    var tiles = all.map(function (k) { return glmKpiTileHtml({ accent: k.tone, value: k.value, label: k.label, clickable: k.id !== 'deliveredToday', kpi: k.id }); }).join('');
     var clear = state.filters.kpi ? '<button type="button" class="glm-btn glm-btn--small" data-act="clear-kpi">Clear</button>' : '';
     return '<div class="glm-kpirail" role="group" aria-label="Attention indicators">' + tiles + clear + '</div>';
   }
@@ -1140,8 +1143,8 @@
     } catch (e) {}
   }
 
-  // R12 — the approved filter controls, relocated into the panel with IDENTICAL data-filter keys + semantics as the
-  // retired filter bar: search · company · destWarehouse (canonical Destination) · carrier · method · etaFrom/etaTo
+  // Map filters: destination country replaces the old warehouse-name filter.
+  // Search, company, carrier, method and ETA retain their existing semantics.
   // (frozen ETA range) · clear-filters. Removed controls (Origin / Status / Stage / Exception·Delayed·Arriving
   // checkboxes) are NOT reintroduced. Stacked full-width for the panel (no horizontal overflow).
   function renderPanelFilters() {
@@ -1149,7 +1152,7 @@
     return '<div class="glm-pfilters" role="group" aria-label="Shipment filters">' +
       '<label class="glm-field glm-field--panel glm-field--search"><span>Search</span><input type="text" data-filter="search" value="' + esc(f.search) + '" placeholder="Shipment / Tracking / Container…"></label>' +
       selHtml('Company', 'company', optSet(vms, function (v) { return v.company; }), f.company, PC) +
-      selHtml('Destination', 'destWarehouse', optSet(vms, function (v) { return v.destWarehouse; }), f.destWarehouse, PC) +
+      selHtml('Destination Country', 'destCountry', optSet(vms, function (v) { return v.destCountry; }), f.destCountry, PC) +
       selHtml('Carrier', 'carrier', optPairs(vms, function (v) { return v.carrier; }, function (v) { return v.carrierLabel; }), f.carrier, PC) +
       selHtml('Method', 'method', optSet(vms, function (v) { return v.method; }), f.method, PC) +
       '<label class="glm-field glm-field--panel glm-field--eta"><span>ETA Date</span><span class="glm-eta-range">' +
@@ -1237,7 +1240,16 @@
       // Coord Pending badge (above); this pill flags the route-data gap so the user sees WHICH shipment has it.
       var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind, opening: v.opening, displayOnly: v.openingDisplayOnly, asOf: v.openingAsOf });
       var issueBadge = issues.types.some(function (t) { return t.code === 'NO_ROUTE_NODES'; }) ? '<span class="glm-badge glm-badge--issue" title="Route history incomplete">⚠ Route Issue</span>'
-        : (issues.types.some(function (t) { return t.code === 'OPENING_NO_ROUTE_HISTORY'; }) ? '<span class="glm-badge glm-badge--neutral" title="No route data">' + (v.openingDisplayOnly ? '僅顯示 · 資料時間 ' + esc(v.openingAsOf || '未提供') : '無路線資料') + '</span>' : '');   // A final3
+        : (issues.types.some(function (t) { return t.code === 'OPENING_NO_ROUTE_HISTORY'; }) ? '<span class="glm-badge glm-badge--neutral" title="No route data">無路線資料</span>' : '');
+      var receiptLines = shipmentLinesFor(v.shipmentId), receiptFacts = glmReceiptFacts_(receiptLines), receiptProgress = '';
+      if (receiptFacts.lines && receiptFacts.code !== 'LINE_QTY_INVALID') {
+        var shippedTotal = 0, receivedTotal = 0, remainingTotal = 0;
+        receiptLines.filter(function (l) { return !l.lineRemoved; }).forEach(function (l) {
+          var q = Number(l.shipmentQty) || 0, r = Number(l.shipmentReceivedQty) || 0;
+          shippedTotal += q; receivedTotal += r; remainingTotal += Math.max(q - r, 0);
+        });
+        receiptProgress = '<div class="glm-ship__meta" data-glm="receipt-progress">Received ' + num(receivedTotal) + ' / ' + num(shippedTotal) + ' · Remaining ' + num(remainingTotal) + '</div>';
+      }
       // backend-derived shipment status (never computed here) — Partially Received / Received are visibly distinct.
       var st = low(v.status), stCls = st ? st.replace(/[^a-z0-9]+/g, '-') : 'unknown';
       if (v.display && v.display.key === 'arrived') stCls = 'arrived';   // A-DELTA1 C2 item 1
@@ -1249,6 +1261,7 @@
         '<div class="glm-ship__badges">' + statusPill + flag + glmTrackBadge_(v) + issueBadge + posBadge + '</div>' +
         '<div class="glm-ship__route">' + esc(glmOriginText_(v)) + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(shipMode(v)) + '</div>' +
+        receiptProgress +
         '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || (v.opening ? '未知 (unknown)' : '—')) + '</div>' +
         '</div>';
     }).join('');
@@ -1592,12 +1605,14 @@
     // F1-7F: in Workspace mode, re-read the SCOPED shipment workspace (the write adapters reloaded the broad cache,
     // which the map now ignores) — never a page-level broad reload. Legacy mode rebuilds from the refreshed cache.
     var _rebuild = function () {
+      var keepDrawerOpen = drawerOpen();
       try { buildReadModel(); } catch (e) {}
       if (_glmBusy[shipmentId]) _glmBusy[shipmentId].readOk = true;   // A final4: the scoped re-read succeeded
       if (_glmPosChecks[shipmentId]) _glmPosChecks[shipmentId].readOk = true;   // a3 (REVIEW_A1 MAJOR-1) / a4 (MAJOR-A): only THIS shipment's successful re-read lets ITS position check decide
       var v8_ = state.vms[shipmentId], sel4_ = !state.selectedShipmentId || state.selectedShipmentId === shipmentId;
       if (v8_ && v8_.track && !v8_.track.active && sel4_) { state.selectedShipmentId = ''; state.doneNotice = '已全數收貨，可至 Shipment Overview 查看'; if (drawerOpen()) closeDrawer(); render(); }   // A final3 (TC-C): only after the re-read shows the authoritative full receipt
-      else if (v8_ && sel4_) selectShipment(shipmentId); else if (v8_) render(); else { if (sel4_) state.selectedShipmentId = ''; render(); }   // A final4: never switch to the written shipment
+      else if (v8_ && sel4_) { selectShipment(shipmentId); if (keepDrawerOpen && !drawerOpen()) openShipmentDrawer(shipmentId); }
+      else if (v8_) render(); else { if (sel4_) state.selectedShipmentId = ''; render(); }   // Never switch to a different selected shipment.
     };
     if (_glmEffectiveWorkspace()) {
       // F1-7M-B2-1: bounded post-write readback — re-read ONLY the written shipment (filters.shipmentId; routes+events
@@ -1735,7 +1750,7 @@
     if (_glmBusy[vm.shipmentId] && _glmBusy[vm.shipmentId].kind === 'route') glmBusyEnd_(vm.shipmentId);   // A final4: the re-read decided
     if (cur && nodeIdentity(cur) === c.target && c.arrival && c.arrival.persisted && low(vm.status) !== 'arrived') receiptMsg('位置已更新為 ' + at + '，但重新讀取的 Shipment Status 是 ' + (vm.status || '—') + '：已送達狀態待確認，請按「重新讀取」，不要重送。', 'error');   // A-DELTA1 P0-1: arrival is shown only from the fresh read
     else if (cur && nodeIdentity(cur) === c.target && c.arrival && (c.arrival.code === 'ARRIVAL_WRITE_FAILED' || c.arrival.reason === 'ARRIVAL_READBACK_MISMATCH')) receiptMsg('位置已更新為 ' + at + '；已送達狀態寫入失敗（' + (c.arrival.code === 'ARRIVAL_WRITE_FAILED' ? 'ARRIVAL_WRITE_FAILED' : 'ARRIVAL_READBACK_MISMATCH') + '）：狀態待確認，請按「重新讀取」。再次更新到同一個目的節點可補寫狀態（不會重複寫入）。', 'error');   // A-delta1 C3 (REVIEW_AD1 L-2)
-    else if (cur && nodeIdentity(cur) === c.target) receiptMsg((c.ok ? '已更新位置：' : '已儲存（重新讀取確認）：') + at + (low(vm.status) === 'arrived' ? '　· 已送達（待收貨）（Shipment Status: arrived）' : (vm.display && vm.display.projected && vm.display.display_only ? '　· 已送達（僅顯示，不在本系統收貨）' : '')) + '。', 'ok');   // C3 L-2: arrival is claimed only from the read-back status (or the labelled display-only projection)
+    else if (cur && nodeIdentity(cur) === c.target) receiptMsg((c.ok ? '已更新位置：' : '已儲存（重新讀取確認）：') + at + (low(vm.status) === 'arrived' ? '　· 已送達（待收貨）（Shipment Status: arrived）' : (vm.display && vm.display.projected && vm.display.display_only ? '　· 已送達（待收貨）' : '')) + '。', 'ok');
     else receiptMsg('未儲存：重新讀取顯示目前位置仍為 ' + at + '。可再按 Update Position。', 'error');
   }
   // The current node's sequence (the one flagged `current` in shipment_routes), else -1.
@@ -1772,7 +1787,7 @@
       routeSection = '<p class="glm-muted" data-glm="route-manual">手動物流（無路線模板）：起點 ' + esc(glmNodeName_(nodes[0])) + ' → 目的倉 ' + esc(glmNodeName_(nodes[nodes.length - 1])) +
         '。位置以「手動回報」記錄（運送中 / 已到目的倉），需填回報時間與原因；到倉不會自動收貨。</p>' +
         '<div data-glm="manual-report"><label class="glm-field"><span>Manual position / 手動回報</span><select data-manual-kind><option value="">—</option><option value="IN_TRANSIT">In transit / 運送中</option>' +
-        (vm.openingDisplayOnly ? '' : '<option value="ARRIVED_AT_DESTINATION">Arrived at destination warehouse / 已到目的倉</option>') + '</select></label>' +
+        '<option value="ARRIVED_AT_DESTINATION">Arrived at destination warehouse / 已到目的倉</option></select></label>' +
         '<label class="glm-field"><span>Report time / 回報時間</span><input type="datetime-local" data-manual-time></label>' +
         '<label class="glm-field"><span>Reason / reference / 原因或依據</span><input type="text" maxlength="200" data-manual-reason></label>' +
         '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="manual-report-save">Report Position</button></div></div>';
@@ -1831,13 +1846,10 @@
       : '<p class="glm-muted">No shipment lines loaded for this shipment.</p>';
     // Default COLLAPSED; auto-expand when partially received or at/after the receiving-capable node.
     var autoExpand = (derived === 'partially_received') || (recvCapSeq >= 0 && curSeq >= 0 && curSeq >= recvCapSeq);
-    // SHIP-OPEN R5 (Owner item 2): an Amazon opening record is DISPLAY ONLY - its remaining quantity is shown read-only with its 資料時間;
-    // no receipt input or button is offered (31_ refuses it: SHIPMENT_OPENING_DISPLAY_ONLY).
     if (vm.openingDisplayOnly) {
-      recvSection = '<p class="glm-muted" data-glm="opening-display-only">僅顯示（不計入供給、不收貨）· 資料時間 ' + esc(vm.openingAsOf || '未提供') + '</p>' +
-        (lines.length ? '<table class="glm-recv-table"><thead><tr><th>SKU</th><th class="glm-num">在途中數量（僅顯示）</th></tr></thead><tbody>' + lines.map(function (l) { return '<tr><td>' + esc(l.sku || l.shipmentLineId) + '</td><td class="glm-num">' + num(parseFloat(l.shipmentQty) || 0) + '</td></tr>'; }).join('') + '</tbody></table>' : '<p class="glm-muted">No shipment lines loaded for this shipment.</p>');
+      recvSection = '<p class="glm-muted" data-glm="opening-receipt-tracking">Amazon 收貨紀錄 · 不增加 Current Stock · 資料時間 ' + esc(vm.openingAsOf || '未提供') + '</p>' + recvSection;
     }
-    var summaryText = vm.openingDisplayOnly ? ('僅顯示 · ' + num(totalRemaining) + ' units · 資料時間 ' + (vm.openingAsOf || '未提供')) : lines.length ? ('Receiving — ' + lines.length + ' SKU' + (lines.length !== 1 ? 's' : '') + ' · ' + num(totalRemaining) + ' units remaining') : 'Receiving';
+    var summaryText = lines.length ? ('Receiving — ' + lines.length + ' SKU' + (lines.length !== 1 ? 's' : '') + ' · ' + num(totalRemaining) + ' units remaining') : 'Receiving';
 
     return '<section class="glm-dsec"><h4>Current Position</h4>' + routeSection + etaSection +
         kv('物流狀態', vm.arrival && vm.arrival.arrived ? ('Delivered · 已送達（' + (vm.track && vm.track.receipt === 'partial' ? '部分收貨' : '待收貨') + '）') : (vm.nodes && vm.nodes.length ? 'In Transit · 運送中' : '—')) +   // A final4 P1: display only - shipments.status is never set to delivered
@@ -2444,7 +2456,7 @@
     if (_searchRenderTimer) clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(function () { _searchRenderTimer = null; renderKeepFocus(selector); }, SEARCH_RENDER_DEBOUNCE_MS);
   }
-  function clearFilters() { state.filters = { search: '', company: '', originCountry: '', destCountry: '', destWarehouse: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' }; state.selectedShipmentId = ''; render(); }
+  function clearFilters() { state.filters = { search: '', company: '', originCountry: '', destCountry: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' }; state.selectedShipmentId = ''; render(); }
 
   // ---------- boot / lifecycle ----------
   function boot(force) {

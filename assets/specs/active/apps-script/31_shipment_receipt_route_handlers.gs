@@ -363,6 +363,11 @@ if (lOp !== -1 && byId[id0] && T(ls.rows[r][lSh]) === shipmentId) F.opening[id0]
 var sm = shipSheet.getDataRange().getValues(), H = (sm[0] || []).map(T);
 var iId = H.indexOf('shipment_id'), iDest = H.indexOf('destination_warehouse_id'), iWh = H.indexOf('warehouse_id');
 if (destOverride !== undefined) F.dest = T(destOverride); else for (var s = 1; s < sm.length; s++) if (iId !== -1 && T(sm[s][iId]) === shipmentId) { F.dest = iDest !== -1 ? T(sm[s][iDest]) : ''; if (!F.dest && iWh !== -1) F.dest = T(sm[s][iWh]); break; }
+// Committed Amazon opening records track receipts, but never post stock, even if the warehouse master later changes.
+var iOrigin = H.indexOf('record_origin'), iMode = H.indexOf('opening_supply_mode');
+if (sm.slice(1).some(function (row) { return T(row[iId]) === shipmentId && T(row[iOrigin]) === 'IMPORT_HISTORICAL' && T(row[iMode]).toUpperCase() === 'DISPLAY_ONLY'; })) {
+F.decision = 'SKIP_PLATFORM'; return F;
+}
 if (!F.dest) return F;
 var whSheet = ss.getSheetByName('warehouses'), whRec = null;
 if (whSheet) { var wr = shipmentReadSheet_(whSheet), wId = wr.col('warehouse_id'), wAct = wr.col('is_active'), wFac = wr.col('is_factory_warehouse'), wSt = wr.col('status'), wTy = wr.col('warehouse_type');   // C4 D-B1
@@ -422,7 +427,7 @@ return '';
 // -> { refuse: [why] | null, pending: { sku: pending facts } }. Reads only (the facts).
 function shipReceiptBooksGate_(shipmentId, F, byId) {
 var out = [], pend = {}, seen = {};
-if (!F.dest || !F.st || !F.mv) return { refuse: null, pending: pend };
+if (F.decision !== 'POST' || !F.dest || !F.st || !F.mv) return { refuse: null, pending: pend };
 var T = function (v) { return String(v == null ? '' : v).trim(); };
 Object.keys(byId).forEach(function (lid) { var sku = (byId[lid] || {}).sku; if (!sku || seen[sku]) return; seen[sku] = 1;
 var pd = ovsReceiptPendingOf_(F.st, F.mv, F.dest, sku);
@@ -964,7 +969,7 @@ function shipManualPositionReport_(b0) {
       arrival: { arrived: kind === 'ARRIVED_AT_DESTINATION', persisted: false, reason: 'OPERATION_ALREADY_RECORDED', status_after: st } } }); }
     if (!SHIP_MANUAL_OPEN_[st]) { lock.releaseLock(); return no('MANUAL_REPORT_STATUS_NOT_OPEN', 'Status "' + (st || '(blank)') + '" is not open for a position report (only shipped / in_transit / arrived).', { status: st }); }
     if (receivedAny) { lock.releaseLock(); return no('RECEIPT_ALREADY_STARTED', 'A receipt has started on this shipment; its position is no longer reported.'); }
-    if (kind === 'ARRIVED_AT_DESTINATION' && displayOnly) { lock.releaseLock(); return no('MANUAL_ARRIVAL_DISPLAY_ONLY', 'This imported record is display-only (not counted): it is never marked arrived or received in this system.'); }
+    if (kind === 'ARRIVED_AT_DESTINATION' && displayOnly && sv('opening_supply_mode').toUpperCase() !== 'DISPLAY_ONLY') { lock.releaseLock(); return no('MANUAL_ARRIVAL_IMPORT_NOT_COMMITTED', 'This imported record is not committed for receipt tracking.'); }
     var destCurrent = /current|completed/.test(dn.status);
     if (kind === 'IN_TRANSIT' && !prior && (destCurrent || st === 'arrived')) { lock.releaseLock(); return no('MANUAL_REPORT_BACKWARD', 'The shipment is already reported at its destination; a position never moves backwards.'); }
     // ---- writes (convergent; the event once per operation id) ----
@@ -1472,7 +1477,7 @@ function n1ReceiptReplay_(ss, shipmentId, G, byId, plan, ls, facts) {
     var seen = false; for (var k = 1; k < e.rows.length; k++) if (String(e.rows[k][cS]).trim() === shipmentId && String(e.rows[k][cX]).trim() === src) { seen = true; break; }
     if (!seen) return null; }
   return { success: true, data: { outcome: 'REPLAYED', replayed: true, zero_write: true, shipment_id: shipmentId, status: facts.status, status_derived: d.status, status_reason: d.reason,
-    lines_applied: 0, lines_idempotent: plan.length, posting: { status: 'POSTED_IDEMPOTENT', lines: [] },
+    lines_applied: 0, lines_idempotent: plan.length, posting: { status: G.groups.every(function (g) { return g.F.decision === 'SKIP_PLATFORM'; }) ? 'SKIP_PLATFORM' : 'POSTED_IDEMPOTENT', lines: [] },
     lines: plan.map(function (p) { return { shipment_line_id: p.slid, shipment_qty: byId[p.slid].shippedQty, shipment_received_qty: shipReceiptNum_(byId[p.slid].oldReceived), remaining_qty: Math.max(byId[p.slid].shippedQty - shipReceiptNum_(byId[p.slid].oldReceived), 0) }; }),
     note: 'This receipt is already recorded exactly as sent (the same cumulative quantities, posted, status and event in place). Nothing was written and nothing was posted again.' } };
 }
@@ -1480,12 +1485,10 @@ function n1ReceiptReplay_(ss, shipmentId, G, byId, plan, ls, facts) {
 // ledger (22_ csdMovementExists_), route rows, event rows (csdEventExists_), the allocations of its lines. A system shipment in a dispatched
 // status must pass 22_ csdDispatchConsistency_ (movement + routes + event + every allocation executed + PO lines reconciled). An imported
 // historical one (record_origin IMPORT_HISTORICAL, never Confirmed here - 22_:203) must carry NO shipment_out, NO route and no live allocation.
-// SHIP-OPEN R4/R5 (Owner rule 4, review M3 / r4-m3, Owner r5 item 4): an opening record (80_ IMPORT_HISTORICAL) is receivable ONLY when
-// its opening_supply_mode is COUNTED (an overseas 3PL record of a COMMITTED import). DISPLAY_ONLY (Amazon) is shown only; any other value
-// (PENDING:* while its import is still being written, or blank) is not a finished record. Zero write, before every other gate.
+// Committed COUNTED and DISPLAY_ONLY imports may record receipts. DISPLAY_ONLY never posts inventory;
+// PENDING/unknown modes still fail before any receipt mutation. Blank remains the legacy historical path.
 function n1ReceiptOpeningGate_(shipmentId, facts) {
-  if (facts.origin !== 'IMPORT_HISTORICAL' || facts.supplyMode === 'COUNTED' || facts.supplyMode === '') return null;   // r5.4: blank mode = LEGACY historical row -> the base gates only (dispatch evidence + opening_received_qty increment)
-  if (facts.supplyMode === 'DISPLAY_ONLY') return n1RcvNo_(shipmentId, 'SHIPMENT_OPENING_DISPLAY_ONLY', 'this is an Amazon opening record (display only): it is not received in this system - the Amazon stock comes only from the Amazon report import');
+  if (facts.origin !== 'IMPORT_HISTORICAL' || facts.supplyMode === 'COUNTED' || facts.supplyMode === 'DISPLAY_ONLY' || facts.supplyMode === '') return null;
   return n1RcvNo_(shipmentId, 'SHIPMENT_OPENING_NOT_COMMITTED', 'this opening record is not finished (opening_supply_mode ' + (facts.supplyMode || 'blank') + ') - its import batch has not committed; it is not received');
 }
 function n1ReceiptDispatchGate_(ss, shipmentId, facts, ls) {

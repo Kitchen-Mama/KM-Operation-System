@@ -64,11 +64,11 @@ var collapsedBranch = panel.slice(panel.indexOf('if (collapsed) return'), panel.
 ok(!/data-filter=|data-mode-select|data-toggle=/.test(collapsedBranch), 'J collapsed panel exposes NO internal focusable controls (no hidden focus traps)');
 
 console.log('\n== K — all current filter data keys preserved ==');
-['search', 'company', 'destWarehouse', 'carrier', 'method', 'etaFrom', 'etaTo'].forEach(function (k) {
+['search', 'company', 'destCountry', 'carrier', 'method', 'etaFrom', 'etaTo'].forEach(function (k) {
   ok(new RegExp("'" + k + "'|\"" + k + "\"|data-filter=\"" + k + "\"").test(pfilters), 'K filter key preserved: ' + k);
 });
 ok(/data-act="clear-filters"/.test(pfilters), 'K Clear Filters preserved');
-ok(!/originCountry|'destCountry'|selHtml\('Status'|selHtml\('Stage'|exceptionOnly|delayedOnly/.test(pfilters), 'K removed controls (Origin/Status/Stage/Exception/Delayed) NOT reintroduced');
+ok(!/originCountry|'destWarehouse'|selHtml\('Status'|selHtml\('Stage'|exceptionOnly|delayedOnly/.test(pfilters), 'K warehouse filter replaced by destination country; other removed controls stay retired');
 
 console.log('\n== L — map controls stay separate from right-side zoom ==');
 ok(/glm-map-controls/.test(mapShell) && /data-act="zoom-in"/.test(mapShell) && /data-act="zoom-out"/.test(mapShell) && /data-act="reset"/.test(mapShell), 'L zoom/reset controls remain in the map shell (separate .glm-map-controls)');

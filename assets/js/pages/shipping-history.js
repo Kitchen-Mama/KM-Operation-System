@@ -707,11 +707,11 @@ var SH_STATUS_LABEL = {
 // A projection only: it never writes a status, never receives, never changes supply eligibility. The rule is the map's glmArrivalNode_ and
 // 31_ shipArrivalVerdict_ (single positive max sequence; last node current / completed; not a transit gateway; exact ID link: location_ref
 // warehouse = destination, or the referenced / template logistics_locations row's warehouse_id = destination). A persisted `arrived` and an
-// Owner-typed delivered_date count as the map counts them. DISPLAY_ONLY imports (never written arrived, never received here) are shown
+// Owner-typed delivered_date count as the map counts them. DISPLAY_ONLY imports (receipt tracking without stock posting) are shown
 // arrived when the route proves it, with their own wording. Loaded by index.html on every page, so the map uses it too (window.KMLogisticsArrival).
 var KMLogisticsArrival = (function () {
     var GATEWAY = /port|airport|air_?cargo|seaport|harbou?r|vessel|customs|clearance|bonded|border|frontier|rail|railway|truck_?terminal|motor_?carrier|cross_?dock|terminal|hub|transship|tranship|sort_?center|sortation|consolidation|parcel|courier|carrier_?facility|centroid|waypoint|midpoint|transit_?point|gateway/i;
-    var LBL = 'Delivered / 已送達（待收貨）', LBL_DO = 'Delivered / 已送達（僅顯示，不在本系統收貨）';
+    var LBL = 'Delivered / 已送達（待收貨）', LBL_DO = LBL;
     function low(v) { return String(v == null ? '' : v).trim().toLowerCase(); }
     function nodeClass(st) { st = low(st); if (/exception|delay|hold|problem|stuck|fail/.test(st)) return 'exception'; if (/current|in_progress|active|transit|ongoing/.test(st)) return 'current'; if (/complete|done|departed|arrived|received|cleared|delivered/.test(st)) return 'completed'; return 'planned'; }
     function nodeLoc(n, idx) {
@@ -1846,7 +1846,7 @@ function _shRenderDbCard(s, planLines, mode) {
             '<div class="sh-card-heading__facts">' +
                 '<span><strong>Marketplace:</strong> ' + _shEsc(mode === 'draft' ? _shMarketplaceLabel(s, planLines) : s.marketplace || '--') + '</span>' +
                 '<span><strong>Company:</strong> ' + _shEsc((s.sourceCompanies || []).length > 1 ? s.sourceCompanies.join(' / ') : s.company || '--') + '</span>' +
-                (mode !== 'overview' && _shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Display only\"><strong>僅顯示</strong>（不計入供給、不收貨）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +
+                (mode !== 'overview' && _shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Amazon receipt tracking\"><strong>Amazon 收貨紀錄</strong>（不增加庫存）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
