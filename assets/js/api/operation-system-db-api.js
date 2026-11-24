@@ -3138,6 +3138,7 @@ window.KM.DB.adaptShipmentWorkspace = function(data) {
         ? null
         : (data.carriers || []).map(normalizeCarrierRecord).filter(function(r) { return r.carrierId || r.carrierName; });
     var out = { shipments: shipments, shipmentLines: shipmentLines, warehouses: warehouses, carrierRateCards: carrierRateCards, carriers: carriers };
+    out.skuLogistics = Array.isArray(data.skuLogistics) ? data.skuLogistics.map(normalizeSkuDetailsRecord) : null;
     // Map-extras (On-the-Way) — same normalizers + filters as normalizeOperationDb; [] when the include was not requested.
     out.shipmentRoutes = (data.shipmentRoutes || []).map(normalizeShipmentRouteRecord).filter(function(r) { return r.shipmentRouteId || r.shipmentId || r.locationName || r.latitude !== null; });
     out.shipmentEvents = (data.shipmentEvents || []).map(normalizeShipmentEventRecord).filter(function(r) { return r.shipmentEventId || r.shipmentId || r.eventType; });

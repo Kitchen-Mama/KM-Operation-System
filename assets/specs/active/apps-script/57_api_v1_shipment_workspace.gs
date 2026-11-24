@@ -52,7 +52,8 @@ var SHIP_WORKSPACE_TABLES_ = [
   // F1-7N-FB-1B §P — the generated_documents registry, projected onto each shipment's Document Panel. Bounded:
   // read only when the caller asks for it, and optional so a DB without the table degrades to "no documents"
   // rather than failing the whole workspace read.
-  { name: 'generated_documents',           requiredCols: [], optional: true, include: 'documents' }
+  { name: 'generated_documents',           requiredCols: [], optional: true, include: 'documents' },
+  { name: 'sku_details',                   requiredCols: ['sku'], optional: true, include: 'skuLogistics' }
 ];
 
 var SHIP_WS_SORT_FIELDS_ = {
@@ -324,6 +325,20 @@ function shipWorkspaceBuild_(tables, payload) {
     carriers: carriers,
     pagination: { pageNumber: pageResult.pageNumber, pageSize: pageResult.pageSize, totalItems: pageResult.totalItems, totalPages: pageResult.totalPages }
   };
+  // Presentation-only carton metadata, limited to returned lines. Duplicate SKU rows stay ambiguous.
+  if (include.skuLogistics) {
+    var skuKeys = Object.create(null);
+    pageLines.forEach(function (l) { if (l.xco_state === 'OK') skuKeys[shipWsStr_(l.sku).toLowerCase()] = true; });
+    var logisticsCols = ['sku', 'units_per_carton', 'carton_length', 'carton_width', 'carton_height',
+      'carton_dimension_unit', 'carton_weight', 'carton_weight_unit', 'item_weight', 'item_weight_unit'];
+    out.skuLogistics = (tables.sku_details || []).filter(function (r) {
+      return skuKeys[shipWsStr_(r.sku).toLowerCase()];
+    }).map(function (r) {
+      var projected = {};
+      logisticsCols.forEach(function (k) { if (Object.prototype.hasOwnProperty.call(r, k)) projected[k] = r[k]; });
+      return projected;
+    });
+  }
   // MAP-extra tables (On-the-Way) — returned ONLY when requested (bounded includes). F1-7M-B2-1: when the exact-shipment
   // filter is active, scope routes/events to that shipment's id too (they carry shipment_id); filter-absent → full tables
   // exactly as before. logistics_locations / route templates / template_nodes carry NO shipment_id → REFERENCE, unscoped.

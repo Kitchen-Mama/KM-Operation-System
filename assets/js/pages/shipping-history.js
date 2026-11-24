@@ -1083,7 +1083,7 @@ function _shRefresh_(renderFn) {
     if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _shRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Shipment Workspace API unavailable.' }); return; }
     // F1-7N-FB-1B §P — ask for the generated_documents projection. It is a BOUNDED include: without it the
     // workspace does not read the registry at all, so the Document Panel cost is opt-in per page.
-    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { documents: true } })).then(function (env) {
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { documents: true, skuLogistics: true } })).then(function (env) {
         if (mySeq !== _shReadSeq) return;
         _shReadPending_ = 0;   // R15C-UI: this answer settles the pending read (success or failure)
         if (_st15c.env !== _shEnvId15c_() || _st15c.scope !== _shScopeId15c_()) { SH_RETURN_STATS_15C_.envDrop++; _shEnvGate15c_(); var _sec15f = document.getElementById('shipment-draft-section'); if (_sec15f && _sec15f.classList.contains('active')) _shLoadAndRender(); return; }   // [R15F-F19v2] envId via db-api; UNKNOWN is never a cache key: an answer for another environment is never drawn or kept
@@ -1368,7 +1368,7 @@ function _shReadbackOne_(shipmentId) {
     var mySeq = ++_shReadSeq; _shReadPending_ = mySeq;
     var rg = _shRegion_(); if (rg) rg.beginLoad(true);
     function full() { SH_READBACK_STATS_.full++; _shReadPending_ = 0; _shLoadAndRender(); return 'FULL'; }
-    return Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: sid }, page: { number: 1, size: 5 }, include: { documents: true } })).then(function (env) {
+    return Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: sid }, page: { number: 1, size: 5 }, include: { documents: true, skuLogistics: true } })).then(function (env) {
         if (mySeq !== _shReadSeq) return 'SUPERSEDED';
         var m = (env && env.success) ? window.KM.DB.adaptShipmentWorkspace(env.data) : null;
         var one = (m && m.shipments.length === 1 && m.shipments[0].shipmentId === sid) ? m.shipments[0] : null;
@@ -1378,6 +1378,11 @@ function _shReadbackOne_(shipmentId) {
         if (_old15c && _shNewer15c_(_shVer15c_(_old15c), _shVer15c_(one))) { SH_RETURN_STATS_15C_.keptNewer++; _shReadPending_ = 0; if (rg) rg.set(window.KM.loadState.STATES.READY); active(); return 'KEPT_NEWER'; }   // R15C-B3B: a stale answer never replaces a newer save
         cur.shipments = cur.shipments.map(function (s) { return s.shipmentId === sid ? one : s; });
         cur.shipmentLines = cur.shipmentLines.filter(function (l) { return l.shipmentId !== sid; }).concat(m.shipmentLines.filter(function (l) { return l.shipmentId === sid; }));
+        var readSkus = Object.create(null);
+        m.shipmentLines.forEach(function (l) { readSkus[String(l.sku || '').trim().toLowerCase()] = true; });
+        cur.skuLogistics = m.skuLogistics === null ? null : (cur.skuLogistics || []).filter(function (d) {
+            return !readSkus[String(d.sku || '').trim().toLowerCase()];
+        }).concat(m.skuLogistics);
         _shReadPending_ = 0; SH_READBACK_STATS_.targeted++;
         if (rg) rg.set(window.KM.loadState.STATES.READY);
         active();
@@ -1469,6 +1474,56 @@ function _shMarketplaceLabel(s, lines) {
     return labels.length ? labels.join(' / ') : s.marketplace || '--';
 }
 
+function _shOverviewLogistics_(s, lines, details) {
+    if (String(s.recordOrigin || '').trim() !== 'IMPORT_HISTORICAL') return lines;
+    var bySku = Object.create(null);
+    (details || []).forEach(function (d) {
+        var key = String(d.sku || '').trim().toLowerCase();
+        (bySku[key] = bySku[key] || []).push(d);
+    });
+    function blank(v) { return v == null || String(v).trim() === ''; }
+    function number(v) { return !blank(v) && typeof v !== 'boolean' && isFinite(Number(v)) && Number(v) >= 0 ? Number(v) : ''; }
+    function kg(v, unit) {
+        var factors = { kg: 1, g: 0.001, lb: 0.45359237, lbs: 0.45359237, oz: 0.028349523125 };
+        var n = number(v), f = factors[String(unit || 'kg').trim().toLowerCase()];
+        return n !== '' && n > 0 && f ? n * f : '';
+    }
+    return (lines || []).map(function (line) {
+        var row = Object.assign({}, line), raw = line.raw, matches = bySku[String(line.sku || '').trim().toLowerCase()] || [];
+        var d = matches.length === 1 ? matches[0] : null;
+        function saved(key, canonical, legacy) {
+            var v = raw ? raw[canonical] : line[key];
+            if (raw && blank(v) && legacy) v = raw[legacy];
+            return v;
+        }
+        var qty = number(saved('qty', 'shipment_qty', 'qty'));
+        var count = saved('cartonQty', 'shipment_carton_qty', 'carton_qty');
+        var upc = number(saved('unitsPerCarton', 'units_per_carton'));
+        if (blank(upc) || upc === 0) upc = d ? number(d.raw ? d.raw.units_per_carton : d.unitsPerCarton) : '';
+        row.cartonQty = number(count);
+        if (blank(count) && qty !== '' && upc > 0 && Number.isInteger(upc)) row.cartonQty = Math.ceil(qty / upc);
+        if (row.cartonQty !== '' && (!Number.isInteger(row.cartonQty) || row.cartonQty === 0 && qty > 0)) row.cartonQty = '';
+        row.unitsPerCarton = upc;
+        var cbm = '', gross = '', net = '';
+        if (d) {
+            var factors = { cm: 0.01, mm: 0.001, m: 1, in: 0.0254, inch: 0.0254, inches: 0.0254 };
+            var f = factors[String(d.cartonDimensionUnit || 'cm').trim().toLowerCase()];
+            var dims = [d.cartonLength, d.cartonWidth, d.cartonHeight].map(number);
+            if (row.cartonQty !== '' && f && dims.every(function (v) { return v !== '' && v > 0; })) cbm = row.cartonQty * dims[0] * dims[1] * dims[2] * f * f * f;
+            var cartonKg = kg(d.cartonWeight, d.cartonWeightUnit), itemKg = kg(d.itemWeight, d.itemWeightUnit);
+            if (row.cartonQty !== '' && cartonKg !== '') gross = row.cartonQty * cartonKg;
+            if (qty !== '' && itemKg !== '') net = qty * itemKg;
+        }
+        // Saved totals win; only absent values use the current SKU reference. Never persist estimates.
+        [['shipmentCartonCbm', 'shipment_carton_cbm', 'carton_cbm', cbm],
+            ['grossWeight', 'gross_weight', null, gross], ['netWeight', 'net_weight', null, net]].forEach(function (spec) {
+            var v = saved(spec[0], spec[1], spec[2]);
+            row[spec[0]] = number(blank(v) ? spec[3] : v);
+        });
+        return row;
+    });
+}
+
 function _shRenderDbCard(s, planLines, mode) {
     var sid = s.shipmentId;
     var statusLabel = (mode === 'overview') ? _shArrivalStateOf_(s).label : (SH_STATUS_LABEL[s.status] || s.status || '—');   // A-DELTA1 C2 item 1
@@ -1479,9 +1534,10 @@ function _shRenderDbCard(s, planLines, mode) {
 
     // SKU Lines — logistics copied (read-only) + editable carton number range.
     // Columns: SKU / Qty / Cartons / CBM (line total) / Gross Wt / Net Wt / Carton No. Start / End.
-    var displayLinesCp2 = _shSkuGroupsCp2_(planLines, fieldsEditable);
+    var metricLines = mode === 'overview' ? _shOverviewLogistics_(s, planLines, _shReadModel && _shReadModel.skuLogistics) : planLines;
+    var displayLinesCp2 = _shSkuGroupsCp2_(metricLines, fieldsEditable);
     var rows = displayLinesCp2.map(function(l) {
-        function n(v) { return (v === '' || v == null) ? '--' : v; }
+        function n(v, digits) { return (v === '' || v == null) ? '--' : digits != null && mode === 'overview' ? Number(v).toFixed(digits) : v; }
         function cartonCell(which, val) {
             if (!fieldsEditable) return '<td style="text-align:right;">' + (val === '' || val == null ? '--' : _shEsc(val)) + '</td>';
             return '<td style="text-align:right;"><input type="number" min="0" step="1" data-line-id="' + _shEsc(l.shipmentLineId) + '" data-carton="' + which + '" data-carton-members="' + _shEsc(JSON.stringify(l._skuMembersCp2 || [])) + '" value="' + _shEsc(val) + '" oninput="_shClearCartonError(\'' + _shEsc(sid) + '\')" style="width:78px;text-align:right;padding:2px 4px;border:1px solid #E2E8F0;border-radius:4px;font-size:12px;"></td>';
@@ -1489,10 +1545,10 @@ function _shRenderDbCard(s, planLines, mode) {
         return '<tr>' +
             '<td>' + _shEsc(l.sku) + ((s.sourceCompanies || []).length > 1 ? '<small style="display:block;color:#596578">' + _shEsc(l.sourceCompany || '--') + ' / ' + _shEsc(l.sourceMarketplace || '--') + '</small>' : '') + '</td>' +
             '<td style="text-align:right;">' + _shNum(l.qty) + '</td>' +
-            '<td style="text-align:right;">' + _shNum(l.cartonQty) + '</td>' +
-            '<td style="text-align:right;">' + n(l.shipmentCartonCbm) + '</td>' +
-            '<td style="text-align:right;">' + n(l.grossWeight) + '</td>' +
-            '<td style="text-align:right;">' + n(l.netWeight) + '</td>' +
+            '<td style="text-align:right;">' + n(l.cartonQty) + '</td>' +
+            '<td style="text-align:right;">' + n(l.shipmentCartonCbm, 3) + '</td>' +
+            '<td style="text-align:right;">' + n(l.grossWeight, 2) + '</td>' +
+            '<td style="text-align:right;">' + n(l.netWeight, 2) + '</td>' +
             cartonCell('start', l.cartonNoStart) +
             cartonCell('end', l.cartonNoEnd) +
             '</tr>';
@@ -1504,13 +1560,19 @@ function _shRenderDbCard(s, planLines, mode) {
     var tCartonCbm = planLines.reduce(function(a, l) { return a + _shNum(l.shipmentCartonCbm); }, 0);
     var tGross = planLines.reduce(function(a, l) { return a + _shNum(l.grossWeight); }, 0);
     var tNet = planLines.reduce(function(a, l) { return a + _shNum(l.netWeight); }, 0);
+    function metricTotal(key, digits, legacy) {
+        if (mode !== 'overview') return digits == null ? legacy : legacy.toFixed(digits);
+        if (!metricLines.every(function (l) { return l[key] !== '' && l[key] != null && isFinite(Number(l[key])); })) return '--';
+        var sum = metricLines.reduce(function (n, l) { return n + Number(l[key]); }, 0);
+        return digits == null ? sum : sum.toFixed(digits);
+    }
     var footRow = '<tr style="font-weight:600;border-top:2px solid #CBD5E1;">' +
         '<td>Total: ' + planLines.map(function (l) { return l.sku; }).filter(function (v, i, a) { return a.indexOf(v) === i; }).length + ' SKU</td>' +
         '<td style="text-align:right;">' + tQty + '</td>' +
-        '<td style="text-align:right;">' + tCtn + '</td>' +
-        '<td style="text-align:right;">' + tCartonCbm.toFixed(3) + '</td>' +
-        '<td style="text-align:right;">' + tGross.toFixed(2) + '</td>' +
-        '<td style="text-align:right;">' + tNet.toFixed(2) + '</td>' +
+        '<td style="text-align:right;">' + metricTotal('cartonQty', null, tCtn) + '</td>' +
+        '<td style="text-align:right;">' + metricTotal('shipmentCartonCbm', 3, tCartonCbm) + '</td>' +
+        '<td style="text-align:right;">' + metricTotal('grossWeight', 2, tGross) + '</td>' +
+        '<td style="text-align:right;">' + metricTotal('netWeight', 2, tNet) + '</td>' +
         '<td>—</td><td>—</td>' +
         '</tr>';
 
@@ -1774,17 +1836,17 @@ function _shRenderDbCard(s, planLines, mode) {
     }
 
     return '' +
-    '<div class="history-card" id="sh-card-' + _shEsc(sid) + '" style="border:1px solid #E2E8F0;border-radius:8px;background:#fff;margin-bottom:12px;">' + _shHoldBannerHtml17_(sid) +   // R15e step 3 r5: the hold notice / release control, from hold state
-        '<div class="history-card-header sh-card-heading" onclick="toggleShipmentCard(\'' + _shEsc(sid) + '\', event)">' +
+    '<div class="history-card' + (mode === 'overview' ? ' history-card--overview' : '') + '" id="sh-card-' + _shEsc(sid) + '" style="border:1px solid #E2E8F0;border-radius:8px;background:#fff;margin-bottom:12px;">' + _shHoldBannerHtml17_(sid) +   // R15e step 3 r5: the hold notice / release control, from hold state
+        '<div class="history-card-header sh-card-heading' + (mode === 'overview' ? ' sh-card-heading--overview' : '') + '" onclick="toggleShipmentCard(\'' + _shEsc(sid) + '\', event)">' +
             '<div class="sh-card-heading__info"><div class="sh-card-heading__identity">' +
                 '<strong style="font-size:14px;">' + _shEsc(s.externalShipmentId || s.shipmentNo || sid) + '</strong>' +
                 (mode === 'draft' ? '' : '<span class="sh-card-status" style="padding:2px 8px;border-radius:10px;background:#EEF2FF;color:#3730A3;font-size:12px;">' + _shEsc(statusLabel) + '</span>') +
-                '<span style="color:#64748B;font-size:12px;">Plan: ' + _shEsc(s.shippingPlanId || '') + '</span>' +
+                (mode === 'overview' && !s.shippingPlanId ? '' : '<span class="sh-card-plan" style="color:#64748B;font-size:12px;">Plan: ' + _shEsc(s.shippingPlanId || '') + '</span>') +
             '</div>' +
             '<div class="sh-card-heading__facts">' +
                 '<span><strong>Marketplace:</strong> ' + _shEsc(mode === 'draft' ? _shMarketplaceLabel(s, planLines) : s.marketplace || '--') + '</span>' +
                 '<span><strong>Company:</strong> ' + _shEsc((s.sourceCompanies || []).length > 1 ? s.sourceCompanies.join(' / ') : s.company || '--') + '</span>' +
-                (_shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Display only\"><strong>僅顯示</strong>（不計入供給、不收貨）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +   // A final3 (Owner item 1): no opening concept; display-only stays visible (it changes what the operator may do)
+                (mode !== 'overview' && _shIsNewOpening(s) && String(s.openingSupplyMode || '').toUpperCase() === 'DISPLAY_ONLY' ? '<span class=\"sh-opening-badge\" title=\"Display only\"><strong>僅顯示</strong>（不計入供給、不收貨）· 資料時間 ' + _shEsc(s.openingAsOf || '未提供') + '</span>' : '') +
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(s.shippingMethod || '--') + '</span>' +
@@ -1796,7 +1858,7 @@ function _shRenderDbCard(s, planLines, mode) {
             '<button type="button" class="history-expand-btn" aria-expanded="false" style="padding:6px 12px;border:1px solid #E2E8F0;border-radius:4px;background:#fff;cursor:pointer;font-size:13px;color:#3B82F6;" onclick="event.stopPropagation();toggleShipmentCard(\'' + _shEsc(sid) + '\', event)">Expand</button>' +
         '</div>' +
         '<div class="history-card-details" style="display:none;padding:16px;border-top:1px solid #E2E8F0;background:#F8FAFC;">' +
-            '<div style="display:grid;grid-template-columns:1.6fr 1fr;gap:24px;">' +
+            '<div class="sh-card-detail-layout" style="display:grid;grid-template-columns:1.6fr 1fr;gap:24px;">' +
                 '<div style="overflow-x:auto;">' +
                     '<h4 style="font-size:14px;margin-bottom:12px;color:#1E293B;">SKU Lines</h4>' +
                     '<table class="sh-sku-table"><thead><tr>' +

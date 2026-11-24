@@ -49,5 +49,5 @@ test('actual line normalizer exposes validated provenance and rejects stale sour
 });
 test('draft renderer uses the helper and HTML escaping while Overview keeps its own label', () => {
   assert(source.includes("_shEsc(mode === 'draft' ? _shMarketplaceLabel(s, planLines) : s.marketplace || '--')"));
-  assert(fs.readFileSync('index.html', 'utf8').includes('shipping-history.js?v=r76-a2sad3-20261129-ds2-dw1-dw2-20261122-r3-20261123-sites1'));
+  assert(fs.readFileSync('index.html', 'utf8').includes('shipping-history.js?v=shipment-overview-20261124'));
 });
