@@ -69,7 +69,10 @@ var IMPORT_CONFIGS = [
       unfulfillable_qty: 'Unfulfillable',
       working_qty: 'Working',
       shipped_qty: 'Shipped',
-      receiving_qty: 'Receiving',
+      receiving_qty: 'Receiving'
+    },
+    // Amazon's current Combined Sheet omits these report-version-dependent metrics.
+    optionalFieldMap: {
       total_days_of_supply_including_open_shipments: 'Total Days of Supply (including units from open shipments)',
       days_of_supply_amazon_fulfillment_network: 'Days of Supply at Amazon Fulfillment Network'
     },
@@ -176,16 +179,18 @@ var IMPORT_CONFIGS = [
     queryMode: 'rolling_window',
     dateField: 'Date',
     // GAP-AWARE incremental rolling upsert (daily sales only). Other configs keep full snapshot rewrite.
-    // Canonical behavior (2026-07-21): retain a rolling window of the latest 90 COMPLETED calendar days
-    // (Asia/Taipei; today excluded; end = yesterday; start = yesterday − 89, inclusive = exactly 90 days).
-    // Each run detects missing / incomplete dates in that window and fetches ONLY those (plus a small
-    // recent-reconciliation window), never an unconditional full 90-day rewrite. See 08_/09_ for the flow.
+    // Owner 2026-11-24: each country + marketplace anchors its own inclusive 90-calendar-day window
+    // at MAX(available source date < today in Asia/Taipei), not at the same yesterday for every site.
+    // Missing/incomplete dates and recent reconciliation are computed PER SITE. SKU/channel remain
+    // natural-key dimensions, not independent window anchors. See 08_/09_ for the matching prune rule.
     writeMode: 'rolling_upsert',
-    retentionDays: 90,             // rolling retention = latest 90 completed calendar days; older rows pruned
+    windowMode: 'site_latest',
+    siteFields: ['country', 'marketplace'],
+    retentionDays: 90,             // inclusive [site latest completed source day - 89, site latest day]
     reconcileRecentDays: 3,        // always reconcile the most recent N source-available dates (late/revised data)
     incrementalDefaultDays: 1,     // legacy — NOT used by the gap-aware path; kept for back-compat only
     lookbackDays: 90,              // backfill ceiling = retention window (manual backfill_days is capped here)
-    excludeToday: true,            // window ends yesterday (avoid partial same-day Amazon data)
+    excludeToday: true,            // source latest must be before today; it need not equal yesterday
     scheduleTime: '16:00',
     scheduleTimezone: 'Asia/Taipei',
     destinationSpreadsheetId: '1EMe9l6ow0-OZkNY9ZP6IxHk84YGs5bqD5nVKHOPt-Kk',

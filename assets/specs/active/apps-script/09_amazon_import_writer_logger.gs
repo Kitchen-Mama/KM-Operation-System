@@ -40,6 +40,7 @@ function amazonWriteSnapshot_(spreadsheetId, sheetName, destObjs) {
 }
 
 // ---- rolling incremental upsert writer (Daily Sales) --------------
+var AMAZON_SITE_ROLLING_VERSION_ = 'SITE-LATEST-90D-20261124';
 //
 // Incremental rolling-window write for a snapshot tab (currently amazon_daily_sales_snapshot).
 // UNLIKE amazonWriteSnapshot_ (which discards all existing rows and rewrites from source), this:
@@ -56,7 +57,7 @@ function amazonWriteSnapshot_(spreadsheetId, sheetName, destObjs) {
 //   - hash-based change detection: a key match with an identical source_row_hash counts as `unchanged`
 //     (not rewritten in effect); a differing hash counts as `updated`.
 // Returns { rowsWritten, updated, appended, unchanged, pruned, duplicatesRemoved, total }.
-function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, naturalKey, dateField, retentionDays, tz, cutoffDate) {
+function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, naturalKey, dateField, retentionDays, tz, cutoffDate, siteRetention) {
   var ss = SpreadsheetApp.openById(spreadsheetId);
   if (!ss) throw new Error('destination spreadsheet not found: ' + spreadsheetId);
   var sh = ss.getSheetByName(sheetName);
@@ -73,6 +74,9 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
   var keyCols = (naturalKey || []).map(function (k) { return colIndex[String(k).toLowerCase()]; });
   var dateColKey = dateField ? String(dateField).toLowerCase() : '';
   var dateCol = (dateColKey && colIndex[dateColKey] != null) ? colIndex[dateColKey] : -1;
+  var scoped = siteRetention && siteRetention.windowMode === 'site_latest' ? siteRetention : null;
+  if (scoped && (!scoped.siteFields || !scoped.siteWindows || dateCol < 0 ||
+      naturalKey.concat(scoped.siteFields).some(function (k) { return colIndex[k] == null; }))) throw new Error('DAILY_SITE_RETENTION_SCHEMA_MISSING');
   // Which natural-key positions are the date field — those MUST be canonicalized to yyyy-MM-dd so that a
   // Google-Sheets Date cell and an incoming 'yyyy-MM-dd' string produce a byte-identical key (root cause of
   // duplicate appends). Non-date key parts keep the prior trim-only behavior.
@@ -125,6 +129,10 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
   var rowByKey = {};
   var duplicatesRemoved = 0;
   for (var r = 0; r < existing.length; r++) {
+    if (scoped) {
+      var existingSite = {}; scoped.siteFields.forEach(function (f) { existingSite[f] = existing[r][colIndex[f]]; });
+      if (!scoped.siteWindows[amazonSiteKey_(scoped.siteFields, existingSite)]) { merged.push(existing[r]); continue; }
+    }
     var kr = keyOfRowArr(existing[r]);
     if (rowByKey[kr] !== undefined) { merged[rowByKey[kr]] = existing[r]; duplicatesRemoved++; } // collapse to last
     else { rowByKey[kr] = merged.length; merged.push(existing[r]); }
@@ -151,13 +159,28 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
     }
   }
 
-  // 3) prune rows OLDER than the retention start (snapshot_date < cutoff). Calendar-inclusive cutoff =
-  //    retention_start ('yyyy-MM-dd'); blank dates are kept (cannot judge). Lexical compare is valid for yyyy-MM-dd.
+  // 3) New mode prunes known sites to their OWN inclusive source window and refreshes row governance.
+  // Legacy callers retain the global lower-cutoff behavior; dates that cannot be judged are preserved.
   var pruned = 0;
-  var cutoff = (cutoffDate && /^\d{4}-\d{2}-\d{2}$/.test(String(cutoffDate)))
+  var cutoff = scoped ? '' : (cutoffDate && /^\d{4}-\d{2}-\d{2}$/.test(String(cutoffDate)))
     ? String(cutoffDate)
     : (retentionDays > 0 ? amazonRollingCutoffDate_(retentionDays, tz) : '');
-  if (dateCol >= 0 && cutoff) {
+  if (scoped) {
+    var siteKept = [], syncDay = Utilities.formatDate(new Date(), tz || 'Asia/Taipei', 'yyyy-MM-dd');
+    for (var si = 0; si < merged.length; si++) {
+      var siteRow = {}; scoped.siteFields.forEach(function (f) { siteRow[f] = merged[si][colIndex[f]]; });
+      var w = scoped.siteWindows[amazonSiteKey_(scoped.siteFields, siteRow)];
+      var nd = amazonNormalizeDate_(merged[si][dateCol]);
+      // No source window for this site: preserve its existing data instead of borrowing another site's cutoff.
+      if (!w || !nd.ok) { siteKept.push(merged[si]); continue; }
+      if (nd.value < w.start || nd.value > w.end) { pruned++; continue; }
+      var metadata = { data_window_start_date: w.start, data_window_end_date: w.end, latest_source_date: w.end,
+        is_fallback_used: false, fallback_reason: '', data_age_days: amazonDateAgeDays_(w.end, syncDay) };
+      Object.keys(metadata).forEach(function (f) { if (colIndex[f] != null) merged[si][colIndex[f]] = metadata[f]; });
+      siteKept.push(merged[si]);
+    }
+    merged = siteKept;
+  } else if (dateCol >= 0 && cutoff) {
     var kept = [];
     for (var m = 0; m < merged.length; m++) {
       // Canonicalize the stored date (Date cell OR string) before the lexical window compare — a raw
@@ -172,6 +195,7 @@ function amazonUpsertRollingSnapshot_(spreadsheetId, sheetName, destObjs, natura
 
   // 4) rewrite the DATA region only (header row 1 preserved). merged contains the preserved non-batch
   //    rows + upserts, deduped and pruned — an upsert result, not a source-only overwrite.
+  if (scoped && merged.length + 1 > sh.getMaxRows()) sh.insertRowsAfter(sh.getMaxRows(), merged.length + 1 - sh.getMaxRows());
   if (lastRow > 1) sh.getRange(2, 1, lastRow - 1, lastCol).clearContent();
   if (merged.length) sh.getRange(2, 1, merged.length, lastCol).setValues(merged);
 

@@ -101,6 +101,19 @@ function amazonGroupFields_(config) {
 function amazonApplyDailyWindow_(ctx, config, destObjs, isFallback) {
   var syncDate = Utilities.formatDate(new Date(), 'Asia/Taipei', 'yyyy-MM-dd');
   ctx.isFallback = isFallback;
+  if (ctx.rollingMeta && ctx.rollingMeta.windowMode === 'site_latest') {
+    var rm = ctx.rollingMeta;
+    destObjs.forEach(function (o) {
+      var w = rm.siteWindows[amazonSiteKey_(rm.siteFields, o)];
+      o.data_window_start_date = w.start; o.data_window_end_date = w.end;
+      o.latest_source_date = w.end; o.is_fallback_used = false; o.fallback_reason = '';
+      o.data_age_days = amazonDateAgeDays_(w.end, syncDate);
+    });
+    ctx.isFallback = false; ctx.fallbackGroupCount = 0;
+    ctx.runLatestDate = rm.retentionEnd; ctx.runWindowStart = rm.retentionStart; ctx.runWindowEnd = rm.retentionEnd;
+    ctx.dataAgeDays = rm.retentionEnd ? amazonDateAgeDays_(rm.retentionEnd, syncDate) : '';
+    return;
+  }
   if (!destObjs.length) { ctx.fallbackGroupCount = 0; return; }
 
   if (!isFallback) {
@@ -165,7 +178,19 @@ function amazonAddDaysStr_(ymd, delta) {
   return Utilities.formatDate(d, 'UTC', 'yyyy-MM-dd');
 }
 
-// Canonical rolling retention window: the latest `retentionDays` COMPLETED calendar days in `tz`.
+function amazonSiteKey_(fields, row) {
+  return JSON.stringify(fields.map(function (f) { return String(row[f] == null ? '' : row[f]).trim(); }));
+}
+
+function amazonSourceSite_(config, row) {
+  var site = {}, fixed = config.fixedValues || {};
+  (config.siteFields || ['country', 'marketplace']).forEach(function (f) {
+    site[f] = String(fixed.hasOwnProperty(f) ? fixed[f] : row[config.fieldMap[f]] == null ? '' : row[config.fieldMap[f]]).trim();
+  });
+  return site;
+}
+
+// Legacy global retention window (site_latest uses each source site's MAX date instead).
 // today (tz) is excluded (may be partial). end = today − 1 (yesterday); start = today − retentionDays
 // (= end − (retentionDays−1)); the range is INCLUSIVE → exactly `retentionDays` completed dates.
 // Example (tz=Asia/Taipei, today=2026-07-21, retentionDays=90): start=2026-04-22, end=2026-07-20.

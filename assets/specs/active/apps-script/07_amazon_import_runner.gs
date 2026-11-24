@@ -8,15 +8,18 @@
 
 // ---- entry points -------------------------------------------------
 
-/** Run all configured Amazon snapshot imports. Safe to attach to a time-based trigger.
- *  Scheduler passes no options → Daily Sales (rolling_upsert) reads its incremental default
- *  (1 completed day = yesterday). */
+/** Run all configured Amazon snapshot imports. Attach the existing time-based trigger here.
+ *  Daily Sales uses each site's latest completed BQ date and its own 90-day gap-aware window. */
 function runAmazonSnapshotImports() {
-  var summaries = [];
-  for (var i = 0; i < IMPORT_CONFIGS.length; i++) {
-    summaries.push(runAmazonSnapshotImport_(IMPORT_CONFIGS[i], 'scheduler', {}));
-  }
+  var summaries = [], _m = kmSrcRevMark_();
+  try {
+    for (var i = 0; i < IMPORT_CONFIGS.length; i++) {
+      summaries.push(runAmazonSnapshotImport_(IMPORT_CONFIGS[i], 'scheduler', {}));
+    }
+  } finally { kmSrcRevBump_(_m); }   // Preserve the Production source-revision hook supplied by the Owner.
   Logger.log(JSON.stringify(summaries, null, 2));
+  var failed = summaries.filter(function (r) { return r.status === 'failed'; });
+  if (failed.length) throw new Error('AMAZON_IMPORT_FAILED: ' + failed.map(function (r) { return r.destination_table + ': ' + r.error_summary; }).join('; '));
   return summaries;
 }
 
@@ -35,7 +38,8 @@ function handleRunAmazonSnapshotImports_(body) {
     if (only && cfg.destinationSheetName !== only) continue;
     summaries.push(runAmazonSnapshotImport_(cfg, triggeredBy, options));
   }
-  return jsonResponse_({ success: true, data: { runs: summaries } });
+  var failed = summaries.some(function (r) { return r.status === 'failed'; });
+  return jsonResponse_({ success: !failed, code: failed ? 'AMAZON_IMPORT_FAILED' : '', data: { runs: summaries } });
 }
 
 /**
@@ -159,6 +163,7 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
                     '; missing=' + n_(rm.missingDates) + '; incomplete=' + n_(rm.incompleteDates) +
                     '; imported=' + n_(rm.datesToFetch) + '; src_unavail=' + n_(rm.sourceUnavailableDates)) : ''))
           : '') +
+        (rm && rm.windowMode === 'site_latest' ? '; window_mode=site_latest; site_windows=' + j_(rm.siteSummaries) + '; source_unavailable_sites=' + j_(rm.sourceUnavailableSites) : '') +
         (ctx.isFallback ? ('; fallback=' + ctx.fallbackGroupCount + ' groups (rolling_window_empty)') : '')
     };
     amazonLogRun_(config.destinationSpreadsheetId, run);
@@ -167,7 +172,8 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
       destination_table: config.destinationSheetName, status: status,
       rows_read: ctx.rowsRead, rows_written: ctx.rowsWritten,
       rows_error: ctx.rowsError, rows_duplicate: ctx.rowsDuplicate,
-      issues: ctx.issues.length, sync_run_id: syncRunId, sync_batch_id: syncBatchId
+      issues: ctx.issues.length, sync_run_id: syncRunId, sync_batch_id: syncBatchId,
+      error_summary: errorSummary || '', site_windows: rm && rm.siteSummaries ? rm.siteSummaries : []
     };
   }
 
@@ -192,6 +198,7 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
   var src;
   try {
     src = (config.sourceType === 'bigquery') ? amazonReadBigQuerySource_(config, options) : amazonReadSheetSource_(config);
+    if (config.windowMode === 'site_latest' && (!src.rollingMeta || src.rollingMeta.windowMode !== 'site_latest')) throw new Error('DAILY_SITE_READER_UPDATE_REQUIRED: install 08_ with the new config');
   } catch (e) {
     amazonAddIssue_(ctx, 'source_read_error', 'critical', '', '', 'source must be readable', 'stopped_import', '', String(e && e.message ? e.message : e));
     return finalize('failed', 'source_read_error: ' + (e && e.message ? e.message : e));
@@ -341,17 +348,20 @@ function runAmazonSnapshotImport_(config, triggeredBy, options) {
   }
 
   // 4) Write to destination.
-  //    - rolling_upsert (Daily Sales): incremental UPSERT by natural key + prune to retentionDays
+  //    - rolling_upsert (Daily Sales): keyed UPSERT + matching per-site retention (legacy global mode remains compatible)
   //      (preserves the header AND every existing row not in this batch — no full-table rewrite).
   //    - all other configs: full snapshot rewrite (preserve header, clear + rewrite data rows).
   try {
     if (config.writeMode === 'rolling_upsert') {
+      if (ctx.rollingMeta && ctx.rollingMeta.windowMode === 'site_latest' &&
+          (typeof AMAZON_SITE_ROLLING_VERSION_ === 'undefined' || AMAZON_SITE_ROLLING_VERSION_ !== 'SITE-LATEST-90D-20261124')) throw new Error('DAILY_SITE_WRITER_UPDATE_REQUIRED: install 09_ together with 06_/07_/08_/10_');
       var up = amazonUpsertRollingSnapshot_(
         config.destinationSpreadsheetId, config.destinationSheetName, destObjs,
         config.naturalKey, (config.dateFields && config.dateFields[0]) || 'snapshot_date',
         (config.retentionDays != null ? config.retentionDays : 90),
         config.scheduleTimezone,
-        (ctx.rollingMeta && ctx.rollingMeta.retentionStart) ? ctx.rollingMeta.retentionStart : ''
+        (ctx.rollingMeta && ctx.rollingMeta.retentionStart) ? ctx.rollingMeta.retentionStart : '',
+        ctx.rollingMeta && ctx.rollingMeta.windowMode === 'site_latest' ? ctx.rollingMeta : null
       );
       ctx.rowsWritten = up.rowsWritten;
       ctx.rowsPruned = up.pruned;
