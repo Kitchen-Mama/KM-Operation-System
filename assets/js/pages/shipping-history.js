@@ -4060,7 +4060,7 @@ function shRunAction(kind) {
         // SHIP-OPEN: exactly two modes, ONE Download (Add New = blank template, Update Existing = this company's updatable shipments)
         combinedWorkflowButtons: true,
         modes: [
-            { value: 'ADD_NEW', label: 'Add New', withData: false, help: 'Shipments already on the way (left the source warehouse, not fully received). Required: 出貨單號, 國家, 站點, 出貨倉, 目的倉, ETD, ETA, Reference ID, Shipping method; Lines: 出貨單號, SKU, 在途中數量 (quantity still not received). Source: an active factory or this company\'s active 3PL overseas warehouse. The import time is recorded by the server. No stock deduction, reservation, PO, route, event, receipt, document or e-mail.' },
+            { value: 'ADD_NEW', label: 'Add New', withData: false, help: 'Shipments already on the way (left the source warehouse, not fully received). Required: 出貨單號, 國家, 站點, 出貨倉, 目的倉, ETD, ETA, Reference ID, Shipping method, Last mile; Lines: 出貨單號, SKU, 在途中數量 (quantity still not received). Source: an active factory or this company\'s active 3PL overseas warehouse. The import time is recorded by the server. No stock deduction, reservation, PO, route, event, receipt, document or e-mail.' },
             { value: 'UPDATE', label: 'Update Existing', withData: true, help: 'The file holds every updatable shipment of the company: tracking / booking / invoice numbers, ETA (fill, never clear), actual dates / costs and notes. Quantity, company, status and SKU never change here.' }
         ],
         scopeFields: [

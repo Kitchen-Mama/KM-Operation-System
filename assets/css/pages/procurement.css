@@ -499,6 +499,11 @@ select.pc-input:disabled {
 @media (max-width: 900px) {
     #purchase-order-overview-section .sp-card-summary { grid-template-columns: repeat(2, 1fr); }
 }
+@media (max-width: 640px) {
+    #purchase-order-overview-section .sp-card-header { flex-direction: column; gap: 16px; }
+    #purchase-order-overview-section .sp-card-summary { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    #purchase-order-overview-section .sp-card-actions { margin-left: 0; max-width: 100%; }
+}
 
 /* ============================================================
    Purchase Order List v2 — grouped operational line list (scoped to

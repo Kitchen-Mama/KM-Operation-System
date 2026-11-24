@@ -39,6 +39,7 @@ var SHI_SCHEMA_VERSION_ = 'SHIPMENT-IMPORT-2';   // SHIP-OPEN: the opening contr
 // with IMPORT_FILE_TEMPLATE_OUTDATED - the file is never reinterpreted. The domain schema_version (and so Update files, receipts and
 // content hashes) is unchanged.
 var SHI_ADD_CONTRACT_ = 'SHIPMENT-ADD-NEW-SHTPL1';
+var SHI_SERVICE_INPUT_ = 'METHOD_LAST_MILE_V1';
 // A fix2 (2026-11-20): the Update export marks the rows whose displayed opening quantity / 資料時間 the server would accept (an Amazon
 // imported shipment: IMPORT_HISTORICAL + DISPLAY_ONLY + in_transit - exactly the displayChangeOf conditions). Only those cells of the two
 // 'display' columns are unlocked in the downloaded file (template-export.js opt-in unlockIfRowFlag); every other row / column keeps its
@@ -198,11 +199,19 @@ function shiExplicitService_(ssM, cards, x) {
   if (!V.lastMiles[lm]) return { ok: false, code: 'LAST_MILE_NOT_IN_VOCABULARY', message: 'Last mile "' + lm + '" is not in the server vocabulary (' + Object.keys(V.lastMiles).join(', ') + ')' };
   var car = S(x.carrier), org = S(x.origin).toUpperCase(), cc = S(x.country).toUpperCase(), day = S(x.day), wc = S(x.whCode).toUpperCase(), mkt = S(x.marketplace), eqi = function (a, b) { return S(a).toLowerCase() === S(b).toLowerCase(); };
   if (!org) return { ok: false, code: 'SHIPPING_SERVICE_ORIGIN_UNKNOWN', message: 'the source warehouse has no country in the master - an explicit service cannot be checked against the declared lanes of the carrier (never any lane); fix the warehouse country' };   // round 7 (review)
-  if (typeof shipSvcCapabilityCheck_ === 'function') { var cap0 = shipSvcCapabilityCheck_(ssM, car, tok, lm, org, cc); if (cap0) return { ok: false, code: cap0.code, message: cap0.message };   // AD3-B (Owner supplement 1): the carrier's declared services only
+  var routeProof = '';
+  if (typeof shipSvcCapabilityCheck_ === 'function') { var cap0 = shipSvcCapabilityCheck_(ssM, car, tok, lm, org, cc);
+    // New token files also accept a route proven by the actual dispatch matcher (including EU-wide templates).
+    if (cap0 && x.routeFacts && typeof csdResolveTemplate_ === 'function') {
+      var route0 = csdResolveTemplate_(ssM, function (k) { return k === 'shipping_method' ? tok : k === 'last_mile_delivery' ? lm : x.routeFacts[k]; }, '');
+      if (route0.ok) { routeProof = route0.templateId; cap0 = null; }
+    }
+    if (cap0) return { ok: false, code: cap0.code, message: cap0.message };
   }
   var dcs = (typeof csdPlanningSet15e_ === 'function' ? csdPlanningSet15e_(cc) : null) || [cc], q = null, app = [];
   var mine = (cards || []).filter(function (c) { return S(c.carrier_id) === car && shiActive_(c); });
-  if (!mine.length) q = 'CARRIER_HAS_NO_ACTIVE_CARD';
+  if (!cards) q = 'CARRIER_RATE_CARDS_UNAVAILABLE';
+  else if (!mine.length) q = 'CARRIER_HAS_NO_ACTIVE_CARD';
   else if (typeof shippingRateMatch_ !== 'function' || typeof shippingBatteryRead_ !== 'function') q = 'SHIPPING_RATE_RULE_UNAVAILABLE';
   else if (!org) q = 'SHIPPING_METHOD_ORIGIN_UNKNOWN';
   else { var bat = shippingBatteryRead_(ssM, x.skus || []);
@@ -216,6 +225,7 @@ function shiExplicitService_(ssM, cards, x) {
       if (S(r.origin_country) && org && !eqi(r.origin_country, org)) return; if (S(r.destination_country) && !dcs.some(function (dc) { return eqi(r.destination_country, dc); })) return;
       ev.push(p[0] + ':' + (S(r[p[1]]) || ('row ' + r.__r)) + (shiActive_(r) && !/^(false|0|no)$/i.test(S(r.is_active)) ? '' : ' (inactive)')); }); });
   var qs = q ? 'QUOTE_UNAVAILABLE' : 'QUOTE_APPLICABLE';
+  if (routeProof && ev.indexOf('shipment_route_templates:' + routeProof) < 0) ev.push('shipment_route_templates:' + routeProof);
   return { ok: true, explicit: true, method: tok, lastMile: lm, label: '', quote_status: qs, quote_reason: q || '', quote_message: q ? 'cost pending (' + q + ')' : '',
     provenance: { rule: 'EXPLICIT_SERVICE_V1 (method token + last mile typed; no rate card needed; no quote selected)', quote_status: qs, quote_reason: q || '', via: 'explicit', carrier_id: car, input: txt.slice(0, 120), last_mile_input: lm,
       origin_country: org, country: cc, destination_countries: dcs.slice(0, 10), marketplace: mkt || 'MULTI', warehouse_code: wc, etd: day, shipping_method: tok, last_mile_delivery: lm, evidence: ev.slice(0, 20),
@@ -342,9 +352,9 @@ shiF_('Header', 'warehouse_code', 'shipments.warehouse_code', 'text', 'derived',
 shiF_('Header', 'etd', 'shipments.etd', 'date', 'input', 'req', 'fixed', { header: '工廠實際出貨日 etd', addHeader: 'ETD', comment: 'The date the goods left the source warehouse (yyyy-MM-dd), not after the import time (or 資料時間 when given). No other logistics date is derived from it.', addComment: 'ETD: the date the goods left the source warehouse (yyyy-MM-dd), not after the import time (or 資料時間 when given).' }),
 shiF_('Header', 'eta', 'shipments.eta', 'date', 'input', 'req', 'edit', { header: 'ETA（未知請留白） eta', addHeader: 'ETA', comment: 'Blank = unknown (never guessed; not counted as dated supply until filled). Update Existing may fill or change it, never clear it.', addComment: 'ETA (yyyy-MM-dd): REQUIRED on Add New (Owner 2026-11-20); not before ETD. Never guessed by the system.' }),   // A fix1: Add New 'opt' -> 'req'; Update unchanged
 shiF_('Header', 'reference_id', 'shipments.reference_id', 'text', 'input', 'req', 'fixed', { addHeader: 'Reference ID', addComment: 'Reference ID: REQUIRED on Add New; your reference text (stored in shipments.reference_id; not a system id).' }),   // A fix1: Add New 'opt' -> 'req'
-shiF_('Header', 'carrier_id', 'shipments.carrier_id', 'ref', 'input', 'req', 'fixed', { list: 'carrier', addHeader: 'Carrier', addComment: 'Carrier: REQUIRED on Add New (Owner 2026-11-21); an ACTIVE carrier id - pick from the list, or type / paste the exact id. Shipping method and last mile are resolved from this carrier\'s rate cards.' }),   // A-delta1 B (P0-2): opt -> req (Add New only; Update keeps fixed)
-shiF_('Header', 'shipping_method', 'shipments.shipping_method', 'ref', 'input', 'req', 'fixed', { addHeader: 'Shipping method', list: 'shipping_method', comment: 'The method token exactly as carrier_lead_times / carrier_rate_cards spell it.', addComment: 'Shipping method: REQUIRED on Add New - the carrier\'s rate-card label (A-delta1: resolved by Carrier + label to ONE method + last mile; a label with several different methods / last miles is refused, never the first). Pick from the list, or type / paste the method exactly as the carrier master spells it.' }),   // A fix1: Add New 'opt' -> 'req'
-shiF_('Header', 'last_mile_delivery', 'shipments.last_mile_delivery', 'ref', 'input', 'opt', 'fixed', { list: 'last_mile', addHeader: 'Last mile', updHeader: 'last_mile_delivery', addComment: 'Last mile: OPTIONAL. Fill it (e.g. parcel / truck) together with a method TOKEN in Shipping method (air / sea / sea_express / truck) for an EXPLICIT service: no rate card is needed and the cost stays pending. Leave it blank when Shipping method is a rate-card label (then it is resolved from the label).' }),   // AD3-B (Owner 10)
+shiF_('Header', 'carrier_id', 'shipments.carrier_id', 'ref', 'input', 'req', 'fixed', { list: 'carrier', addHeader: 'Carrier', addComment: 'REQUIRED: select an ACTIVE carrier id, or type / paste the exact id. Select Shipping method and Last mile separately; no rate-card label is needed.' }),
+shiF_('Header', 'shipping_method', 'shipments.shipping_method', 'ref', 'input', 'req', 'fixed', { addHeader: 'Shipping method', list: 'shipping_method', comment: 'The stored transport method token.', addComment: 'REQUIRED: select the transport method token (air / sea / sea_express / truck), not a rate-card label. Fill Last mile separately. A matching route template does not require a quote.' }),
+shiF_('Header', 'last_mile_delivery', 'shipments.last_mile_delivery', 'ref', 'input', 'opt', 'fixed', { list: 'last_mile', addHeader: 'Last mile', updHeader: 'Last mile', oldHeaders: ['last_mile_delivery'], addComment: 'REQUIRED: select the final delivery mode (parcel / truck). Independent of Shipping method; truck + parcel and truck + truck are different services.' }),
 shiF_('Header', 'shipments_customs_type', 'shipments.shipments_customs_type', 'ref', 'input', 'no', 'fixed', { list: 'customs_type' }),
 shiF_('Header', 'import_duty_treatment', 'shipments.import_duty_treatment', 'ref', 'input', 'no', 'fixed', { list: 'import_duty_treatment' }),
 shiF_('Header', 'currency', 'shipments.currency', 'ref', 'input', 'no', 'fixed', { list: 'currency' }),
@@ -482,10 +492,8 @@ cltRows.forEach(function (r) { add('last_mile', r.last_mile_delivery); });
 crcRows.forEach(function (r) { add('last_mile', r.last_mile_delivery); add('currency', r.currency); });
 var svc0 = shiSvcVocabFromRows_(cltRows, crcRows);   // AD3-B (Owner 10): the server vocabulary tokens are always offered, with or without a rate card; round 6: from the rows THIS function already read (no extra sheet read)
 Object.keys(svc0.lastMiles).forEach(function (t) { add('last_mile', t); });
-var methods = shiMethodModel_(cltRows.concat(Object.keys(svc0.methods).map(function (t) { return { shipping_method: t }; })), crcRows);   // A final S1: the dropdown shows the business label; the token is what is stored
-L.shipping_method = methods.entries.map(function (e) { return { value: e.text, label: '', status: 'active' }; });
-Object.keys(svc0.methods).sort().forEach(function (t) { if (!L.shipping_method.some(function (e) { return e.value === t; })) L.shipping_method.push({ value: t, label: '', status: 'active' }); });   // AD3-B: the bare tokens for an EXPLICIT service (with Last mile)
-L.shipping_method_label = Object.keys(crcRows.reduce(function (m, r) { var l = imbStr_(r.shipping_method_label); if (l && shiActive_(r)) m[l] = 1; return m; }, {})).sort().map(function (l) { return { value: l, label: '', status: 'active' }; });   // A-delta1 B: label-only dropdown for Add New
+var methods = shiMethodModel_(cltRows.concat(Object.keys(svc0.methods).map(function (t) { return { shipping_method: t }; })), crcRows);   // Legacy label compatibility; new dropdowns contain tokens only.
+L.shipping_method = Object.keys(svc0.methods).sort().map(function (t) { return { value: t, label: '', status: 'active' }; });
 Object.keys(typeof CUSTOMS_TYPE_LABELS_ === 'object' ? CUSTOMS_TYPE_LABELS_ : {}).forEach(function (k) { add('customs_type', k, k + ' - ' + CUSTOMS_TYPE_LABELS_[k]); });
 Object.keys(typeof CRC_IMPORT_DUTY_TREATMENTS_ === 'object' ? CRC_IMPORT_DUTY_TREATMENTS_ : {}).forEach(function (k) { add('import_duty_treatment', k); });
 L.distinct_ack = [{ value: 'TRUE', label: '', status: 'active' }, { value: 'FALSE', label: '', status: 'active' }];   // SHIP-OPEN R5; A fix1: TRUE / FALSE (Owner 2026-11-20), no label so the cell holds exactly TRUE or FALSE
@@ -529,6 +537,7 @@ if (mode === 'ADD_NEW') return f.add !== 'no';
 return f.update !== 'ignore';
 }).map(function (f) {
 var req = mode === 'ADD_NEW' ? (f.add === 'req' || f.add === 'link') : (f.update === 'key' || f.update === 'version' || f.update === 'link');
+if (mode === 'ADD_NEW' && f.key === 'last_mile_delivery') req = true;
 var kind = mode === 'UPDATE' && f.update === 'fixed' ? 'readonly' : (mode === 'UPDATE' && f.update === 'edit' ? 'editable' : f.kind);
 // A fix1 SHTPL1 (root cause: the shared template-export.js unlocks a protected-sheet data cell only for kind editable / required /
 // business; b5 sent 'input' / 'key', so every Add New data cell was locked). ADD_NEW ONLY: a user-input field (kind 'input') and the
@@ -546,7 +555,7 @@ if (mode === 'UPDATE' && f.update === 'display') col.unlock_if_row_flag = SHI_DI
 // A-delta2 r3 (b3 freeze, Owner: never looser than b3): Update shows the Add New Carrier + Shipping method texts and dropdown lists, but both cells
 // stay LOCKED on every row and any different value is refused (shiTransportLock_ / transportOf). Last mile is derived (read-only).
 if (mode === 'UPDATE' && sheet === 'Header' && (f.key === 'carrier_id' || f.key === 'shipping_method')) col.comment = f.key === 'carrier_id' ? 'Carrier: read-only in Update (as b3). A different value is listed in the preview and refused (SHIPMENT_TRANSPORT_FROZEN, or a more specific lock code); no route or event is deleted or rebuilt.' : 'Shipping method: read-only in Update (as b3). The exported text, or any text that resolves to the SAME stored method + last mile for this carrier, is no change; anything else is listed in the preview and refused.';   // A-delta2 r3: cells stay locked (b3 scope)
-if (mode === 'UPDATE' && sheet === 'Header' && f.key === 'last_mile_delivery') col.comment = 'Derived from Carrier + Shipping method (read-only).';
+if (mode === 'UPDATE' && sheet === 'Header' && f.key === 'last_mile_delivery') col.comment = 'Stored final delivery mode (read-only in Update).';
 return col;
 });
 }
@@ -571,11 +580,11 @@ var li = shiLists_(ss, company);
 if (li.unreadable.length) { var eU = new Error('master data could not be read: ' + li.unreadable.join(', ') + ' - no list is offered'); eU.importCode = li.unreadable.indexOf('company master') >= 0 ? 'SHIPMENT_COMPANY_MASTER_UNAVAILABLE' : 'SHIPMENT_MASTER_UNREADABLE'; throw eU; }
 if (mode === 'UPDATE' && o.include_data) {
 if (!company) { var e = new Error('UPDATE export needs scope.company - the export is the complete set of one company\'s updatable shipments'); e.importCode = 'IMPORT_SCOPE_REQUIRED'; throw e; }
-var db = shiDb_(ss), tx = shiTransportIndex_(ss), trFlags = { Header: [] }, crcT = shiRowsOf_(ss, 'carrier_rate_cards') || [];
+var db = shiDb_(ss), tx = shiTransportIndex_(ss), trFlags = { Header: [] };
 Object.keys(db.byId).sort().forEach(function (sid) {
 var h = db.byId[sid][0]; if (imbStr_(h.company) !== company || !shiUpdatable_(h)) return;   // A-delta2: the ONE status filter (shipped / in_transit / arrived; never PENDING)
 var hr = {}; shiColumns_('Header', 'UPDATE').forEach(function (c) { hr[c.key] = shiCurrent_(db, shiField_('Header', c.key), h, null); }); if (shiDisplayEditable_(h)) flagRows.Header.push(rows.Header.length);   // A fix2 (b2: the flag stays OUT of the row data)
-hr.shipping_method = shiMethodText_(li.methods, crcT, h);   // A-delta2: the business label (the Add New pair), never the bare token when one label names it
+hr.shipping_method = imbStr_(h.shipping_method);
 if (!shiTransportLock_(tx, h)) trFlags.Header.push(rows.Header.length);   // A-delta2 r2: never true (the lock always answers) - the flag list stays empty
 rows.Header.push(hr);
 (db.linesBy[sid] || []).forEach(function (l) { var lr = {}; shiColumns_('Lines', 'UPDATE').forEach(function (c) { lr[c.key] = c.key === 'shipment_id' ? sid : shiCurrent_(db, shiField_('Lines', c.key), h, l); }); if (shiDisplayEditable_(h)) flagRows.Lines.push(rows.Lines.length); rows.Lines.push(lr); });   // A fix2 (b2)
@@ -583,18 +592,19 @@ rows.Header.push(hr);
 flagRows.__transport = trFlags.Header;
 notes.push('UPDATE: only the editable columns may change (tracking / booking / invoice numbers, ETA, actual dates, actual costs, notes). A blank keeps the current value; [CLEAR] clears a clearable field (ETA is never cleared).');
 notes.push('Updatable = shipped / in_transit / arrived (已送達待收貨). Shipments whose receipt has started or that are finished (partially_received, received, closed, completed, delivered, cancelled), drafts and ready_to_ship are not exported and an Update row for them is refused.');
-notes.push('Carrier + Shipping method (label) show the Add New texts and stay read-only, as before: a different value is listed in the preview with its route impact and refused - no route or event is deleted or rebuilt.');
+notes.push('Carrier, Shipping method token and Last mile stay read-only in Update: a different value is refused. No route or event is deleted or rebuilt.');
 notes.push('Amazon display-only shipments: 在途中數量（僅顯示） may only go down or stay, with a LATER 資料時間 (not in the future). Only the shown number changes. Other shipments change quantity only through receipts.');
 notes.push('Status, quantities, SKU, company / receiver, warehouses and system columns are read-only: a different value is refused (Carrier / Shipping method too - see below). Receipts: shipment.receipt.update.');   // A-delta2
 } else {
 notes.push('Add New = shipments already on the way (left the source warehouse, not fully received). Type only the quantity still not received (在途中數量) - not the original total, not what was already received.');
-notes.push('Required on Header: 出貨單號, 國家, 站點, 出貨倉, 目的倉, ETD, ETA, Reference ID, Shipping method. Required on Lines: 出貨單號, SKU, 在途中數量 (whole number > 0). Source = an active factory or the selected company\'s active 3PL overseas warehouse. List cells accept a picked value or the same value typed / pasted; the server checks every value.');
+notes.push('Required on Header: 出貨單號, 國家, 站點, 出貨倉, 目的倉, ETD, ETA, Reference ID, Shipping method, Last mile. Shipping method = transport token (air / sea / sea_express / truck); Last mile = final delivery mode (parcel / truck). No rate-card label or quote is needed to match a route template. Source = an active factory or the selected company\'s active 3PL overseas warehouse.');
 notes.push('No factory stock deduction, reservation, PO allocation, PO change, route, event, receipt, document or e-mail is created. Lines link to their Header row by 出貨單號.');
 notes.push('One shipment may carry several different SKUs (one line each); the same SKU twice in one shipment is refused. A row whose content equals another shipment under a different number is SUSPECTED_DUPLICATE: if it really is a different shipment, set 確認為不同出貨 = TRUE and give 不同出貨原因 (recorded in the audit); FALSE or blank does not acknowledge. Never change dates or quantities to get past it.');
 notes.push('One 出貨單號 = one shipment = one destination (no split). ETD is the source warehouse departure date; ETA is required and never guessed.');
 notes.push('Amazon (FBA) destination: shown only - not supply, cannot be received. Overseas 3PL destination: counted once and received normally. The server records the import time; 資料時間 stays blank unless the source gives one.');
 }
 var outScope = { company: company }; if (mode === 'ADD_NEW') { outScope.opening_as_of = cut; outScope.timezone = shiTz_(); outScope.template_contract = SHI_ADD_CONTRACT_; }   // A fix1: the Add New contract travels in _SYSTEM.scope
+if (mode === 'ADD_NEW') outScope.service_input = SHI_SERVICE_INPUT_;
 if (prep) { outScope.opening_as_of = ''; outScope.preparation_only = SHI_PREP_MARK_; notes.unshift('準備用：不可上傳 Apply - PREPARATION ONLY: copy the rows into a template downloaded from the import dialog (this file is refused at validate and Apply).'); }   // A final3: short note
 return { sheets: ['Header', 'Lines'].map(function (sn) { var s = { name: sn, columns: shiColumns_(sn, mode), rows: rows[sn] }; if (mode === 'UPDATE' && o.include_data) { s.row_flags = {}; s.row_flags[SHI_DISPLAY_EDIT_FLAG_] = flagRows[sn]; if (sn === 'Header') s.row_flags[SHI_TRANSPORT_EDIT_FLAG_] = flagRows.__transport || []; } return s; }), lists: li.lists,   // A fix2 b2: row_flags = { flag: [row index] } (template-only; never part of a row); A-delta2: + the transport flag
 scope: outScope, scope_label: prep ? '準備用：不可上傳 Apply · company = ' + company : company ? 'company = ' + company + (mode === 'ADD_NEW' && cut ? ' · 資料時間 ' + cut : '') + (mode === 'UPDATE' && o.include_data ? ' - every updatable shipment of this company (' + rows.Header.length + ')' : '') : 'choose the company first',   // A final3: no cut-off text
@@ -743,8 +753,11 @@ if (miss.length) imbIssue_(issues, '', '', p[0] + '.' + miss.join(','), 'SHIPMEN
 li.unreadable.forEach(function (t) { imbIssue_(issues, '', '', t, 'SHIPMENT_MASTER_UNREADABLE', 'the ' + t + ' master could not be read - nothing was checked against it'); });
 var whBy = Object.create(null); /* A final2 (MINOR-6): a warehouse id named like an Object.prototype key is a plain key */ (shiRowsOf_(ss, 'warehouses') || []).forEach(function (r) { var id = imbStr_(r.warehouse_id); if (id) (whBy[id] = whBy[id] || []).push(r); });
 var mkRows = shiRowsOf_(ss, 'marketplaces') || [];
-var crcAll_ = shiRowsOf_(ss, 'carrier_rate_cards');   // A-delta1 B (P0-2): Carrier + label -> (shipping_method, last_mile_delivery)
-if (!crcAll_) imbIssue_(issues, '', '', 'carrier_rate_cards', 'SHIPMENT_MASTER_UNREADABLE', 'the carrier_rate_cards master could not be read - Shipping method cannot be resolved');
+// New files declare the two tokens; previously downloaded label files retain their original interpretation.
+var tokenInput = !!(fsc && imbStr_(fsc.service_input) === SHI_SERVICE_INPUT_);
+if (fsc && imbStr_(fsc.service_input) && !tokenInput) imbIssue_(issues, '', '', '_SYSTEM.scope.service_input', 'IMPORT_FILE_SERVICE_INPUT_UNSUPPORTED', 'Download a current template; this server does not support service_input ' + imbStr_(fsc.service_input));
+var crcAll_ = shiRowsOf_(ss, 'carrier_rate_cards');
+if (!crcAll_ && !tokenInput) imbIssue_(issues, '', '', 'carrier_rate_cards', 'SHIPMENT_MASTER_UNREADABLE', 'the carrier_rate_cards master could not be read - Shipping method cannot be resolved');
 var batchSt = shiBatchStatuses_(ss);
 // existing shipments of THIS company by external number (another company's same number is a different shipment - Owner Q5)
 var exByExt = {}, histSig = {};
@@ -776,7 +789,7 @@ if (f.add === 'no') return;
 if (f.key === 'marketplace' && multi) { v.marketplace = imbStr_(rawMk.value); return; }
 if (f.key === 'distinct_shipment_ack') { var a0 = shiAckOf_(r); h.ack0 = a0; v.distinct_shipment_ack = a0.raw; return; }
 if (f.key === 'shipping_method') {   // A final S1: label / token / 'token | ...' -> the canonical token; a shared label is refused, never first-match
-var mc = imbCell_(r, 'shipping_method'); h.methodRaw = mc.absent ? '' : imbStr_(mc.value); if (!h.methodRaw) { imbIssue_(issues, sn, r.__row, 'shipping_method', 'REQUIRED', 'Shipping method (the carrier\'s rate-card label) is required'); } v.shipping_method = ''; return;   // A-delta1 B: resolved after the destination checks
+var mc = imbCell_(r, 'shipping_method'); h.methodRaw = mc.absent ? '' : imbStr_(mc.value); if (!h.methodRaw) { imbIssue_(issues, sn, r.__row, 'shipping_method', 'REQUIRED', 'Shipping method is required'); } v.shipping_method = ''; return;
 var mr = li.methods.resolve(mc.absent ? '' : mc.value);
 if (mr.blank) { if (f.add === 'req') imbIssue_(issues, sn, r.__row, 'shipping_method', 'REQUIRED', 'shipping_method is required'); v.shipping_method = ''; return; }
 if (mr.ambiguous) { imbIssue_(issues, sn, r.__row, 'shipping_method', 'SHIPPING_METHOD_LABEL_AMBIGUOUS', 'Shipping method "' + mr.value + '" names more than one method in carrier_rate_cards' + (mr.candidates.length ? ' (' + mr.candidates.join(', ') + ')' : '') + ' - pick the entry that carries the method in brackets; nothing is guessed', mr.value); v.shipping_method = mr.value; return; }
@@ -784,7 +797,7 @@ if (mr.unknown) { imbIssue_(issues, sn, r.__row, 'shipping_method', 'REFERENCE_U
 v.shipping_method = mr.token; h.methodLabel = mr.label || ''; return;
 }   // A fix1: TRUE / FALSE, judged below with the suspicion
 var wh = f.key === 'source_warehouse_id' || f.key === 'destination_warehouse_id';
-var t = shiTyped_(f, r, issues, sn, wh ? null : L, f.add === 'req');
+var t = shiTyped_(f, r, issues, sn, wh ? null : L, f.add === 'req' || (tokenInput && f.key === 'last_mile_delivery'));
 if (f.key === 'note' && /\[SC13_/.test(String(t.value == null ? '' : t.value))) { imbIssue_(issues, sn, r.__row, 'note', 'IMPORT_LINEAGE_MARKER_PROTECTED', 'a note may not contain a system marker [SC13_...] - remove it', ''); return; }
 if (t.clear) { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_FIELD_NOT_CLEARABLE', '[CLEAR] has no meaning on Add New'); return; }
 v[f.key] = t.ok ? t.value : (t.value === undefined ? '' : t.value);
@@ -823,7 +836,8 @@ if (v.source_warehouse_id === v.destination_warehouse_id) imbIssue_(issues, sn, 
 }
 if (src.length === 1) state.refs['wh:' + v.source_warehouse_id] = src[0];
 if (v.carrier_id) { var carHit_ = shiInList_(L, 'carrier', v.carrier_id); if (carHit_ && carHit_.status === 'inactive') imbIssue_(issues, sn, r.__row, 'carrier_id', 'SHIPMENT_CARRIER_INACTIVE', 'carrier ' + v.carrier_id + ' is inactive in the carriers master - an Add New shipment is refused for it', v.carrier_id); }
-if (h.methodRaw && v.carrier_id && crcAll_) { v.shipping_method = h.methodRaw; h.tupleQ = { lm: imbStr_(v.last_mile_delivery) /* AD3-B */, carrier: v.carrier_id, text: h.methodRaw, country: shiDeliveryCountry_(v.country, dst), whCode: h.warehouse_code || '', day: v.etd || '', origin: src.length === 1 ? imbStr_(src[0].country) : '', marketplace: multi ? '' : imbStr_(v.marketplace) }; }   // b3 M-3: resolved after the Lines (the battery class needs the SKUs)
+if (h.methodRaw && v.carrier_id && (crcAll_ || tokenInput)) { v.shipping_method = h.methodRaw; h.tupleQ = { lm: imbStr_(v.last_mile_delivery), carrier: v.carrier_id, text: h.methodRaw, country: shiDeliveryCountry_(v.country, dst), whCode: h.warehouse_code || '', day: v.etd || '', origin: src.length === 1 ? imbStr_(src[0].country) : '', marketplace: multi ? '' : imbStr_(v.marketplace) }; }
+if (tokenInput && h.tupleQ) h.tupleQ.routeFacts = { country: v.country, source_warehouse_id: v.source_warehouse_id, destination_warehouse_id: v.destination_warehouse_id, carrier_id: v.carrier_id, shipping_method: h.methodRaw, last_mile_delivery: v.last_mile_delivery, warehouse_code: h.warehouse_code || '' };
 h.v = v; h.ext = imbStr_(v.external_shipment_id); h.key = h.ext.toLowerCase();
 // R4 (Owner rule 1): ONE external number = ONE shipment = ONE destination. A second row with the same number is refused.
 if (h.ext) {
@@ -853,7 +867,8 @@ var unchanged = 0, overseas = shiOverseasFacts_(ss), amazon = shiAmazonFacts_(ss
 var rcSs_ = shiMemoSs_(ss);   // b3 M-3: one read of carrier_rate_cards / sku_details per request, whatever the row count
 order.forEach(function (k0) {
 var h = heads[k0];
-if (h.tupleQ) { var tq_ = h.tupleQ; tq_.skus = h.lines.map(function (l) { return imbStr_(l.v.sku); }).filter(Boolean); var tu_ = shiExplicitService_(rcSs_, crcAll_, tq_) || shiResolveTuple_(rcSs_, crcAll_, tq_);   // AD3-B: an explicit method token + last mile first; else the c2 label layers
+if (h.tupleQ) { var tq_ = h.tupleQ; tq_.skus = h.lines.map(function (l) { return imbStr_(l.v.sku); }).filter(Boolean); var tu_ = shiExplicitService_(rcSs_, crcAll_, tq_);
+  if (!tu_) tu_ = tokenInput ? { ok: false, code: 'SHIPPING_SERVICE_TOKENS_REQUIRED', message: 'Select a Shipping method token (air / sea / sea_express / truck) and fill Last mile separately; rate-card labels are not accepted in this template.' } : shiResolveTuple_(rcSs_, crcAll_, tq_);
   if (tu_.ok && !tu_.explicit && tq_.lm && tu_.lastMile !== tq_.lm) tu_ = { ok: false, code: 'SHIPPING_LAST_MILE_CONFLICT', message: 'Shipping method "' + tq_.text + '" resolves to ' + tu_.method + ' + ' + tu_.lastMile + ', but Last mile says ' + tq_.lm + ' - nothing is guessed (type the method token for an explicit service, or leave Last mile blank)', quote_status: tu_.quote_status, quote_reason: tu_.quote_reason };
   if (tu_.ok) { h.v.shipping_method = tu_.method; h.v.last_mile_delivery = tu_.lastMile; h.methodLabel = tu_.label; h.methodResolution = tu_.provenance; h.quote = { status: tu_.quote_status, reason: tu_.quote_reason || '', message: tu_.quote_message || '' };
     state.method_tuples = state.method_tuples || {}; state.method_tuples['row' + h.row] = [tu_.method, tu_.lastMile, tu_.quote_status].concat(tu_.provenance.rate_card_ids, tu_.provenance.evidence || []); }   // in the preview digest - a rate-card / service-evidence change between Validate and Apply refuses (IMPORT_PREVIEW_STALE)
@@ -1050,7 +1065,7 @@ function transportOf(r, h, t) {
     var eq = shiResolveTuple_(memoU, crcU, { carrier: car, text: txt, country: shiDeliveryCountry_(h.country, whU[imbStr_(h.destination_warehouse_id)] || []), whCode: h.warehouse_code, day: shiDateText_(h.etd), origin: src0.length === 1 ? imbStr_(src0[0].country) : '', marketplace: shiIsMulti_(h.marketplace) ? '' : imbStr_(h.marketplace), skus: sk0 });
     same = !!(eq.ok && eq.method === curTok && eq.lastMile === curLm); }
   if (same) {
-    if (!lc.absent && !lc.blank && imbStr_(lc.value) !== curLm) imbIssue_(issues, sn, r.__row, 'last_mile_delivery', 'SHIPMENT_FIELD_NOT_UPDATABLE', 'last_mile_delivery is derived from Carrier + Shipping method (current ' + (curLm || 'blank') + ') - change the Shipping method label instead', lc.value);
+    if (!lc.absent && !lc.blank && imbStr_(lc.value) !== curLm) imbIssue_(issues, sn, r.__row, 'last_mile_delivery', 'SHIPMENT_FIELD_NOT_UPDATABLE', 'Last mile is read-only in Update (current ' + (curLm || 'blank') + '); an import cannot change the saved transport service', lc.value);
     return null; }
   var want = (car !== curCar ? 'carrier ' + (curCar || 'blank') + ' -> ' + car : 'carrier ' + car) + ', Shipping method ' + (curTxt || curTok || 'blank') + ' -> ' + (txt || '(blank)');
   t.transport = { requested: want, current: { carrier_id: curCar, shipping_method: curTok, last_mile_delivery: curLm }, routes: txU.routes[t.sid] || 0 };

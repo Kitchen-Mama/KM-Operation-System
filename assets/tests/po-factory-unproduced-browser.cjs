@@ -65,9 +65,15 @@ function check(label, value) { assert(value, label); checks++; console.log('PASS
       await page.getByRole('button', { name: 'Confirm Receive', exact: true }).click();
       await page.locator('#po-modal').waitFor({ state: 'detached' });
       check(width + ' real receipt completes PO and stock becomes 500, not 1000', h.rows('purchase_orders')[0].order_status === 'completed' && h.rows('factory_stock')[0].fac_current_stock === 500 && h.rows('purchase_order_lines')[0].completed_qty === 1000);
+      await po.waitFor({ state: 'detached' });
+      check(width + ' completed PO leaves active Workspace and its selectors', await page.locator('#po-groups [data-status="completed"]').count() === 0 && !await page.locator('#po-toolbar').isVisible());
       const receipt = h.calls.find(c => c.action === 'receivePurchaseOrderLines' && !c.mode), before = h.writes();
       const replay = await page.evaluate(body => KM.DB.receivePurchaseOrderLines(body), receipt);
       check(width + ' receipt replay is idempotent with zero additional writes', replay.already_recorded === true && h.writes() === before);
+      await mount(page, 'purchase-order-list', 'initPurchaseOrderListPage');
+      await page.getByRole('button', { name: /Ready \/ Completed/ }).click();
+      await page.locator('#pol-tbody tr').filter({ hasText: 'CO1150-N' }).waitFor();
+      check(width + ' completed PO remains in Overview', (await page.locator('#pol-tbody').innerText()).includes('1,000'));
       check(width + ' no browser exceptions or real outbound network', ui.errors.length === 0 && ui.outbound.length === 0);
       await page.screenshot({ path: path.join(out, 'completed-' + width + '.png'), fullPage: true }); await page.close();
     }

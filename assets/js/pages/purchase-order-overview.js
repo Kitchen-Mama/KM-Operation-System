@@ -1,11 +1,11 @@
 // ========================================
 // Purchase Order Workspace (Procurement Commitment / Execution) — Card architecture.
 // Reads purchase_orders / purchase_order_lines / warehouses / sku_details via KM.DB.
-// Factory tabs (All / CN侑鑫 / TW勝一) · Series / PO selectors · THREE lifecycle groups
-// (Draft / In Production / Completed) · 25 cards per page · expandable 4-block card
+// Factory tabs (All / CN侑鑫 / TW勝一) · Series / PO selectors · active lifecycle groups
+// (Draft / In Production) · 25 cards per page · expandable 4-block card
 // (SKU Summary / Production Timeline / Factory Notes / Factory Payment).
 // order_status canonical (fallback legacy status). Cancelled hidden. Actions: Draft = Save /
-// Send PO / Cancel · In Production = Update / Receive · Completed = read-only. Receive persists via
+// Send PO / Cancel · In Production = Update / Receive. Completed orders stay in Overview. Receive persists via
 // KM.DB.receivePurchaseOrderLines; Save/Update via KM.DB.updatePurchaseOrderHeader. No faked success.
 // See docs/planning/PURCHASE_ORDER_SPEC.md §3–§4B / REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md §7.2.
 // ========================================
@@ -127,20 +127,15 @@
         ready_to_ship: 'Ready to Ship', closure: 'Closure', cancelled: 'Cancelled'
     };
 
-    // Three lifecycle groups (PURCHASE_ORDER_SPEC.md §3.2). Cancelled + unknown → hidden.
-    // shipped / partial_shipped / ready_to_ship (post-production) fold into Completed so they stay visible.
+    // Received / post-production orders remain in Overview, not this active workspace.
     var GROUP_OF = {
         draft: 'draft',
         issued: 'in_production', supplier_confirmed: 'in_production', confirmed: 'in_production',
-        in_production: 'in_production', partial_completed: 'in_production',
-        completed: 'completed', closure: 'completed',
-        ready_to_ship: 'completed', partial_shipped: 'completed', shipped: 'completed'
+        in_production: 'in_production', partial_completed: 'in_production'
     };
     function groupOf(status) { return GROUP_OF[status] || null; }
 
-    // Ordering for the combined (pre-pagination) list: active first, then completed.
-    var STATUS_ORDER = ['draft', 'issued', 'supplier_confirmed', 'confirmed', 'in_production', 'partial_completed',
-        'ready_to_ship', 'partial_shipped', 'shipped', 'completed', 'closure'];
+    var STATUS_ORDER = ['draft', 'issued', 'supplier_confirmed', 'confirmed', 'in_production', 'partial_completed'];
 
     var PAGE_SIZE = 25;
 
@@ -245,7 +240,7 @@
                 documentGenerationError: o.documentGenerationError || null,
                 canRetryDocuments: o.canRetryDocuments === true
             };
-        }).filter(function (m) { return m.group; });   // hide cancelled / unknown
+        }).filter(function (m) { return m.group; });   // before filters, selectors and pagination
     }
 
     function applyFilters(models) {
@@ -289,7 +284,7 @@
 
         if (!models.length) {
             hideToolbar();
-            groupsEl.innerHTML = '<div class="procurement-empty">No purchase orders yet. Convert an Approved Request Order (Request Order Draft page) to create one.</div>';
+            groupsEl.innerHTML = '<div class="procurement-empty">No active purchase orders.</div>';
             return;
         }
 
@@ -319,8 +314,7 @@
         }
 
         groupsEl.innerHTML = section('Draft', 'draft') +
-            section('In Production', 'in_production') +
-            section('Completed', 'completed');
+            section('In Production', 'in_production');
         renderPagination(filtered.length, totalPages);
     }
 

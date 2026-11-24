@@ -129,7 +129,8 @@ async function scenario(browser, width) {
     check(width + ' Fresh receipt defaults only the unreceived remainder', await page.locator('.po-rcv-input').inputValue() === '20');
     await page.getByRole('button', { name: 'Confirm Receive', exact: true }).click();
     await page.locator('#po-modal').waitFor({ state: 'detached' });
-    await page.waitForFunction(() => document.querySelector('[data-status="completed"]'));
+    await po.waitFor({ state: 'detached' });
+    check(width + ' fully received PO leaves Workspace', await page.locator('#po-groups [data-status="completed"]').count() === 0);
     check(width + ' Full receipt closes production with exactly 30 stock', h.rows('purchase_orders')[0].order_status === 'completed' &&
       h.rows('factory_stock')[0].fac_current_stock === 30 && h.rows('factory_stock_movements').length === 2);
     await mount(page, 'purchase-order-list', 'initPurchaseOrderListPage');
