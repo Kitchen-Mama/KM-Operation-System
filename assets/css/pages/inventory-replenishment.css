@@ -687,6 +687,15 @@
     text-overflow: ellipsis;
 }
 
+#ops-section .replen-cache-status {
+    flex-basis: 100%;
+    font-size: 12px;
+    color: #64748b;
+    padding-top: 4px;
+    overflow-wrap: anywhere;
+}
+#ops-section .replen-cache-status[hidden] { display: none; }
+
 /* 問題4: Table Body - sticky 和 hover */
 #ops-section .table-body-bar {
     display: flex;

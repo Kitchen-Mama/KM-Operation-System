@@ -2271,7 +2271,50 @@ function _irDosCellClass_(item) {
     if (item && item.srcUnknown13) return '';   // R71-FE-14 (M-1): no red light from a site number
     return (window.IRMap ? window.IRMap.dosColorClass(item.daysOfSupply) : '') + (item.needsAlert ? ' alert-red' : '');
 }
-function _irScrollRowHtml_(item) {
+// Read the already batched exposure snapshot; never fetch once per SKU.
+function _irPendingRouteSkus_() {
+    var out = Object.create(null), headers = Object.create(null), knownHeaders = Object.create(null), site = _irExposureSite_();
+    if (!site) return out;
+    var drafts = _irWsGet('getShippingAllocationDrafts'), lines = _irWsGet('getShippingAllocationDraftLines');
+    if (window.KMARC && drafts && lines) {
+        drafts.forEach(function (d) {
+            if (!d) return;
+            var r = d.raw || d, id = String(d.allocationDraftId || r.allocation_draft_id || '');
+            knownHeaders[id] = !_irIsHistoricalDraft_(id) && window.KMARC.classifyHeader(r, site).counts_toward_current_plan;
+            if (knownHeaders[id]) headers[id] = true;
+        });
+        lines.forEach(function (l) {
+            if (!l) return;
+            var r = l.raw || l, id = String(l.allocationDraftId || r.allocation_draft_id || ''),
+                lid = String(l.allocationDraftLineId || r.allocation_draft_line_id || ''),
+                status = String(l.lineStatus || r.line_status || '').trim().toLowerCase();
+            if (headers[id] && r.sku && status !== 'cancelled' && !_irRouteCancelHeld_(lid)) out[String(r.sku)] = true;
+        });
+    }
+    if (_replenCtxEq(replenAllocationDraft.context, site)) {
+        Object.keys(replenAllocationDraft.bySku || {}).forEach(function (sku) {
+            var rows = replenAllocationDraft.bySku[sku];
+            if (!Array.isArray(rows)) return;
+            out[sku] = rows.some(function (r) {
+                if (r && knownHeaders[String(r.allocation_draft_id || '')] === false) return false;
+                return r && !_irIsComposerRow_(r) && !_irIsHistoricalDraft_(r.allocation_draft_id) &&
+                    !_irRouteCancelHeld_(r.allocation_draft_line_id);
+            });
+        });
+    }
+    return out;
+}
+function _irPendingRouteCellHtml_(sku, pending) {
+    return pending && pending[String(sku)] ? '<span class="ai-action-cell__text">Pending Route</span>' : '';
+}
+function _irPaintPendingRoutes_() {
+    var pending = _irPendingRouteSkus_();
+    document.querySelectorAll('#replenScrollBody .scroll-row[data-sku]').forEach(function (row) {
+        var cell = row.querySelector('.ai-action-cell');
+        if (cell) cell.innerHTML = _irPendingRouteCellHtml_(row.getAttribute('data-sku'), pending);
+    });
+}
+function _irScrollRowHtml_(item, pendingRoutes) {
     return '\n        <div class="scroll-row" data-sku="' + item.sku + '" data-rowkey="' + escapeReplenHtml(_irRowKey(item)) + '" onclick="_replenRowClick(event, \'' + _irSkuArg(item.sku) + '\')">' +
         '<div class="scroll-cell">' + _replenPlanningModelLabel(item.replenishmentModel) + '</div>' +
         '<div class="scroll-cell">' + item.company + '</div>' +
@@ -2286,8 +2329,8 @@ function _irScrollRowHtml_(item) {
         '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
         _irFactoryCellHtml_(item.cnStock, item, 'CN') +
         _irFactoryCellHtml_(item.twStock, item, 'TW') +
-        '<div class="scroll-cell ai-action-cell" role="button" data-no-row-toggle onclick="openAISuggestion(event, \'' + _irSkuArg(item.sku) + '\')" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">' +
-        '<span class="ai-action-cell__text">View Recommendation</span>' +
+        '<div class="scroll-cell ai-action-cell" style="width: 175px; min-width: 175px; max-width: 175px; flex-shrink: 0;">' +
+        _irPendingRouteCellHtml_(item.sku, pendingRoutes || _irPendingRouteSkus_()) +
         '</div>' +
         '</div>\n    ';
 }
@@ -2368,6 +2411,7 @@ window._irRenderIntegrity_ = function () { return _irRenderIntegrity; };
 function renderReplenishment() {
     /* S8-B3-R3-CP2P-R2 - the table render is one synchronous scope. */
     return _irWithRenderPass_(function () {
+    _irPaintCacheStatus_();
     // F1-7N-FB-2A §B — THE gate. Placed before getReplenishmentData() so that NO caller of
     // renderReplenishment() — the mount, an LTS change, a post-write reconcile, the async recommendation
     // re-render — can paint inventory rows the user never searched for. Demo mode is unchanged (it needs no
@@ -2428,8 +2472,9 @@ function renderReplenishment() {
     // a TW pool outside ResUS, and a zero forecast denominator are all REAL zeros, and each carries its reason
     // in the cell's title. null means the projection could not run at all, and prints the same em dash every
     // other unavailable number on this page uses. `|| 0` would erase that difference.
+    var pendingRoutes = _irPendingRouteSkus_();
     scrollBody.innerHTML = data.map(item => {
-        try { return _irScrollRowHtml_(item); }
+        try { return _irScrollRowHtml_(item, pendingRoutes); }
         catch (e) { _irNoteRowFailure_(item, e, 'scroll'); return _irScrollRowFailedHtml_(item); }
     }).join('');
     
@@ -2450,6 +2495,7 @@ function renderReplenishment() {
     _irApplyInventoryColumnModel(_irScopeFulfillmentModel());
     // F1-7N-FB-4E-R4B-R3 §3 - the render checks its own output rather than trusting it.
     _irVerifyRenderedRows_(data.length);
+    if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
     });
 }
 
@@ -3991,6 +4037,7 @@ function _persistAllocationDraft() {
         snapshot._routeCancelEvidence = (typeof _irRouteCancelEvidence_ !== 'undefined' && _irRouteCancelEvidence_) ? _irRouteCancelEvidence_ : [];   // RC1
         sessionStorage.setItem(REPLEN_ALLOC_DRAFT_KEY, JSON.stringify(snapshot));
     } catch (e) {}
+    try { _irPaintPendingRoutes_(); } catch (ePaint) {}
 }
 // ============================================================================
 // F1-7N-FB-2A §D — NO LOCAL PERSISTENCE FALLBACK FOR A BUSINESS WRITE.
@@ -7913,6 +7960,7 @@ function _clearAllocationDraft() {
     replenAllocationDraft = { context: { country: '', marketplace: '' }, targetDays: '', bySku: {} };
     window.KM.shippingAllocationDraft = replenAllocationDraft;
     try { sessionStorage.removeItem(REPLEN_ALLOC_DRAFT_KEY); } catch (e) {}
+    _irPaintPendingRoutes_();
 }
 function _irKeepUnsubmittedRoutesDw2_(draftIds) {
     var done = {}; (draftIds || []).forEach(function (id) { done[String(id)] = true; });
@@ -11044,9 +11092,11 @@ function _irEnsureExposureLoaded_(opts) {
 // were never waiting on this and are not touched.
 function _irOnExposureSettled_(key) {
     if (key !== _irExposureScopeKey_()) return;            // the operator moved on; this answer has no home
+    try { _irPaintPendingRoutes_(); } catch (ePlan) {}
     var sku = (typeof currentExpandedRow !== 'undefined' && currentExpandedRow) ? currentExpandedRow : '';
     try { _irRepaintExposureCard_(sku); } catch (e) {}
     try { _irPaintOnTheWayCells_(); } catch (eOW) {}   // A final4 Cut B: the first level follows the same settled snapshot
+    if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
     // The persisted routes are an exposure table, so the hydrate could not have run before now. It pumps the
     // Execution gate itself on completion, which is what releases that panel from its skeleton.
     //
@@ -11249,7 +11299,9 @@ function _irPaintOnTheWayCells_() {
     var n = 0;
     document.querySelectorAll('.replen-onway-cell[data-ow-key]').forEach(function (el) {
         var c = _irOnTheWayCellInner_(el.getAttribute('data-ow-key'), null); el.innerHTML = c.html;
+        el.removeAttribute('data-cached-result');
         if (c.title) el.setAttribute('title', c.title); else el.removeAttribute('title'); n++; });
+    _irRestoreWarmCells_();
     return n;
 }
 function _irRepaintExposureCard_(sku) {
@@ -11501,11 +11553,11 @@ function _irSharedRegistry_() {
 //     scope lives in `applied`, which is assigned in exactly one validated place (§B.5).
 //   * only a SUCCESSFUL read is retained, and only a successful read stamps a completion time, so a failure is
 //     never restorable and never paints as current.
-//   * the restore is BOUNDED by that stamp. An aged result is not painted; it is re-read like any other.
+//   * age controls freshness, not visibility: a same-scope snapshot stays visible during revalidation.
 //   * an explicit Search never restores. It always performs a fresh read, because a person pressing Search is
 //     asking for exactly that.
 //   * revalidation runs QUIETLY: it may replace data, it may never replace a valid table with a loading one.
-var _IR_RESULT_TTL_MS = 10 * 60 * 1000;   // ten minutes: long enough for navigation, short enough to be current
+var _IR_RESULT_TTL_MS = 10 * 60 * 1000;   // freshness threshold, not a cache eviction deadline
 var _irReadModelAt = 0;                    // when the retained model COMPLETED (0 = never)
 function _irNowMs_() { try { return Date.now(); } catch (e) { return 0; } }
 // Canonical scope equality. Compared field by field on normalized strings, never by object identity and never
@@ -11521,8 +11573,65 @@ function _irRestorableResult_(scope) {
     if (!scope || !_irReadModel || !_irReadModelAt) return { ok: false, reason: 'NO_COMPLETED_RESULT' };
     if (!_irSameScope_(_irSearch.applied, scope)) return { ok: false, reason: 'SCOPE_NOT_APPLIED' };
     var age = _irNowMs_() - _irReadModelAt;
-    if (age < 0 || age > _IR_RESULT_TTL_MS) return { ok: false, reason: 'RESULT_EXPIRED', ageMs: age };
-    return { ok: true, ageMs: age };
+    return { ok: true, stale: age < 0 || age > _IR_RESULT_TTL_MS, ageMs: age };
+}
+// Presentation only: old numbers never feed stock, gap, route validation or Submit.
+var _irWarmCells = null;
+function _irCaptureWarmCells_() {
+    var key = _irAppliedScopeKey_();
+    if (!key || !_irSearch.applied) return;
+    var snap = _irWarmCells && _irWarmCells.key === key ? _irWarmCells : { key: key, rows: Object.create(null) };
+    var velocityReady = _irRecoState && _irRecoState.loadedOk && _irResultMatchesAppliedScope_(_irRecoState);
+    var onwayReady = _irExposureStateForRender_() === IR_EXPOSURE_STATES_.READY;
+    if (velocityReady) snap.hasVelocity = true;
+    if (onwayReady) snap.hasOnway = true;
+    document.querySelectorAll('#replenScrollBody .scroll-row[data-rowkey]').forEach(function (row) {
+        var k = row.getAttribute('data-rowkey'), cells = snap.rows[k] || {};
+        [['velocity', '.replen-avg-cell', velocityReady], ['dos', '.replen-dos-cell', velocityReady], ['onway', '.replen-onway-cell', onwayReady]].forEach(function (c) {
+            var el = row.querySelector(c[1]);
+            if (el && c[2]) cells[c[0]] = { html: el.innerHTML, cls: el.className, title: el.getAttribute('title') };
+        });
+        snap.rows[k] = cells;
+    });
+    _irWarmCells = snap;
+}
+function _irWarmCellState_() {
+    var rec = _irBootstrap;
+    if (!_irWarmCells || _irWarmCells.key !== _irAppliedScopeKey_() || !rec || rec.mode !== 'RESTORED' ||
+        rec.searchSeq !== _irSearch.seq || _irSearch.status === 'LOADING' || _irSearch.status === 'ERROR') return {};
+    return { velocity: _irWarmCells.hasVelocity && !(_irRecoState && _irRecoState.loadedOk && _irResultMatchesAppliedScope_(_irRecoState)),
+        onway: _irWarmCells.hasOnway && _irExposureStateForRender_() !== IR_EXPOSURE_STATES_.READY };
+}
+function _irRestoreWarmCells_() {
+    var state = _irWarmCellState_();
+    if (_irWarmCells && (state.velocity || state.onway)) {
+        document.querySelectorAll('#replenScrollBody .scroll-row[data-rowkey]').forEach(function (row) {
+            var cells = _irWarmCells.rows[row.getAttribute('data-rowkey')];
+            if (!cells) return;
+            [['velocity', '.replen-avg-cell'], ['dos', '.replen-dos-cell'], ['onway', '.replen-onway-cell']].forEach(function (c) {
+                var saved = cells[c[0]], el = row.querySelector(c[1]);
+                if (!saved || !el || !(c[0] === 'onway' ? state.onway : state.velocity)) return;
+                el.innerHTML = saved.html; el.className = saved.cls;
+                el.setAttribute('data-cached-result', 'true');
+                el.setAttribute('title', 'Cached result - updating. ' + (saved.title || ''));
+            });
+        });
+    }
+    _irPaintCacheStatus_();
+}
+function _irPaintCacheStatus_() {
+    var host = document.querySelector('#ops-section .replen-control-panel');
+    if (!host) return;
+    var el = document.getElementById('replenCacheStatus');
+    if (!el) { el = document.createElement('div'); el.id = 'replenCacheStatus'; el.className = 'replen-cache-status'; el.setAttribute('role', 'status'); host.appendChild(el); }
+    var rec = _irBootstrap;
+    var warm = _irWarmCellState_();
+    var visible = rec && rec.mode === 'RESTORED' && rec.searchSeq === _irSearch.seq &&
+        _irSearch.status !== 'LOADING' && _irSearch.status !== 'ERROR' && (rec.revalidating || rec.revalidateFailed || warm.velocity || warm.onway);
+    el.hidden = !visible;
+    var failed = rec && (rec.revalidateFailed || (warm.velocity && _irRecoState.status === 'API_ERROR') ||
+        (warm.onway && _irExposureStateForRender_() === IR_EXPOSURE_STATES_.FAILED));
+    el.textContent = !visible ? '' : failed ? 'Update failed. Showing cached results; press Search to retry.' : 'Showing cached results. Updating...';
 }
 var _IR_SCOPE_MEMORY_KEY = 'km_site_inventory_last_scope_v1';
 var _IR_SCOPE_MEMORY_TTL_MS = 30 * 24 * 60 * 60 * 1000;   // a month: this is a convenience, not an authority
@@ -11628,8 +11737,12 @@ function _irBootstrapScope_() {
     // final word without the screen going empty to ask for it.
     var restorable = _irRestorableResult_(remembered);
     if (restorable.ok) {
+        _irCaptureWarmCells_();
         rec.mode = 'RESTORED';
-        rec.reason = 'a completed result for this scope was still valid (' + Math.round(restorable.ageMs / 1000) + 's old) -- painted immediately, revalidating quietly';
+        rec.reason = 'same-scope completed snapshot (' + Math.round(restorable.ageMs / 1000) + 's old) -- visible while revalidating';
+        rec.stale = restorable.stale;
+        rec.searchSeq = _irSearch.seq;
+        rec.revalidating = true;
         rec.registryRequests = 0;
         rec.workspaceRequests = 0;
         // S8-R4D-F1B D-R (operator-frozen) — THIS branch may still paint, and the distinction is the operator's
@@ -11646,7 +11759,11 @@ function _irBootstrapScope_() {
         // BEFORE the repaint, so nothing paints from it; the next expand reads it as a first visit does. It
         // is kept, and the decision recorded, while any manual route has not reached the database.
         rec.exposureSourceCheck = 'REVISION_CHECK';   // DC2-R2 D-S8-B3-187: decided after the probe; an expand waits for it
-        if (typeof _irAfterRevisionProbe_ === 'function') _irAfterRevisionProbe_(function () { rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT'); });
+        if (typeof _irAfterRevisionProbe_ === 'function') _irAfterRevisionProbe_(function () {
+            if (rec !== _irBootstrap || rec.mountGen !== _irMountGen || rec.searchSeq !== _irSearch.seq) return;
+            rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT');
+            if (rec.exposureSourceCheck === 'RETIRED') _irEnsureExposureLoaded_();
+        });
         else rec.exposureSourceCheck = _irExposureRetireIfSourceMoved_('RESTORED_MOUNT');
         if (window.KM && window.KM.factoryAvailability) { window.KM.factoryAvailability.ensure(false); }
         if (typeof renderReplenishment === 'function') renderReplenishment();
@@ -11695,7 +11812,9 @@ function _irBootstrapScope_() {
             rec.revalidating = false; rec.revalidateFailed = true;
             if (rec !== _irBootstrap || rec.mountGen !== _irMountGen) {
                 rec.revalidateSuperseded = 'MOUNT_SUPERSEDED'; _irBootstrapStray++;
+                return;
             }
+            _irPaintCacheStatus_();
         });
         return Promise.resolve(remembered);
     }
@@ -12143,6 +12262,7 @@ function _irRenderStaleNotice_() {
 // PRE_SEARCH / LOADING / ERROR render INTO the table bodies, so they are mutually exclusive with rows and with
 // each other. "No data" is NEVER shown before a successful Search.
 function _irRenderSearchGate_() {
+    _irPaintCacheStatus_();
     var body = document.getElementById('replenScrollBody');
     var fixed = document.getElementById('replenFixedBody');
     if (!body) return;
@@ -18079,6 +18199,7 @@ function _irRecoUpdateVelocityCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
+      avg.removeAttribute('data-cached-result');
       var note = _irScopeTitle16_(item, _irAvgSalesTitleText_(item));   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than set to '', so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
@@ -18087,10 +18208,12 @@ function _irRecoUpdateVelocityCells_() {
     var dos = row.querySelector('.replen-dos-cell');
     if (dos) {
       dos.className = 'scroll-cell replen-dos-cell ' + _irDosCellClass_(item);
+      dos.removeAttribute('data-cached-result');
       dos.textContent = item.daysOfSupply;   // textContent: this cell is a number, never markup
       var t16 = _irScopeTitle16_(item, ''); if (t16) dos.setAttribute('title', t16); else dos.removeAttribute('title');   // R71-FE-16 (m-1)
     }
   });
+  if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
 }
 function _irRecoHasCanonicalBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
@@ -18161,6 +18284,7 @@ function _irRecoPaintReadStateCells_() {
     var avg = row.querySelector('.replen-avg-cell');
     if (avg) {
       avg.className = 'scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item);
+      avg.removeAttribute('data-cached-result');
       var note = _irScopeTitle16_(item, _irAvgSalesTitleText_(item));   // DC1-R1 - the one title helper (quality note + window note)
       // REMOVED rather than blanked, so a cell that recovers does not keep an empty tooltip box.
       if (note) avg.setAttribute('title', note); else avg.removeAttribute('title');
@@ -18171,9 +18295,11 @@ function _irRecoPaintReadStateCells_() {
       // No rate means no cover. The colour classes are dropped with it: a red "days of supply" on a cell
       // that is reporting a failed read would be inventing a shortage out of a transport error.
       dos.className = 'scroll-cell replen-dos-cell';
+      dos.removeAttribute('data-cached-result');
       dos.textContent = mark;
     }
   }
+  if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
 }
 // __IRRECO_END__ (test extraction marker — do not remove)
 
@@ -18574,6 +18700,7 @@ if (window.KM && window.KM.lifecycle) {
             // answering for a page that has been taken down and put back up, and must say so rather
             // than write into this one.
             _irMountGen++;
+            var mountGen = _irMountGen;
             // R6-R5 §4 — INTENT IS RECORDED BEFORE ANYTHING IS AWAITED. The markup is partial-loaded, so the
             // first thing this mount does is a fetch; without this line the arbiter would not know a Site
             // Inventory read is coming until after that fetch resolved, and the honest "preparing" state the
@@ -18586,6 +18713,7 @@ if (window.KM && window.KM.lifecycle) {
             // class (showSection ran before the async injection on first open), wire the once-only
             // listeners, and run the existing initialization unchanged.
             _ensureInventoryReplenishmentMarkup().then(function() {
+                if (mountGen !== _irMountGen) return;
                 var sec = document.getElementById('ops-section');
                 if (sec) sec.classList.add('active');
                 _inventoryReplenStaticInit();
@@ -18641,6 +18769,7 @@ if (window.KM && window.KM.lifecycle) {
         },
         unmount() {
             console.log('[Replenishment] unmount');
+            _irCaptureWarmCells_();
             // CP2X-R4-R1 §C — leaving ends the generation too, so a callback that lands while the page
             // is not mounted cannot repaint it.
             _irMountGen++;
