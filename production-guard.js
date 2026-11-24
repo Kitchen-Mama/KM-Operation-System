@@ -2,11 +2,14 @@
     'use strict';
     var C = window.KM_PRODUCTION_CONFIG_, nativeFetch = window.fetch.bind(window), flight = null;
     var G = { verdict: null, mode: 'PRODUCTION', profile: C && C.profile_id, identity: null };
+    // During the manual GS rollout, retain the exact prior policy for its existing actions only.
+    var priorPolicy = '27eedfe4914bcebb1431b7680f5720046e937f49e3f35a7f205212f4c949add8';
     window.KM_PRODUCTION_GUARD_ = G;
     function fail(code) { G.verdict = code; G.identity = null; return new Error(code); }
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
     function control(action, body) {
         if (!C || C.allowed.indexOf(action) < 0) throw new Error('PRODUCTION_ACTION_NOT_ENABLED');
+        if (action === 'updateRecommendationDecisionLocked' && !rtrMonthlyAllocationEditScope_(body)) throw new Error('PRODUCTION_ALLOCATION_EDIT_SCOPE_REFUSED');
         if (/^import\./.test(action) && (!body || !C.import_scopes || !Object.prototype.hasOwnProperty.call(C.import_scopes, body.domain) ||
             (['import.template.get', 'import.validate', 'import.commit'].indexOf(action) >= 0 ?
                 C.import_scopes[body.domain].indexOf(body.mode) < 0 :
@@ -18,7 +21,7 @@
         flight = nativeFetch(C.endpoint + '?action=getClientCapabilities', { method: 'GET', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (r) {
             var p = r && r.production_gate;
             if (!r.success || !p || p.environment !== 'KM_PRODUCTION' || p.profile_id !== C.profile_id ||
-                p.policy_sha256 !== C.policy_sha256 || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
+                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
                 p.administration_enabled !== false || p.ai_plan_enabled !== false) throw fail('PRODUCTION_IDENTITY_MISMATCH');
             G.identity = p; G.verdict = 'VERIFIED'; return true;
         }).catch(function (e) { if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
@@ -26,7 +29,8 @@
     }
     G.ready = identity;
     G.environmentKey = function () { return G.verdict === 'VERIFIED' ? 'production:' + C.endpoint_sha256 + ':' + C.db_fp + ':' + C.profile_id : ''; };
-    G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0; };
+    G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0 &&
+        !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)); };
     window.fetch = function (input, init) {
         var u;
         try { u = new URL(typeof input === 'string' ? input : input.url, location.href); } catch (e) { return Promise.reject(e); }
@@ -42,7 +46,10 @@
             action = action || body.action; control(action, body);
             if (C.reads.indexOf(action) < 0) window.KM.passwordAccess.assertWriteAllowed();
         } catch (e) { return Promise.reject(e); }
-        return identity().then(function () { return nativeFetch(input, init); });
+        return identity().then(function () {
+            if (!G.isActionAllowed(action)) throw new Error('PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED');
+            return nativeFetch(input, init);
+        });
     };
     if (window.XMLHttpRequest) {
         var open = XMLHttpRequest.prototype.open, send = XMLHttpRequest.prototype.send;
@@ -50,6 +57,20 @@
         XMLHttpRequest.prototype.send = function () { if (/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+\.)?script\.googleusercontent\.com|script\.googleapis\.com)\//.test(this.__kmProdUrl || '')) throw new Error('PRODUCTION_XHR_REFUSED'); return send.apply(this, arguments); };
     }
     if (navigator.sendBeacon) { var beacon = navigator.sendBeacon.bind(navigator); navigator.sendBeacon = function (url, data) { if (/^https:\/\/(?:script\.google\.com|(?:[a-z0-9-]+\.)?script\.googleusercontent\.com|script\.googleapis\.com)\//.test(String(url))) return false; return beacon(url, data); }; }
+    function rtrMonthlyAllocationEditScope_(body) {
+        return !!body && body.recommendationType === 'MONTHLY_ORDER' &&
+            typeof body.draftId === 'string' && /^RD::MONTHLY_ORDER::\d{4}-\d{2}::/.test(body.draftId) &&
+            !body.reconcile && !body.allowInsert && body.expectedToken && typeof body.expectedToken === 'object' && !Array.isArray(body.expectedToken) &&
+            Array.isArray(body.edits) && body.edits.length > 0 && body.edits.length <= 3 && body.edits.every(function (edit) {
+                if (!edit || Object.keys(edit).some(function (k) { return ['naturalKey', 'fields'].indexOf(k) < 0; })) return false;
+                var key = edit.naturalKey, fields = edit.fields;
+                return key && ['T1', 'T2', 'T3'].indexOf(key.request_bucket) >= 0 && /^\d{4}-\d{2}$/.test(key.request_month) &&
+                    Object.keys(key).every(function (k) { return ['request_month', 'request_bucket'].indexOf(k) >= 0; }) &&
+                    fields && Object.keys(fields).length > 0 && Object.keys(fields).every(function (k) {
+                        return k === 'order_qty' ? typeof fields[k] === 'number' && isFinite(fields[k]) && fields[k] >= 0 : k === 'note' && typeof fields[k] === 'string';
+                    });
+            });
+    }
     function restrictUi() {
         // ADMIN-RESTORE (2026-11-13): every Administration entry is visible; each action stays gated by production-config/01_
         // (reads only; every Administration write is refused by control() and by 01_). Only the AI Plan buttons stay hidden.

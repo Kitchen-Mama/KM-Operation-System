@@ -2360,11 +2360,10 @@ function renderExpandPanel(item) {
   // No visible Recommended column (the engine gap remains in runtime/audit). Order Qty defaults to Suggested;
   // manual partial carton is non-blocking; editing Order Qty never rewrites Suggested.
   var anySuggested = false;
-  // F1-7N-FA-3C-R6B1 — per-SKU Order Allocation hydration state. Editable inputs appear ONLY when the Draft + token are
-  // resolved (LOADED) or for an ordinary MANUAL SKU. LOADING → disabled skeleton (never a blank editable field);
-  // NO_SAVED_DRAFT / DRAFT_CONFLICT / DRAFT_LOAD_ERROR → disabled + explicit state (never a Suggested→Order Qty fallback).
+  // A confirmed absent draft supports the existing manual create-on-quantity-edit writer.
+  // Loading, unresolved scopes, conflicts and read errors remain locked; suggestions are never saved implicitly.
   var _allocState = (typeof _roDraftUiState_ === 'function') ? _roDraftUiState_(item) : 'MANUAL';
-  var _editable = (_allocState === 'DRAFT_LOADED' || _allocState === 'MANUAL');
+  var _editable = (_allocState === 'DRAFT_LOADED' || _allocState === 'MANUAL' || _allocState === 'NO_SAVED_DRAFT');
   var _dis = _editable ? '' : ' disabled';
   var _stCls = (_allocState === 'DRAFT_LOADING') ? ' is-loading' : ((_allocState === 'DRAFT_CONFLICT' || _allocState === 'DRAFT_LOAD_ERROR') ? ' is-invalid' : '');
   var allocRows = ['T1', 'T2', 'T3'].map(function (t, i) {
@@ -2372,16 +2371,18 @@ function renderExpandPanel(item) {
     var sug = _roTierSuggested(item, i);
     if (sug != null) anySuggested = true;
     var e = edits[t] || {};
+    var savedTier = _roCanonicalRowFor_(item, t);
+    var noteDis = _dis || (!(savedTier && savedTier.line.request_month) ? ' disabled' : '');
     // DISPLAY value: a PERSISTED canonical-draft row shows its DB order_qty (reload authority, R4E3-PRE §10);
     // otherwise the frozen effective value. _roEffectiveOrderQty (the Send Request payload owner) is UNCHANGED.
     var eff = _roRowOrderQtyDisplay_(item, i, t, e);
-    var cb = _roCartonBreak(eff == null ? '' : eff, box);
+    var qtyVal = (!_editable || _allocState === 'NO_SAVED_DRAFT' && (e.orderQty == null || e.orderQty === '')) ? '' : ((eff == null) ? '' : eff);
+    var cb = _roCartonBreak(qtyVal, box);
     // F1-7N-FA-3C-R6B — Note DISPLAY: a touched local edit wins (so typing/clearing is never clobbered by a re-render);
     // otherwise the PERSISTED canonical-draft note (reload authority). Blank local edit ('') deliberately shows blank.
     var noteRaw = (e.note !== undefined) ? String(e.note) : _roRowNoteDisplay_(item, t);
     var note = noteRaw.replace(/"/g, '&quot;');
-    // R6B1 — during LOADING/NO_SAVED/CONFLICT/ERROR the editable fields are NOT populated (no blank-editable, no Suggested fallback).
-    var qtyVal = (!_editable) ? '' : ((eff == null) ? '' : eff);
+    // Until a manual quantity is saved, a note alone cannot create a draft.
     var noteVal = (!_editable) ? '' : note;
     var cartonHtml = (_editable) ? _roCartonCellHtml(cb, box) : (_allocState === 'DRAFT_LOADING' ? '<span class="ro-muted">…</span>' : '<span class="ro-muted">--</span>');
     // FM3d: Suggested column ← canonical monthlyProjection.suggestedOrderQty when the workspace is ON (server
@@ -2395,7 +2396,7 @@ function renderExpandPanel(item) {
         'data-sku="' + _roAttr(sku) + '" data-company="' + _roAttr(item.company || '') + '" data-country="' + _roAttr(country) + '" data-marketplace="' + _roAttr(marketplace) + '" ' +
         'data-bucket="' + t + '" data-idx="' + i + '" data-box="' + box + '" data-field="qty" data-month="' + _roYm(mo) + '" onchange="_roAllocEdit(this)" oninput="_roRecomputeAllocRow(this)"></td>' +
       '<td class="ro-carton-cell" data-cell="carton">' + cartonHtml + '</td>' +
-      '<td><input type="text" class="ro-alloc-note' + _stCls + '" value="' + noteVal + '"' + _dis + ' ' +
+      '<td><input type="text" class="ro-alloc-note' + _stCls + '" value="' + noteVal + '"' + noteDis + ' ' +
         'data-sku="' + _roAttr(sku) + '" data-company="' + _roAttr(item.company || '') + '" data-country="' + _roAttr(country) + '" ' +
         'data-marketplace="' + _roAttr(marketplace) + '" data-bucket="' + t + '" data-field="note" data-month="' + _roYm(mo) + '" ' +
         'oninput="_roAllocEditNote(this)" onblur="_roAllocNoteFlush(this)" onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}"></td></tr>';
@@ -2403,7 +2404,6 @@ function renderExpandPanel(item) {
   // R6B1 — a compact, non-layout-shifting state banner ROW above the allocation rows for the non-editable states
   // (valid table markup: a colspan row, never a bare <div> between <tr>s).
   var _bannerTxt = (_allocState === 'DRAFT_LOADING') ? ['ro-alloc-state--loading', 'Loading saved allocation…']
-    : (_allocState === 'NO_SAVED_DRAFT') ? ['ro-alloc-state--none', 'No saved allocation draft — run AI Plan to create one.']
     : (_allocState === 'DRAFT_CONFLICT') ? ['ro-alloc-state--conflict', 'Duplicate active draft — review required.']
     : (_allocState === 'DRAFT_SCOPE_UNRESOLVED') ? ['ro-alloc-state--error', 'Saved allocation was not read: these rows carry no company, so no draft scope could be resolved. Nothing was changed. <button type="button" class="ro-alloc-retry" onclick="_roHydratePersistedDraftsForLoadedScopes_()">Retry</button>']
     : (_allocState === 'DRAFT_LOAD_ERROR') ? ['ro-alloc-state--error', (_roMultiScopeRefusal_ && _roMultiScopeRefusal_.code === 'TOO_MANY_SCOPES')
@@ -2419,12 +2419,6 @@ function renderExpandPanel(item) {
   // available." message is suppressed (it must never show alongside canonical lines). When the workspace is
   // OFF (kill switch), the legacy tier Suggested behavior is preserved verbatim.
   var allocEmpty = (anySuggested || _opRecoEnabled()) ? '' : '<div class="ro-rec-empty">No recommendation available.</div>';
-  // §12 — a SKU the scope read-back reported as NO_DRAFT gets a restrained marker (execution row unavailable). This
-  // NEVER recreates a second editable quantity authority: Order Qty edits for a non-canonical SKU stay in-memory
-  // planning scratch (never persisted as a canonical draft) — the ordinary planning view, not an AI Plan execution row.
-  var noDraftNote = (typeof _roIsNoDraftSku_ === 'function' && _roIsNoDraftSku_(item))
-    ? '<div class="ro-rec-nodraft" title="This SKU has no active AI Plan draft; run AI Plan to generate one.">No active AI Plan draft</div>' : '';
-
   // Incoming v3: this row's Ongoing (and the SKU's unassigned parts) by expected completion - from the row itself, so the
   // "This site" total IS the Ongoing cell. Columns: this site / SKU unallocated (company known, no site) / SKU needs review.
   var inc = _roIncomingProjection_(item);
@@ -2512,7 +2506,6 @@ function renderExpandPanel(item) {
           </div>
           <div class="ro-block-sub">
             <div class="ro-subtitle">Order Allocation</div>
-            ${noDraftNote}
             ${allocEmpty}
             <table class="ro-expand-table ro-rec-table"><thead><tr><th>Tier · Month</th><th>Suggested</th><th>Order Qty</th><th>Carton</th><th>Note</th></tr></thead><tbody>${allocRows}</tbody></table>
           </div>
@@ -2571,15 +2564,19 @@ function _roAllocEdit(input) {
   if (!rec[bucket]) rec[bucket] = {};
   var v = String(input.value);
   if (v === '') {
+    rec[bucket].invalidQty = false;
     rec[bucket].orderQty = '';                       // cleared → falls back to Suggested default
     input.classList.remove('is-invalid'); input.title = '';
   } else {
     var q = Number(v);
-    if (isNaN(q) || q < 0) {                          // BLOCKING validation: negative / non-numeric
+    if (!isFinite(q) || q < 0) {                          // BLOCKING validation: negative / non-numeric
+      rec[bucket].invalidQty = true;
       input.classList.add('is-invalid');
       input.title = 'Order Qty must be a number ≥ 0.';
-      // do NOT store an invalid value — the previous valid value is retained on Send
+      _roRecomputeAllocRow(input);
+      return;
     } else {
+      rec[bucket].invalidQty = false;
       input.classList.remove('is-invalid'); input.title = '';
       rec[bucket].orderQty = q;                        // partial-carton (non-multiple) is allowed here
     }
@@ -2633,7 +2630,7 @@ function _roAllocEditNote(input) {
   if (!rec[bucket]) rec[bucket] = {};
   rec[bucket].note = String(input.value == null ? '' : input.value);   // '' is a real value, not "omitted"
   if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset)) {
-    _roAutosaveDebounce_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
+    _roAutosaveDebounce_(input, function () { return _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
   }
 }
 function _roAllocNoteFlush(input) {
@@ -2642,7 +2639,7 @@ function _roAllocNoteFlush(input) {
   var rec = _roAllocEnsure(key); if (!rec[bucket]) rec[bucket] = {};
   rec[bucket].note = String(input.value == null ? '' : input.value);
   if (typeof _roIsCanonicalDraftSku_ === 'function' && _roIsCanonicalDraftSku_(input.dataset)) {
-    _roAutosaveFlush_(input, function () { _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
+    _roAutosaveFlush_(input, function () { return _roSaveTierEditToCanonicalDraft_(input.dataset, bucket, { note: rec[bucket].note }, input); });
   }
 }
 // PERSISTED note projection for the Order Allocation Note field (reload authority): the canonical-draft tier note, else ''.
@@ -4555,9 +4552,27 @@ async function _roSendRunToCompletion_(basePayload, checksum, plan, sendMount) {
   return { done: false, exhausted: true, res: null, lastPartial: lastPartial, continuation: continuation };
 }
 
+function _roAllocationEditsBlockSend_() {
+  var pending = document.querySelector('#request-order-section .ro-alloc-qty:is(.is-saving,.is-invalid,.is-conflict), #request-order-section .ro-alloc-note:is(.is-saving,.is-invalid,.is-conflict)');
+  // Closing a detail panel must not hide an unsaved decision from Send.
+  Object.keys(requestOrderState.allocEdits || {}).forEach(function (key) {
+    var draft = _roCanonicalDraftBySku[key], edits = requestOrderState.allocEdits[key];
+    ['T1', 'T2', 'T3'].forEach(function (tier) {
+      var e = edits[tier], saved = draft && draft.lines && draft.lines[tier];
+      if (!e) return;
+      if (e.invalidQty || e.orderQty != null && e.orderQty !== '' &&
+          (saved ? Number(e.orderQty) !== Number(saved.order_qty) : Number(e.orderQty) > 0)) pending = true;
+      if (e.note != null && (!saved || String(e.note) !== String(saved.note || ''))) pending = true;
+    });
+  });
+  if (!pending) return false;
+  _roSetSendState_('ERROR', 'Allocation edits are unsaved or still saving. Nothing was sent.');
+  return true;
+}
 async function handleSendRequest() {
   // SINGLE-FLIGHT. A second click while an orchestration is running is refused outright.
   if (_roSendState.busy) { _roSetSendState_('LOADING', 'A Send is already running — please wait for it to finish.'); return; }
+  if (_roAllocationEditsBlockSend_()) return;
   const _sendMount = _roSendState.mountSeq;   // page-transition guard: a late result must not repaint a newer page
   const requestType = document.getElementById('ro-request-type').value;
   const buckets = _roBucketsForType(requestType);
@@ -4639,6 +4654,7 @@ async function handleSendRequest() {
   }
 
   const DB = window.KM.DB;
+  if (_roAllocationEditsBlockSend_()) return;
   const planningCycle = _roSendPlanningCycle_();
   if (!planningCycle) {
     _roSetSendState_('ERROR', 'The current planning cycle could not be resolved.');
@@ -5290,9 +5306,8 @@ var _roNoDraftSkus = {};           // §12 — sku(UPPER) → true for SKUs the 
 var _roHydrationStatus = 'IDLE';
 var _roDraftDtoCache = {};         // scopeKey → { drafts:{sku→dto}, noDraft:{sku→true}, submitted:{sku→true} } (confirmed, session)
 function _roScopeKey3_(s) { return [String((s && s.company) || '').trim().toUpperCase(), String((s && s.country) || '').trim().toUpperCase(), String((s && s.marketplace) || '').trim().toUpperCase()].join('|'); }
-// Per-SKU Order Allocation UI state. LOADED shows DB order_qty/carton/note (enabled); NO_SAVED_DRAFT / DRAFT_CONFLICT /
-// DRAFT_LOAD_ERROR disable the inputs (never a blank editable field, never a Suggested→Order Qty fallback); DRAFT_LOADING
-// is the in-flight skeleton. A SKU outside any AI read-back (not a draft, not NO_DRAFT) keeps the ordinary MANUAL flow.
+// LOADED uses saved quantities. NO_SAVED_DRAFT permits an explicit manual quantity, initially blank.
+// Conflicts, errors and unresolved/loading reads stay locked. No state change itself writes a draft.
 function _roDraftUiState_(ref) {
   var k = _roDraftKey_(ref), d = _roCanonicalDraftBySku[k];
   if (d && d.conflict) return 'DRAFT_CONFLICT';
@@ -5517,6 +5532,8 @@ function _roSendOrderQty_(item, idx, bucket, edit) {
   // recomputed quantity: that is precisely how the page came to send 400 against a persisted 360. Returning null
   // contributes nothing to the Send intents, so the tier is simply not asserted rather than asserted wrongly.
   if (_roHasCanonicalDraft_(item)) return null;
+  // A confirmed draft-less row is advisory only until its explicit manual quantity has been saved.
+  if (_roIsNoDraftSku_(item)) return null;
   return _roEffectiveOrderQty(item, idx, edit);
 }
 // F1-4B-FM6-R4E5B — DETERMINISTIC manual allocation-draft id (grain + planning cycle). A manual (no-AI) Send must
@@ -5674,6 +5691,7 @@ function _roReadActiveDraftsForScope_(scope, accDrafts, accNoDraft, accSubmitted
   if (!db || typeof db.getActiveRequestOrderDrafts !== 'function' || !scope || !scope.company) return Promise.resolve(null);
   _roHydrateReqCount++;   // one getActive per unique scope (scope-based, NEVER per SKU)
   return Promise.resolve(db.getActiveRequestOrderDrafts(scope)).then(function (res) {
+    if (!res || res.success !== true) return null;
     var data = (res && res.data) || {};
     _roApplyScopeReadbackData_(scope, data, accDrafts, accNoDraft, accSubmitted, accDropped);
     return data;
@@ -5870,7 +5888,7 @@ function _roSaveTierEditToCanonicalDraft_(ref, bucket, patch, input) {
   // in-memory path rather than writing into whichever company's draft happened to be looked up first.
   var ref0 = _roCanonicalRowFor_(ref, bucket);
   var sku = _roDraftSku_(ref);
-  if (!ref0) {
+  if (!ref0 || !ref0.line.request_month) {
     var hasQty = patch && Object.prototype.hasOwnProperty.call(patch, 'order_qty')
       && patch.order_qty != null && patch.order_qty !== '';
     if (!hasQty) return Promise.resolve(null);   // note-only on a draft-less SKU → unchanged in-memory behavior
@@ -5889,6 +5907,7 @@ function _roSaveTierEditToCanonicalDraft_(ref, bucket, patch, input) {
 function _roCreateCanonicalDraftFromEdit_(siteRef, bucket, orderQty, patch, input) {
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.ensureAndEditAllocationDraft !== 'function') return Promise.resolve(null);
+  if (!_roAllocationWriteReady_(input)) return Promise.resolve({ ok: false, reason: 'PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED' });
   var sku = _roDraftSku_(siteRef);
   var item = _roFindRowForRef_(siteRef);
   if (!item) return Promise.resolve(null);
@@ -5934,6 +5953,9 @@ function _roCreateCanonicalDraftFromEdit_(siteRef, bucket, orderQty, patch, inpu
       order_qty: Number(d.persisted_order_qty), recommended_qty: '', line_status: 'draft', user_edited: true };
     _roCanonicalDraftBySku[k] = entry;
     if (_roNoDraftSkus && _roNoDraftSkus[k]) delete _roNoDraftSkus[k];
+    var allocationRow = input && input.closest ? input.closest('tr') : null;
+    var noteInput = allocationRow && allocationRow.querySelector('.ro-alloc-note');
+    if (noteInput) noteInput.disabled = false;
     _roSetFieldState_(input, 'is-saved', 'Saved');
     _roLastAutosaveOutcome = 'SAVED';
     return { ok: true, reason: d.created ? 'CREATED' : 'UPDATED', draftId: entry.draftId,
@@ -5960,11 +5982,19 @@ function _roFindRowForRef_(ref) {
   return null;
 }
 function _roFindRowBySku_(sku) { return _roFindRowForRef_(sku); }   // kept for callers that only have a SKU
+function _roAllocationWriteReady_(input) {
+  var guard = window.KM_PRODUCTION_GUARD_;
+  if (!guard || typeof guard.isActionAllowed !== 'function' || guard.isActionAllowed('updateRecommendationDecisionLocked')) return true;
+  _roSetFieldState_(input, 'is-invalid', 'Production backend update required: 01_router.gs + 15_request_allocation_handlers.gs + 63_api_v1_system_health.gs');
+  _roLastAutosaveOutcome = 'FAILED';
+  return false;
+}
 function _roSaveTierEditCore_(siteRef, bucket, patch, input) {
   var ref = _roCanonicalRowFor_(siteRef, bucket);
   if (!ref) return Promise.resolve(null);
   var db = window.KM && window.KM.DB;
   if (!db || typeof db.updateRecommendationDecisionLocked !== 'function') return Promise.resolve(null);
+  if (!_roAllocationWriteReady_(input)) return Promise.resolve({ ok: false, reason: 'PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED' });
   var month = ref.line.request_month;
   _roSetFieldState_(input, 'is-saving', 'Saving…');
   return _roEnsureDraftToken_(siteRef).then(function (tok) {

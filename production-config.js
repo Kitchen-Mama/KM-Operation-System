@@ -112,6 +112,7 @@
     "updatePurchaseOrderHeader",
     "updatePurchaseOrderLine",
     "updatePurchaseOrderStatus",
+    "updateRecommendationDecisionLocked",
     "updateRequestOrderLineQty",
     "updateRequestOrderStatus",
     "updateShipment",
@@ -214,5 +215,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "27eedfe4914bcebb1431b7680f5720046e937f49e3f35a7f205212f4c949add8"
+  "policy_sha256": "cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

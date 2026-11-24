@@ -418,6 +418,7 @@ function raSubmitLinesByDraft_(sheet, draftId, bucketSet, actor, now) {
 // it again later without re-creating anything.
 // ============================================================================================================
 
+var RAEE_BUILD_VERSION_ = 'MANUAL-ALLOCATION-20261124';
 var RAEE_TIERS_ = { T1: 1, T2: 1, T3: 1 };   // T4 is visibility-only and is never an order commitment
 
 // Resolve the ACTIVE flat draft for one exact business scope + cycle, using the EXISTING resolver so this
@@ -430,10 +431,11 @@ function raeeLoadActive_(ss, cycle, scope) {
 
 // Read the persisted tier quantity back from the canonical flat DTO. Returns null when the tier is absent, so an
 // absent tier can never be reported as a verified 0.
-function raeePersistedTierQty_(dto, tier) {
+function raeePersistedTierQty_(dto, tier, month) {
   var tiers = (dto && dto.tiers) || [];
   for (var i = 0; i < tiers.length; i++) {
     if (String(tiers[i].tier).toUpperCase() !== String(tier).toUpperCase()) continue;
+    if (month && String(tiers[i].month || '') !== String(month)) return null;
     var q = tiers[i].orderQty;
     return (q === null || q === undefined || q === '') ? null : Number(q);
   }
@@ -488,6 +490,8 @@ function handleRequestOrderAllocationDraftEnsureAndEdit_(body) {
       message: 'planning_cycle must be exactly YYYY-MM (the current-run authority). ' + String(e && e.message || e) });
   }
   if (!month) month = cycle;   // the tier month defaults to the cycle rather than being invented per tier
+  var monthParts = /^(\d{4})-(0[1-9]|1[0-2])$/.exec(month);
+  if (!monthParts) return jsonResponse_({ success: false, code: 'INVALID_REQUEST_MONTH', error: 'INVALID_REQUEST_MONTH', zero_write: true });
 
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   try { rpoFlatSchemaGate_(ss); }
@@ -512,12 +516,17 @@ function handleRequestOrderAllocationDraftEnsureAndEdit_(body) {
   // non-actionable gate permits an all-zero create. generation_type is user_created so provenance stays honest.
   var created = false;
   if (!existed) {
+    // Bind all three empty monthly slots once, without adopting any suggested quantity.
+    var manualLines = ['T1', 'T2', 'T3'].map(function (bucket, index) {
+      var date = new Date(Date.UTC(Number(monthParts[1]), Number(monthParts[2]) - 1 + index + 1 - Number(tier.slice(1)), 1));
+      return { request_bucket: bucket, request_month: date.getUTCFullYear() + '-' + ('0' + (date.getUTCMonth() + 1)).slice(-2),
+        recommended_qty: 0, units_per_carton: (payload.units_per_carton == null ? '' : payload.units_per_carton) };
+    });
     var gen = rpoGenerateMonthlyFlatResult_({
       recommendationType: 'MONTHLY_ORDER', mode: 'manual', action: 'create',
       planningCycle: cycle, businessScope: scope, generationType: 'user_created', actor: actor,
       facts: { ready: true, formulaVersion: 'USER_MANUAL_ORDER', sourceDataAsOf: '',
-        lines: [{ request_bucket: tier, request_month: month, recommended_qty: 0,
-          units_per_carton: (payload.units_per_carton == null ? '' : payload.units_per_carton) }] }
+        lines: manualLines }
     });
     var gd = (gen && gen.data) || {};
     if (!gen || gen.success !== true) {
@@ -562,8 +571,11 @@ function handleRequestOrderAllocationDraftEnsureAndEdit_(body) {
 
   // ---- STEP 4 · READ IT BACK. A writer's success flag is not persistence proof. --------------------------
   var after = rpoFlatLoadById_(ss, draftId);
-  var dto = (after && (after.draft || after.dto || after)) || null;
-  var persisted = raeePersistedTierQty_(dto, tier);
+  // The flat loader returns {status,row}; use the canonical DTO adapter before verifying tier quantities.
+  var dto = after && after.status === 'FOUND' && after.row
+    ? KMRDV2P.flatReadbackDto(after.row)
+    : (after && (after.draft || after.dto || after)) || null;
+  var persisted = raeePersistedTierQty_(dto, tier, month);
   if (persisted === null || Number(persisted) !== Number(qty)) {
     return jsonResponse_({ success: false, error: 'ALLOCATION_DRAFT_QUANTITY_NOT_VERIFIED',
       code: 'ALLOCATION_DRAFT_QUANTITY_NOT_VERIFIED', stage: 'readback', zero_write: false,

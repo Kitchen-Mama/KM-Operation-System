@@ -49,7 +49,7 @@
 
 
 
-var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4";
+var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1";
 
 
 
@@ -1348,6 +1348,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "updatePurchaseOrderHeader",
     "updatePurchaseOrderLine",
     "updatePurchaseOrderStatus",
+    "updateRecommendationDecisionLocked",
     "updateRequestOrderLineQty",
     "updateRequestOrderStatus",
     "updateShipment",
@@ -1464,7 +1465,6 @@ var RTR_PRODUCTION_PROFILE_ = {
     "system.shippingAllocationSchemaDiagnostic",
     "system.submitFlowDiagnostic",
     "system.twoVerticalFlowsDiagnostic",
-    "updateRecommendationDecisionLocked",
     "weeklyAiPlan.generate"
   ],
   "import_domain": "po_factory_stock",
@@ -1476,6 +1476,11 @@ var RTR_PRODUCTION_PROFILE_ = {
   "administration_enabled": false,
   "ai_plan_enabled": false,
   "module_stamps": [
+    {
+      "symbol": "RAEE_BUILD_VERSION_",
+      "expected": "MANUAL-ALLOCATION-20261124",
+      "optional": false
+    },
     {
       "symbol": "SHIP_WS_BUILD_VERSION_",
       "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7",
@@ -1568,7 +1573,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SYS_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
       "optional": false
     },
     {
@@ -1713,7 +1718,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "RTR_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
       "optional": false
     },
     {
@@ -1773,7 +1778,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "27eedfe4914bcebb1431b7680f5720046e937f49e3f35a7f205212f4c949add8"
+  "policy_sha256": "cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};
@@ -1823,9 +1828,24 @@ function rtrShipmentDocumentRetryScope_(body) {
 }
 function rtrActionGate_(action, body) {
   if (RTR_PRODUCTION_PROFILE_.allowed.indexOf(String(action || '')) < 0) return { code: 'PRODUCTION_ACTION_NOT_ENABLED' };
+  if (action === 'updateRecommendationDecisionLocked' && !rtrMonthlyAllocationEditScope_(body)) return { code: 'PRODUCTION_ALLOCATION_EDIT_SCOPE_REFUSED' };
   if (action === 'document.retry' && !rtrShipmentDocumentRetryScope_(body)) return { code: 'PRODUCTION_DOCUMENT_RETRY_SCOPE_REFUSED' };
   if (/^import\./.test(String(action || '')) && !rtrPoFactoryScope_(action, body)) return { code: 'PRODUCTION_IMPORT_SCOPE_REFUSED' };
   return null;
+}
+function rtrMonthlyAllocationEditScope_(body) {
+  return !!body && body.recommendationType === 'MONTHLY_ORDER' &&
+    typeof body.draftId === 'string' && /^RD::MONTHLY_ORDER::\d{4}-\d{2}::/.test(body.draftId) &&
+    !body.reconcile && !body.allowInsert && body.expectedToken && typeof body.expectedToken === 'object' && !Array.isArray(body.expectedToken) &&
+    Array.isArray(body.edits) && body.edits.length > 0 && body.edits.length <= 3 && body.edits.every(function (edit) {
+      if (!edit || Object.keys(edit).some(function (k) { return ['naturalKey', 'fields'].indexOf(k) < 0; })) return false;
+      var key = edit.naturalKey, fields = edit.fields;
+      return key && ['T1', 'T2', 'T3'].indexOf(key.request_bucket) >= 0 && /^\d{4}-\d{2}$/.test(key.request_month) &&
+        Object.keys(key).every(function (k) { return ['request_month', 'request_bucket'].indexOf(k) >= 0; }) &&
+        fields && Object.keys(fields).length > 0 && Object.keys(fields).every(function (k) {
+          return k === 'order_qty' ? typeof fields[k] === 'number' && isFinite(fields[k]) && fields[k] >= 0 : k === 'note' && typeof fields[k] === 'string';
+        });
+    });
 }
 function rtrGateRefusal_(r, handler, action) {
   return jsonResponse_({ success: false, code: r.code, zero_write: true, business_writes: 0,

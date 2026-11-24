@@ -14,7 +14,7 @@ async function mount(page, name, init) {
   await page.evaluate(fn => window[fn](), init);
 }
 
-async function openHarness(browser, width, h) {
+async function openHarness(browser, width, h, options = {}) {
   const page = await browser.newPage({ viewport: { width, height: 950 } });
   const errors = [], outbound = [], dialogs = [];
   page.on('pageerror', e => errors.push(e.message));
@@ -30,15 +30,15 @@ async function openHarness(browser, width, h) {
     await page.addStyleTag({ content: read(file) });
   }
   await page.addStyleTag({ content: 'body{margin:0;font:14px Arial;color:#222;background:white}main{padding:16px;min-width:0}*{box-sizing:border-box}' });
-  await page.evaluate(() => {
-    window.KM_PRODUCTION_CONFIG_ = { endpoint: 'https://script.google.com/macros/s/SYNTHETIC_ONLY/exec' };
+  await page.evaluate(endpoint => {
+    window.KM_PRODUCTION_CONFIG_ = { endpoint };
     window.KM = { api: {
       workspaceApiActive: () => true,
       getWorkspace: (workspace, payload) => fixtureDispatch({ action: 'workspace', workspace, payload })
     } };
     window.fetch = async (_url, init) => new Response(JSON.stringify(await fixtureDispatch(JSON.parse(init.body))),
       { status: 200, headers: { 'Content-Type': 'application/json' } });
-  });
+  }, options.endpoint || 'https://script.google.com/macros/s/SYNTHETIC_ONLY/exec');
   await page.addScriptTag({ content: read('assets/js/api/operation-system-db-api.js') });
   await page.addScriptTag({ content: read('assets/js/utils/multi-select-filter.js') });
   await page.addScriptTag({ content: read('assets/js/pages/shipping-history.js') });

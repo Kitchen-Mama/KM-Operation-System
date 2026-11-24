@@ -402,7 +402,7 @@ var SYS_DEPLOYMENT_RELEASE_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71';
 
 
 
-var SYS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4";
+var SYS_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1";
 
 
 
@@ -740,6 +740,12 @@ try { return typeof sysGlobalOwn_(name) === 'function'; } catch (e) { return fal
 
 var SYS_MODULE_BUILD_STAMPS_ = [
   {
+    "file": "15_request_allocation_handlers.gs",
+    "symbol": "RAEE_BUILD_VERSION_",
+    "expected": "MANUAL-ALLOCATION-20261124",
+    "owns": "Manual monthly allocation create, tier-month binding and verified flat-row readback"
+  },
+  {
     "file": "31_shipment_receipt_route_handlers.gs",
     "symbol": "SHIP_RECEIPT_BUILD_VERSION_",
     "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R72-SO8-AFINAL4-A2ROUTE-AD1B-AD2-AD3",
@@ -844,7 +850,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "63_api_v1_system_health.gs",
     "symbol": "SYS_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
     "owns": "this module: deployment identity, health and local PFI2/WDL1 dependency stamps"
   },
   {
@@ -1024,7 +1030,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "01_router.gs",
     "symbol": "RTR_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
     "owns": "doGet/doPost action routing (incl. the GET read table + cancelShipmentDraft) + typed handler/method response identity + the R6-R5 per-execution entry stamp handlers report as server evidence. R41 adds factoryStockGuard.get to the GET read table, the last approved read that still travelled on POST. It ADDS NO ACTION - the action already existed on the POST chain and keeps it - so the action-contract version stays at 18. R41 exists rather than R40 absorbing it because R40 was cut against a tree in which this file had not changed. R51 ADDS FOUR ACTIONS (the Overseas Allocation Preview job: start/status/result/cancel), which is why the action-contract version moves 18 -> 19 in this release. R52 ADDS ONE MORE - marketplace.allocationPriority.set - moving the action contract 19 -> 20; a project holding a pre-R52 router cannot route a priority write at all, and because upsertMarketplace simultaneously stops accepting the field, that is a total loss of the capability rather than a degraded one. R56 adds system.sourceRevision (contract 21 -> 22) and moves KM_SOURCE_REVISION after every non-read POST."
   },
   {
