@@ -151,7 +151,7 @@
         if (kind !== 'import') return;
         function go() { return window.KM.poFactoryImport.open({ onCommitted: function () { return _polRefresh_(true); } }); }
         if (window.KM && window.KM.poFactoryImport) return go();
-        return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=r6103-r3-20261123-sitesku1').then(function (ok) {
+        return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=stockpo-unproduced-20261124').then(function (ok) {
             if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
             return go();
         }).catch(function (e) { alert(String(e.message || e)); });

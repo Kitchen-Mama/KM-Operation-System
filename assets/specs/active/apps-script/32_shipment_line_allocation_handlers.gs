@@ -94,6 +94,40 @@ function slaAvailability_(poLine, reservedByOthers) {
 return Math.max(0, slaNum_(poLine.completed_qty) - slaNum_(poLine.shipped_qty) - slaNum_(reservedByOthers) - slaOpeningHold_(poLine));
 }
 
+// Historical consumption is not an executed shipment. Only a committed StockPO import's CREATED audit proves this baseline.
+function slaFactoryImportConsumed_(ss, lineId, cache) {
+var C = cache || {}, S = slaStr_;
+function rows(name) {
+  if (C[name]) return C[name];
+  var sh = ss.getSheetByName(name); if (!sh) return [];
+  var v = sh.getDataRange().getValues(), h = (v[0] || []).map(S);
+  return (C[name] = v.slice(1).map(function (a) { var r = {}; h.forEach(function (k, i) { r[k] = a[i]; }); return r; }));
+}
+var ls = rows('purchase_order_lines').filter(function (l) { return S(l.purchase_order_line_id) === lineId; });
+if (ls.length !== 1) return { ok: false, error: 'PO_LINE_NOT_UNIQUE' };
+var l = ls[0], raw = S(l.opening_shipped_qty);
+if (!raw || raw === '0') return { ok: true, qty: 0 };
+var hs = rows('purchase_orders').filter(function (h) { return S(h.purchase_order_id) === S(l.purchase_order_id); });
+if (hs.length !== 1 || S(hs[0].source_type) !== 'po_factory_import') return { ok: true, qty: 0 };
+var bad = { ok: false, error: 'PO_FACTORY_IMPORT_CONSUMED_UNPROVEN' }, n = Number(raw), batch = S(l.import_batch_id);
+if (!/^\d+$/.test(raw) || n <= 0 || n > 9007199254740991 || S(hs[0].import_batch_id) !== batch || S(hs[0].company) !== S(l.company) || S(hs[0].warehouse_id) !== S(l.supplier_warehouse_id) || S(l.opening_lineage_qty) !== '0' || S(l.opening_reconcile_status) !== 'RECONCILED') return bad;
+var receipts = rows('import_batches').filter(function (r) { return S(r.import_batch_id) === batch; });
+if (receipts.length !== 1 || S(receipts[0].domain) !== 'po_factory_stock' || S(receipts[0].mode) !== 'NEW_RECEIPT' || S(receipts[0].status) !== 'COMMITTED') return bad;
+if (!C.auditByLine) {
+  C.auditByLine = {};
+  rows('import_batch_changes').forEach(function (r) { if (S(r.domain) !== 'po_factory_stock' || S(r.entity_table) !== 'purchase_order_lines' || S(r.result) !== 'CREATED') return;
+    var k = S(r.import_batch_id) + '|' + S(r.line_id); (C.auditByLine[k] = C.auditByLine[k] || []).push(r); });
+}
+var audit = C.auditByLine[batch + '|' + lineId] || [];
+function value(field) { var a = audit.filter(function (r) { return S(r.field) === field && S(r.entity_id) === S(l.purchase_order_id); }); return a.length === 1 ? S(a[0].after_value) : null; }
+var completed = Number(value('completed_qty')), remaining = Number(value('remaining_qty'));
+var expected = { purchase_order_id: l.purchase_order_id, purchase_order_line_id: lineId, company: l.company, sku: l.sku,
+  supplier_warehouse_id: l.supplier_warehouse_id, ordered_qty: l.ordered_qty, import_batch_id: batch,
+  shipped_qty: n, opening_shipped_qty: n, opening_completed_qty: l.opening_completed_qty, opening_lineage_qty: 0, opening_reconcile_status: 'RECONCILED' };
+if (Object.keys(expected).some(function (k) { return value(k) !== S(expected[k]); }) || !isFinite(completed) || !isFinite(remaining) || completed - n !== remaining || completed !== Number(l.opening_completed_qty) || Number(l.shipped_qty) < n) return bad;
+return { ok: true, qty: n };
+}
+
 
 
 function slaAllocateShipmentLine_(scope, poLinesJoined, existingAllocations) {
@@ -475,6 +509,7 @@ for (var p = 1; p < pd.length; p++) { var id = slaStr_(pd[p][pPol]); if (id) pol
 hold: slaOpeningHold_({ opening_completed_qty: pOc !== -1 ? pd[p][pOc] : 0, opening_lineage_qty: pOl !== -1 ? pd[p][pOl] : 0, opening_reconcile_status: pOs !== -1 ? pd[p][pOs] : '' }) }; }
 
 var poReconcile = [];
+var consumedCache = {};
 var pols = Object.keys(thisByPol);
 for (var k = 0; k < pols.length; k++) {
 var polId = pols[k], pr = polRow[polId];
@@ -483,10 +518,12 @@ var others = executedByPolOthers[polId] || 0;
 
 
 var executedAll = others + (thisExecutedByPol[polId] || 0);
-if (pr.shipped !== executedAll && !(pr.shipped === 0 && executedAll === 0)) {
+var baseline = slaFactoryImportConsumed_(ss, polId, consumedCache);
+if (!baseline.ok) return { ok: false, error: baseline.error, detail: { purchase_order_line_id: polId } };
+if (pr.shipped !== baseline.qty + executedAll) {
 return { ok: false, error: 'PO_SHIPPED_QTY_LEGACY_BASELINE_UNRESOLVED', detail: { purchase_order_line_id: polId, persisted_shipped_qty: pr.shipped, executed_allocation_sum: executedAll } };
 }
-var newShipped = others + thisByPol[polId];
+var newShipped = baseline.qty + others + thisByPol[polId];
 
 
 if (pr.hold > 0 && newShipped > pr.completed - pr.hold) return { ok: false, error: 'PO_OPENING_PENDING_RECONCILIATION', detail: { purchase_order_line_id: polId, completed_qty: pr.completed, opening_held_qty: pr.hold, would_be_shipped: newShipped } };

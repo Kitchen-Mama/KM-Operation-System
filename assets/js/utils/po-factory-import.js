@@ -25,7 +25,8 @@
         if (rows.length && rows.every(function (r) { return !String(r.transaction_id || '').trim(); })) {
             if (!window.crypto || !window.crypto.subtle) throw new Error('Secure batch identity is unavailable. Nothing was submitted.');
             var columns = template.sheets.filter(function (s) { return s.name === 'StockPO'; })[0].columns;
-            var keys = columns.map(function (c) { return c.key; }).filter(function (k) { return k !== 'transaction_id' && k !== 'row_type'; }).sort();
+            var keys = columns.map(function (c) { return c.key; }).filter(function (k) { return k !== 'transaction_id' && k !== 'row_type' &&
+                (k !== 'unproduced_qty' || rows.some(function (r) { return String(r[k] == null ? '' : r[k]).trim() !== ''; })); }).sort();
             var content = rows.map(function (r) { return keys.map(function (k) { return [k, String(r[k] == null ? '' : r[k]).trim()]; }); });
             return window.crypto.subtle.digest('SHA-256', new TextEncoder().encode(JSON.stringify(content))).then(function (buf) {
                 var generated = 'PFI-auto-' + Array.prototype.map.call(new Uint8Array(buf), function (b) { return b.toString(16).padStart(2, '0'); }).join('');
