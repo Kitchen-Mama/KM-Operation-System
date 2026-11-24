@@ -98,7 +98,7 @@ return { entries: entries, tokens: Object.keys(tokens).sort(), resolve: resolve 
 // A-delta1 B (P0-2, Owner 2026-11-21) + b3 (REVIEW_AD1 M-3 / L-5): Carrier + Shipping method label -> exactly ONE (shipping_method,
 // last_mile_delivery) tuple over the APPLICABLE rate cards. Applicability is the SYSTEM rule, not a second copy: 17_ shippingRateMatch_
 // (mode 'exact') with this carrier, ETD (active + effective), origin country (the source factory warehouse's country), destination country
-// (the row country's planning set, exactly as 11_ asks 17_), battery class of the shipment's SKUs (17_ shippingBatteryRead_), marketplace
+// (EU rows use the actual destination warehouse country, not the forecast planning set), battery class of the shipment's SKUs, marketplace
 // (blank for MULTI), destination warehouse code; 17_ also applies its city / postal scoping and keeps the latest tariff + the narrowest
 // geography per service. Only then is the text matched, among the applicable cards, in this order (exact after trim, no case folding): the
 // label; the old dropdown text "label (token)"; the canonical token; "token | anything" (token part). Cards that differ only in price /
@@ -163,7 +163,7 @@ function shiResolveTuple_(ssM, cards, x) {
 // A-delta2 (Owner 2026-11-21): layer 2 = the TRACKING SERVICE, used only when the exact quote gives nothing. The carrier's ACTIVE cards (shiActive_
 // status; effectivity, geography, warehouse code and price are quote matters and are NOT used here) are only the label VOCABULARY: the cards the text
 // names (same order: label, "label (token)", token, "token | ...") give candidate (shipping_method, last_mile_delivery) tuples of THIS carrier.
-// A tuple is kept only when the master PROVES that service for this origin -> destination country (the row country's planning set, as the quote
+// A tuple is kept only when the master PROVES that service for this origin -> destination country (EU uses the physical warehouse country, as the quote
 // layer): an active carrier_lead_times row, an active shipment_route_templates row (transit_type = method) or an active carrier_service_schedules row
 // with the same carrier, origin_country, destination_country, shipping_method and last_mile_delivery (all non-blank, exact; blank is never a match).
 // One proven tuple -> ok with quote_status QUOTE_UNAVAILABLE (+ the quote layer's diagnostic as quote_reason) and provenance TRACKING_SERVICE_V1
@@ -252,8 +252,16 @@ function shiTrackingService_(ssM, named, q) {
       origin_country: q.org, country: q.cc, destination_countries: q.dcs.slice(0, 10), battery: q.batUnknown ? 'unclassified (not needed)' : (q.bat.cls || 'non_lithium'), marketplace: q.mkt || 'MULTI', warehouse_code: q.wc, etd: q.day,
       shipping_method: t0.method, last_mile_delivery: t0.lastMile, evidence: t0.evidence.slice(0, 20), vocabulary_cards: cs.map(function (c) { return S(c.rate_card_id); }).sort().slice(0, 20), rate_card_ids: [] } };
 }
-function shiDestCountryOk_(w, rowCountry) { var wc = imbStr_(w && w.country).toUpperCase(), rc = imbStr_(rowCountry).toUpperCase(); if (!wc || !rc) return false; if (wc === rc) return true;
+function shiDestCountryOk_(w, rowCountry) { var wc = imbStr_(w && w.country).toUpperCase(), rc = imbStr_(rowCountry).toUpperCase();
+if (typeof csdShipmentDestinationCountryOk_ === 'function') return csdShipmentDestinationCountryOk_(wc, rc);
+if (!wc || !rc) return false; if (wc === rc) return true;
   var set = (typeof csdPlanningSet15e_ === 'function') ? csdPlanningSet15e_(rc) : null; return !!(set && set.indexOf(wc) !== -1); }   // A-delta1 B: 22_ csdRouteDestination16_ rule
+// Keep the business scope EU; carrier lanes must use the unique destination's physical country.
+function shiDeliveryCountry_(rowCountry, destinations) {
+var rc = imbStr_(rowCountry).toUpperCase();
+if (rc !== 'EU') return rc;
+return destinations.length === 1 && shiDestCountryOk_(destinations[0], rc) ? imbStr_(destinations[0].country).toUpperCase() : '';
+}
 function shiDisplayEditable_(h) { return imbStr_(h && h.record_origin) === SHI_ORIGIN_HISTORICAL_ && imbStr_(h && h.opening_supply_mode) === 'DISPLAY_ONLY' && shiLc_(h && h.status) === 'in_transit'; }
 var SHI_ORIGIN_HISTORICAL_ = 'IMPORT_HISTORICAL';
 // A-delta2 (Owner rule 6): what may change the transport (carrier / method / last mile) of an existing shipment. Read once per request.
@@ -807,7 +815,7 @@ if (shiIsFactoryWh_(d0)) imbIssue_(issues, sn, r.__row, 'destination_warehouse_i
 else if (!imbStr_(d0.company)) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'SHIPMENT_DESTINATION_COMPANY_UNKNOWN', 'the destination warehouse has no company in the master - its owner is never guessed', v.destination_warehouse_id);
 else if (company && imbStr_(d0.company) !== company) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'SHIPMENT_DESTINATION_COMPANY_MISMATCH', 'the destination warehouse belongs to ' + imbStr_(d0.company) + ', the import to ' + company, v.destination_warehouse_id);
 else if (!shiActive_(d0)) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'SHIPMENT_DESTINATION_INACTIVE', 'goods still on the way cannot go to an inactive warehouse', v.destination_warehouse_id);
-else if (v.country && !shiDestCountryOk_(d0, v.country)) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'SHIPMENT_DESTINATION_COUNTRY_MISMATCH', 'the destination warehouse is in ' + (imbStr_(d0.country) || '(no country in the master)') + ', the row country is ' + v.country + ' - never cross-country', v.destination_warehouse_id);   // A-delta1 B
+else if (v.country && !shiDestCountryOk_(d0, v.country)) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', 'SHIPMENT_DESTINATION_COUNTRY_MISMATCH', 'the destination warehouse is in ' + (imbStr_(d0.country) || '(no country in the master)') + ', the row country is ' + v.country + ' - destination must match the country or its shipping region (EU member countries only for EU)', v.destination_warehouse_id);
 else { var sm = shiSupplyModeOf_(d0, mk0); if (sm.code) imbIssue_(issues, sn, r.__row, 'destination_warehouse_id', sm.code, sm.message, v.destination_warehouse_id); else h.mode = sm.mode; }
 h.warehouse_code = imbStr_(d0.warehouse_code); state.refs['wh:' + v.destination_warehouse_id] = d0;
 }
@@ -815,7 +823,7 @@ if (v.source_warehouse_id === v.destination_warehouse_id) imbIssue_(issues, sn, 
 }
 if (src.length === 1) state.refs['wh:' + v.source_warehouse_id] = src[0];
 if (v.carrier_id) { var carHit_ = shiInList_(L, 'carrier', v.carrier_id); if (carHit_ && carHit_.status === 'inactive') imbIssue_(issues, sn, r.__row, 'carrier_id', 'SHIPMENT_CARRIER_INACTIVE', 'carrier ' + v.carrier_id + ' is inactive in the carriers master - an Add New shipment is refused for it', v.carrier_id); }
-if (h.methodRaw && v.carrier_id && crcAll_) { v.shipping_method = h.methodRaw; h.tupleQ = { lm: imbStr_(v.last_mile_delivery) /* AD3-B */, carrier: v.carrier_id, text: h.methodRaw, country: v.country, whCode: h.warehouse_code || '', day: v.etd || '', origin: src.length === 1 ? imbStr_(src[0].country) : '', marketplace: multi ? '' : imbStr_(v.marketplace) }; }   // b3 M-3: resolved after the Lines (the battery class needs the SKUs)
+if (h.methodRaw && v.carrier_id && crcAll_) { v.shipping_method = h.methodRaw; h.tupleQ = { lm: imbStr_(v.last_mile_delivery) /* AD3-B */, carrier: v.carrier_id, text: h.methodRaw, country: shiDeliveryCountry_(v.country, dst), whCode: h.warehouse_code || '', day: v.etd || '', origin: src.length === 1 ? imbStr_(src[0].country) : '', marketplace: multi ? '' : imbStr_(v.marketplace) }; }   // b3 M-3: resolved after the Lines (the battery class needs the SKUs)
 h.v = v; h.ext = imbStr_(v.external_shipment_id); h.key = h.ext.toLowerCase();
 // R4 (Owner rule 1): ONE external number = ONE shipment = ONE destination. A second row with the same number is refused.
 if (h.ext) {
@@ -1039,7 +1047,7 @@ function transportOf(r, h, t) {
   var same = car === curCar && (!txt || txt === curTxt || txt === curTok);
   if (!same && car === curCar && txt && curTok) {   // F3: an equivalent text (same resolver, same carrier) is no change
     var src0 = whU[imbStr_(h.source_warehouse_id)] || [], sk0 = (db.linesBy[t.sid] || []).filter(function (l) { var s0 = shiLc_(l.line_status); return s0 !== 'cancelled' && s0 !== 'removed'; }).map(function (l) { return imbStr_(l.sku); }).filter(Boolean);
-    var eq = shiResolveTuple_(memoU, crcU, { carrier: car, text: txt, country: h.country, whCode: h.warehouse_code, day: shiDateText_(h.etd), origin: src0.length === 1 ? imbStr_(src0[0].country) : '', marketplace: shiIsMulti_(h.marketplace) ? '' : imbStr_(h.marketplace), skus: sk0 });
+    var eq = shiResolveTuple_(memoU, crcU, { carrier: car, text: txt, country: shiDeliveryCountry_(h.country, whU[imbStr_(h.destination_warehouse_id)] || []), whCode: h.warehouse_code, day: shiDateText_(h.etd), origin: src0.length === 1 ? imbStr_(src0[0].country) : '', marketplace: shiIsMulti_(h.marketplace) ? '' : imbStr_(h.marketplace), skus: sk0 });
     same = !!(eq.ok && eq.method === curTok && eq.lastMile === curLm); }
   if (same) {
     if (!lc.absent && !lc.blank && imbStr_(lc.value) !== curLm) imbIssue_(issues, sn, r.__row, 'last_mile_delivery', 'SHIPMENT_FIELD_NOT_UPDATABLE', 'last_mile_delivery is derived from Carrier + Shipping method (current ' + (curLm || 'blank') + ') - change the Shipping method label instead', lc.value);

@@ -824,6 +824,16 @@ function csdDestTypeGate22_(ss, sc) {
   var v = shipDestinationTypeRule_(f.type, f.isFactory);
   return v.ok ? null : no('ROUTE_' + v.code, v.type);
 }
+// Shipping coverage is independent of the frozen four-market forecast/inventory planning set.
+// EU membership: https://eur-lex.europa.eu/EN/legal-content/glossary/member-states.html
+function csdShipmentDestinationCountryOk_(warehouseCountry, shipmentCountry) {
+var wc = String(warehouseCountry || '').trim().toUpperCase(), rc = String(shipmentCountry || '').trim().toUpperCase();
+if (!wc || !rc) return false;
+if (wc === rc) return true;
+if (rc === 'EU') return 'AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE'.split(' ').indexOf(wc) !== -1;
+var set = csdPlanningSet15e_(rc);
+return !!(set && set.indexOf(wc) !== -1);
+}
 function csdRouteDestination16_(ss, sc) {
 var wid = String(sc('destination_warehouse_id') || sc('warehouse_id') || '').trim();
 if (!wid) return { ok: false, error: 'ROUTE_DESTINATION_WAREHOUSE_REQUIRED' };
@@ -835,8 +845,7 @@ if (ic === -1 || cc === -1) return { ok: false, error: 'ROUTE_WAREHOUSE_HEADERS_
 var hits = d.slice(1).filter(function (r) { return String(r[ic] || '').trim() === wid; });
 if (hits.length !== 1) return { ok: false, error: 'ROUTE_DESTINATION_WAREHOUSE_NOT_UNIQUE' };
 var r = hits[0], country = String(r[cc] || '').trim().toUpperCase();
-var want15e = String(sc('country') || '').trim().toUpperCase(), set15e = (country && country !== want15e) ? csdPlanningSet15e_(want15e) : null;   // R15C-EU: a planning set admits its member warehouses only
-if (!country || (country !== want15e && !(set15e && set15e.indexOf(country) !== -1))) return { ok: false, error: 'ROUTE_DESTINATION_COUNTRY_MISMATCH' };
+if (!csdShipmentDestinationCountryOk_(country, sc('country'))) return { ok: false, error: 'ROUTE_DESTINATION_COUNTRY_MISMATCH' };
 var wc = h.indexOf('warehouse_code'), savedCode = String(sc('warehouse_code') || '').trim();
 if (savedCode && (wc === -1 || savedCode.toUpperCase() !== String(r[wc] || '').trim().toUpperCase())) return { ok: false, error: 'ROUTE_DESTINATION_CODE_MISMATCH' };
 return { ok: true, warehouseId: wid, region: rc === -1 ? '' : String(r[rc] || '').trim().toUpperCase(), country: country };   // R15C-EU: the warehouse's authoritative country
