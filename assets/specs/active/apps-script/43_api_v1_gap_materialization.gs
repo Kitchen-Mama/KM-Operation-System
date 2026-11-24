@@ -49,7 +49,7 @@ var OP_GAP_HEADERS_ = ['company', 'country', 'marketplace', 'sku', 'calculation_
 
 
 
-var GAP_MATERIALIZATION_HANDLER_VERSION_ = 'dc2-r2-d4';
+var GAP_MATERIALIZATION_HANDLER_VERSION_ = 'inventory-ongoing-warning-20261124';
 
 var GAP_KEY_COLS_ = ['company', 'country', 'marketplace', 'sku'];
 var GAP_MAX_SKUS_ = 5000;
@@ -229,11 +229,14 @@ d45_gap_qty: null, d45_suggested_qty: null, d90_gap_qty: null, d90_suggested_qty
 };
 if (!lines || !lines.length) { base.calculation_status = 'BLOCKED'; base.note = 'RECOMMENDATION_LINE_NOT_FOUND'; return base; }
 var acc = { D18: { g: 0, s: 0 }, D30: { g: 0, s: 0 }, D45: { g: 0, s: 0 }, D90: { g: 0, s: 0 } };
-var blockedReason = null;
+var blockedReason = null, ongoingWarnings = [];
 for (var i = 0; i < lines.length && !blockedReason; i++) {
 var L = lines[i];
 if (L && L.blocked) { blockedReason = gapStr_(L.blockedReason) || 'BLOCKED'; break; }
-if ((blockedReason = gapOngoingIncompleteNote_(L))) break;
+// Inventory uses the existing horizons; undated ongoing supply stays excluded, not a row-level block.
+// Order Planning retains its incomplete-ongoing protection in gapOpMapFromLines_.
+var ongoingNote = gapOngoingIncompleteNote_(L);
+if (ongoingNote && ongoingWarnings.indexOf(ongoingNote) === -1) ongoingWarnings.push(ongoingNote);
 var hz = L && L.horizons;
 
 
@@ -253,6 +256,7 @@ base.d45_gap_qty = acc.D45.g; base.d45_suggested_qty = acc.D45.s;
 base.d90_gap_qty = acc.D90.g; base.d90_suggested_qty = acc.D90.s;
 var anyGap = acc.D18.g > 0 || acc.D30.g > 0 || acc.D45.g > 0 || acc.D90.g > 0;
 base.note = !anyGap ? 'No shortage' : ((acc.D18.g > 0 || acc.D30.g > 0) ? 'Shortage within 30 days' : 'Replenishment required');
+ongoingWarnings.forEach(function (n) { base.note += ' | WARNING: ' + gapNoteReason_(n) + '; excluded ongoing quantity not counted, suggested quantity may be overstated'; });
 base.note += gapLineFlags_(lines, 'INVENTORY');   // D5-V3-R5
 return base;
 }

@@ -2518,6 +2518,7 @@ function renderReplenishment() {
     // F1-7N-FB-4E-R4B-R3 §3 - the render checks its own output rather than trusting it.
     _irVerifyRenderedRows_(data.length);
     if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
+    if (typeof _irCaptureWarmCells_ === 'function') _irCaptureWarmCells_();
     });
 }
 
@@ -11324,6 +11325,7 @@ function _irPaintOnTheWayCells_() {
         el.removeAttribute('data-cached-result');
         if (c.title) el.setAttribute('title', c.title); else el.removeAttribute('title'); n++; });
     _irRestoreWarmCells_();
+    _irCaptureWarmCells_();
     return n;
 }
 function _irRepaintExposureCard_(sku) {
@@ -11601,8 +11603,9 @@ function _irRestorableResult_(scope) {
 var _irWarmCells = null;
 function _irCaptureWarmCells_() {
     var key = _irAppliedScopeKey_();
-    if (!key || !_irSearch.applied) return;
-    var snap = _irWarmCells && _irWarmCells.key === key ? _irWarmCells : { key: key, rows: Object.create(null) };
+    if (!key || !_irSearch.applied || _irSearch.status !== 'READY') return;
+    var snap = _irWarmCells && _irWarmCells.key === key && _irWarmCells.searchSeq === _irSearch.seq ? _irWarmCells :
+        { key: key, searchSeq: _irSearch.seq, rows: Object.create(null) };
     var velocityReady = _irRecoState && _irRecoState.loadedOk && _irResultMatchesAppliedScope_(_irRecoState);
     var onwayReady = _irExposureStateForRender_() === IR_EXPOSURE_STATES_.READY;
     if (velocityReady) snap.hasVelocity = true;
@@ -11611,7 +11614,7 @@ function _irCaptureWarmCells_() {
         var k = row.getAttribute('data-rowkey'), cells = snap.rows[k] || {};
         [['velocity', '.replen-avg-cell', velocityReady], ['dos', '.replen-dos-cell', velocityReady], ['onway', '.replen-onway-cell', onwayReady]].forEach(function (c) {
             var el = row.querySelector(c[1]);
-            if (el && c[2]) cells[c[0]] = { html: el.innerHTML, cls: el.className, title: el.getAttribute('title') };
+            if (el && c[2] && !el.hasAttribute('data-cached-result')) cells[c[0]] = { html: el.innerHTML, cls: el.className, title: el.getAttribute('title') };
         });
         snap.rows[k] = cells;
     });
@@ -11619,8 +11622,8 @@ function _irCaptureWarmCells_() {
 }
 function _irWarmCellState_() {
     var rec = _irBootstrap;
-    if (!_irWarmCells || _irWarmCells.key !== _irAppliedScopeKey_() || !rec || rec.mode !== 'RESTORED' ||
-        rec.searchSeq !== _irSearch.seq || _irSearch.status === 'LOADING' || _irSearch.status === 'ERROR') return {};
+    if (!_irWarmCells || _irWarmCells.key !== _irAppliedScopeKey_() || _irWarmCells.searchSeq !== _irSearch.seq ||
+        !rec || _irSearch.status !== 'READY') return {};
     return { velocity: _irWarmCells.hasVelocity && !(_irRecoState && _irRecoState.loadedOk && _irResultMatchesAppliedScope_(_irRecoState)),
         onway: _irWarmCells.hasOnway && _irExposureStateForRender_() !== IR_EXPOSURE_STATES_.READY };
 }
@@ -11648,7 +11651,7 @@ function _irPaintCacheStatus_() {
     if (!el) { el = document.createElement('div'); el.id = 'replenCacheStatus'; el.className = 'replen-cache-status'; el.setAttribute('role', 'status'); host.appendChild(el); }
     var rec = _irBootstrap;
     var warm = _irWarmCellState_();
-    var visible = rec && rec.mode === 'RESTORED' && rec.searchSeq === _irSearch.seq &&
+    var visible = rec && ((rec.mode === 'RESTORED' && rec.searchSeq === _irSearch.seq) || warm.velocity || warm.onway) &&
         _irSearch.status !== 'LOADING' && _irSearch.status !== 'ERROR' && (rec.revalidating || rec.revalidateFailed || warm.velocity || warm.onway);
     el.hidden = !visible;
     var failed = rec && (rec.revalidateFailed || (warm.velocity && _irRecoState.status === 'API_ERROR') ||
@@ -11737,6 +11740,33 @@ function _irSetSelectors_(scope) {
 var _irMountGen = 0;
 var _irBootstrapAttempt = 0;
 var _irBootstrapStray = 0;
+var _irRestoreReadFlight = null;
+function _irReadForRestoredScope_(rec, scope, restorable) {
+    return new Promise(function (resolve, reject) {
+        _irAfterRevisionProbe_(function () {
+            if (rec !== _irBootstrap || rec.mountGen !== _irMountGen || rec.searchSeq !== _irSearch.seq ||
+                !_irSameScope_(_irSearch.applied, scope)) { resolve(null); return; }
+            var verdict = _irSourceVerdict_(_irReadModelSource, 'planning');
+            if (!restorable.stale && verdict.verdict === 'SAME') {
+                rec.primaryRecovery = 'CURRENT'; resolve(_irReadModel); return;
+            }
+            // A return joins the existing read; Search and writes still own their independent fresh reads.
+            var key = JSON.stringify([scope, rec.searchSeq, _irSourceStamp_()]);
+            if (_irRestoreReadFlight && _irRestoreReadFlight.key === key) {
+                rec.primaryRecovery = 'JOINED'; _irRestoreReadFlight.promise.then(resolve, reject); return;
+            }
+            rec.primaryRecovery = 'REREAD';
+            var flight = { key: key, promise: Promise.resolve().then(function () {
+                return _irWorkspaceRefresh_({ quiet: true, carrier: true, owner: 'RESTORED_MOUNT_REVALIDATION',
+                    reason: 'retained result is stale or its source revision cannot be reused' });
+            }) };
+            _irRestoreReadFlight = flight;
+            var release = function () { if (_irRestoreReadFlight === flight) _irRestoreReadFlight = null; };
+            flight.promise.then(release, release);
+            flight.promise.then(resolve, reject);
+        });
+    });
+}
 function _irBootstrapScope_() {
     var rec = { ran: true, attempt: ++_irBootstrapAttempt, mountGen: _irMountGen,
         mode: null, scopeValid: null, registryRequests: 0, workspaceRequests: 0, reason: null };
@@ -11804,9 +11834,8 @@ function _irBootstrapScope_() {
         // it was read and a failed revalidation does not make it invalid.
         rec.revalidating = true;
         var qSeq = _irSearch.seq;
-        Promise.resolve(_irWorkspaceRefresh_({ quiet: true, carrier: true,
-            owner: 'RESTORED_MOUNT_REVALIDATION',
-            reason: 'a retained model was restored; this re-reads behind it without a loading state' })).then(function () {
+        var restoredModel = _irReadModel;
+        _irReadForRestoredScope_(rec, remembered, restorable).then(function (model) {
             // CP2X-R4 §D — A SUPERSEDED REVALIDATION STILL HAS TO END ITS OWN STATE.
             //
             // The guards below are right and are unchanged: a revalidation that a newer Search or a
@@ -11829,7 +11858,8 @@ function _irBootstrapScope_() {
             if (qSeq !== _irSearch.seq) { rec.revalidateSuperseded = 'NEWER_SEARCH'; return; }
             if (!_irSameScope_(_irSearch.applied, remembered)) { rec.revalidateSuperseded = 'SCOPE_MOVED'; return; }
             rec.revalidated = true;
-            if (typeof renderReplenishment === 'function') renderReplenishment();
+            if (model && model !== restoredModel && typeof renderReplenishment === 'function') renderReplenishment();
+            else _irPaintCacheStatus_();
         }, function () {
             rec.revalidating = false; rec.revalidateFailed = true;
             if (rec !== _irBootstrap || rec.mountGen !== _irMountGen) {
@@ -18236,6 +18266,7 @@ function _irRecoUpdateVelocityCells_() {
     }
   });
   if (typeof _irRestoreWarmCells_ === 'function') _irRestoreWarmCells_();
+  if (typeof _irCaptureWarmCells_ === 'function') _irCaptureWarmCells_();
 }
 function _irRecoHasCanonicalBasis_() {
   var by = _irRecoState && _irRecoState.linesBySku; if (!by) return false;
