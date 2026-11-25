@@ -28,7 +28,20 @@
         }); return out;
     }
     function id() { if (!window.crypto || !window.crypto.getRandomValues) throw Error('Secure request ID unavailable.'); var b = new Uint32Array(4); window.crypto.getRandomValues(b); return 'WDL-' + Array.from(b).map(function (v) { return v.toString(16).padStart(8,'0'); }).join(''); }
-    function error(r) { var e = r && r.error, issues=(r&&r.issues)||(e&&e.details&&e.details.issues)||[], stock=issues.find(function(i){return /^WEEKLY_STOCK_/.test(s(i.code));}); return { code:s((e && e.code) || (r && r.code) || 'NO_RESULT'), message:s(stock&&stock.message || (e && e.message) || (typeof e === 'string' ? e : '') || 'No confirmed result.') }; }
+    function groupsFrom(lines) {
+        var core=window.KM.mixedCartons, byId={}, groups={};
+        lines.forEach(function(l){var m=core.metadata((l.raw||l).note);if(m){byId[m.ref]=l.sku;m.groups.forEach(function(g){groups[g.id]=g;});}});
+        return Object.keys(groups).sort().map(function(k){var g=groups[k];return {id:g.id,representative_sku:byId[g.representativeId],members:g.members.map(function(m){return {sku:byId[m.lineId],quantity:m.quantity};})};});
+    }
+    function checkGroups(rows, groups) {
+        var available={},used={};rows.filter(function(r){return !r.removed;}).forEach(function(r){available[r.sku]=qty(r.quantity,!!r.id===false);});
+        groups.forEach(function(g){var seen={};if(g.members.length<2)throw Error('Each mixed carton needs at least two SKUs.');
+            g.members.forEach(function(m){if(!Object.prototype.hasOwnProperty.call(available,m.sku)||seen[m.sku])throw Error('Choose distinct shipping SKUs in each carton.');seen[m.sku]=true;
+                m.quantity=qty(m.quantity,true);used[m.sku]=(used[m.sku]||0)+m.quantity;if(used[m.sku]>available[m.sku])throw Error(m.sku+': mixed-carton quantity exceeds shipping quantity.');});
+            if(!seen[g.representative_sku])throw Error('Representative SKU must belong to this carton.');
+        });return groups;
+    }
+    function error(r) { var e = r && r.error, issues=(r&&r.issues)||(e&&e.details&&e.details.issues)||[], specific=issues.find(function(i){return /^(WEEKLY_STOCK_|MIXED_)/.test(s(i.code));}); return { code:s((e && e.code) || (r && r.code) || 'NO_RESULT'), message:s(specific&&(specific.message+' ['+specific.code+']') || (e && e.message) || (typeof e === 'string' ? e : '') || 'No confirmed result.') }; }
     function freezeOnError(code) { return !/^(IMPORT_VALIDATION_FAILED|WEEKLY_LINES_VALIDATION_FAILED|IMPORT_REQUEST_INVALID|IMPORT_PREVIEW_STALE|IMPORT_FAILED_ROLLED_BACK|LOCK_UNAVAILABLE|IN_FLIGHT)$/.test(code); }
     function close() {
         if (!active || active.busy) return;
@@ -38,18 +51,30 @@
         if (active) { active.dialog.focus(); return Promise.resolve(); }
         if (!opts.plan || opts.plan.status !== 'draft' || !opts.token) return Promise.reject(Error('Reject to Draft and reload before editing.'));
         var environment = env(); if (!known(environment)) return Promise.reject(Error('Environment unavailable. Reload before editing.'));
+        if (!window.KM.mixedCartons) return Promise.reject(Error('Packing module unavailable. Reload before editing.'));
         var st = { opts:opts, environment:environment, rows:(opts.lines || []).map(function (l) {
             return { id:l.shippingPlanLineId, sku:l.sku, original:l.approvedQty, quantity:opts.values[l.shippingPlanLineId] === undefined ? l.approvedQty : opts.values[l.shippingPlanLineId], token:s((l.raw || {}).updated_at) };
-        }), busy:false, frozen:false, loaded:false, catalog:[], sent:null, signature:'' };
+        }), busy:false, frozen:false, loaded:false, catalog:[], sent:null, signature:'', groups:groupsFrom(opts.lines||[]) };
+        st.hadPacking=st.groups.length>0;
         var d = document.createElement('dialog'); d.className = 'sp-sku-editor'; d.setAttribute('aria-label','Edit Draft SKUs');
         d.innerHTML = '<header><h3>Edit Draft SKUs</h3><button type="button" data-close title="Close" aria-label="Close">&#215;</button></header>' +
             '<div class="sp-sku-editor__scope">' + esc(opts.plan.company) + ' / ' + esc(opts.plan.country) + ' / ' + esc(opts.plan.marketplace) + '</div>' +
             '<div class="sp-sku-editor__table"><table><thead><tr><th>SKU</th><th>Quantity</th><th></th></tr></thead><tbody></tbody></table></div>' +
             '<div class="sp-sku-editor__add"><select aria-label="SKU to add"><option value="">Loading SKUs...</option></select><button type="button" data-add title="Add SKU" aria-label="Add SKU">+</button></div>' +
+            '<section class="sp-packing-editor"><div class="sp-packing-editor__heading"><label><input type="checkbox" data-mixed> Mixed cartons / &#25340;&#31665;</label><button type="button" data-add-group title="Add mixed carton" aria-label="Add mixed carton">+</button></div><div data-groups></div></section>' +
             '<p role="status" aria-live="polite"></p><footer><button type="button" data-close>Cancel</button><button type="button" data-recheck hidden>Re-check</button><button type="button" data-save disabled>Save</button></footer>';
         st.dialog = d; active = st; document.body.appendChild(d); d.showModal();
         var status = d.querySelector('[role="status"]'), save = d.querySelector('[data-save]'), select = d.querySelector('select'), add = d.querySelector('[data-add]');
-        function enabled() { save.disabled = st.busy || st.frozen || !st.loaded; add.disabled = st.busy || st.frozen || !st.loaded; select.disabled = add.disabled; d.querySelectorAll('tbody input,tbody button').forEach(function (e) { e.disabled = st.busy || st.frozen; }); d.querySelectorAll('[data-close]').forEach(function (e) { e.disabled = st.busy; }); }
+        function enabled() { save.disabled = st.busy || st.frozen || !st.loaded; add.disabled = st.busy || st.frozen || !st.loaded; select.disabled = add.disabled; d.querySelectorAll('tbody input,tbody button,.sp-packing-editor input,.sp-packing-editor select,.sp-packing-editor button').forEach(function (e) { e.disabled = st.busy || st.frozen; }); d.querySelector('[data-add-group]').hidden=!d.querySelector('[data-mixed]').checked; d.querySelectorAll('[data-close]').forEach(function (e) { e.disabled = st.busy; }); }
+        function paintGroups() {
+            var box=d.querySelector('[data-groups]');box.innerHTML='';
+            st.groups.forEach(function(g,gi){var f=document.createElement('fieldset');f.innerHTML='<legend>Mixed '+(gi+1)+' / 1 carton</legend><div class="sp-packing-editor__heading"><label>Representative SKU <select data-rep></select></label><button type="button" data-remove-group title="Remove carton" aria-label="Remove mixed carton '+(gi+1)+'">&#215;</button></div><table><thead><tr><th>SKU</th><th>Pcs in carton</th><th></th></tr></thead><tbody></tbody></table><button type="button" data-member title="Add carton member" aria-label="Add carton member">+</button>';
+                var rep=f.querySelector('[data-rep]');rep.innerHTML='<option value="">Select SKU</option>'+g.members.map(function(m){return '<option value="'+esc(m.sku)+'">'+esc(m.sku)+'</option>';}).join('');rep.value=g.representative_sku||'';rep.onchange=function(){g.representative_sku=rep.value;};
+                g.members.forEach(function(m,mi){var tr=document.createElement('tr');tr.innerHTML='<td><select aria-label="Mixed '+(gi+1)+' SKU '+(mi+1)+'"><option value="">Select SKU</option>'+st.rows.filter(function(r){return !r.removed;}).map(function(r){return '<option value="'+esc(r.sku)+'">'+esc(r.sku)+'</option>';}).join('')+'</select></td><td><input type="number" min="1" step="1" aria-label="Mixed '+(gi+1)+' quantity '+(mi+1)+'"></td><td><button type="button" title="Remove member" aria-label="Remove carton member">&#215;</button></td>';
+                    var sku=tr.querySelector('select'),q=tr.querySelector('input');sku.value=m.sku||'';q.value=m.quantity;sku.onchange=function(){m.sku=sku.value;paintGroups();enabled();};q.oninput=function(){m.quantity=q.value;};tr.querySelector('button').onclick=function(){g.members.splice(mi,1);paintGroups();enabled();};f.querySelector('tbody').appendChild(tr);});
+                f.querySelector('[data-remove-group]').onclick=function(){st.groups.splice(gi,1);paintGroups();enabled();};f.querySelector('[data-member]').onclick=function(){g.members.push({sku:'',quantity:1});paintGroups();enabled();};box.appendChild(f);
+            });
+        }
         function paint() {
             var tb = d.querySelector('tbody'); tb.innerHTML = '';
             st.rows.forEach(function (r,i) {
@@ -59,8 +84,11 @@
                 tr.querySelector('button').onclick = function () { if (!st.busy && !st.frozen) { st.rows[i].removed = !st.rows[i].removed; paint(); } }; tb.appendChild(tr);
             });
             var used = {}; st.rows.forEach(function (r) { if (!r.removed) used[r.sku] = true; });
-            select.innerHTML = '<option value="">Select SKU</option>' + st.catalog.filter(function (r) { return !used[r.sku]; }).map(function (r) { return '<option value="' + esc(r.sku) + '">' + esc(r.sku + (r.siteSku ? ' / ' + r.siteSku : '')) + '</option>'; }).join(''); enabled();
+            select.innerHTML = '<option value="">Select SKU</option>' + st.catalog.filter(function (r) { return !used[r.sku]; }).map(function (r) { return '<option value="' + esc(r.sku) + '">' + esc(r.sku + (r.siteSku ? ' / ' + r.siteSku : '')) + '</option>'; }).join(''); paintGroups();enabled();
         }
+        d.querySelector('[data-mixed]').checked=st.hadPacking;
+        d.querySelector('[data-mixed]').onchange=function(){if(!this.checked){if(st.groups.length&&!window.confirm('Remove all mixed cartons?')){this.checked=true;return;}st.groups=[];}paintGroups();enabled();};
+        d.querySelector('[data-add-group]').onclick=function(){st.groups.push({id:'MC-'+id(),representative_sku:'',members:[{sku:'',quantity:1},{sku:'',quantity:1}]});paintGroups();enabled();};
         d.querySelectorAll('[data-close]').forEach(function (b) { b.onclick = close; });
         d.addEventListener('cancel', function (e) { e.preventDefault(); close(); });
         add.onclick = function () {
@@ -76,10 +104,13 @@
         save.onclick = function () {
             if (st.busy || st.frozen || !st.loaded) return;
             if (env() !== st.environment || !known(env())) { st.frozen = true; status.textContent = 'Environment changed. Close and reload.'; enabled(); return; }
-            var ops; try { ops = edits(st.rows); if (!ops.length) { status.textContent = 'No changes.'; return; } } catch (e) { status.textContent = e.message; return; }
+            var ops,packing=st.hadPacking||d.querySelector('[data-mixed]').checked;
+            try { ops = edits(st.rows); if(packing){checkGroups(st.rows,st.groups);st.rows.filter(function(r){return r.id&&!r.removed;}).forEach(function(r){if(!ops.some(function(o){return o.shipping_plan_line_id===r.id;}))ops.push({op:'update',shipping_plan_line_id:r.id,quantity:qty(r.quantity,false),expected_updated_at:r.token});});}
+                if (!ops.length) { status.textContent = 'No changes.'; return; } } catch (e) { status.textContent = e.message; return; }
             if (st.rows.some(function (r) { return r.id && !r.token; })) { st.frozen = true; status.textContent = 'A line has no version. Reload before editing.'; enabled(); return; }
-            var signature = JSON.stringify(ops);
+            var signature = JSON.stringify([ops,packing?st.groups:null]);
             if (!st.sent || st.signature !== signature) { st.signature = signature; st.sent = { shipping_plan_id:opts.plan.shippingPlanId, expected_plan_updated_at:opts.token, request_id:id(), line_edits:ops }; }
+            if(packing){st.sent.packing_version=window.KM.mixedCartons.VERSION;st.sent.mixed_cartons=JSON.parse(JSON.stringify(st.groups));}
             st.busy = true; status.textContent = 'Saving...'; enabled();
             Promise.resolve().then(function () { return opts.save(st.sent); }).then(function (r) {
                 if (env() !== st.environment) { st.frozen = true; status.textContent = 'Environment changed. Re-check before another change.'; return; }
@@ -102,5 +133,5 @@
             st.catalog = catalog(db,opts.plan); st.loaded = true; paint(); status.textContent = '';
         }).catch(function (e) { if (active !== st) return; st.frozen = true; status.textContent = e.message || 'SKU list unavailable.'; enabled(); });
     }
-    window.KM.weeklyDraftEditor = { open:open, close:close, _catalog:catalog, _edits:edits, _freezeOnError:freezeOnError };
+    window.KM.weeklyDraftEditor = { open:open, close:close, _catalog:catalog, _edits:edits, _freezeOnError:freezeOnError, _checkGroups:checkGroups };
 })();

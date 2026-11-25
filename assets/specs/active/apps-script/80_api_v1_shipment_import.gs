@@ -32,7 +32,7 @@
 
 
 
-var SHI_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3';   // SHIP-OPEN R4 (review B1); r5.1 SO5; r5.2 SO6; r5.4 (legacy compatibility) -> SO8; A fix1 (Add New template contract) -> SO8-SHTPL1; A fix2 (Update display-only cells) -> SO8-SHTPL2: a new stamp, pinned in Production 01_ module_stamps and 63_
+var SHI_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3-MC1';
 var SHI_SCHEMA_VERSION_ = 'SHIPMENT-IMPORT-2';   // SHIP-OPEN: the opening contract (remaining quantity only)
 // A fix1 SHTPL1 (Owner 2026-11-20): the Add New template contract. A downloaded Add New file names it in _SYSTEM.scope.template_contract;
 // validate and commit refuse an Add New file without it (an older template: DISTINCT token, optional ETA / Reference ID / Shipping method)
@@ -527,6 +527,7 @@ if (f.sheet === 'Lines' && f.key === 'purchase_order_line_id') return shiLinePo_
 if (f.sheet === 'Lines' && f.key === 'opening_remaining_qty') return imbStr_(row && row.record_origin) === SHI_ORIGIN_HISTORICAL_ && imbStr_(row && row.opening_supply_mode) !== '' && line ? shiShow_(f, line.shipment_qty) : '';   // SHIP-OPEN R5; r5.4: never for a legacy row (blank mode)
 if (f.sheet === 'Header' && f.key === 'opening_as_of') return shiCutoff_(row && row.opening_as_of) || imbStr_(row && row.opening_as_of);   // SHIP-OPEN R5
 var src = f.sheet === 'Header' ? row : line;
+if (f.sheet === 'Lines' && f.key === 'note' && src && String(src.note).indexOf('[KMPACK1:')>=0) return KMPACK.clean(src.note);
 return shiShow_(f, src ? src[f.key] : '');
 }
 
@@ -798,7 +799,7 @@ v.shipping_method = mr.token; h.methodLabel = mr.label || ''; return;
 }   // A fix1: TRUE / FALSE, judged below with the suspicion
 var wh = f.key === 'source_warehouse_id' || f.key === 'destination_warehouse_id';
 var t = shiTyped_(f, r, issues, sn, wh ? null : L, f.add === 'req' || (tokenInput && f.key === 'last_mile_delivery'));
-if (f.key === 'note' && /\[SC13_/.test(String(t.value == null ? '' : t.value))) { imbIssue_(issues, sn, r.__row, 'note', 'IMPORT_LINEAGE_MARKER_PROTECTED', 'a note may not contain a system marker [SC13_...] - remove it', ''); return; }
+if (f.key === 'note' && /\[(SC13_|KMPACK)/.test(String(t.value == null ? '' : t.value))) { imbIssue_(issues, sn, r.__row, 'note', 'IMPORT_LINEAGE_MARKER_PROTECTED', 'A note may not contain a system packing or lineage marker.', ''); return; }
 if (t.clear) { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_FIELD_NOT_CLEARABLE', '[CLEAR] has no meaning on Add New'); return; }
 v[f.key] = t.ok ? t.value : (t.value === undefined ? '' : t.value);
 });
@@ -854,7 +855,7 @@ if (!ext) imbIssue_(issues, sn, r.__row, 'external_shipment_id', 'REQUIRED', 'ex
 else if (!h) imbIssue_(issues, sn, r.__row, 'external_shipment_id', 'SHIPMENT_LINE_ORPHAN', 'no Header row has the external number ' + ext, ext);
 var v = {};
 shiFields_(sn).forEach(function (f) { if (f.add !== 'req' && f.add !== 'opt') return; var t = shiTyped_(f, r, issues, sn, L, f.add === 'req');
-if (f.key === 'note' && /\[SC13_/.test(String(t.value == null ? '' : t.value))) { imbIssue_(issues, sn, r.__row, 'note', 'IMPORT_LINEAGE_MARKER_PROTECTED', 'a note may not contain a system marker [SC13_...] - remove it', ''); return; }
+if (f.key === 'note' && /\[(SC13_|KMPACK)/.test(String(t.value == null ? '' : t.value))) { imbIssue_(issues, sn, r.__row, 'note', 'IMPORT_LINEAGE_MARKER_PROTECTED', 'A note may not contain a system packing or lineage marker.', ''); return; }
 if (t.clear) { imbIssue_(issues, sn, r.__row, f.key, 'SHIPMENT_FIELD_NOT_CLEARABLE', '[CLEAR] has no meaning on Add New'); return; } v[f.key] = t.ok ? t.value : ''; });
 var skuHit = v.sku ? shiInList_(L, 'sku', v.sku) : null;
 if (skuHit && skuHit.status === 'inactive') imbIssue_(issues, sn, r.__row, 'sku', 'SHIPMENT_SKU_INACTIVE', 'SKU ' + v.sku + ' is inactive in sku_details - fix the master or leave it out', v.sku);
@@ -1364,6 +1365,12 @@ done_statuses: SHI_DONE_STATUSES_, status_aliases: SHI_STATUS_ALIASES_, refused_
 
 // ===== XCO-R15G (80_): an import never erases or forges a system marker =====
 function xcoImportNote_(ss, issues, sn, r, ch, ship, line) {
+  if (/\[KMPACK/.test(String(ch.after))) {imbIssue_(issues,sn,r.__row,'note','IMPORT_LINEAGE_MARKER_PROTECTED','Packing metadata is server-owned; edit the note text only.','');return null;}
+  if (line && String(line.note).indexOf('[KMPACK1:')>=0) {
+    try {KMPACK.metadata(line.note);}catch(e){imbIssue_(issues,sn,r.__row,'note','MIXED_PACKING_METADATA_INVALID','Stored packing metadata is unreadable.','');return null;}
+    var packingMarkers=String(line.note).match(/(?:^|\n)\[KMPACK1:[^\]\r\n]*\]/g)||[];
+    ch.before=line.note;ch.after=String(ch.after||'').trim()+'\n'+packingMarkers.map(function(m){return m.trim();}).join('\n');
+  }
   var re = /\[SC13_[A-Z_]+:[^\]\r\n]*\]/g;
   var before = String(ch.before == null ? '' : ch.before).match(re) || [], after = String(ch.after == null ? '' : ch.after).match(re) || [];
   if (JSON.stringify(before) !== JSON.stringify(after)) {

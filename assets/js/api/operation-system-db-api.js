@@ -5723,7 +5723,7 @@ async function _kmWeeklyCommand_(command, payload) {
         // F1-7N-FB-2A §E — also carry the handler's own `stage` and the PROVEN zero-write fact, so the page can
         // state "nothing was written" only when the server's own reason establishes it.
         var _det = (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null) || {};
-        if (command === 'updateShippingPlanLineQty' && payload && payload.line_edits && Array.isArray(json.issues)) _det.issues = json.issues;
+        if ((command === 'updateShippingPlanLineQty' || command === 'shippingPlan.mixedCartons.save') && payload && payload.line_edits && Array.isArray(json.issues)) _det.issues = json.issues;
         if (json.stage != null && _det.stage == null) _det.stage = String(json.stage);
         if (_det.zero_write == null && _kmZeroWriteProven_(_emsg)) _det.zero_write = true;
         // F1-7N-FB-4G-A2-R3-R1 §D — the evidence a failure has to be diagnosable from. None of this was kept,
@@ -5763,6 +5763,12 @@ window.KM.DB.updateShippingPlanStatus = function(payload) { return _kmWeeklyComm
 window.KM.DB.factoryStockGuardGet = function(payload) { return _kmGapRead_('factoryStockGuard.get', payload || {}); };
 // Edit approved_qty (Draft only): { lines: [ { shipping_plan_line_id, approved_qty } ] }.
 window.KM.DB.updateShippingPlanLineQty = function(payload) { return _kmWeeklyCommand_('updateShippingPlanLineQty', payload); };
+window.KM.DB.saveMixedCartons = async function(payload) {
+    var guard=window.KM_PRODUCTION_GUARD_;
+    if(guard){try{await guard.ready();}catch(e){return _kmCmdErr_('shippingPlan.mixedCartons.save',String(e.message),'Production identity could not be verified.');}
+        if(!guard.isActionAllowed('shippingPlan.mixedCartons.save'))return _kmCmdErr_('shippingPlan.mixedCartons.save','PRODUCTION_MIXED_CARTONS_BACKEND_UPDATE_REQUIRED','Update the matching Apps Script mixed-carton release before saving. Nothing was sent.');}
+    return _kmWeeklyCommand_('shippingPlan.mixedCartons.save', payload);
+};
 // Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.
 window.KM.DB.appendShippingPlanNote = function(payload) { return _kmWeeklyCommand_('appendShippingPlanNote', payload); };
 // Decision Layer Completion (Done): mark an Approved + transferred plan completed { shipping_plan_id, actor? }.
@@ -7529,6 +7535,7 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     // shipping plans and shipments: an incoming quantity for 42_ AND an exposure table for the panel
     createShippingPlansBatch: ['planning', 'exposure'], updateShippingPlanStatus: ['planning', 'exposure'],
     updateShippingPlanLineQty: ['planning', 'exposure'], appendShippingPlanNote: ['planning', 'exposure'],
+    saveMixedCartons: ['planning', 'exposure'],
     completeShippingPlan: ['planning', 'exposure'], updateShippingPlanRationale: ['planning', 'exposure'],
     selectShippingPlanCarrier: ['planning', 'exposure'], combineShippingPlans: ['planning', 'exposure'],
     uncombineShippingPlans: ['planning', 'exposure'], createShipmentFromPlan: ['planning', 'exposure'],

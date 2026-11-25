@@ -260,6 +260,8 @@ return st.state === SHIPMENT_FOR_PLAN_EXISTS_ ? st.shipment_id : '';
 
 
 function shipmentValidateCartons_(ss, shipmentId, requireComplete) {
+try { if (typeof mcpShipment_ === 'function' && mcpShipment_(ss, shipmentId)) return {ok:true, numbering:'PACKING_BLOCK_SEQUENCE'}; }
+catch (e) { return {ok:false,error:e.code || String(e.message || e)}; }
 var sheet = ss.getSheetByName('shipment_lines');
 if (!sheet) return { ok: true };
 var s = shipmentReadSheet_(sheet);
@@ -369,7 +371,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2';   // SANDBOX-GATE-1f: carrier -> method in one selection
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1';
 
 
 
@@ -567,6 +569,9 @@ var v = plv(rowVals, 'plan_carton_qty');
 if (v === '' || v == null) v = plv(rowVals, 'carton_qty');
 return v;
 };
+try {
+  if (typeof mcpLayout_ === 'function') mcpLayout_(planLines.map(function (row) { var o={};pl.headers.forEach(function (h,i) {o[h]=row[i];});return o; }), 'plan');
+} catch (packingError) { fcUnlock_();return {created:false,reason:packingError.code || 'MIXED_PACKING_INVALID',message:String(packingError.message)}; }
 
 
 
@@ -2419,6 +2424,10 @@ if (String(s.rows[i][idCol]).trim() === shipmentId) { targetRow = i + 1; break; 
 if (targetRow === -1) return jsonResponse_({ success: false, error: 'Shipment not found: ' + shipmentId });
 
 var rowVals = s.rows[targetRow - 1] || [];
+try {
+  var packing = typeof mcpShipment_ === 'function' ? mcpShipment_(ss, shipmentId) : null;
+  if (packing && body.lines && body.lines.length) return shipRcNo_('MIXED_CARTON_NUMBERING_AUTOMATIC', {error:'Mixed shipment carton numbers follow the saved packing groups. No fields were changed.'});
+} catch (packingError) { return shipRcNo_(packingError.code || 'MIXED_PACKING_INVALID', {error:String(packingError.message)}); }
 var p1u_ = editP1Gate15f2_(s.col('updated_at') === -1 ? undefined : rowVals[s.col('updated_at')], body && body.expected_updated_at); if (p1u_) return jsonResponse_(Object.assign({ success: false, zero_write: true, shipment_id: shipmentId }, p1u_));   /* R15F2 P1 */ if (body && body.expected_updated_at != null && String(body.expected_updated_at).trim() !== '') {   // INT-CAND8 r8 (edit conflict): the optimistic token, read under the lock
 var ucE_ = s.col('updated_at'), curTok_ = ucE_ === -1 ? '' : editTok_(rowVals[ucE_]), expTok_ = editTok_(body.expected_updated_at);
 if (ucE_ !== -1 && editTokSame_(rowVals[ucE_], body.expected_updated_at) === 'DIFF') {   /* INT-CAND9 r8 (CH8-1): epoch seconds; unparsable / coarse = ignored (run 1: a line comment here swallowed the rest of the line) */ var curRow_ = editRowObj_(s.headers, rowVals), diff_ = Object.keys(body).filter(function (k) { return k !== 'updated_at' && k !== 'expected_updated_at' && Object.prototype.hasOwnProperty.call(curRow_, k) && editTok_(body[k]) !== curRow_[k]; }).slice(0, 12);
@@ -3143,6 +3152,7 @@ function sc13Verify_(ss, ship) {
   if (!ids.length) sc13Fail_('CONSOLIDATION_LINK_MISSING');
   var lines = sc13Read_(ss, 'shipment_lines', ['shipment_line_id', 'shipment_id', 'shipping_plan_line_id', 'shipment_qty', 'sku', 'note']).rows
     .filter(function (l) { return sc13Str_(l.shipment_id) === sid && !sc13LineRemoved_(l); });   // XCO-R15G H2: a removed line is history
+  if (typeof mcpLayout_ === 'function') mcpLayout_(lines, 'shipment');
   var seen = {}, need = {}, companies = [];
   lines.forEach(function (l) {
     var src = sc13Source_(ss, l, ship);
@@ -3223,6 +3233,7 @@ function sc13Prepare_(ss, planId, policy) {
   var pls = sc13Read_(ss, 'shipping_plan_lines', ['shipping_plan_id', 'shipping_plan_line_id', 'sku', 'approved_qty']);
   var incoming = pls.rows.filter(function (r) { return sc13Str_(r.shipping_plan_id) === planId; });
   if (!incoming.length) sc13Fail_('CONSOLIDATION_PLAN_HAS_NO_LINES');
+  if (typeof mcpLayout_ === 'function') mcpLayout_(incoming, 'plan');
   if (sc13Str_(p.parent_shipping_plan_id) && sc13Str_(p.parent_shipping_plan_id) !== sc13Str_(p.shipping_plan_id)) sc13Fail_('CONSOLIDATION_COMBINED_PLAN_REVIEW_REQUIRED');
   return { handled: true, plan: p, planTable: ps, ship: ship, shipTable: ships, before: v, incoming: incoming, policy: policy };
 }

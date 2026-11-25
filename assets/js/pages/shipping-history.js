@@ -1528,6 +1528,19 @@ function _shOverviewLogistics_(s, lines, details) {
     });
 }
 
+function _shPackingRows_(lines) {
+    var core=window.KM.mixedCartons,records=core.uiRecords(lines,'shipment'),p=core.layout(records),number=0;
+    function n(v,d){return v==null||v===''?'--':Number(v).toFixed(d);}
+    return p.blocks.map(function(b){if(b.mixed)number++;
+        var portions=core.portions(records,'SHIPDETAIL').filter(function(r){return r.groupId===b.id;});
+        return portions.map(function(r,i){var span=' rowspan="'+portions.length+'" style="text-align:right;vertical-align:middle;"';
+            return '<tr'+(b.mixed?' class="sp-mixed-row"':'')+'><td>'+(i===0?'<small class="sp-packing-label">'+(b.mixed?'Mixed '+number:'Standard')+'</small>':'')+_shEsc(r.sku)+'</td><td style="text-align:right">'+r.quantity+'</td>'+
+                (i===0?'<td'+span+'>'+b.cartons+'</td><td'+span+'>'+n(portions[0].cbm,3)+'</td><td'+span+'>'+n(portions[0].grossKg,2)+'</td>':'')+
+                '<td style="text-align:right">'+n(r.netKg,2)+'</td>'+(i===0?'<td'+span+'>'+b.start+'</td><td'+span+'>'+b.end+'</td>':'')+'</tr>';
+        }).join('');
+    }).join('');
+}
+
 function _shRenderDbCard(s, planLines, mode) {
     var sid = s.shipmentId;
     var statusLabel = (mode === 'overview') ? _shArrivalStateOf_(s).label : (SH_STATUS_LABEL[s.status] || s.status || '—');   // A-DELTA1 C2 item 1
@@ -1538,7 +1551,8 @@ function _shRenderDbCard(s, planLines, mode) {
 
     // SKU Lines — logistics copied (read-only) + editable carton number range.
     // Columns: SKU / Qty / Cartons / CBM (line total) / Gross Wt / Net Wt / Carton No. Start / End.
-    var metricLines = mode === 'overview' ? _shOverviewLogistics_(s, planLines, _shReadModel && _shReadModel.skuLogistics) : planLines;
+    var hasPacking=planLines.some(function(l){return String((l.raw||l).note).indexOf('[KMPACK1:')>=0;});
+    var metricLines = mode === 'overview' && !hasPacking ? _shOverviewLogistics_(s, planLines, _shReadModel && _shReadModel.skuLogistics) : planLines;
     var displayLinesCp2 = _shSkuGroupsCp2_(metricLines, fieldsEditable);
     var rows = displayLinesCp2.map(function(l) {
         function n(v, digits) { return (v === '' || v == null) ? '--' : digits != null && mode === 'overview' ? Number(v).toFixed(digits) : v; }
@@ -1557,6 +1571,10 @@ function _shRenderDbCard(s, planLines, mode) {
             cartonCell('end', l.cartonNoEnd) +
             '</tr>';
     }).join('');
+    if(hasPacking) {
+        try { rows=_shPackingRows_(planLines); }
+        catch(e) {rows='<tr><td colspan="8" role="alert">'+_shEsc(e.code||e.message)+'</td></tr>';}
+    }
     // Totals row. Total CBM = Σ(shipment_carton_cbm) — each line already holds its LINE-TOTAL CBM, so
     // sum directly (NEVER multiply by cartons in the frontend). Matches shipments.shipment_total_cbm.
     var tQty = planLines.reduce(function(a, l) { return a + _shNum(l.qty); }, 0);

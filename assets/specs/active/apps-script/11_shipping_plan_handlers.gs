@@ -26,7 +26,7 @@
 // recovery object, and the Weekly page BINDS to both. An 11_ one round behind still approves and still fails
 // to create the shipment, but reports plain success — the exact silence this round closes, and
 // indistinguishable from a healthy deployment without this stamp moving.
-var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2';
+var SP_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2-MC1';
 
 var SHIPPING_PLANS_HEADERS_ = [
   'shipping_plan_id', 'parent_shipping_plan_id', 'shipping_plan_no', 'plan_name',
@@ -1664,6 +1664,7 @@ function spUpdateLineQtyCore_(body) {
   // index line id -> sheet row
   var rowById = {};
   for (var i = 1; i < data.length; i++) rowById[String(data[i][idCol]).trim()] = { row: i + 1, vals: data[i] };
+  if (reqLines.some(function (l) { var r=rowById[String(l.shipping_plan_line_id)];return r && col('note')>=0 && String(r.vals[col('note')]).indexOf('[KMPACK1:')>=0; })) return jsonResponse_({success:false,zero_write:true,code:'MIXED_CARTON_EDITOR_REQUIRED',error:'Use Edit SKUs to change mixed-carton quantities.'});
   if(typeof wdlGuard_==='function'){for(var wqi=0;wqi<reqLines.length;wqi++){var wqref=rowById[String(reqLines[wqi].shipping_plan_line_id||'')];if(!wqref)continue;var wqpid=String(wqref.vals[planIdCol]||'');var wqcode=wdlGuard_(ss,wqpid,'');if(wqcode)return wdlNo_(wqcode);}}
 
   // INT-CAND9 r7 (edit conflict): optional tokens - expected_plan_updated_at (the plan row) and lines[].expected_updated_at (each line

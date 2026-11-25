@@ -511,6 +511,10 @@ return handleUpdateShippingPlanStatus_(body);
 if (action === 'updateShippingPlanLineQty') {
 return handleUpdateShippingPlanLineQty_(body);
 }
+if (action === 'shippingPlan.mixedCartons.save') {
+if (body.packing_version !== 'MIXED_CARTONS_V1' || !Array.isArray(body.mixed_cartons) || !Array.isArray(body.line_edits)) return jsonResponse_({success:false,zero_write:true,code:'MIXED_PACKING_VERSION_INVALID'});
+return handleWeeklyDraftLines_(body);
+}
 if (action === 'shippingPlan.rateCardOptions') {   // SANDBOX-GATE-1f (read)
 return handleShippingPlanRateCardOptions_(body);
 }
@@ -1363,6 +1367,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "updateRequestOrderStatus",
     "updateShipment",
     "updateShippingPlanLineQty",
+    "shippingPlan.mixedCartons.save",
     "updateShippingPlanStatus",
     "updateSkuLifecycle",
     "upsertCampaign",
@@ -1524,7 +1529,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2",
+      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1",
       "optional": false
     },
     {
@@ -1559,7 +1564,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "WDL_BUILD_VERSION_",
-      "expected": "WDL1-SBX-20261111-AF1",
+      "expected": "WDL1-MIXED-CARTONS-20261125-V1",
       "optional": false
     },
     {
@@ -1569,7 +1574,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHI_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15G-SO8-AFINAL3-A2ROUTE-AD1B-AD2-AD3-MC1",
       "optional": false
     },
     {
@@ -1649,12 +1654,12 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SFO_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1",
       "optional": false
     },
     {
       "symbol": "SDR_BUILD_VERSION_",
-      "expected": "F1-AD3-SDR1",
+      "expected": "F1-AD3-SDR1-MC1",
       "optional": false
     },
     {
@@ -1669,7 +1674,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SP_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-WDL1-SBX-AF1-AD3-AD4-DW1-DW2-MC1",
       "optional": false
     },
     {
@@ -1684,7 +1689,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHIPMENT_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1",
       "optional": false
     },
     {
@@ -1724,7 +1729,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "KM_BUNDLE_CONTENT_HASH_",
-      "expected": "2136cd321d69e1fe44df2685815c67c60ccbd77cf169d3426720d4f166cfec72",
+      "expected": "5aa21ae41f9878279c88173052db4ec6cec5fc360da3a6665120a2d1f9d2dada",
       "optional": false
     },
     {
@@ -1794,7 +1799,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221"
+  "policy_sha256": "ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

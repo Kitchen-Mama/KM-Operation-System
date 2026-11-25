@@ -101,7 +101,7 @@ return sfoStr_(v);
 function sfoLc_(v) { return sfoStr_(v).toLowerCase(); }
 function sfoUc_(v) { return sfoStr_(v).toUpperCase(); }
 // SANDBOX-GATE-1l (K-1): the round this file last changed
-var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1';
+var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1';
 // SANDBOX-GATE-1l (K-1): a measure whose source is blank is UNKNOWN (''), never 0; a stored 0 with a known source stays 0
 function sfoHas_(v) { var t = sfoStr_(v); return t !== '' && !isNaN(Number(t.replace(/,/g, ''))); }
 function sfoNumOrBlank_(v) { var t = sfoStr_(v); if (t === '') return ''; var n = Number(t.replace(/,/g, '')); return isNaN(n) ? '' : n; }
@@ -173,6 +173,7 @@ return factory && !w.__duplicated && /^[A-Z]{2}$/.test(sfoUc_(w.country)) ? sfoU
 
 function sfoBuildLine_(line, master, siteSku, customs, lineId) {
 var m = master || {}, c = customs || {};
+var packed = String(line.note || '').indexOf('[KMPACK1:') >= 0;
 var qty = sfoNum_(line.shipment_qty);
 var declaredUnit = c.resolved === false ? '' : sfoNum_(c.declared_unit_value);
 return {
@@ -187,9 +188,9 @@ shipment_carton_qty: sfoNum_(line.shipment_carton_qty),
 carton_no_start: sfoStr_(line.carton_no_start),
 carton_no_end: sfoStr_(line.carton_no_end),
 units_per_carton: sfoNum_(line.units_per_carton) || sfoNum_(m.units_per_carton),
-gross_weight: sfoKnownNum_(line.gross_weight, sfoHas_(m.carton_weight)),   // SANDBOX-GATE-1l (K-1)
-net_weight: sfoKnownNum_(line.net_weight, sfoHas_(m.item_weight)),
-cbm: sfoKnownNum_(line.shipment_carton_cbm, sfoHas_(m.carton_length) && sfoHas_(m.carton_width) && sfoHas_(m.carton_height) && (sfoLc_(m.carton_dimension_unit) === '' || sfoLc_(m.carton_dimension_unit) === 'cm')),   // 11_ derives CBM for cm only (other units -> 0)
+gross_weight: sfoKnownNum_(line.gross_weight, packed || sfoHas_(m.carton_weight)),
+net_weight: sfoKnownNum_(line.net_weight, packed || sfoHas_(m.item_weight)),
+cbm: sfoKnownNum_(line.shipment_carton_cbm, packed || sfoHas_(m.carton_length) && sfoHas_(m.carton_width) && sfoHas_(m.carton_height) && (sfoLc_(m.carton_dimension_unit) === '' || sfoLc_(m.carton_dimension_unit) === 'cm')),
 carton_length: sfoNumOrBlank_(m.carton_length), carton_width: sfoNumOrBlank_(m.carton_width), carton_height: sfoNumOrBlank_(m.carton_height),
 gs1_code: sfoStr_(m.gs1_code), gs1_type: sfoStr_(m.gs1_type),
 country_of_origin: sfoUc_(c.country_of_origin),
@@ -413,6 +414,8 @@ factory_id: sfoStr_(fc.factory_id), factory_name: sfoStr_(fc.factory_name)
 
 
 function sfoDocumentReadiness_(h, lines) {
+try { if (typeof mcpLayout_ === 'function') mcpLayout_(lines, 'snapshot'); }
+catch (e) { var blocked={status:'BLOCKED',reason:e.code || 'MIXED_PACKING_INVALID'};return {shipping_detail:blocked,packing_list:blocked,commercial_invoice:blocked,booking:blocked,customs:blocked}; }
 var hasLines = !!(lines && lines.length);
 var hasShipper = !!(sfoStr_(h.shipper_legal_entity_id) || sfoStr_(h.shipper_legal_name));
 var hasConsignee = !!sfoStr_(h.consignee_location_id);

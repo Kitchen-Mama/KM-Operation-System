@@ -294,6 +294,19 @@
 .sp-sku-editor footer { display:flex; justify-content:flex-end; gap:8px; flex-wrap:wrap; margin-top:16px; padding-top:16px; border-top:1px solid #E2E8F0; }
 .sp-sku-editor [data-save] { color:white; background:#2563EB; border-color:#2563EB; min-width:76px; }
 .sp-sku-editor [data-save]:hover:not(:disabled) { color:#FFFFFF; background:#1D4ED8; }
+.sp-packing-editor { margin-top:20px; padding-top:16px; border-top:1px solid #CBD5E1; }
+.sp-packing-editor__heading { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+.sp-packing-editor__heading label { display:flex; align-items:center; gap:8px; min-width:0; flex-wrap:wrap; }
+.sp-packing-editor input[type=checkbox] { width:16px; height:16px; flex:none; }
+.sp-packing-editor fieldset { margin:12px 0; padding:12px; min-width:0; border:1px solid #94A3B8; border-radius:4px; }
+.sp-packing-editor legend { padding:0 6px; font-size:13px; font-weight:600; color:#0F766E; }
+.sp-packing-editor select { width:100%; }
+.sp-packing-editor [data-rep] { width:160px; flex:none; }
+.sp-packing-editor th:first-child { width:48%; }
+.sp-packing-editor td select { max-width:100%; padding:4px; font-size:13px; }
+.sp-mixed-row td { background:#F0FDFA; }
+.sp-mixed-row td[rowspan] { vertical-align:middle; border-left:2px solid #0F766E; text-align:center; }
+.sp-packing-label { display:block; margin-bottom:3px; color:#0F766E; font-size:11px; }
 @media (max-width:640px) { .sp-sku-editor { padding:16px; } .sp-sku-editor th:first-child { width:46%; } }
 .si-sku-editor .si-sku-fields { display: grid; gap: 16px; padding: 8px 0; }
 .si-sku-editor .si-sku-fields label { display: grid; gap: 6px; font-weight: 600; }

@@ -22,9 +22,9 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
-test('baseline reproduces blocked edits; only monthly edit, warehouse read and job-status read are newly allowed', () => {
+test('baseline keeps explicit additions limited to monthly edit, warehouse/status reads and mixed packing', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
-  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', body.action].sort());
+  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', body.action].sort());
   assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action && a !== 'gapJob.status.get'));
   assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get'), oldP.reads);
   assert.equal(p.ai_plan_enabled, false);
@@ -173,4 +173,35 @@ test('real status transport preserves production guard refusal instead of disgui
   const result = await h.DB.getGapJobStatus('INVENTORY', 'RUN');
   assert.equal(result.success, false); assert.equal(result.error.code, 'PRODUCTION_STATUS_BACKEND_UPDATE_REQUIRED');
   assert.equal(calls, 1);
+});
+
+test('pre-mixed exact policy retains status reads, but cannot send mixed packing writes', async () => {
+  const previous={...p,policy_sha256:'320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221'},g=guard(previous);
+  await g.w.fetch(p.endpoint+'?action=gapJob.status.get');
+  const before=g.sent.length;
+  await assert.rejects(g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'shippingPlan.mixedCartons.save'})}),/MIXED_CARTONS_BACKEND_UPDATE_REQUIRED/);
+  assert.equal(g.sent.length,before);
+});
+test('mixed packing action is enabled only by matching backend policy and modules', async () => {
+  assert.equal(c.rtrActionGate_('shippingPlan.mixedCartons.save',{}),null);
+  const g=guard();await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'shippingPlan.mixedCartons.save'})});
+  assert.equal(g.sent.length,2);assert.equal(g.writes.length,1);
+  const ctx=vm.createContext({});
+  for(const file of ['01_router.gs','63_api_v1_system_health.gs','11_shipping_plan_handlers.gs','12_shipment_handlers.gs','34_shipment_final_output_handlers.gs','35_shipment_document_renderer.gs','39_document_runtime_service.gs','80_api_v1_shipment_import.gs','83_api_v1_weekly_draft_lines.gs','90_generated_supply_planning_bundle.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
+  for(const symbol of ['WDL_BUILD_VERSION_','SP_BUILD_VERSION_','SHIPMENT_BUILD_VERSION_','SFO_BUILD_VERSION_','SDR_BUILD_VERSION_','DGS_PRODUCTION_PROFILE_BUILD_VERSION_','SHI_BUILD_VERSION_','KM_BUNDLE_CONTENT_HASH_']){
+    assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);
+    assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);
+  }
+  assert.equal(ctx.KMPACK.VERSION,'MIXED_CARTONS_V1');
+});
+test('real mixed-packing client deduplicates writes and invalidates planning/exposure caches',async()=>{
+  const {makeClient}=require('./helpers/write-command-flight-world.cjs'),h=makeClient({hold:true});h.sb._kmWriterPostWrite_=async()=>{};
+  assert.deepEqual(plain(h.DB.sourceWriteFamilies('saveMixedCartons')),['planning','exposure']);
+  assert.equal(h.DB.saveMixedCartons.__kmSourceWriter.name,'saveMixedCartons');assert.equal(h.DB._sourceWriterListDrift.length,0);
+  const b={shipping_plan_id:'P1',request_id:'WDL-MIXED-CLIENT',packing_version:'MIXED_CARTONS_V1',mixed_cartons:[],line_edits:[]};
+  const a=h.DB.saveMixedCartons(b),again=h.DB.saveMixedCartons(b);assert.equal(a,again);
+  assert.equal(h.log.fetches.length,1);assert.equal(JSON.parse(h.log.fetches[0].body).action,'shippingPlan.mixedCartons.save');
+  assert.equal(h.epoch().planning,1);assert.equal(h.epoch().exposure,1);
+  h.release(JSON.stringify({success:true,data:{readback_verified:true}}));await a;
+  assert.equal(h.epoch().planning,2);assert.equal(h.epoch().exposure,2);
 });

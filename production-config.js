@@ -119,6 +119,7 @@
     "updateRequestOrderStatus",
     "updateShipment",
     "updateShippingPlanLineQty",
+    "shippingPlan.mixedCartons.save",
     "updateShippingPlanStatus",
     "updateSkuLifecycle",
     "upsertCampaign",
@@ -219,5 +220,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221"
+  "policy_sha256": "ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

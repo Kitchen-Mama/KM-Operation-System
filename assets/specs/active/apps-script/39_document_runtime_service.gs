@@ -1257,10 +1257,10 @@ function dgsSeriesExportModel_(model, skuRows, companyOf) {   // XCO-R15G G3: co
 var bySku = Object.create(null), groups = Object.create(null), ordered = [], problems = [], lineageGaps = [];
 (skuRows || []).forEach(function (r) { var k = dgsStr_(r.sku); if (k) (bySku[k] || (bySku[k] = [])).push(r); });
 (model.lines || []).forEach(function (l, i) {
-var sku = dgsStr_(l.sku), rows = bySku[sku] || [], series = rows.length === 1 ? dgsStr_(rows[0].series) : '';
+var sku = dgsStr_(l.sku), rows = bySku[sku] || [], series = l.packing_group ? dgsStr_(l.packing_series) : rows.length === 1 ? dgsStr_(rows[0].series) : '';
 if (rows.length > 1) problems.push('DOCUMENT_SERIES_SOURCE_AMBIGUOUS:' + sku);
 var co = companyOf ? companyOf(l) : ''; if (co === null || co === undefined) lineageGaps.push('DOCUMENT_LINE_LINEAGE_MISSING:' + dgsStr_(l.shipment_line_id || l.sku));
-var key = series ? 'series:' + JSON.stringify([series, dgsStr_(co)].concat(XCO_SERIES_FACTS_.map(function (k) { return dgsStr_(l[k]); }))) : 'line:' + i;   // XCO-R15G G3: differing facts split
+var key = series ? 'series:' + JSON.stringify([series, dgsStr_(co), dgsStr_(l.packing_group)].concat(XCO_SERIES_FACTS_.map(function (k) { return dgsStr_(l[k]); }))) : 'line:' + i;
 if (!groups[key]) { groups[key] = []; ordered.push(key); }
 groups[key].push({ line: l, series: series });
 });
@@ -2570,4 +2570,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1';

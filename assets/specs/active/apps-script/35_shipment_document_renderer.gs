@@ -1,4 +1,4 @@
-var SDR_BUILD_VERSION_ = 'F1-AD3-SDR1';   // AD3 integrator: the FIRST module stamp of this file (pinned in 63_ and the Production 01_ profile)
+var SDR_BUILD_VERSION_ = 'F1-AD3-SDR1-MC1';
 
 
 
@@ -293,7 +293,37 @@ if (m && m.ok && m.lines && m.lines.length === sl.length && m.lines.every(functi
 m.lines.forEach(function (l, i) { SFO_DB16L_.concat(SFO_DB16A_, SFO_DB16U_).forEach(function (k) { if (k in sl[i]) l[k] = sl[i][k]; });
 DOC_LINE_FACTS_.forEach(function (k) { if (k in sl[i] && !(k in l)) l[k] = sl[i][k]; }); });
 if (m && m.ok && m.header && snap && snap.header) DOC_HEADER_FACTS_.forEach(function (k) { if (k in snap.header && !(k in m.header)) m.header[k] = docStr_(snap.header[k]); });
-return m;
+return docMixedCartons_(m, snap, renderKey);
+}
+function docMixedCartons_(model, snap, family) {
+if (!model || !model.ok || !(snap.lines || []).some(function (l) {return String(l.note).indexOf('[KMPACK1:')>=0;})) return model;
+try {
+  var parts = KMPACK.portions(mcpRecords_(snap.lines,'snapshot'),family), byId={}, allocations={};
+  model.lines.forEach(function (l) {byId[String(l.shipment_line_id)]=l;});
+  snap.lines.forEach(function(l){
+    var po=docLinePos_(l.shipment_line_id,snap.po_lineage).map(function(a){return Object.assign({},a);});
+    if(po.length && (po.some(function(a){return !Number.isSafeInteger(a.allocated_qty)||a.allocated_qty<0;}) || po.reduce(function(n,a){return n+a.allocated_qty;},0)!==Number(l.shipment_qty))) throw new Error('MIXED_PACKING_PO_QTY_MISMATCH');
+    allocations[String(l.shipment_line_id)]=po;
+  });
+  var result=Object.assign({},model);
+  result.lines=parts.map(function (p) {
+    var row=Object.assign({},byId[p.id]);
+    Object.assign(row,{shipment_qty:p.quantity,carton_qty:p.cartons,carton_no_start:String(p.start),carton_no_end:String(p.end),
+      gross_weight:p.grossKg===null?'':p.grossKg,net_weight:p.netKg===null?'':p.netKg,cbm:p.cbm===null?'':p.cbm,
+      declared_unit_value:p.unitValue===null?'':p.unitValue,declared_total_value:p.declaredTotal===null?'':p.declaredTotal,
+      packing_group:p.groupId,packing_series:p.series,packing_members:p.members,mixed_carton:p.mixed});
+    if (p.box && p.box.length) {var f={cm:1,mm:0.1,m:100,in:2.54,inch:2.54}[String(p.box.unit).toLowerCase()];
+      row.carton_length=p.box.length*f;row.carton_width=p.box.width*f;row.carton_height=p.box.height*f;row.carton_weight=p.box.grossKg;}
+    row.po_allocations=[];
+    p.members.forEach(function (a) {
+      var remaining=a.quantity;
+      (allocations[a.id]||[]).forEach(function(po){var take=Math.min(remaining,po.allocated_qty);if(take>0){row.po_allocations.push(Object.assign({},po,{allocated_qty:take}));po.allocated_qty-=take;remaining-=take;}});
+      if((allocations[a.id]||[]).length && remaining) throw new Error('MIXED_PACKING_PO_QTY_MISMATCH');
+    });
+    return row;
+  });
+  return result;
+} catch(e) {return {ok:false,error:e.code || 'MIXED_PACKING_INVALID',document_type:family};}
 }
 function docRenderByClass0_(renderKey, snap) {
 if (renderKey === 'SHIPDETAIL') return docRenderShippingDetail_(snap);

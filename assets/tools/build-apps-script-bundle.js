@@ -17,6 +17,7 @@ var crypto = require('crypto');
 
 // Canonical modules in DEPENDENCY order (a module's deps must appear before it).
 var MODULE_ORDER = [
+  'mixed-carton-packing',
   'supply-planning-site-calendar',
   'supply-planning-country-identity',           // canonical country identity owner (F1-4B-FM5-R1b; no deps) — before destination-runtime
   'supply-planning-calculations',
@@ -89,6 +90,7 @@ var MODULE_ORDER = [
 // silently becoming another. The builder now refuses.
 // Global namespace → module basename (the Apps Script-visible names the orchestrator + guards reference).
 var GLOBALS = [
+  ['KMPACK', 'mixed-carton-packing'],
   ['KMSC', 'supply-planning-site-calendar'],
   ['KMFCN', 'supply-planning-forecast-normalization'],
   ['KMSNF', 'supply-planning-snapshot-freshness'],

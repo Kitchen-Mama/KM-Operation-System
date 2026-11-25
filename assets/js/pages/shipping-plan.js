@@ -1208,6 +1208,10 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         }).join('');
 
         // SKU Shipping Details footer totals (Total SKU / Total Qty / Total Cartons).
+        if (planLines.some(function (l) {return String((l.raw||l).note).indexOf('[KMPACK1:')>=0;})) {
+            try { rows=_spPackingRows_(planLines,plan,live); }
+            catch(e) {rows='<tr><td colspan="6" role="alert">'+_spEsc(e.code||e.message)+'</td></tr>';}
+        }
         var footer = '<tfoot><tr class="sp-sku-footer" style="font-weight:600; border-top:2px solid #CBD5E1;">' +
             '<td>Total SKU: ' + totalSku + '</td>' +
             '<td>—</td><td>—</td><td>—</td>' +
@@ -1671,12 +1675,23 @@ function _spRunCommand_(key, invokeFn, opts) {
 }
 
 function spDbSaveQty(planId) {
+    if ((_spWsModel_().lines||[]).some(function(l){return String(l.shippingPlanId)===String(planId)&&String((l.raw||l).note).indexOf('[KMPACK1:')>=0;})) return spDbEditSkus(planId);
     var lines = _spCollectQtyLines(planId);
     if (!lines.length) { renderShippingPlan(); return; }
     return _spRunCommand_(planId + ':saveqty', function () {
         var previous = _spPlanTok_(planId);
         return window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)).then(function (res) { if (res && res.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, res); _spAdoptQtyPlanTok_(planId, res, previous); } return res; });
     }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed', planId: planId, sent: lines });
+}
+
+function _spPackingRows_(lines,plan,live) {
+    var core=window.KM.mixedCartons,p=core.layout(core.uiRecords(lines,'plan')),number=0;
+    return p.blocks.map(function(b){if(b.mixed)number++;
+        return b.rows.map(function(r,i){var l=r.source.source,disp=_spLineDisplay(l,plan,live);
+            return '<tr'+(b.mixed?' class="sp-mixed-row"':'')+'><td>'+(i===0?'<small class="sp-packing-label">'+(b.mixed?'Mixed '+number:'Standard')+'</small>':'')+_spEsc(r.sku)+'</td><td>'+disp.currentStock+'</td><td>'+disp.avgSales+'</td><td>'+disp.daysOfSupply+'</td><td style="text-align:right">'+r.quantity+'</td>'+
+                (i===0?'<td rowspan="'+b.rows.length+'">'+b.cartons+'</td>':'')+'</tr>';
+        }).join('');
+    }).join('');
 }
 
 function spDbEditSkus(planId) {
@@ -1686,14 +1701,14 @@ function spDbEditSkus(planId) {
     var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); });
     var values = {}, card = document.getElementById('sp-card-' + planId);
     if (card) card.querySelectorAll('input[data-line-id]').forEach(function (i) { values[i.getAttribute('data-line-id')] = i.value; });
-    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js').then(function (loaded) {
+    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=mixed-cartons-20261125-v1').then(function (loaded) {
         if (!loaded || !window.KM.weeklyDraftEditor) throw Error('SKU editor could not be loaded.');
         return window.KM.weeklyDraftEditor.open({ plan: plan, token: token, lines: lines, values: values,
             save: function (body) {
                 if (_spReadbackBlocked_ || _spPlanBusy_(planId)) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'Finish the current command first.' } });
                 var key = planId + ':skus'; _spInFlight[key] = true;
                 var release = _spHoldButtons_(planId, 'skus');
-                return Promise.resolve().then(function () { return window.KM.DB.updateShippingPlanLineQty(body); })
+                return Promise.resolve().then(function () { return body.packing_version ? window.KM.DB.saveMixedCartons(body) : window.KM.DB.updateShippingPlanLineQty(body); })
                     .finally(function () { _spInFlight[key] = false; release(); });
             },
             readback: _spReadbackAfterWrite_
