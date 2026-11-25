@@ -101,6 +101,47 @@ test('country service estimate uses representative destination without writing p
   assert.equal(quote.rateCardId, 'R100'); assert.equal(quote.estimatedFreightCost, 400); assert.equal(p.destination_warehouse_id, undefined); assert.equal(writes.length, 0);
   const options = ctx.handleShippingPlanRateCardOptions_({ shipping_plan_id: 'P' }); assert.equal(options.estimate_only, true); assert.equal(options.options[0].estimate_basis, 'COUNTRY_SERVICE');
 });
+
+test('native date cells use spreadsheet calendar days, never Date.toString ordering', () => {
+  const format = ctx.Utilities.formatDate;
+  ctx.Utilities.formatDate = (date, tz) => {
+    assert.equal(tz, 'Asia/Taipei');
+    return new Date(date.getTime() + 8 * 3600000).toISOString().slice(0, 10);
+  };
+  try {
+    setup([card(100, { effective_from: new Date('2026-06-30T16:00:00Z'), effective_to: new Date('2026-11-23T16:00:00Z') })]);
+    assert.equal(ctx.spRcLaneCards_(book, plan(), [line(100)], '2026-11-24').cards.length, 1);
+    assert.equal(ctx.spRcLaneCards_(book, plan(), [line(100)], '2026-11-25').cards.length, 0);
+    assert.equal(ctx.shippingRateActive_(card(100, { effective_from: '2026/7/1' }), '2026-11-24'), true);
+    for (const bad of ['2026-02-30', 'invalid']) assert.equal(ctx.shippingRateActive_(card(100, { effective_from: bad }), '2026-11-24'), false);
+    const options = ctx.handleShippingPlanRateCardOptions_({ shipping_plan_id: 'P' });
+    assert.equal(options.options[0].quote.priced, true); assert.equal(options.options[0].quote.freight, 400);
+    assert.equal(writes.length, 0);
+  } finally { ctx.Utilities.formatDate = format; }
+});
+
+test('blank duty treatment stays unknown; explicit included-in-rate unlocks the total', () => {
+  setup([card(100, { import_duty_treatment: '' })]);
+  let option = ctx.handleShippingPlanRateCardOptions_({ shipping_plan_id: 'P' }).options[0];
+  assert.equal(option.quote.priced, false); assert.equal(option.quote.freight, 400);
+  assert.equal(option.quote.tax_reason, 'CARD_DUTY_TREATMENT_UNKNOWN'); assert.equal(option.quote.total, '');
+  setup([card(100, { import_duty_treatment: 'included_in_rate' })]);
+  option = ctx.handleShippingPlanRateCardOptions_({ shipping_plan_id: 'P' }).options[0];
+  const answer = ctx.handleShippingPlanSelectRateCard_({ shipping_plan_id: 'P', rate_card_id: option.rate_card_id,
+    rate_card_version: option.rate_card_version, expected_current_carrier_id: 'C1', expected_updated_at: 'v1' });
+  assert.equal(answer.success, true); assert.equal(answer.estimated_duty, 0); assert.equal(answer.estimated_total_cost, 400);
+});
+
+test('service label shows known freight and the actual reason for a pending total', () => {
+  const page = fs.readFileSync(path.join(__dirname, '../js/pages/shipping-plan.js'), 'utf8');
+  const text = page.slice(page.indexOf('function _spRcQuoteLabel_('), page.indexOf('function _spRcPanelHtml_('));
+  const ui = { _spEsc: String, _spMoney_: (v, c) => c + ' ' + Number(v).toFixed(2) };
+  vm.createContext(ui); vm.runInContext(text, ui);
+  assert.equal(ui._spRcQuoteLabel_({ quote: { priced: false, freight: 400, currency: 'USD', tax_reason: 'CARD_DUTY_TREATMENT_UNKNOWN' } }),
+    'Freight USD 400.00 / total pending: duty treatment missing');
+  assert.equal(ui._spRcQuoteLabel_({ quote: { priced: true, total: 400, currency: 'USD' } }), 'USD 400.00');
+  assert.equal(ui._spRcQuoteLabel_({ quote: { priced: false } }), 'quote pending');
+});
 test('concrete plan and Shipment Draft still reject wrong destination card', () => {
   setup([card(100, { destination_warehouse_code: 'ONT8' })]);
   const lane = ctx.spRcLaneCards_(book, plan({ destination_warehouse_id: 'US' }), [line(100)], '2026-11-24');

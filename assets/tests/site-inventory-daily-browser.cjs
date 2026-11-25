@@ -34,8 +34,21 @@ let checks = 0;
         const panel = document.createElement('section'); panel.id = 'verified-upcoming';
         panel.style.cssText = 'position:fixed;inset:0;z-index:999999;background:white;padding:24px;overflow:auto;';
         panel.innerHTML = '<h3>Upcoming Event</h3><h4>US</h4>' + _irRenderUpcoming(us) + '<h4>EU</h4>' + _irRenderUpcoming(eu);
+        const fractional = [9.714285714286, 2.285714285714, 0.571428571428, 10, 0];
+        const displayed = fractional.map(n => {
+          const el = document.createElement('div');
+          el.innerHTML = _irScrollRowHtml_({ sku: 'SKU', company: 'C', country: 'AU', marketplace: 'Amazon', upcomingEventQty: n,
+            avgDailySales: 1, daysOfSupply: 1, thirdPartyStock: 0, currentInventory: 1, forecast60d: 1 }, {});
+          return el.querySelectorAll('.scroll-cell')[8].textContent;
+        });
+        const fractionHtml = _irRenderUpcoming(fractional.map((fcQty, i) => ({ event: 'Fraction ' + i, fcQty })));
+        panel.innerHTML += '<h4>Rounded Event FC</h4>' + fractionHtml;
+        const fractionEl = document.createElement('div'); fractionEl.innerHTML = fractionHtml;
+        const detailDisplayed = [...fractionEl.querySelectorAll('.replen-card__value')].map(e => e.textContent);
+        const banner = _irSrcBanner15_({ srcUnknown13: true, srcWhy15: 'SITE_SOURCE_NOT_CONFIRMED', srcKind15: 'UNKNOWN' });
         const ops = document.getElementById('ops-section'); ops.style.display = 'block'; ops.appendChild(panel);
         return { us: us[0].fcQty, eu: eu[0].fcQty, otherCompany, ended: ended.length, invalid: bad[0].fcQty, total,
+          displayed, detailDisplayed, fractional, banner,
           sourceUnchanged: ev.fcQty, old: _irMatToLine(oldRow).horizons[0], zero: _irMatToLine(newRow).horizons[0],
           oldStale: _irMatIsStale(oldRow), newStale: _irMatIsStale(newRow), text: panel.innerText,
           cacheDates: [_irSiteCalculationDateCurrent_('2026-11-24',scope),_irSiteCalculationDateCurrent_('2026-11-23',scope)],
@@ -48,6 +61,10 @@ let checks = 0;
       assert.equal(result.invalid, null); checks++;
       assert.equal(result.total, 220); checks++;
       assert.equal(result.sourceUnchanged, 240); checks++;
+      assert.deepEqual(result.displayed, ['10', '3', '1', '10', '0']); checks++;
+      assert.deepEqual(result.detailDisplayed, ['10', '3', '1', '10', '0']); checks++;
+      assert.equal(result.fractional[0], 9.714285714286); checks++;
+      assert.equal(result.banner, ''); checks++;
       assert.equal(result.old.gapQty, null); checks++;
       assert.equal(result.old.note, 'Recalculate required'); checks++;
       assert.equal(result.zero.gapQty, 0); checks++;

@@ -546,11 +546,24 @@ function shippingReadRateCards_(ss) {
 }
 
 // Active + effective-date filter for a rate card at quoteDate (yyyy-mm-dd). Blank effective_to = open.
-function shippingRateActive_(rc, quoteDate) {
+function shippingRateDay_(value, tz) {
+  if (value == null || String(value).trim() === '') return '';
+  if (Object.prototype.toString.call(value) === '[object Date]') {
+    if (!isFinite(value.getTime())) return null;
+    return Utilities.formatDate(value, tz || 'Asia/Taipei', 'yyyy-MM-dd');
+  }
+  var s = String(value).trim(), m = /^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T].*)?$/.exec(s);
+  if (!m) return null;
+  var y = Number(m[1]), mo = Number(m[2]), d = Number(m[3]), check = new Date(Date.UTC(y, mo - 1, d));
+  if (check.getUTCFullYear() !== y || check.getUTCMonth() !== mo - 1 || check.getUTCDate() !== d) return null;
+  return m[1] + '-' + ('0' + mo).slice(-2) + '-' + ('0' + d).slice(-2);
+}
+function shippingRateActive_(rc, quoteDate, tz) {
   if (shippingCostLower_(rc.status) !== 'active') return false;
-  var q = String(quoteDate || '').trim();
-  var ef = String(rc.effective_from || '').trim();
-  var et = String(rc.effective_to || '').trim();
+  var q = shippingRateDay_(quoteDate, tz);
+  var ef = shippingRateDay_(rc.effective_from, tz);
+  var et = shippingRateDay_(rc.effective_to, tz);
+  if (q === null || ef === null || et === null) return false;
   if (ef && q && ef > q) return false;
   if (et && q && et < q) return false;
   return true;

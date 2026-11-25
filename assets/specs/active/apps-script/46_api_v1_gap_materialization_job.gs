@@ -30,7 +30,11 @@
 // gapJobDefaultEnv_(); Node tests inject fakes and drive the entire PENDING→RUNNING→DONE lifecycle deterministically.
 
 var GAP_JOB_TZ_ = 'Asia/Taipei';                       // frozen operational timezone (mirrors the scheduler / import cadence)
-var GAP_JOB_LOCK_MS_ = 10000;                          // bounded wait for the script lock (one logical job per product)
+var GAP_JOB_LOCK_MS_ = 10000;                          // bounded wait while claiming the gap execution lease
+// A gap execution owns a durable lease, not the system-wide ScriptLock while calculating.
+// Eight minutes exceeds Apps Script's six-minute execution limit; hard-killed owners expire safely.
+var GAP_JOB_LEASE_KEY_ = 'GAP_JOB_EXECUTION_LEASE_V1';
+var GAP_JOB_LEASE_MS_ = 480000;
 var GAP_JOB_CONTINUATION_DELAY_MS_ = 1000;             // one-off continuation trigger delay (Apps Script schedules ~soon after)
 var GAP_JOB_MAX_SLICE_ATTEMPTS_ = 3;                   // bounded retry of a failing slice before terminal ERROR (idempotent re-run)
 // R4J-LIVE2 §8 — Inventory: ONE scope per continuation. The measured monolithic run is ~865s across ALL scopes, so
@@ -53,7 +57,6 @@ var GAP_JOB_PHASES_ = { FACTORY_PREPASS: 'FACTORY_PREPASS', COMPANY_SLICES: 'COM
 
 var GAP_JOB_PROP_KEYS_ = { INVENTORY: 'GAP_JOB_INVENTORY', ORDER_PLANNING: 'GAP_JOB_ORDER_PLANNING' };
 var GAP_JOB_CONTINUATION_HANDLERS_ = { INVENTORY: 'continueInventoryGapMaterializationJob', ORDER_PLANNING: 'continueOrderPlanningGapMaterializationJob' };
-var GAP_JOB_MAX_LOCK_WAITS_ = 8;                       // R4J-LIVE §A2 — bounded RESCHEDULED_LOCKED before FAILED (never an infinite 0/N)
 // R4J-LIVE2 §5/§7 — a non-terminal job whose state has NOT advanced for longer than this window is treated as
 // STALLED and is RECLAIMABLE by a new (user-initiated) START. 10 min is safely longer than any HEALTHY single slice
 // (which cannot exceed the ~6-min execution budget), so a live job is never reclaimed; but a worker killed mid-slice
@@ -362,7 +365,12 @@ function gapJobStart_(product, env, requestedScope) {
   if (!product) return gapBatchEnvelope_(false, null, 'INVALID_PRODUCT', 'product required (INVENTORY|ORDER_PLANNING)');
   var lock = env.lock, locked = false;
   try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
-  if (lock && !locked) return gapBatchEnvelope_(false, null, 'GAP_JOB_LOCK_UNAVAILABLE', 'another gap job operation is in progress');
+  if (lock && !locked) {
+    var active = gapJobReadState_(env, product);
+    if (active && !gapJobIsTerminal_(active.status) && !gapJobStaleNonterminal_(active, env.nowMs ? env.nowMs() : 0))
+      return gapBatchEnvelope_(true, Object.assign(gapJobPublicState_(active), { alreadyRunning: true }));
+    return gapBatchEnvelope_(false, null, 'GAP_JOB_LOCK_UNAVAILABLE', 'another gap job operation is in progress; nothing was started');
+  }
   try {
     var existing = gapJobReadState_(env, product);
     if (existing && (existing.status === 'PENDING' || existing.status === 'RUNNING')) {   // §3.3 / §17 — never a 2nd job
@@ -431,18 +439,12 @@ function gapJobContinue_(product, env) {
   // the multi-minute slice before it re-armed, left the RUNNING job with ZERO triggers → permanent stall.
   var lock = env.lock, locked = false;
   try { locked = lock ? lock.acquire(GAP_JOB_LOCK_MS_) : true; } catch (e) { locked = false; }
-  if (lock && !locked) {                                                                // another slice is active (holds the lock) → re-arm, BOUNDED
+  if (lock && !locked) {                                                                // another slice owns the expiring lease
     var ls = gapJobReadState_(env, product);
     if (ls && !gapJobIsTerminal_(ls.status)) {
-      ls.lockWaits = (ls.lockWaits || 0) + 1; ls.updatedAt = env.timestamp(); gapJobTouchMs_(env, ls);
-      if (ls.lockWaits >= GAP_JOB_MAX_LOCK_WAITS_) {                                     // §A2 a permanently stuck lock must NOT loop forever at 0/N
-        gapJobMarkFailed_(env, product, ls, 'LOCK_UNAVAILABLE_TIMEOUT after ' + ls.lockWaits + ' waits');
-        return ls;                                                                      // do NOT re-arm a permanently blocked worker
-      }
-      gapJobWriteState_(env, product, ls);
-      // A non-holder NEVER clears triggers (the holder owns them). Re-arm a prompt tick so the chain survives if the
-      // holder dies; the holder's next start-of-run sweep collects this + any duplicates and normalizes to one.
-      try { env.scheduleContinuation(product, GAP_JOB_CONTINUATION_DELAY_MS_); } catch (er) {}
+      // A losing worker cannot overwrite the owner's checkpoint or declare its healthy run failed.
+      // The recovery trigger and expiring lease handle a killed owner without concurrent state writes.
+      try { env.scheduleContinuation(product, GAP_JOB_RECOVERY_DELAY_MS_); } catch (er) {}
     }
     return { status: 'RESCHEDULED_LOCKED', product: product };
   }
@@ -679,8 +681,36 @@ function gapJobScriptProps_() {
     keys: function () { return sp.getKeys() || []; } };   // F1-7N-FA-3C-PRE1 — prefix-bounded stale-chunk cleanup
 }
 function gapJobScriptLock_() {
-  var l = null; try { l = LockService.getScriptLock(); } catch (e) { l = null; }
-  return { acquire: function (ms) { try { return l ? l.tryLock(ms) : true; } catch (e) { return false; } }, release: function () { try { if (l) l.releaseLock(); } catch (e) {} } };
+  var token = Utilities.getUuid(), owned = false;
+  function guarded(ms, fn) {
+    var guard = LockService.getScriptLock(), held = false;
+    try { held = guard.tryLock(ms); return held ? fn(PropertiesService.getScriptProperties()) : false; }
+    finally { if (held) guard.releaseLock(); }
+  }
+  return {
+    acquire: function (ms) {
+      try {
+        return guarded(ms, function (props) {
+          var raw = props.getProperty(GAP_JOB_LEASE_KEY_), lease = raw ? JSON.parse(raw) : null, now = Date.now();
+          if (lease && (!lease.token || !isFinite(lease.expiresAt))) return false;
+          if (lease && lease.expiresAt > now && lease.token !== token) return false;
+          props.setProperty(GAP_JOB_LEASE_KEY_, JSON.stringify({ token: token, expiresAt: now + GAP_JOB_LEASE_MS_ }));
+          owned = true; return true;
+        });
+      } catch (e) { return false; }
+    },
+    release: function () {
+      if (!owned) return;
+      // Flush sheet writes before handing the gap tables to the next gap execution.
+      SpreadsheetApp.flush();
+      guarded(GAP_JOB_LOCK_MS_, function (props) {
+        var raw = props.getProperty(GAP_JOB_LEASE_KEY_), lease = raw ? JSON.parse(raw) : null;
+        if (lease && lease.token === token) props.deleteProperty(GAP_JOB_LEASE_KEY_);
+        return true;
+      });
+      owned = false;
+    }
+  };
 }
 function gapJobTimestamp_() { try { return Utilities.formatDate(new Date(), GAP_JOB_TZ_, 'yyyy-MM-dd HH:mm:ss'); } catch (e) { return ''; } }
 function gapJobIoClock_() { return { now: function () { return new Date(); }, tz: function () { try { return Session.getScriptTimeZone(); } catch (e) { return 'UTC'; } } }; }

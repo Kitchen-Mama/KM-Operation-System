@@ -47,4 +47,15 @@ test('native Sheets Date cells cannot bypass exact-rate duplicate checks', () =>
   const input = card({ rate_card_id: 'CRC-Q-00000002' }); delete input.updated_at;
   assert.equal(save('add_rate', [input]).code, 'RATE_ALREADY_EXISTS'); assert.equal(writes, 0);
 });
+test('actual price update succeeds while a gap worker owns its lease', () => {
+  const props = new Map(); let seq = 0;
+  ctx.Utilities.getUuid = () => 'lease-' + (++seq);
+  ctx.PropertiesService = { getScriptProperties: () => ({ getProperty: k => props.get(k) || null,
+    setProperty: (k, v) => props.set(k, v), deleteProperty: k => props.delete(k) }) };
+  vm.runInContext(fs.readFileSync(base + '46_api_v1_gap_materialization_job.gs', 'utf8'), ctx);
+  const gap = ctx.gapJobScriptLock_(); assert.equal(gap.acquire(10000), true);
+  const r = save('update', [{ rate_card_id: card().rate_card_id, expected_updated_at: 'v1', unit_rate: 9 }]);
+  assert.equal(r.success, true); assert.equal(r.data.rows[0].unit_rate, 9);
+  assert.equal(ctx.gapJobScriptLock_().acquire(1), false); gap.release();
+});
 console.log(`RATE_MAINTENANCE_PASS ${checks} offline`);

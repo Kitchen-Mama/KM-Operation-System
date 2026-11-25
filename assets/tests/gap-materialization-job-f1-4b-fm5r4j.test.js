@@ -184,14 +184,16 @@ eq(mSt.status, 'FAILED', 'M2 the stored job state is TERMINAL FAILED — NOT a d
 ok(/CONTINUATION_SCHEDULE_FAILED/.test(mSt.lastError || ''), 'M3 lastError names the schedule failure (points at trigger auth/quota on the live run)');
 ok(eSched._cleared.indexOf('INVENTORY') !== -1, 'M4 START cleared any stale continuation trigger first (at-most-one per product)');
 
-section('R4J-LIVE §A2 — a permanently stuck LOCK becomes FAILED (bounded), never infinite RESCHEDULED_LOCKED');
+section('Contending workers never overwrite or fail the lease owner');
 var eLock = fakeEnv({ scopes: invScopes(3) });
 H.start('INVENTORY', eLock);                                    // START acquires+releases the lock normally (job created)
 eLock._lockFlags.block = true;                                  // now simulate a permanently stuck lock for every continuation
 var lockLast = null; for (var li = 0; li < 20; li++) { lockLast = H.cont('INVENTORY', eLock); if (lockLast && lockLast.status === 'FAILED') break; }
 var lockSt = H.status('INVENTORY', null, eLock).data;
-eq(lockSt.status, 'FAILED', 'N1 after the bounded lock-wait limit the job is FAILED (never an infinite 0/N reschedule loop)');
-ok(/LOCK_UNAVAILABLE_TIMEOUT/.test(lockSt.lastError || ''), 'N2 lastError records the lock timeout');
+eq(lockSt.status, 'PENDING', 'N1 non-holders leave durable lifecycle state unchanged');
+ok(!/LOCK_UNAVAILABLE_TIMEOUT/.test(lockSt.lastError || ''), 'N2 contention cannot falsely fail the active owner');
+eLock._lockFlags.block = false;
+eq(drain(eLock, 'INVENTORY').status, 'DONE', 'N3 processing resumes once the lease is available');
 
 section('R4J-LIVE §A5 — lifecycle DIAGNOSTICS pinpoint the broken edge (timestamps + last scope; no per-SKU payload)');
 var eDiag = fakeEnv({ scopes: invScopes(7) });

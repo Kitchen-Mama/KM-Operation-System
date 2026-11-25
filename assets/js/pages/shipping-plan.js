@@ -2174,6 +2174,14 @@ function spDbSaveNote(planId) {
 var SP_RC_ = {}, SP_RC_DISPLAY_KEY_ = {};
 var SP_RC_REQUESTS_ = {};
 function _spMoney_(v, cur) { if (v === '' || v == null || !isFinite(Number(v))) return '--'; return (cur ? (_spEsc(cur) + ' ') : '') + Number(v).toFixed(2); }
+function _spRcQuoteLabel_(option) {
+    var q = option.quote || {};
+    if (q.priced) return q.split_currency ? ('Freight ' + _spMoney_(q.freight, q.currency) + ' / Duty ' + _spMoney_(q.duty, q.duty_currency)) : _spMoney_(q.total, q.currency);
+    var reason = q.tax_reason || q.cost_unknown || q.reason || '';
+    var knownFreight = q.freight !== '' && q.freight != null && isFinite(Number(q.freight));
+    var pending = /DUTY_TREATMENT_UNKNOWN/.test(reason) ? 'duty treatment missing' : reason ? String(reason).replace(/_/g, ' ').toLowerCase() : 'quote pending';
+    return (knownFreight ? 'Freight ' + _spMoney_(q.freight, q.currency) + ' / total pending: ' : '') + _spEsc(pending);
+}
 function _spRcPanelHtml_(plan, statusType) {
     var pid = plan.shippingPlanId, editable = (statusType === 'draft');
     var cur = '<div class="sp-rationale-item"><strong>Carrier:</strong> ' + (plan.carrierId ? _spEsc(plan.carrierName || plan.carrierId) : '--') + '</div>' +
@@ -2393,7 +2401,7 @@ function _spRcRenderBase13_(planId) {
         '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Shipping Service</label>' +
         '<select class="sp-rc-method" aria-label="Shipping Service" onchange="spRcPickMethod(\'' + _spEsc(planId) + '\', this.value)"' + (selC ? '' : ' disabled') + ' style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
             '<option value=""' + (o ? '' : ' selected') + '>' + (selC ? '-- Choose service --' : '-- Choose a carrier first --') + '</option>' +
-            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _spEsc(_spServiceLabel_(x.o)) + (x.o.quote && x.o.quote.priced ? ' \u00b7 ' + (x.o.quote.split_currency ? ('Freight ' + _spMoney_(x.o.quote.freight, x.o.quote.currency) + ' / Duty ' + _spMoney_(x.o.quote.duty, x.o.quote.duty_currency)) : _spMoney_(x.o.quote.total, x.o.quote.currency)) : ' \u00b7 quote at Shipment Draft') + _spEuLead15e_(x.o) + '</option>'; }).join('') +
+            mine.map(function (x) { return '<option value="' + x.i + '"' + (String(x.i) === selI ? ' selected' : '') + '>' + _spEsc(_spServiceLabel_(x.o)) + ' \u00b7 ' + _spRcQuoteLabel_(x.o) + _spEuLead15e_(x.o) + '</option>'; }).join('') +
         '</select>' +
         '<details class="sp-rc-token" style="font-size:11px;color:#64748B;margin-top:2px;"><summary>Details</summary>' + (o ? ('method token: ' + _spEsc(o.shipping_method) + (o.last_mile_delivery ? ' \u00b7 last mile: ' + _spEsc(o.last_mile_delivery) : '') + ' \u00b7 card ' + _spEsc(o.rate_card_id)) : '') + '</details>' +
         '<div class="sp-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? ((o.lead_time && o.lead_time.state === 'MATCHED') ? '<span style="color:#475569;">Lead time: ' + _spEsc(o.lead_time.days) + ' days \u00b7 ' + _spEsc(o.lead_time.origin_country || '?') + ' \u2192 ' + _spEsc(o.lead_time.destination_country || '?') + '</span>' : '<span style="color:#B45309;">Lead time: UNKNOWN for this carrier / method (' + _spEsc((o.lead_time && o.lead_time.reason) || 'no match') + ')</span>') : '') + '</div>' +
@@ -2586,7 +2594,7 @@ function spRcSave(planId) {
             return { success: false, error: { code: code, message: (x && x.message) || code } };
         });
     }, { failPrefix: 'Save carrier failed', planId: planId,
-        onSuccess: function (res) { var d = res.data || {}; delete SP_RC_SEL_[planId]; if (d.priced === false) return 'Saved. Freight is not quoted yet; finish pricing in Shipment Draft.'; return 'Saved: ' + (o.carrier_name || o.carrier_id) + ' \u00b7 ' + (d.shipping_method_label || o.shipping_method_label) + (d.customs_type_label ? ' \u00b7 ' + d.customs_type_label : '') + ' \u00b7 ' + _spSavedQuoteTextCp2d_(d) + ' (priced by the server, read back).'; } })
+        onSuccess: function (res) { var d = res.data || {}; delete SP_RC_SEL_[planId]; if (d.priced === false) return 'Service saved; cost pending (' + (d.unpriced_reason || 'QUOTE_UNRESOLVED') + ').'; return 'Saved: ' + (o.carrier_name || o.carrier_id) + ' \u00b7 ' + (d.shipping_method_label || o.shipping_method_label) + (d.customs_type_label ? ' \u00b7 ' + d.customs_type_label : '') + ' \u00b7 ' + _spSavedQuoteTextCp2d_(d) + ' (priced by the server, read back).'; } })
         .then(function (res) { delete _SP_WK1_SAVING_[planId]; return res; }, function (e) { delete _SP_WK1_SAVING_[planId]; throw e; });
 }
 function _spMarkCostState12_(planId, st) {   // R71-FE-12 (review MINOR-3)

@@ -1120,7 +1120,7 @@ function _irRenderUpcoming(list) {
     var titleAttr = fullR ? (' title="' + esc(fullR) + '"') : '';
     return '<div class="replen-card__row"><span class="replen-card__label">' + esc(ev.event || ev.scopeId || 'Event') +
       (dates ? (' <span class="replen-evt-dates"' + titleAttr + '>(' + esc(dates) + ')</span>') : '') +
-      '</span><span class="replen-card__value">' + (ev.fcQty == null ? '--' : Math.round(qty(ev.fcQty)).toLocaleString()) + '</span></div>';
+      '</span><span class="replen-card__value">' + (ev.fcQty == null ? '--' : Math.ceil(qty(ev.fcQty)).toLocaleString()) + '</span></div>';
   }
   var html = line(list[0]);
   if (list.length > 1) {
@@ -1752,7 +1752,7 @@ function getReplenishmentData() {
                 // "M.D~M.D" year-less display; full range preserved in title= for accessibility.
                 const fullR = `${event?.startDate}~${event?.endDate}`;
                 const shortR = _irFmtEventRange(event?.startDate, event?.endDate) || fullR;
-                return `<div class="replen-card__row"><span class="replen-card__label" title="${fullR}">${e.name} (${shortR})</span><span class="replen-card__value">${e.qty}</span></div>`;
+                return `<div class="replen-card__row"><span class="replen-card__label" title="${fullR}">${e.name} (${shortR})</span><span class="replen-card__value">${Math.ceil(Number(e.qty)).toLocaleString()}</span></div>`;
               }).join('')
             : '<div class="replen-card__row"><span class="replen-card__label">No upcoming event</span><span class="replen-card__value">-</span></div>';
         
@@ -2364,7 +2364,7 @@ function _irScrollRowHtml_(item, pendingRoutes) {
         _irOnTheWayCellHtml_(item) +   // A final4 Cut B: was the literal DTO onTheWay (0); the DTO field itself is unchanged
         '<div class="scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
         '<div class="scroll-cell">' + item.forecast60d + '</div>' +
-        '<div class="scroll-cell">' + (item.upcomingEventQty !== null ? item.upcomingEventQty : '-') + '</div>' +
+        '<div class="scroll-cell">' + (item.upcomingEventQty != null ? Math.ceil(Number(item.upcomingEventQty)).toLocaleString() : '-') + '</div>' +
         '<div class="scroll-cell replen-dos-cell ' + _irDosCellClass_(item) + '"' + _irDosTitleAttr16_(item) + '>' + item.daysOfSupply + '</div>' +
         '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
         _irFactoryCellHtml_(item.cnStock, item, 'CN') +
@@ -19131,7 +19131,8 @@ function _irRecoLabel15_(skuData) {
 }
 function _irSrcBanner15_(skuData) {
     if (!(skuData && skuData.srcUnknown13)) return _irScopeLabel15_();
-    var t = skuData.srcKind15 === 'NO_ROW' ? 'No inventory snapshot for this site / SKU.' : 'Source not linked to this account.';
+    if (skuData.srcKind15 !== 'NO_ROW') return '';
+    var t = 'No inventory snapshot for this site / SKU.';
     return '<div class="replen-src-unknown replen-src-banner" title="' + _irEsc15_(skuData.srcWhy15) + '" style="margin:6px 0 8px;padding:6px 8px;border:1px dashed #F59E0B;border-radius:4px;color:#92400E;font-size:12px;">' + t + '</div>';
 }
 
