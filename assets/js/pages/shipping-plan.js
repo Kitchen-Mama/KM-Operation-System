@@ -1528,6 +1528,14 @@ function _spPatchLocalQty(savedLines) {
 var _spInFlight = {};
 var _spReadbackBlocked_ = false, _spReadbackTail_ = Promise.resolve();
 function _spNotify_(msg) { try { alert(msg); } catch (e) { /* headless */ } }
+function _spPlanNotice_(planId, message, failed) {
+    var card = document.getElementById('sp-card-' + planId); if (!card) return;
+    var note = card.querySelector('.sp-command-notice');
+    if (!note) { note = document.createElement('div'); note.className = 'sp-command-notice'; card.insertBefore(note, card.firstChild); }
+    note.setAttribute('role', failed ? 'alert' : 'status');
+    note.style.cssText = 'padding:10px;margin:8px;overflow-wrap:anywhere;color:' + (failed ? '#991b1b;background:#fef2f2' : '#166534;background:#f0fdf4');
+    note.textContent = message;
+}
 // Exactly ONE readback via the ACTIVE read path (Workspace when enabled, else Legacy loadOperationDb). If the
 // readback fails AFTER a committed write, it is flagged (readbackFailed) — the command itself already succeeded.
 function _spReadbackAfterWrite_() {
@@ -1558,9 +1566,9 @@ function _spHandleCommandResult_(res, opts) {
     opts = opts || {};
     if (res && res.success) {
         return _spReadbackAfterWrite_().then(function (rb) {
-            if (rb && rb.readbackFailed) { _spNotify_(opts.commitMsg || '已提交，正在重新確認狀態…'); return; }
+            if (rb && rb.readbackFailed) { _spReadbackBlocked_ = true; if (opts.planId) _spPlanNotice_(opts.planId, 'Saved, but readback failed. Reload before another change. Do not save again.', true); _spNotify_(opts.commitMsg || '已提交，正在重新確認狀態…'); return; }
             var msg = (typeof opts.onSuccess === 'function') ? opts.onSuccess(res) : opts.successMsg;
-            if (msg) _spNotify_(msg);
+            if (msg) { if (opts.planId) _spPlanNotice_(opts.planId, msg, false); _spNotify_(msg); }
         });
     }
     var err = (res && res.error) || { code: 'UNKNOWN', message: 'Command failed' };
@@ -1571,7 +1579,9 @@ function _spHandleCommandResult_(res, opts) {
     // R71-FE-1: a stale token - nothing written; the card keeps the typed values and names what differs (never resent here)
     if (err.code === 'EDIT_CONFLICT' && opts.planId) { _spShowEditConflict_(opts.planId, err, opts.sent); return Promise.resolve(); }
     // genuine failure BEFORE/without a committed mutation → retain the current cards, show structured error, allow retry.
-    _spNotify_((opts.failPrefix || '操作失敗') + ': ' + err.message + ' [' + err.code + ']');
+    var failure = (opts.failPrefix || '操作失敗') + ': ' + err.message + ' [' + err.code + ']';
+    if (opts.planId) _spPlanNotice_(opts.planId, failure, true);
+    _spNotify_(failure);
     return Promise.resolve();
 }
 // Run one Weekly command with a per-key in-flight guard (double-click protection) + a single active-path readback.
@@ -1617,9 +1627,13 @@ function _spUnholdPlan_(planId) {
 }
 var _SP_UNKNOWN_CODES_ = { HTTP_TRANSPORT_ERROR: 1, REQUEST_TIMEOUT_WRITE_INDETERMINATE: 1, NO_RESULT: 1, RATE_CARD_SELECTION_INTERRUPTED: 1, RATE_CARD_SELECTION_UNVERIFIED: 1 };   // WK1: + the two 11_ partial-write outcomes
 function _spRunCommand_(key, invokeFn, opts) {
+    opts = opts || {};
     if (_spReadbackBlocked_) { _spNotify_('Reload the plans successfully before another change. Nothing was sent.'); return Promise.resolve({ success: false, error: { code: 'READBACK_REQUIRED' } }); }
     var _pid9 = String(key).split(':')[0], _op9 = String(key).split(':').slice(1).join(':');
-    if (_spInFlight[key] || (typeof _spPlanBusy_ === 'function' && _spPlanBusy_(_pid9))) return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'A command is already running for this plan.' } });   // R71-FE-9 (W8)
+    if (_spInFlight[key] || (typeof _spPlanBusy_ === 'function' && _spPlanBusy_(_pid9))) {
+        _spPlanNotice_(_pid9, 'A command is already running for this plan. Nothing was sent.', true);
+        return Promise.resolve({ success: false, error: { code: 'IN_FLIGHT', message: 'A command is already running for this plan.' } });
+    }
     _spInFlight[key] = true;
     var _release9 = (typeof _spHoldButtons_ === 'function') ? _spHoldButtons_(_pid9, _op9) : function () {};
     return Promise.resolve().then(invokeFn).then(function (res) {
@@ -1631,14 +1645,19 @@ function _spRunCommand_(key, invokeFn, opts) {
         var _c9 = res && res.success !== true && res.error && res.error.code;
         if (_c9 && typeof _SP_UNKNOWN_CODES_ !== 'undefined' && _SP_UNKNOWN_CODES_[_c9]) {   // R71-FE-9 (W8): an UNKNOWN outcome is read back, never offered as a retry
             _spNotify_((opts.failPrefix || 'Command') + ': the outcome is UNKNOWN (' + _c9 + '). Nothing was resent. The plan is being re-read - check its status before doing anything else.');
-            return _spReadbackAfterWrite_().then(function () { _spInFlight[key] = false; _release9(); return res; }, function () { _spInFlight[key] = false; _release9(); return res; });   // (the release also frees re-held buttons)
+            _spPlanNotice_(_pid9, 'Outcome unknown (' + _c9 + '). Checking the saved plan. Nothing was resent.', true);
+            return _spReadbackAfterWrite_().then(function (rb) { if (rb && rb.readbackFailed) _spReadbackBlocked_ = true; return res; }, function () { _spReadbackBlocked_ = true; return res; });
         }
         return _spHandleCommandResult_(res, opts).then(function () { _spInFlight[key] = false; _release9(); return res; });
     }, function (e) {   // R71-FE-10 (MINOR-1): a rejection is an UNKNOWN outcome too - read back before releasing
         if (typeof _spRcForget_ === 'function') _spRcForget_(_pid9);   // R15C-UI
         _spNotify_((opts.failPrefix || 'Command') + ': the outcome is UNKNOWN (' + ((e && e.message) || e) + '). Nothing was resent. The plan is being re-read - check its status before doing anything else.');
         return Promise.resolve().then(_spReadbackAfterWrite_).then(function () { _spInFlight[key] = false; _release9(); throw e; }, function () { _spInFlight[key] = false; _release9(); throw e; });
-    });
+    }).catch(function (e) {
+        _spReadbackBlocked_ = true;
+        _spPlanNotice_(_pid9, 'The result could not be displayed. Reload this plan before another change. Nothing was resent.', true);
+        return { success: false, error: { code: 'READBACK_REQUIRED', message: e.message || String(e) } };
+    }).finally(function () { _spInFlight[key] = false; _release9(); });
 }
 
 function spDbSaveQty(planId) {
@@ -2200,7 +2219,7 @@ function _spCostBreakdownHtml_(plan, totalPcs) {
 //   UNKNOWN recovery never reads it: an UNKNOWN command forgets the plan first, so the readback asks the server.
 var SP_RC_CACHE_ = {}, SP_RC_CACHE_TTL_MS_ = 60000, _spRcRefGen_ = 0, _spRcPlanGen_ = {}, _spRcAsk_ = {};
 var SP_RC_STATS_ = { hits: 0, misses: 0, joins: 0, dropped: 0, forgets: 0 };
-var SP_RC_REF_WRITERS_ = ['importCarrierRateTemplate', 'upsertCarrierLeadTime', 'upsertSkuDetail', 'upsertMarketplace', 'upsertMarketplaceSku', 'importMarketplaceSkusBatch'];
+var SP_RC_REF_WRITERS_ = ['importCarrierRateTemplate', 'saveCarrierRateCardsQuick', 'upsertCarrierLeadTime', 'upsertSkuDetail', 'upsertMarketplace', 'upsertMarketplaceSku', 'importMarketplaceSkusBatch'];
 function _spRcForgetAll_() { _spRcRefGen_++; SP_RC_CACHE_ = {}; SP_RC_DISPLAY_KEY_ = {}; SP_RC_STATS_.forgets++; }
 function _spRcForget_(planId) { var p = String(planId); delete SP_RC_DISPLAY_KEY_[p]; _spRcPlanGen_[p] = (_spRcPlanGen_[p] || 0) + 1; Object.keys(SP_RC_CACHE_).forEach(function (k) { if (SP_RC_CACHE_[k].planId === p) delete SP_RC_CACHE_[k]; }); SP_RC_STATS_.forgets++; }
 function _spRcObserveRefWriters_() {
@@ -2336,6 +2355,7 @@ function _spRcRenderBase13_(planId) {
         PREVIEW_CUSTOMS: 'Customs changed (not saved yet) - choose a carrier and a method priced for it, then Save.',
         NEEDS_REPRICING: 'NEEDS RE-PRICING: the stored cost no longer matches the rate card or the plan - save again.', COST_SAVED_CARD_UNVERIFIED: _spWk1CardTxt_(r), NOT_APPLICABLE: 'The stored carrier / method no longer applies to this lane - choose again.', PENDING: 'The last carrier / method choice did not finish - choose again. Submit is refused until then.' }[st] || st;
     body.innerHTML =
+        (r.estimate_only ? '<div class="sp-estimate-basis" style="font-size:12px;color:#92400e;margin-bottom:6px;">Estimated: country / service rate. Final destination pricing pending.</div>' : '') +
         '<div style="color:' + (st === 'PRICED' ? '#059669' : (st === 'NONE' ? '#64748B' : '#B45309')) + ';margin-bottom:6px;">' + _spEsc(stTxt) + '</div>' + _spWk1KnownHtml_(r) +
         '<label style="display:block;font-size:11px;color:#64748B;">Carrier</label>' +
         '<select class="sp-rc-carrier" onchange="spRcPickCarrier(\'' + _spEsc(planId) + '\', this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
@@ -2357,7 +2377,7 @@ function _spWk1CardTxt_(r) { return 'Please confirm the freight quote again.'; }
 function _spWk1KnownHtml_(r) {
     var c = (r && r.current) || {}, k = c.card_check || {};
     if (!c.carrier_id || c.state === 'PENDING' || c.state === 'PREVIEW_CUSTOMS') return '';
-    var cost = c.cost_saved ? ('Saved cost: ' + _spEsc(String(c.currency || '')) + ' ' + _spEsc(String(c.total)) + ' (known)') : 'Saved cost: none (unpriced)';
+    var cost = c.cost_saved ? ((r.estimate_only ? 'Estimated cost: ' : 'Saved cost: ') + _spEsc(String(c.currency || '')) + ' ' + _spEsc(String(c.total))) : 'Saved cost: none (unpriced)';
     var card = { UNIQUE: 'Rate card: ' + _spEsc(String(k.rate_card_id || '')) + ' (verified: the only card with the saved terms, valid today)', CURRENT_EQUIVALENT: 'Current eligible quote verified; original rate card not recorded', AMBIGUOUS: 'Rate card: NOT verifiable (' + _spEsc(String(k.cards_with_saved_terms)) + ' cards carry the saved terms)', NO_CURRENT_CARD: 'Rate card: no current card carries the saved terms' }[k.status] || 'Rate card: not checked';
     return '<div class="sp-rc-known" data-card-check="' + _spEsc(String(k.status || 'NOT_CHECKED')) + '" style="font-size:11px;color:#475569;margin-bottom:6px;">' + cost + ' | ' + card + '</div>';
 }
@@ -2381,7 +2401,7 @@ function _spWk1SaveCustoms_(planId, h, r, cx) {   // WK1 r3 (Owner): a customs-o
     var exp = String((r.current && r.current.carrier_id) || '');
     if (!_spPlanTok_(planId)) { _spNotify_('This plan has no edit token on screen - it is being re-read. Nothing was sent; choose again after it reloads.'); try { _spReadbackAfterWrite_(); } catch (eT) {} return; }
     if (_SP_WK1_SAVING_[planId]) return;
-    var btn = h ? h.querySelector('.sp-rc-save') : null; _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving...'; }
+    _SP_WK1_SAVING_[planId] = true;
     var tok = _spPlanTok_(planId);
     return _spRunCommand_(planId + ':ratecard', function () {
         if (!window.KM.DB || typeof window.KM.DB.saveShippingPlanCustoms !== 'function') return { success: false, error: { code: 'WEEKLY_SAVE_UNAVAILABLE', message: 'This build has no customs Save. Nothing was sent.' } };
@@ -2523,7 +2543,7 @@ function spRcSave(planId) {
     var cSel = h ? h.querySelector('.sp-rc-customs') : null, cx = cSel ? String(cSel.value || '') : '';
     if (!_spCustomsNa_(r) && r.lane && (r.lane.customs || []).length && !cx) { _spNotify_('Choose a customs type first. Nothing was sent.'); return; }   // AD4
     if (_SP_WK1_SAVING_[planId]) return;   // WK1: double-click guard (one unified Save per plan)
-    var btn = h ? h.querySelector('.sp-rc-save') : null; _SP_WK1_SAVING_[planId] = true; if (btn) { btn.disabled = true; btn.textContent = 'Saving…'; }
+    _SP_WK1_SAVING_[planId] = true;
     var tok = _spPlanTok_(planId);
     return _spRunCommand_(planId + ':ratecard', function () {
         // WK1 r2 (M-1): the registered db-api source writer (planning / exposure epochs); fail closed without it

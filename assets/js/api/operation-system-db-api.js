@@ -6758,6 +6758,10 @@ window.KM.DB.exportCarrierRateTemplate = function(rows, opts) {
 // Append-only import of parsed template rows → carrier_rate_cards (server-side validation).
 // payload = { rows: [ {row_type, carrier_id, ...} ], columns?: [headers], source_file_name? }.
 // Returns { imported, skipped_examples, rejected, batch_id, errors:[{row,message}] }; reloads DB.
+window.KM.DB.saveCarrierRateCardsQuick = function(payload) {
+    // Older routers see no template rows and refuse before any write, never a token-less update.
+    return _kmWeeklyCommand_('importCarrierRateCards', Object.assign({}, payload, { rows: [], quick_rows: payload && payload.rows, mode: 'quick_maintenance', maintenance_mode: payload && payload.mode, quick_edit: true }));
+};
 window.KM.DB.importCarrierRateTemplate = async function(payload) {
     if (!isOperationDbApiConfigured()) { console.warn('[KM.DB] API not configured, importCarrierRateTemplate skipped'); return { success: false, error: 'API not configured' }; }
     var resp = await fetch(OP_DB_API_BASE_URL, { method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain' },
@@ -7524,7 +7528,7 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     // writes that reach no table a planning read or the exposure panel consumes
     updatePricing: [], upsertSkuRegionalDetail: [], syncMarketplaceSkusToSkuRegionalDetails: [],
     upsertTaxReferralRate: [], upsertTaxRateComponent: [], saveFactoryOperationConfig: [],
-    importCarrierRateTemplate: [], upsertCarrierLeadTime: [], saveFxRateBook: [], updateAutomationSchedule: [],
+    importCarrierRateTemplate: [], saveCarrierRateCardsQuick: [], upsertCarrierLeadTime: [], saveFxRateBook: [], updateAutomationSchedule: [],
     generateShipmentDocument: [], retryDocumentGeneration: [],
     upsertRequestOrderAllocationDraft: [], upsertRequestOrderAllocationDraftLines: [],
     ensureAndEditAllocationDraft: [], startRequestOrderDraftJob: [], continueRequestOrderDraftJob: [],
@@ -7542,6 +7546,7 @@ var _KM_SOURCE_WRITE_EXEMPT_REASON_ = {
     upsertTaxReferralRate: 'tax tables — pricing only', upsertTaxRateComponent: 'tax tables — pricing only',
     saveFactoryOperationConfig: 'factory operation config — read by 62_ only',
     importCarrierRateTemplate: 'carrier_rate_cards — the method registry owns its own read',
+    saveCarrierRateCardsQuick: 'carrier_rate_cards — reference readers refresh through their existing owner',
     upsertCarrierLeadTime: 'carrier_lead_times — the method registry owns its own read',
     saveFxRateBook: 'FX rate book — pricing only', updateAutomationSchedule: 'schedule settings, no data row',
     generateShipmentDocument: 'document files only', retryDocumentGeneration: 'document files only',

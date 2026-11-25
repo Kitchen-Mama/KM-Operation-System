@@ -93,6 +93,21 @@ function setup(cards = [20, 50, 100, 200].map(t => card(t)), p = plan(), ls = [l
 const ids = cards => Array.from(cards, c => c.rate_card_id).sort();
 let pass = 0;
 function test(name, fn) { fn(); pass++; console.log(`PASS ${name}`); }
+test('country service estimate uses representative destination without writing plan destination', () => {
+  setup([card(100, { destination_warehouse_code: 'ONT8', destination_city: 'LA', destination_postal_code_start: '80000', destination_postal_code_end: '89999' })]);
+  const p = plan(), lane = ctx.spRcLaneCards_(book, p, [line(100)], '2026-11-24');
+  assert.equal(lane.estimate_only, true); assert.equal(lane.cards.length, 1);
+  const quote = ctx.spRcQuote_(book, p, lane.cards[0], [line(100)], ctx.spRcTotals_([line(100)]), '2026-11-24', lane.origin, lane);
+  assert.equal(quote.rateCardId, 'R100'); assert.equal(quote.estimatedFreightCost, 400); assert.equal(p.destination_warehouse_id, undefined); assert.equal(writes.length, 0);
+  const options = ctx.handleShippingPlanRateCardOptions_({ shipping_plan_id: 'P' }); assert.equal(options.estimate_only, true); assert.equal(options.options[0].estimate_basis, 'COUNTRY_SERVICE');
+});
+test('concrete plan and Shipment Draft still reject wrong destination card', () => {
+  setup([card(100, { destination_warehouse_code: 'ONT8' })]);
+  const lane = ctx.spRcLaneCards_(book, plan({ destination_warehouse_id: 'US' }), [line(100)], '2026-11-24');
+  assert.equal(lane.estimate_only, false); assert.equal(lane.cards.length, 0);
+  const q = ctx.shipmentExactRateAndCost_(book, { originCountry: 'CN', planRateCardId: 'R100', carrierId: 'C1', country: 'US', shippingMethod: 'sea', lastMile: 'ups', destinationWarehouseCode: 'OTHER', quoteDate: '2026-11-24', grossWeightKg: 100, cartons: 10, totalQty: 100, lines: [{ sku: 'SKU' }] });
+  assert.equal(q.rateCardId, ''); assert.equal(writes.length, 0);
+});
 test('100 physical kg: only 100 tier; dim 6000 and min box 10 do not hide rates', () => {
   setup(); assert.deepEqual(ids(ctx.spRcLaneCards_(book, plan(), [line(100)], '2026-11-24').cards), ['R100']);
 });
@@ -178,11 +193,11 @@ test('ambiguous carriers/services or mismatched plan method/last-mile never defa
     assert.equal(ctx.shippingPlanRoughQuote_(book, p, [{ sku: 'SKU', requested_qty: 100 }], '2026-11-24').carrier_id, '');
   }
 });
-test('unique carrier/service is not a unique price: distinct currency/customs require a later Update', () => {
+test('country-only plan uses a stable representative quote within its chosen service', () => {
   setup([card(100), card(100, { rate_card_id: 'CNY', currency: 'CNY' })]);
   const q = ctx.shippingPlanRoughQuote_(book, plan({ carrier_id: '' }), [{ sku: 'SKU', requested_qty: 100 }], '2026-11-24');
   assert.equal(q.carrier_id, 'C1'); assert.equal(q.customs_type, 'self_customs');
-  assert.equal(q.estimated_total_cost, ''); assert.equal(q.carrier_unit_rate, '');
+  assert.equal(q.estimated_total_cost, 400); assert.equal(q.carrier_unit_rate, 4);
 });
 test('different-method carriers do not prevent a unique matching service; inactive carriers never default', () => {
   setup([card(100), card(100, { rate_card_id: 'AIR', carrier_id: 'C2', shipping_method: 'air' })]);

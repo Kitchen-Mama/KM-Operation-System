@@ -81,6 +81,151 @@
             .catch(function (err) { _crcPrimaryError = err || { message: 'refresh failed' }; if (cb) cb(); _crcRenderPrimaryError(); });
     }
 
+    var quick = { dialog: null, groups: [], rows: [], mode: 'update', busy: false, unknown: false, returnFocus: null };
+    function quickId() { return Array.from(crypto.getRandomValues(new Uint8Array(16))).map(function (v) { return v.toString(16).padStart(2, '0'); }).join(''); }
+    function quickServiceKey(r) { return JSON.stringify([low(r.carrierId), up(r.originCountry), up(r.destinationCountry), low(r.shippingMethod).replace('sea express', 'sea_express').replace('air freight', 'air'), low(r.lastMileDelivery)]); }
+    function quickNotice(text, failed) { var el = quick.dialog.querySelector('[data-quick-notice]'); el.textContent = text; el.style.color = failed ? '#991b1b' : '#166534'; el.setAttribute('role', failed ? 'alert' : 'status'); }
+    function quickField(name, label, value, options) {
+        var control = options ? '<select name="' + name + '">' + options.map(function (x) { var v = Array.isArray(x) ? x[0] : x, t = Array.isArray(x) ? x[1] : x; return '<option value="' + esc(v) + '"' + (String(v) === String(value) ? ' selected' : '') + '>' + esc(t) + '</option>'; }).join('') + '</select>'
+            : '<input name="' + name + '" value="' + esc(value) + '"' + (/^effective_/.test(name) ? ' type="date"' : ['unit_rate', 'weight_tier', 'dim_divisor', 'min_box_weight', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee'].indexOf(name) >= 0 ? ' type="number" min="0" step="any"' : '') + '>';
+        return '<label>' + esc(label) + control + '</label>';
+    }
+    function quickHasEdits() {
+        if (!quick.dialog) return false;
+        if (quick.mode !== 'update') return true;
+        return Array.from(quick.dialog.querySelectorAll('[data-price-index]')).some(function (i) { return i.value !== String(quick.rows[Number(i.dataset.priceIndex)].unitRate); });
+    }
+    function quickGroups() {
+        var byKey = {}, names = {};
+        getCarriers().forEach(function (c) { names[c.carrierId] = c.carrierName || c.carrierId; });
+        getCards().forEach(function (c) {
+            var key = quickServiceKey(c); if (!byKey[key]) byKey[key] = { key: key, rows: [], label: (names[c.carrierId] || c.carrierId) + ' | ' + c.originCountry + ' > ' + c.destinationCountry + ' | ' + (c.shippingMethodLabel || c.shippingMethod) + ' / ' + c.lastMileDelivery };
+            byKey[key].rows.push(c);
+        });
+        quick.groups = Object.keys(byKey).map(function (k) { return byKey[k]; }).sort(function (a, b) { return a.label.localeCompare(b.label); });
+        var sel = quick.dialog.querySelector('[data-quick-service]');
+        sel.innerHTML = '<option value="">Choose service</option>' + quick.groups.map(function (g, i) { return '<option value="' + i + '">' + esc(g.label) + ' (' + g.rows.length + ')</option>'; }).join('');
+    }
+    window.crcQuickOpen = function () {
+        if (!useDb()) { alert('Connect the Operation DB before editing rates.'); return; }
+        if (quick.dialog) return;
+        quick.returnFocus = document.activeElement;
+        var d = document.createElement('dialog'); d.className = 'crc-quick'; d.setAttribute('aria-label', 'Rate Card Maintenance');
+        d.innerHTML = '<div class="crc-quick__bar"><h3>Prices & Services</h3></div><div class="crc-quick__bar"><select data-quick-service aria-label="Service"></select><button type="button" class="crc-btn" data-quick-new>New Service</button><button type="button" class="crc-btn" data-quick-add>Add Rate</button></div>' +
+            '<div data-quick-body></div><div class="crc-quick__notice" data-quick-notice role="status"></div><div class="crc-quick__footer"><button type="button" class="crc-btn" data-quick-refresh>Refresh</button><button type="button" class="crc-btn" data-quick-close>Close</button><button type="button" class="crc-btn crc-btn--primary" data-quick-save disabled>Save Prices</button></div>';
+        document.body.appendChild(d); quick.dialog = d; quick.mode = 'update'; quick.rows = []; quick.unknown = false;
+        quickGroups();
+        d.querySelector('[data-quick-service]').onchange = function () {
+            if (quickHasEdits() && !confirm('Discard unsaved edits?')) { this.value = quick.selectedIndex || ''; return; }
+            quick.selectedIndex = this.value; quick.mode = 'update';
+            quick.rows = this.value === '' ? [] : quick.groups[Number(this.value)].rows.map(function (r) { return Object.assign({}, r); }); quickRenderPrices();
+        };
+        d.querySelector('[data-quick-new]').onclick = function () { quickCreate('new_service'); };
+        d.querySelector('[data-quick-add]').onclick = function () { quickCreate('add_rate'); };
+        d.querySelector('[data-quick-save]').onclick = quickSave;
+        d.querySelector('[data-quick-refresh]').onclick = quickRefresh;
+        d.querySelector('[data-quick-close]').onclick = quickClose;
+        d.addEventListener('cancel', function (e) { e.preventDefault(); quickClose(); });
+        d.showModal();
+    };
+    function quickClose() {
+        if (quick.busy) return;
+        if (quickHasEdits() && !confirm('Close without saving these edits?')) return;
+        quick.dialog.close(); quick.dialog.remove(); quick.dialog = null;
+        if (quick.returnFocus) quick.returnFocus.focus({ preventScroll: true });
+    }
+    function quickRenderPrices() {
+        var body = quick.dialog.querySelector('[data-quick-body]');
+        body.innerHTML = quick.rows.length ? '<table><thead><tr><th>Destination</th><th>Tier / Basis</th><th>Validity / Status</th><th>Currency</th><th>Unit Rate</th></tr></thead><tbody>' + quick.rows.map(function (r, i) {
+            var dest = [r.destinationWarehouseCode, r.destinationCity, r.destinationPostalCodeStart && (r.destinationPostalCodeStart + '-' + r.destinationPostalCodeEnd)].filter(Boolean).join(' / ') || r.destinationCountry;
+            return '<tr><td>' + esc(dest) + '<br><small>' + esc(r.customsTypeLabel || r.customsType) + '</small></td><td>' + esc((r.weightTier === '' ? '' : r.weightTier + ' ' + r.weightTierUnit + ' / ') + r.chargeType + ' / ' + r.chargeUnit) + '</td><td>' + esc(r.effectiveFrom + ' / ' + (r.effectiveTo || 'Open') + ' / ' + r.status) + '</td><td>' + esc(r.currency) + '</td><td><input aria-label="Unit Rate ' + esc(r.rateCardId) + '" type="number" min="0" step="any" data-price-index="' + i + '" value="' + esc(r.unitRate) + '"></td></tr>';
+        }).join('') + '</tbody></table>' : '';
+        quick.dialog.querySelector('[data-quick-save]').textContent = 'Save Prices';
+        quick.dialog.querySelector('[data-quick-save]').disabled = !quick.rows.length || quick.unknown;
+        quickNotice('', false);
+    }
+    function quickCreate(mode) {
+        if (quick.busy || quick.unknown) return;
+        if (quickHasEdits() && !confirm('Discard unsaved edits?')) return;
+        var index = quick.dialog.querySelector('[data-quick-service]').value;
+        if (mode === 'add_rate' && index === '') { quickNotice('Choose an existing service first.', true); return; }
+        quick.mode = mode;
+        var base = mode === 'add_rate' ? quick.groups[Number(index)].rows[0] : {};
+        quick.base = base; quick.createId = 'CRC-Q-' + quickId();
+        var carriers = [['', 'Choose carrier']].concat(getCarriers().filter(function (c) { return !/^(inactive|disabled|false|0)$/i.test(c.status || ''); }).map(function (c) { return [c.carrierId, c.carrierName || c.carrierId]; }));
+        var f = quickField;
+        var fields = f('carrier_id', 'Carrier', base.carrierId || '', carriers) + f('origin_country', 'Origin Country', base.originCountry || 'CN') + f('destination_country', 'Destination Country', base.destinationCountry || '') +
+            f('shipping_method', 'Method', base.shippingMethod || 'air', ['air', 'sea_express', 'sea', 'express', 'truck', 'rail']) + f('last_mile_delivery', 'Last Mile', base.lastMileDelivery || 'parcel', ['parcel', 'truck', 'ups', 'fedex', 'dhl', 'ltl', 'ftl', 'spd', 'self_pickup', 'none']) + f('shipping_method_label', 'Service Label', base.shippingMethodLabel || '') +
+            f('destination_warehouse_code', 'Destination Warehouse', '') + f('destination_city', 'Destination City', '') + f('destination_postal_code_start', 'Postal From', '') + f('destination_postal_code_end', 'Postal To', '') + f('marketplace', 'Marketplace', base.marketplace || '') +
+            f('charge_type', 'Charge Type', base.chargeType || 'weight', ['weight', 'volume', 'carton', 'shipment', 'container']) + f('charge_unit', 'Charge Unit', base.chargeUnit || 'kg', ['kg', 'lb', 'cbm', 'carton', 'shipment', '20gp', '40hq']) +
+            f('weight_tier', 'Minimum Tier', '') + f('weight_tier_unit', 'Tier Unit', base.weightTierUnit || 'kg', ['', 'kg', 'lb']) + f('currency', 'Currency', base.currency || 'USD') + f('unit_rate', 'Unit Rate', '') + f('dim_divisor', 'Dim Divisor', base.dimDivisor || '6000') + f('min_box_weight', 'Min Box Weight', base.minBoxWeight || '') + f('min_box_weight_unit', 'Min Weight Unit', base.minBoxWeightUnit || 'kg', ['', 'kg', 'lb']) +
+            f('customs_type', 'Customs', base.customsType || '', [['', 'Unspecified'], ['tax_refund_customs', 'Tax Refund'], ['third_party_customs', 'Third Party'], ['formal_customs', 'Formal']]) + f('battery_type', 'Battery', base.batteryType || 'no_battery', ['no_battery', 'alkaline_battery', 'lithium_battery']) +
+            f('import_duty_treatment', 'Duty Treatment', base.importDutyTreatment || '', [['', 'Unknown'], ['included_in_rate', 'Included'], ['excluded_in_rate', 'Excluded']]) + f('min_charge', 'Minimum Charge', '') + f('fuel_surcharge', 'Fuel Surcharge', '') + f('customs_fee', 'Customs Fee', '') + f('doc_fee', 'Document Fee', '') +
+            f('effective_from', 'Effective From', new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Taipei' })) + f('effective_to', 'Effective To', '') + f('status', 'Status', 'active', ['active', 'inactive']) + f('note', 'Note', '');
+        quick.dialog.querySelector('[data-quick-body]').innerHTML = '<h4>' + (mode === 'new_service' ? 'New Service' : 'Add Destination / Tier Rate') + '</h4><form class="crc-quick__grid" data-quick-form>' + fields + '</form>';
+        var form = quick.dialog.querySelector('[data-quick-form]'), details = document.createElement('details');
+        details.className = 'crc-quick__terms'; details.innerHTML = '<summary>Additional Rate Terms</summary><div class="crc-quick__grid"></div>';
+        var advanced = details.querySelector('div');
+        ['destination_city', 'destination_postal_code_start', 'destination_postal_code_end', 'marketplace', 'dim_divisor', 'min_box_weight', 'min_box_weight_unit', 'customs_type', 'battery_type', 'import_duty_treatment', 'min_charge', 'fuel_surcharge', 'customs_fee', 'doc_fee', 'effective_to', 'status', 'note'].forEach(function (name) { advanced.appendChild(form.querySelector('[name="' + name + '"]').parentNode); });
+        form.appendChild(details);
+        if (mode === 'add_rate') ['carrier_id', 'origin_country', 'destination_country', 'shipping_method', 'last_mile_delivery'].forEach(function (k) { quick.dialog.querySelector('[name="' + k + '"]').disabled = true; });
+        quick.dialog.querySelector('[data-quick-save]').textContent = mode === 'new_service' ? 'Create Service & Rate' : 'Add Rate'; quick.dialog.querySelector('[data-quick-save]').disabled = false; quickNotice('', false);
+    }
+    async function quickRefresh() {
+        if (quick.busy || (quickHasEdits() && !confirm('Refresh and discard unsaved edits?'))) return;
+        quick.busy = true; quickLock(true);
+        try {
+            if (!_crcScopedActive()) throw Error('Scoped refresh unavailable. Reload the page.');
+            var model = await window.KM.DB.loadScopedTables(_CRC_TABLES, { force: true });
+            _crcReadModel = model; quick.mode = 'update'; quick.rows = []; quick.unknown = false; quickGroups(); quickRenderPrices(); quickNotice('Refreshed. Check current prices before another edit.', false);
+        } catch (e) { quickNotice('Refresh failed: ' + e.message + '. Nothing was resent.', true); }
+        finally { quick.busy = false; quickLock(false); }
+    }
+    function quickLock(held) {
+        quick.dialog.querySelectorAll('button,select,input').forEach(function (el) {
+            if (held) { el.dataset.wasDisabled = el.disabled ? '1' : '0'; el.disabled = true; }
+            else if (el.dataset.wasDisabled != null) { el.disabled = el.dataset.wasDisabled === '1'; delete el.dataset.wasDisabled; }
+        });
+        if (quick.unknown) quick.dialog.querySelector('[data-quick-save]').disabled = true;
+    }
+    async function quickSave() {
+        if (quick.busy || quick.unknown) return;
+        var rows;
+        try {
+            if (quick.mode === 'update') {
+                rows = Array.from(quick.dialog.querySelectorAll('[data-price-index]')).filter(function (i) { return i.value !== String(quick.rows[Number(i.dataset.priceIndex)].unitRate); }).map(function (i) {
+                    var r = quick.rows[Number(i.dataset.priceIndex)];
+                    if (i.value.trim() === '' || !Number.isFinite(Number(i.value)) || Number(i.value) < 0) throw Error('Enter a valid non-negative unit rate.');
+                    return { rate_card_id: r.rateCardId, expected_updated_at: r.updatedAt, unit_rate: Number(i.value) };
+                });
+                if (!rows.length) { quickNotice('No prices changed.', false); return; }
+            } else {
+                var row = { rate_card_id: quick.createId };
+                quick.dialog.querySelectorAll('[data-quick-form] [name]').forEach(function (el) { row[el.name] = el.value.trim(); });
+                if (quick.mode === 'new_service') {
+                    var key = quickServiceKey({ carrierId: row.carrier_id, originCountry: row.origin_country, destinationCountry: row.destination_country, shippingMethod: row.shipping_method, lastMileDelivery: row.last_mile_delivery });
+                    if (quick.groups.some(function (g) { return g.key === key; })) throw Error('This service already exists. Select it and use Add Rate.');
+                }
+                rows = [row];
+            }
+        } catch (e) { quickNotice(e.message, true); return; }
+        quick.busy = true; quickLock(true); quickNotice('Saving...', false);
+        try {
+            var res = await window.KM.DB.saveCarrierRateCardsQuick({ mode: quick.mode, request_id: quickId(), rows: rows });
+            if (!res || !res.success) {
+                var err = res && res.error || {}, code = err.code || 'NO_RESULT';
+                quick.unknown = !(res && (res.zero_write === true || (err.details && err.details.zero_write === true)));
+                quickNotice((err.message || code) + (quick.unknown ? '. Outcome unknown. Refresh to verify; nothing was resent.' : '. Nothing was written.'), true); return;
+            }
+            if (!res.data || !res.data.verified) { quick.unknown = true; quickNotice('Receipt unverified. Refresh before another edit.', true); return; }
+            // Adopt only acknowledged prices, so unchanged reference fields stay intact.
+            (res.data.rows || []).forEach(function (r) { getCards().forEach(function (c) { if (c.rateCardId === r.rate_card_id) { c.unitRate = r.unit_rate; c.updatedAt = r.updated_at; } }); });
+            quick.mode = 'update'; quick.rows = []; quickGroups(); quickRenderPrices(); quickNotice('Saved ' + res.data.rows.length + ' rate(s).', false);
+            _crcAfterWrite(function () { if (quick.dialog && !quick.busy && !quickHasEdits()) quickGroups(); if (crcSearched) search(); });
+        } catch (e) { quick.unknown = true; quickNotice('Outcome unknown: ' + e.message + '. Refresh to verify; nothing was resent.', true); }
+        finally { quick.busy = false; quickLock(false); if (!quick.rows.length && quick.mode === 'update') quick.dialog.querySelector('[data-quick-save]').disabled = true; }
+    }
+
     // ---- data accessors (read-model-first) ----
     function getCards() { return _crcGet('carrierRateCards', 'getCarrierRateCards'); }
     function getCarriers() { return _crcGet('carriers', 'getCarriers'); }

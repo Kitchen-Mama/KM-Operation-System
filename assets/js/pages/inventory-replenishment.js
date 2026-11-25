@@ -165,7 +165,11 @@ function _irBuildShipmentDisplayByReceiver(shipments, shipmentLines, todayMs, li
     // AD3 D r5 (Owner P0): classified by the SAVED destination warehouse's master type ONLY (never marketplace / name / route text):
     // FBA (incl. WFS) -> platform, 3PL -> overseas, anything else / unknown -> neither (still inside the totals above).
     var s5 = byId3[f.shipment_id], ty5 = (whTypeById && s5) ? String(whTypeById[String(s5.destinationWarehouseId || s5.warehouseId || '').trim()] || '').trim().toUpperCase() : '';
-    if (ty5 === 'FBA') rec.plat[f.eta_bucket] += f.remaining; else if (ty5 === '3PL') rec.ovs[f.eta_bucket] += f.remaining; else rec.untyped += f.remaining;
+    var target = ty5 === 'FBA' ? rec.plat : ty5 === '3PL' ? rec.ovs : null;
+    if (target) {
+      target[f.eta_bucket] += f.remaining;
+      if (f.eta_bucket === 'overdue') { target.overdueIds = target.overdueIds || []; if (target.overdueIds.indexOf(f.shipment_id) < 0) target.overdueIds.push(f.shipment_id); }
+    } else rec.untyped += f.remaining;
   });
   return map;
 }
@@ -11291,6 +11295,20 @@ function _ir3plCardRows_(sd3, skuData, row) {
 }
 // AD3 D r5: the 30-day row is the 19-30 window (exclusive of 0-18), never a running total
 var IR_ROW30_LABEL_ = '<span title="19\u201330 days (not including 0\u201318)">Within 30 days <small class="ir-row30-range">(19\u201330)</small></span>';
+function _irOverdueValue_(group) {
+    if (!group || !(group.overdue > 0)) return '';
+    var value = Math.round(group.overdue).toLocaleString(), ids = group.overdueIds || [];
+    return ids.length ? '<button type="button" class="ir-overdue-link" data-no-row-toggle data-overdue-ids="' + escapeReplenHtml(JSON.stringify(ids)) + '" onclick="_irOpenOverdueShipments_(event,this)" title="Global Shipment Tracking">' + value + '</button>' : value;
+}
+function _irOpenOverdueShipments_(event, button) {
+    if (event) { event.preventDefault(); event.stopPropagation(); }
+    var ids; try { ids = JSON.parse(button.getAttribute('data-overdue-ids')); } catch (e) { return; }
+    if (!Array.isArray(ids) || !ids.length || ids.some(function (id) { return typeof id !== 'string' || !id.trim(); })) return;
+    window._glmPendingShipmentIds = ids;
+    window._glmPendingSelect = ids.length === 1 ? ids[0] : '';
+    if (typeof window.showSection === 'function') window.showSection('global-logistics-map');
+}
+window._irOpenOverdueShipments_ = _irOpenOverdueShipments_;
 // AD3 D r5 (Owner P0): the 3rd Party Stock card's "On the Way" sub-block = in-transit to OVERSEAS 3PL warehouses (destination type 3PL),
 // 0-18 and 19-30. Same projection and the same read state as the Shipping Shipment card. Display only.
 function _irTpOnWayHtml_(sku, skuData) {
@@ -11300,7 +11318,7 @@ function _irTpOnWayHtml_(sku, skuData) {
     if (state === IR_EXPOSURE_STATES_.NOT_LOADED || state === IR_EXPOSURE_STATES_.LOADING) { var pend = '<span class="replen-card__value--pending">&hellip;</span>'; return head + row('Within 18 days', pend) + row(IR_ROW30_LABEL_, pend); }
     if (state === IR_EXPOSURE_STATES_.FAILED) return head + '<div class="replen-card__row replen-card__row--error" role="alert"><span class="replen-card__label">In-transit not read (see Shipping Shipment)</span><span class="replen-card__value">&mdash;</span></div>';
     if (state === 'NO_SCOPE' || !sd3 || !sd3.ovs) return head + row('Within 18 days', sd3 ? '0' : '&mdash;') + row(IR_ROW30_LABEL_, sd3 ? '0' : '&mdash;');
-    return head + row('Within 18 days', Math.round(sd3.ovs.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.ovs.d19_30 || 0).toLocaleString());
+    return head + (sd3.ovs.overdue > 0 ? row('Overdue', _irOverdueValue_(sd3.ovs)) : '') + row('Within 18 days', Math.round(sd3.ovs.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.ovs.d19_30 || 0).toLocaleString());
 }
 window._irTpOnWayHtml_ = _irTpOnWayHtml_;
 function _irShipCardInnerHtml_(sku, skuData) {
@@ -11330,7 +11348,7 @@ function _irShipCardInnerHtml_(sku, skuData) {
     // A final3 (B): the card reads the DISPLAY projection (incl. imported Amazon display-only) when present; the supply fields stay as they were
     var sd3 = skuData && skuData.shipDisplay;
     // AD3 D r5 (Owner P0): ONLY in-transit to PLATFORM warehouses (destination type FBA, incl. WFS), 0-18 and 19-30 (mutually exclusive).
-    if (sd3 && sd3.plat) return head + row('Within 18 days', Math.round(sd3.plat.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.plat.d19_30 || 0).toLocaleString());
+    if (sd3 && sd3.plat) return head + (sd3.plat.overdue > 0 ? row('Overdue', _irOverdueValue_(sd3.plat), 'replen-card__row--overdue') : '') + row('Within 18 days', Math.round(sd3.plat.d0_18 || 0).toLocaleString()) + row(IR_ROW30_LABEL_, Math.round(sd3.plat.d19_30 || 0).toLocaleString());
     var overdue = sd3 ? (sd3.overdue || 0) : ((skuData && skuData.shipOverdue) || 0);
     return head
         + (overdue > 0 ? row('Overdue', overdue, 'replen-card__row--overdue') : '')

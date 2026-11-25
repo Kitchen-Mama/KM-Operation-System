@@ -4562,16 +4562,41 @@ function _roAllocationEditsBlockSend_() {
       if (!e) return;
       if (e.invalidQty || e.orderQty != null && e.orderQty !== '' &&
           (saved ? Number(e.orderQty) !== Number(saved.order_qty) : Number(e.orderQty) > 0)) pending = true;
-      if (e.note != null && (!saved || String(e.note) !== String(saved.note || ''))) pending = true;
+      if (e.note != null && String(e.note) !== String(saved && saved.note || '')) pending = true;
     });
   });
   if (!pending) return false;
   _roSetSendState_('ERROR', 'Allocation edits are unsaved or still saving. Nothing was sent.');
   return true;
 }
+var _roActiveAllocationSaves_ = [], _roSendDraining_ = false;
+function _roTrackAllocationSave_(promise) {
+  var tracked = Promise.resolve(promise);
+  _roActiveAllocationSaves_.push(tracked);
+  function done() { var i = _roActiveAllocationSaves_.indexOf(tracked); if (i >= 0) _roActiveAllocationSaves_.splice(i, 1); }
+  tracked.then(done, done); return tracked;
+}
+async function _roDrainAllocationSaves_() {
+  _roFlushPendingAutosaveOnUnmount_();
+  var timer;
+  try {
+    return await Promise.race([
+      Promise.all(_roActiveAllocationSaves_.slice().map(function (p) { return p.catch(function () {}); })).then(function () { return true; }),
+      new Promise(function (resolve) { timer = setTimeout(function () { resolve(false); }, 15000); })
+    ]);
+  } finally { clearTimeout(timer); }
+}
 async function handleSendRequest() {
   // SINGLE-FLIGHT. A second click while an orchestration is running is refused outright.
   if (_roSendState.busy) { _roSetSendState_('LOADING', 'A Send is already running — please wait for it to finish.'); return; }
+  if (_roSendDraining_) return;
+  _roSendDraining_ = true;
+  try {
+    var waitingForEdits = _roActiveAllocationSaves_.length || Object.keys(_roAutosavePending_).length;
+    if (waitingForEdits) _roSetSendState_('LOADING', 'Saving allocation edits...');
+    if (!await _roDrainAllocationSaves_()) { _roSetSendState_('ERROR', 'Allocation save is still pending. Nothing was sent.'); return; }
+    if (waitingForEdits) _roSetSendState_('IDLE', '');
+  } finally { _roSendDraining_ = false; }
   if (_roAllocationEditsBlockSend_()) return;
   const _sendMount = _roSendState.mountSeq;   // page-transition guard: a late result must not repaint a newer page
   const requestType = document.getElementById('ro-request-type').value;
@@ -5892,13 +5917,13 @@ function _roSaveTierEditToCanonicalDraft_(ref, bucket, patch, input) {
     var hasQty = patch && Object.prototype.hasOwnProperty.call(patch, 'order_qty')
       && patch.order_qty != null && patch.order_qty !== '';
     if (!hasQty) return Promise.resolve(null);   // note-only on a draft-less SKU → unchanged in-memory behavior
-    return _roCreateCanonicalDraftFromEdit_(ref, bucket, Number(patch.order_qty), patch, input);
+    return _roTrackAllocationSave_(_roCreateCanonicalDraftFromEdit_(ref, bucket, Number(patch.order_qty), patch, input));
   }
   var qk = String(ref0.draft.draftId);
   var prior = _roDraftEditQueue_[qk] || Promise.resolve();
   var run = prior.then(function () { return _roSaveTierEditCore_(ref, bucket, patch, input); }, function () { return _roSaveTierEditCore_(ref, bucket, patch, input); });
   _roDraftEditQueue_[qk] = run.catch(function () {});   // the NEXT edit for this draft chains after this one settles (success or failure)
-  return run;
+  return _roTrackAllocationSave_(run);
 }
 // §B.2 — create the canonical Flat-V2 draft DURING the edit/save, persist the user quantity, read it back and
 // adopt the returned internal id into the page's canonical map so the row behaves like any other persisted

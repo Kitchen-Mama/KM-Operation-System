@@ -2044,21 +2044,37 @@ function spRcLaneCards_(ss, p, lines, day) {   // WK1 r3 (D-6): + the plan's ori
   var bc = shipBatteryClass_(ss, lines.map(function (l) { return spRcStr_(l.sku); }));
   if (bc.unclassified.length) return { cards: [], unclassified: bc.unclassified };
   var mk = spRcStr_(p.marketplace), multi = mk.toUpperCase() === 'MULTI';
+  var dest = shipRateDestination_(ss, p);
+  var estimate = !spRcStr_(p.destination_warehouse_id) && !dest.code && !dest.city && !dest.postal && !spRcSetMembers15e_(p.country);
   var c = shippingMatchRateCards_(ss, { originCountry: org, destinationCountry: p.country, shippingMethod: '', lastMile: '', customsType: spRcStr_(p.customs_type),
     marketplace: multi ? 'MULTI' : mk, destinationWarehouseCode: shipRateDestination_(ss, p).code,
-    destinationCity: shipRateDestination_(ss, p).city, destinationPostalCode: shipRateDestination_(ss, p).postal, batteryType: bc.cls, quoteDate: day }, true);
+    destinationCity: dest.city, destinationPostalCode: dest.postal, batteryType: bc.cls, quoteDate: day }, !estimate);
+  c = c.filter(function (x) { return !spRcStr_(x.marketplace) || spRcStr_(x.marketplace).toLowerCase() === mk.toLowerCase(); });
   c = multi ? c.filter(function (x) { return spRcStr_(x.marketplace) === ''; }) : c;
-  return { cards: spRcApplicableTiers_(c, spRcTotals_(lines)), unclassified: [], origin: org };
+  c = spRcApplicableTiers_(c, spRcTotals_(lines));
+  if (estimate) {
+    var carrierSheet = ss.getSheetByName('carriers'), activeCarriers = carrierSheet ? shippingPlanReadObjects_(carrierSheet).filter(function (r) { return !/^(inactive|disabled|false|0)$/i.test(spRcStr_(r.status || r.is_active)); }) : [];
+    c = c.filter(function (r) { return spRcStr_(r.shipping_method_label) && spRcTierNumber_(r.unit_rate) !== null && Number(r.unit_rate) >= 0
+      && activeCarriers.filter(function (a) { return spRcStr_(a.carrier_id) === spRcStr_(r.carrier_id); }).length === 1; });
+    // Stable representative per service, not a cheapest-carrier recommendation.
+    var seen = {};
+    c = c.slice().sort(function (a, b) { return spRcStr_(a.rate_card_id).localeCompare(spRcStr_(b.rate_card_id)); }).filter(function (x) {
+      var key = JSON.stringify([x.carrier_id, spRcMethod15_(x.shipping_method), spRcStr_(x.last_mile_delivery).toLowerCase()]);
+      if (seen[key]) return false; seen[key] = true; return true;
+    });
+  }
+  return { cards: c, unclassified: [], origin: org, estimate_only: estimate };
 }
 function spRcQuote_(ss, p, rc, lines, tot, day, org, lane) {   // WK1 r3 (D-6): priced only with the plan's origin; no origin -> not priced
   lane = lane || spRcLaneCards_(ss, p, lines, day);
   if (!spRcStr_(org) || !lane.cards.some(function (c) { return spRcStr_(c.rate_card_id) === spRcStr_(rc.rate_card_id); })
       || ['weight', 'volume', 'carton', 'shipment', 'container'].indexOf(spRcStr_(rc.charge_type).toLowerCase()) < 0)
     return { rateCardId: '', currency: '', estimatedFreightCost: '', estimatedDuty: '', estimatedCustomsFee: '', estimatedTotalCost: '', estimatedUnitCost: '' };
+  var dest = lane.estimate_only ? { code: spRcStr_(rc.destination_warehouse_code), city: spRcStr_(rc.destination_city), postal: spRcStr_(rc.destination_postal_code_start) } : shipRateDestination_(ss, p);
   return shipmentExactRateAndCost_(ss, { originCountry: spRcStr_(org), planRateCardId: spRcStr_(rc.rate_card_id), carrierId: spRcStr_(rc.carrier_id), country: p.country, marketplace: p.marketplace,
     shippingMethod: spRcStr_(rc.shipping_method), lastMile: spRcStr_(rc.last_mile_delivery), importDutyTreatment: spRcStr_(rc.import_duty_treatment) /* R15F2 duty (i): the card's own value only */,
-    destinationWarehouseCode: shipRateDestination_(ss, p).code, destinationCity: shipRateDestination_(ss, p).city,
-    destinationPostalCode: shipRateDestination_(ss, p).postal, quoteDate: day, grossWeightKg: tot.gw, cbm: tot.cbm, cartons: tot.cartons, totalQty: tot.qty, lines: tot.items });
+    destinationWarehouseCode: dest.code, destinationCity: dest.city,
+    destinationPostalCode: dest.postal, quoteDate: day, grossWeightKg: tot.gw, cbm: tot.cbm, cartons: tot.cartons, totalQty: tot.qty, lines: tot.items });
 }
 // WK1 (Weekly unified Save): the customs a request asks for, validated against the lane customs list (12_ sc13PlanLaneOptions_, i.e. the
 // carrier_rate_cards customs codes); returns { plan } = the plan row as it would be priced with that customs (a COPY - nothing is written).
@@ -2224,6 +2240,7 @@ function handleShippingPlanRateCardOptions_(body) {
     var q = spRcQuote_(ss, p, c, lines, tot, day, lane.origin, lane);
     return { rate_card_id: spRcStr_(c.rate_card_id), rate_card_version: shipRateCardVersion_(c), carrier_id: spRcStr_(c.carrier_id), carrier_name: names[spRcStr_(c.carrier_id)] || '',
       shipping_method: spRcStr_(c.shipping_method), shipping_method_label: spRcStr_(c.shipping_method_label), last_mile_delivery: spRcStr_(c.last_mile_delivery) || spRcStr_(p.last_mile_delivery), customs_type: spRcStr_(c.customs_type),
+      estimate_only: !!lane.estimate_only, estimate_basis: lane.estimate_only ? 'COUNTRY_SERVICE' : '',
       charge_type: spRcStr_(c.charge_type), unit_rate: c.unit_rate, weight_tier: c.weight_tier, weight_tier_unit: spRcStr_(c.weight_tier_unit), effective_from: spRcStr_(c.effective_from), effective_to: spRcStr_(c.effective_to),
       quote: { cost_unknown: q.costUnknown || '', priced: q.rateCardId === spRcStr_(c.rate_card_id) && shippingQuoteComplete_(q), duty_currency: q.estimatedDutyCurrency || '', split_currency: !!q.splitCurrency, tax_reason: q.taxReason || '', currency: q.currency, freight: q.estimatedFreightCost, duty: q.estimatedDuty, customs_fee: q.estimatedCustomsFee, total: q.estimatedTotalCost, unit_cost: q.estimatedUnitCost },
       lead_time: shipLt1g_(ss, c.carrier_id, c.shipping_method, spRcStr_(c.last_mile_delivery) || spRcStr_(p.last_mile_delivery), org1g, p.country) };
@@ -2239,7 +2256,7 @@ function handleShippingPlanRateCardOptions_(body) {
   var preview = cxv.asked && cxv.customs_type !== spRcStr_(p0.customs_type);   // WK1: a customs that is not the stored one is a PREVIEW
   var state = (spRcStr_(p0.carrier_rate_type).indexOf(SP_RC_PENDING_1G_) === 0) ? 'PENDING' : preview ? 'PREVIEW_CUSTOMS' : !curC ? 'NONE' : (!priced && hasService15) ? 'NOT_PRICED' : !curOpt.length ? 'NOT_APPLICABLE' : !priced ? 'NOT_PRICED'
     : !cc.cost_reproduced ? 'NEEDS_REPRICING' : (cc.status === 'UNIQUE' || cc.status === 'CURRENT_EQUIVALENT') ? 'PRICED' : 'COST_SAVED_CARD_UNVERIFIED';   // A current equivalent verifies today's quote, not the unrecorded historical card identity.
-  return jsonResponse_({ success: true, shipping_plan_id: planId, quote_date: day, status: spRcStr_(p0.status), editable: spRcStr_(p0.status).toLowerCase() === 'draft',
+  return jsonResponse_({ success: true, shipping_plan_id: planId, estimate_only: !!lane.estimate_only, quote_date: day, status: spRcStr_(p0.status), editable: spRcStr_(p0.status).toLowerCase() === 'draft',
     service_vocabulary: (typeof shipServiceVocabulary_ === 'function') ? shipServiceVocabulary_(ss) : null,   // AD3-B: explicit service choices (carriers master + server vocabulary), never derived from cards
     preview_customs_type: cxv.asked ? cxv.customs_type : null, lane: sc13PlanLaneOptions_(ss, p0), totals: { gross_weight: tot.gw, cbm: tot.cbm, cartons: tot.cartons, qty: tot.qty }, current: Object.assign({ state: state, lead_time: shipLt1g_(ss, curC, curM, curL, org1g, p.country), cost_saved: !!priced, card_check: cc || { status: 'NOT_CHECKED', basis: 'SAVED_TERMS_NO_CARD_ID' } }, stored), options: available15 });
 }

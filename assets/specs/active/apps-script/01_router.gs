@@ -1077,6 +1077,10 @@ return handleRetireShipmentLabelColumns_(body);
 }
 
 if (action === 'importCarrierRateCards') {
+if (body.quick_edit === true) {
+if (typeof handleCarrierRateCardsQuick_ !== 'function') return jsonResponse_({ success: false, code: 'RATE_MAINTENANCE_NOT_DEPLOYED', error: 'Install 17b_carrier_rate_card_maintenance.gs first.', data: { zero_write: true } });
+return handleCarrierRateCardsQuick_(body);
+}
 return handleImportCarrierRateCards_(body);
 }
 

@@ -3,6 +3,8 @@ var PFI_SCHEMA_ = 'PO-FACTORY-IMPORT-1';
 var PFI_BUILD_VERSION_ = "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4";
 var PFI_FIELDS_ = ['row_type', 'transaction_id', 'company', 'po_no', 'sku', 'warehouse_id', 'quantity', 'unproduced_qty', 'ordered_qty', 'currency', 'order_date', 'purchase_order_line_id', 'row_version', 'note'];
 var PFI_MODES_ = ['NEW_RECEIPT', 'OPENING_PO_FOR_EXISTING_STOCK', 'UPDATE_REMAINING'];
+// Until the stock writer supports resumable commits, keep synchronous dual-book batches small.
+var PFI_MAX_INPUT_ROWS_ = 25;
 
 function pfiFail_(code, text) { var e = new Error(text || code); e.importCode = code; throw e; }
 function pfiInt_(v, positive) {
@@ -154,6 +156,8 @@ function pfiInventoryRows_(req, x, wh) {
   return { rows: rows, skipped: skipped };
 }
 function pfiValidate_(ss, req) {
+  if (((req.sheets && req.sheets.StockPO) || []).filter(function (r) { return pmiS_(r.row_type) !== 'example'; }).length > PFI_MAX_INPUT_ROWS_)
+    return { issues: [{ sheet: 'StockPO', code: 'PFI_BATCH_TOO_LARGE', message: 'At most 25 rows per PO / factory stock import. Split into separate files before validation; no rows were written.' }], plan: null, preview: { counts: { reject: 1 } }, state: {} };
   if (req.mode === 'UPDATE_REMAINING') return pfiValidateRemaining_(ss, req);
   var issues = [], empty = { issues: issues, plan: null, preview: { rows: [], counts: { reject: 0 } }, state: {} };
   try {
@@ -453,5 +457,23 @@ function pfiApply_(ss, plan, ctx) {
 }
 function pfiSnapshot_(ss) { return ['purchase_orders','purchase_order_lines','factory_stock','factory_stock_movements'].map(function (n) { return [n,ss.getSheetByName(n).getDataRange().getValues()]; }); }
 function pfiVerifyRollback_(ss, plan) { return JSON.stringify(pfiSnapshot_(ss)) === JSON.stringify(plan.rollback); }
-function imbPoFactoryDomain_() { return { domain: 'po_factory_stock', schema_version: PFI_SCHEMA_, modes: PFI_MODES_, sheets: ['StockPO'], maxRows: 1000,
-  template: pfiTemplate_, validate: pfiValidateJr2_, apply: pfiApply_, verifyRollback: pfiVerifyRollback_ }; }
+function pfiResidue_(ss, id, receipt) {
+  var x = pfiRead_(ss), keys = {}, scope = JSON.parse(receipt.scope_key || '{}'), rows = [];
+  x.M.T.pol.rows.filter(function (l) { return pmiS_(l.import_batch_id) === id; }).forEach(function (l) {
+    var wh = pmiS_(l.supplier_warehouse_id) || pmiS_(scope.warehouse_id), sku = pmiS_(l.sku);
+    keys[wh + '||' + sku] = { warehouse_id: wh, sku: sku };
+  });
+  Object.keys(keys).sort().forEach(function (key) {
+    var k = keys[key], stock = pfiStock_(x, k.warehouse_id, k.sku), coverage = pfiCoverageInfo_(x, k.warehouse_id, k.sku);
+    var moves = pmiTable_(ss, 'factory_stock_movements').rows;
+    var history = moves.filter(function (m) { return pmiS_(m.warehouse_id) === k.warehouse_id && pmiS_(m.sku) === k.sku; }), latest = history[history.length - 1];
+    rows.push({ warehouse_id: k.warehouse_id, sku: k.sku, stock_exists: stock.exists, current_stock: stock.current,
+      po_remaining: coverage.known ? coverage.quantity : null, po_coverage_reason: coverage.code || '',
+      stock_matches_po: coverage.known && stock.current === coverage.quantity,
+      movement_exists: !!latest, ledger_matches_stock: !!latest && pfiInt_(latest.after_current_stock) === stock.current && pfiInt_(latest.after_reserved_stock) === stock.reserved });
+  });
+  return { verdict: 'OWNER_REVIEW_REQUIRED', receipt_status: pmiS_(receipt.status), read_only: true, writes_performed: 0, rows: rows,
+    message: 'An unfinished import is not safe to replay. Compare PO balances, stock and movements before any manual repair. This read does not change the receipt.' };
+}
+function imbPoFactoryDomain_() { return { domain: 'po_factory_stock', schema_version: PFI_SCHEMA_, modes: PFI_MODES_, sheets: ['StockPO'], maxRows: PFI_MAX_INPUT_ROWS_,
+  template: pfiTemplate_, validate: pfiValidateJr2_, apply: pfiApply_, verifyRollback: pfiVerifyRollback_, residue: pfiResidue_ }; }

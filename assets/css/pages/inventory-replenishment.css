@@ -2385,3 +2385,15 @@
 #ops-section .exec-from-check:empty { display: none; }
 #ops-section .exec-from-check--short { color: #B45309; }
 #ops-section .exec-from-check--unusable { color: #B91C1C; }
+
+#ops-section #replen-factory-detail-modal { width: min(1000px, calc(100vw - 32px)); max-width: none; }
+#ops-section #replen-factory-detail-modal .fc-modal-content { width: 100%; max-width: none; box-sizing: border-box; }
+#ops-section #replen-factory-detail-body table { table-layout: fixed; }
+#ops-section #replen-factory-detail-body th,
+#ops-section #replen-factory-detail-body td { white-space: normal !important; overflow-wrap: anywhere; }
+#ops-section #replen-factory-detail-body th:first-child { width: 20%; }
+#ops-section .ir-overdue-link { background: none; border: 0; padding: 0; color: #b91c1c; text-decoration: underline; font: inherit; cursor: pointer; }
+@media (max-width: 640px) {
+    #ops-section #replen-factory-detail-modal .fc-modal-content { padding: 16px; }
+    #ops-section #replen-factory-detail-body table { font-size: 11px !important; }
+}

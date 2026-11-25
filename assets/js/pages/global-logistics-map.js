@@ -751,6 +751,7 @@
   function filteredVms() {
     var f = state.filters, q = f.search.trim().toLowerCase();
     return allVms().filter(function (v) {
+      if (Array.isArray(f.shipmentIds) && f.shipmentIds.length && f.shipmentIds.indexOf(v.shipmentId) < 0) return false;
       if (v.track && !v.track.active) return false;   // Fully received records belong to Overview, never the active map list.
       if (f.kpi && !v.flags[f.kpi]) return false;
       if (q) { var hay = glmSearchHay_(v); if (hay.indexOf(q) < 0) return false; }
@@ -1493,6 +1494,14 @@
   // Every key stays the internal shipmentId; the same globe instance and its focus() are reused; nothing is read or polled.
   function selectShipment(id) {
     var seq = ++state.selectSeq;
+    var beforeRoot = root(), beforeList = beforeRoot && beforeRoot.querySelector('.glm-shiplist');
+    var listTop = beforeList ? beforeList.scrollTop : 0, scrolls = [], parent = beforeRoot;
+    while (parent) { if (parent.scrollHeight > parent.clientHeight) scrolls.push({ node: parent, top: parent.scrollTop, left: parent.scrollLeft }); parent = parent.parentElement; }
+    function restoreScroll() {
+      if (seq !== state.selectSeq) return;
+      var list = root() && root().querySelector('.glm-shiplist'); if (list) list.scrollTop = listTop;
+      scrolls.forEach(function (s) { s.node.scrollTop = s.top; s.node.scrollLeft = s.left; });
+    }
     var ae = document.activeElement, cardHadFocus = !!(ae && ae.getAttribute && ae.getAttribute('data-ship') !== null);
     state.selectedShipmentId = id; state.doneNotice = '';
     render();
@@ -1502,8 +1511,10 @@
     // The side panel opens only when the globe keeps a visible area beside it. Measured at 1280 px: the panel (420) plus the map control panel
     // leave NO visible globe, so there - as on a phone - the selection stays on the map and the panel opens from the chip's Details.
     if (!glmNarrow_() && glmRoomBesidePanel_()) openShipmentDrawer(id);
-    else { if (typeof drawerOpen === 'function' && drawerOpen()) closeDrawer(); glmRevealMap_(); }
+    else { if (typeof drawerOpen === 'function' && drawerOpen()) closeDrawer(); }
     if (vm) state.lastFocus = { shipmentId: id, result: glmFocusSelected_(vm) };
+    restoreScroll();
+    if (window.requestAnimationFrame) window.requestAnimationFrame(restoreScroll);
   }
   function glmNarrow_() { try { return !!(window.matchMedia && window.matchMedia('(max-width: 640px)').matches); } catch (e) { return false; } }
   function glmRevealMap_() { var r = root(), w = r && r.querySelector('.glm-mapwrap'); if (w && w.scrollIntoView) try { w.scrollIntoView({ block: 'nearest', inline: 'nearest' }); } catch (e) {} }
@@ -2302,11 +2313,11 @@
     // Wire ALL close buttons in the drawer (header X + the in-body Identity-row X) — the body is populated
     // after render(), so bindRuntime hasn't seen the body one.
     els.dr.querySelectorAll('[data-act="drawer-close"]').forEach(function (b) { b.onclick = closeDrawer; });
-    var x = els.dr.querySelector('.glm-drawer__close') || els.dr.querySelector('[data-act="drawer-close"]'); if (x) try { x.focus(); } catch (e) {} }
+    var x = els.dr.querySelector('.glm-drawer__close') || els.dr.querySelector('[data-act="drawer-close"]'); if (x) try { x.focus({ preventScroll: true }); } catch (e) {} }
   function closeDrawer() {
     var els = drawerEls(); if (!els || !els.dr) return;
     els.dr.classList.remove('is-open'); els.dr.setAttribute('aria-hidden', 'true');
-    if (state.lastFocusEl && document.contains(state.lastFocusEl)) { try { state.lastFocusEl.focus(); } catch (e) {} }
+    if (state.lastFocusEl && document.contains(state.lastFocusEl)) { try { state.lastFocusEl.focus({ preventScroll: true }); } catch (e) {} }
     state.lastFocusEl = null;
   }
   function drawerOpen() { var els = drawerEls(); return !!(els && els.dr && els.dr.classList.contains('is-open')); }
@@ -2460,7 +2471,7 @@
     if (_searchRenderTimer) clearTimeout(_searchRenderTimer);
     _searchRenderTimer = setTimeout(function () { _searchRenderTimer = null; renderKeepFocus(selector); }, SEARCH_RENDER_DEBOUNCE_MS);
   }
-  function clearFilters() { state.filters = { search: '', company: '', originCountry: '', destCountry: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' }; state.selectedShipmentId = ''; render(); }
+  function clearFilters(skipRender) { state.filters = { search: '', company: '', originCountry: '', destCountry: '', carrier: '', method: '', status: '', stage: '', routeTemplateId: '', etaFrom: '', etaTo: '', exceptionOnly: false, delayedOnly: false, arrivingSoon: false, kpi: '' }; state.selectedShipmentId = ''; if (skipRender !== true) render(); }
 
   // ---------- boot / lifecycle ----------
   function boot(force) {
@@ -2481,6 +2492,11 @@
       try { buildReadModel(); } catch (e) { state.error = String(e && e.message || e); render(); return; }
       if (myNav !== _glmNavGen) { _glmDiag.staleRendersBlocked++; return; }
       state.didFocus = false;
+      if (Array.isArray(window._glmPendingShipmentIds)) {
+        clearFilters(true);
+        state.filters.shipmentIds = window._glmPendingShipmentIds.filter(function (id) { return typeof id === 'string'; });
+        window._glmPendingShipmentIds = null;
+      }
       render();
       if (window._glmPendingSelect && state.vms && state.vms[window._glmPendingSelect]) { var sid = window._glmPendingSelect; window._glmPendingSelect = ''; selectShipment(sid); }
     });

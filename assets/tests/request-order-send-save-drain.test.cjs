@@ -1,0 +1,20 @@
+'use strict';
+const assert = require('node:assert/strict'), fs = require('node:fs'), vm = require('node:vm');
+const { extract } = require('./ad4/extract.cjs');
+const names = ['_roAllocationEditsBlockSend_', '_roTrackAllocationSave_', '_roDrainAllocationSaves_'];
+const text = fs.readFileSync('assets/js/pages/request-order.js', 'utf8');
+const source = extract(text, n => names.includes(n), () => false).map(x => x.text).join('\n') + '\n' + text.slice(text.indexOf('async function _roDrainAllocationSaves_'), text.indexOf('async function handleSendRequest'));
+const c = { Promise, setTimeout, clearTimeout, document: { querySelector: () => null }, requestOrderState: { allocEdits: {} }, _roCanonicalDraftBySku: {}, _roActiveAllocationSaves_: [], _roSetSendState_: () => {}, _roFlushPendingAutosaveOnUnmount_: () => {} };
+vm.createContext(c); vm.runInContext(source, c);
+(async () => {
+ c.requestOrderState.allocEdits.A = { T1: { orderQty: 40, note: '' }, T2: { note: '' }, T3: { note: '' } };
+ c._roCanonicalDraftBySku.A = { lines: { T1: { order_qty: 40 } } };
+ assert.equal(c._roAllocationEditsBlockSend_(), false);
+ c.requestOrderState.allocEdits.A.T2.note = 'unsaved'; assert.equal(c._roAllocationEditsBlockSend_(), true);
+ c.requestOrderState.allocEdits.A.T2.note = ''; c.requestOrderState.allocEdits.A.T1.orderQty = 50; assert.equal(c._roAllocationEditsBlockSend_(), true);
+ let finish; c._roTrackAllocationSave_(new Promise(r => { finish = r; }).then(() => { c._roCanonicalDraftBySku.A.lines.T1.order_qty = 50; }));
+ let settled = false; const drain = c._roDrainAllocationSaves_().then(v => { settled = true; return v; });
+ await Promise.resolve(); assert.equal(settled, false); finish(); assert.equal(await drain, true); assert.equal(c._roAllocationEditsBlockSend_(), false); assert.equal(c._roActiveAllocationSaves_.length, 0);
+ c.document.querySelector = () => ({ className: 'is-conflict' }); assert.equal(c._roAllocationEditsBlockSend_(), true);
+ console.log('ORDER_SEND_SAVE_DRAIN_PASS 8 offline');
+})().catch(e => { console.error(e); process.exitCode = 1; });

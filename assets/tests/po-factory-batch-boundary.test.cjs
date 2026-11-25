@@ -1,0 +1,17 @@
+'use strict';
+const assert = require('node:assert/strict');
+const { world } = require('./helpers/po-factory-unproduced-world.cjs');
+const h = world();
+const body = h.body(), row = body.sheets.StockPO[0];
+body.sheets.StockPO = Array.from({ length: 26 }, (_, i) => ({ ...row, __row: i + 2, po_no: 'LIMIT-' + i }));
+const before = h.writes();
+const v = h.c.handleImportValidate_(body);
+assert.equal(v.success, false); assert.equal(h.writes(), before); assert.match(JSON.stringify(v), /IMPORT_TOO_MANY_ROWS|PFI_BATCH_TOO_LARGE/);
+assert.equal(h.c.imbPoFactoryDomain_().maxRows, 25);
+const b = h.body({}, 'RESIDUE-IMPORT-0001'); h.commit(b);
+const movement = h.tables.factory_stock_movements; movement.grid.splice(1);
+const n = h.writes();
+const result = h.c.pfiResidue_(h.ss, b.import_batch_id, { status: 'COMMITTING', scope_key: JSON.stringify(b.scope) });
+assert.equal(result.read_only, true); assert.equal(result.verdict, 'OWNER_REVIEW_REQUIRED'); assert.equal(result.rows[0].movement_exists, false);
+assert.equal(result.rows[0].ledger_matches_stock, false); assert.equal(h.writes(), n);
+console.log('PO_FACTORY_BATCH_BOUNDARY_PASS 8 offline');

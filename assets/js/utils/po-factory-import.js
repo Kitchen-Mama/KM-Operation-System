@@ -21,6 +21,7 @@
     }
     function batchId(parsed, template) {
         var rows = (parsed.sheets && parsed.sheets.StockPO || []).filter(function (r) { return String(r.row_type || '').trim() !== 'example'; });
+        if (rows.length > 25) throw new Error('At most 25 rows per PO / factory stock import. Split this file before importing. Nothing was submitted.');
         var id = rows.length && String(rows[0].transaction_id || '').trim();
         if (rows.length && rows.every(function (r) { return !String(r.transaction_id || '').trim(); })) {
             if (!window.crypto || !window.crypto.subtle) throw new Error('Secure batch identity is unavailable. Nothing was submitted.');
