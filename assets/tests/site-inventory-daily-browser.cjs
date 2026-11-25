@@ -30,7 +30,7 @@ let checks = 0;
         const shipmentFacts = _irShipmentDisplayReconcile(['US','EU'].map(country => ({ shipmentId: country, company: 'C', country, marketplace: 'Amazon', status: 'in_transit', eta: '2026-12-13' })),
           ['US','EU'].map(country => ({ shipmentLineId: 'L-' + country, shipmentId: country, sku: 'SKU', shipmentQty: 10, shipmentReceivedQty: 0 })), Date.UTC(2026,10,25), {}, now);
         const oldRow = { calculation_status: 'READY', country: 'US', calculation_date: '2026-11-24', d18_gap_qty: 999, d18_suggested_qty: 1000, note: 'old formula' };
-        const newRow = { ...oldRow, d18_gap_qty: 0, d18_suggested_qty: 0, note: 'CALC FORMULA=SITE_DAILY_V2' };
+        const newRow = { ...oldRow, d18_gap_qty: 0, d18_suggested_qty: 0, note: 'CALC FORMULA=SITE_DAILY_V2 ALLOC=DAILY_3PL_V1' };
         const panel = document.createElement('section'); panel.id = 'verified-upcoming';
         panel.style.cssText = 'position:fixed;inset:0;z-index:999999;background:white;padding:24px;overflow:auto;';
         panel.innerHTML = '<h3>Upcoming Event</h3><h4>US</h4>' + _irRenderUpcoming(us) + '<h4>EU</h4>' + _irRenderUpcoming(eu);
@@ -43,6 +43,10 @@ let checks = 0;
         });
         const fractionHtml = _irRenderUpcoming(fractional.map((fcQty, i) => ({ event: 'Fraction ' + i, fcQty })));
         panel.innerHTML += '<h4>Rounded Event FC</h4>' + fractionHtml;
+        const allocated = _irRecoMapLine({ sku: 'SKU', overseasAllocation: { version: 'DAILY_3PL_V1', openingQty: 10,
+          allocatedQty: 10, reconciliation: [{ warehouseId: 'WH-<UNTRUSTED>', lotId: 'STOCK:WH', poolQty: 15, allocatedQty: 15, unallocatedQty: 0 }] } });
+        const allocationEl = document.createElement('div'); allocationEl.className = 'replen-recsum-ws';
+        allocationEl.innerHTML = _irRecoDiagnosticsInnerHtml(allocated); panel.appendChild(allocationEl);
         const fractionEl = document.createElement('div'); fractionEl.innerHTML = fractionHtml;
         const detailDisplayed = [...fractionEl.querySelectorAll('.replen-card__value')].map(e => e.textContent);
         const banner = _irSrcBanner15_({ srcUnknown13: true, srcWhy15: 'SITE_SOURCE_NOT_CONFIRMED', srcKind15: 'UNKNOWN' });
@@ -52,6 +56,7 @@ let checks = 0;
           sourceUnchanged: ev.fcQty, old: _irMatToLine(oldRow).horizons[0], zero: _irMatToLine(newRow).horizons[0],
           oldStale: _irMatIsStale(oldRow), newStale: _irMatIsStale(newRow), text: panel.innerText,
           cacheDates: [_irSiteCalculationDateCurrent_('2026-11-24',scope),_irSiteCalculationDateCurrent_('2026-11-23',scope)],
+          allocationText: allocationEl.innerText, allocationEscaped: allocationEl.querySelector('untrusted') === null,
           etaBuckets: shipmentFacts.map(f => f.eta_bucket), overflow: panel.scrollWidth > panel.clientWidth };
       });
       assert.equal(result.us, 120); checks++;
@@ -75,6 +80,9 @@ let checks = 0;
       assert.equal(result.overflow, false); checks++;
       assert.deepEqual(result.etaBuckets, ['d19_30','d0_18']); checks++;
       assert.deepEqual(result.cacheDates, [true,false]); checks++;
+      assert.match(result.allocationText, /Allocated 3PL stock: 10/); checks++;
+      assert.match(result.allocationText, /15 = 15 allocated \+ 0 unallocated/); checks++;
+      assert.equal(result.allocationEscaped, true); checks++;
       assert.deepEqual(errors, []); checks++;
       await page.screenshot({ path: path.join(out, 'upcoming-' + width + '.png') });
       await page.close();

@@ -228,6 +228,9 @@ d18_gap_qty: null, d18_suggested_qty: null, d30_gap_qty: null, d30_suggested_qty
 d45_gap_qty: null, d45_suggested_qty: null, d90_gap_qty: null, d90_suggested_qty: null, note: ''
 };
 if (!lines || !lines.length) { base.calculation_status = 'BLOCKED'; base.note = 'RECOMMENDATION_LINE_NOT_FOUND'; return base; }
+if (lines.every(function (l) { return l && l.skipped === true && l.blockedReason === 'SKU_INACTIVE'; })) {
+base.calculation_status = 'SKIPPED'; base.note = 'SKU_INACTIVE'; return base;
+}
 var acc = { D18: { g: 0, s: 0 }, D30: { g: 0, s: 0 }, D45: { g: 0, s: 0 }, D90: { g: 0, s: 0 } };
 var blockedReason = null, ongoingWarnings = [];
 for (var i = 0; i < lines.length && !blockedReason; i++) {
@@ -393,6 +396,7 @@ function gapMaterializationDefaultIo_(calcContext) {
 var _ss = null;
 var _preRead = null;
 var _poCache = {};
+var _dailyWarehouseCache = {};
 var ctx = (calcContext && calcContext.ok) ? calcContext : null;
 
 
@@ -433,7 +437,7 @@ if (typeof KMPS !== 'undefined' && KMPS && typeof KMPS.readCanonicalSnapshots ==
 var pre = preReadSnapshots_(sharedSs);
 
 
-recoIo.readCanonicalSnapshots = function () { return { snapshots: pre.snapshots, issues: pre.issues, __poCache: _poCache }; };
+recoIo.readCanonicalSnapshots = function () { return { snapshots: pre.snapshots, issues: pre.issues, __poCache: _poCache, __dailyWarehouseCache: _dailyWarehouseCache }; };
 }
 if (ctx) {
 recoIo.configDate = function () { return ctx.calculationDate; };
@@ -477,7 +481,7 @@ return 'GAP-' + p + '-' + ts + '-' + ('000' + gapRunSeq_).slice(-4);
 function gapBlockedReasonKey_(note) { var m = /^[A-Z][A-Z0-9_]{2,}/.exec(String(note == null ? '' : note).trim()); return m ? m[0] : 'BLOCKED'; }
 function gapTallyBlocked_(acc, note) { var r = acc.blockedReasons = acc.blockedReasons || {}, k = gapBlockedReasonKey_(note); if (!(k in r) && Object.keys(r).length >= 8) k = 'OTHER'; r[k] = (r[k] || 0) + 1; }
 function gapProcessScopeSlice_(scopes, io, sheet, cfg, runId) {   // D5-V3-R5G: runId optional (46_ job slices pass none)
-var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, errors: 0, calculationAuthority: null, scopeErrors: [], calculatedAt: null };
+var acc = { scopesCalculated: 0, written: 0, ready: 0, blocked: 0, skipped: 0, errors: 0, calculationAuthority: null, scopeErrors: [], calculatedAt: null };
 var ts = gapBatchTimestamp_(io);
 acc.calculatedAt = ts;
 var ss = io.openTarget();
@@ -505,11 +509,13 @@ row.updated_at = ts;
 var identity = gapNoteIdentity_(meta.calculationDate || (cfg.product === 'INVENTORY' ? calcAuthority : ''), ts, runId, gapNoteTz_(io));
 // Keep the formula marker in the non-truncatable identity. AT/TZ still describe the stored run timestamp.
 if (cfg.product === 'INVENTORY' && meta.horizonFormula === 'SITE_DAILY_V2') identity += ' FORMULA=SITE_DAILY_V2 SITE_TZ=' + (meta.siteTimeZone || '-');
+if (cfg.product === 'INVENTORY' && meta.warehouseAllocationVersion === 'DAILY_3PL_V1') identity += ' ALLOC=DAILY_3PL_V1';
 row.note = gapNoteFinalize_(row.note, identity, row.calculation_status !== 'READY');
 gapUpsertByKey_(sheet, row);
 acc.written++;
 if (row.calculation_status === 'READY') acc.ready++;
 else if (row.calculation_status === 'BLOCKED') { acc.blocked++; gapTallyBlocked_(acc, row.note); }
+else if (row.calculation_status === 'SKIPPED') acc.skipped++;
 else acc.errors++;
 }
 }

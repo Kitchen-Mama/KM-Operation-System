@@ -121,7 +121,7 @@ function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs, reques
   return {
     runId: runId, product: product, status: 'PENDING',
     scopeCursor: 0, scopesTotal: scopesTotal, scopesProcessed: 0,
-    rowsProcessed: 0, readyCount: 0, blockedCount: 0, errorCount: 0,
+    rowsProcessed: 0, readyCount: 0, blockedCount: 0, skippedCount: 0, errorCount: 0,
     calculationDate: ctx.calculationDate || '', calculationMonth: ctx.calculationMonth || '', planningCycle: ctx.planningCycle || '',
     calculationInstantMs: typeof ctx.instantMs === 'number' ? ctx.instantMs : nowMs,
     startedAt: nowStr, updatedAt: nowStr, startedAtMs: (nowMs || 0), updatedAtMs: (nowMs || 0), finishedAt: null, cancelledAt: null, lastError: null, sliceAttempts: 0,
@@ -148,7 +148,7 @@ function gapJobLog_(tag, state) {
 function gapJobPublicState_(s) {
   return { runId: s.runId, product: s.product, status: s.status,
     scopesProcessed: s.scopesProcessed, scopesTotal: s.scopesTotal, rowsProcessed: s.rowsProcessed,
-    readyCount: s.readyCount, blockedCount: s.blockedCount, errorCount: s.errorCount,
+    readyCount: s.readyCount, blockedCount: s.blockedCount, skippedCount: s.skippedCount || 0, errorCount: s.errorCount,
     calculationDate: s.calculationDate, calculationMonth: s.calculationMonth, planningCycle: s.planningCycle,
     startedAt: s.startedAt, updatedAt: s.updatedAt, finishedAt: s.finishedAt, cancelledAt: s.cancelledAt, lastError: s.lastError,
     lastContinuationScheduledAt: s.lastContinuationScheduledAt, lastWorkerStartedAt: s.lastWorkerStartedAt,
@@ -573,6 +573,7 @@ function gapJobContinue_(product, env) {
       state.rowsProcessed += (inc.written || 0);
       state.readyCount += (inc.ready || 0);
       state.blockedCount += (inc.blocked || 0);
+      state.skippedCount = (state.skippedCount || 0) + (inc.skipped || 0);
       state.errorCount += (inc.errors || 0);
       var lastScope = slice.scopes[slice.scopes.length - 1];
       state.lastProcessedScope = lastScope ? (lastScope.company + '/' + lastScope.country + '/' + lastScope.marketplace) : state.lastProcessedScope;

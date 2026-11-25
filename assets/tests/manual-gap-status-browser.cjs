@@ -33,6 +33,8 @@ async function mount(page, mode) {
       getGapJobStatus: (product, runId) => {
         calls.statuses++;
         if (fixtureMode === 'precheck-hung' || (fixtureMode === 'status-hung' && calls.statuses > 1)) return new Promise(() => {});
+        if (fixtureMode === 'status-lost' && calls.statuses > 1) return Promise.resolve({ success: false, error: { code: 'TEMPORARY_UNAVAILABLE' } });
+        if (fixtureMode === 'status-delayed' && calls.statuses > 1) return new Promise(resolve => { window.resolveStatus = resolve; });
         if (calls.statuses === 1 || ['unknown', 'late'].includes(fixtureMode) && !runId) return Promise.resolve(job('NONE', null));
         return Promise.resolve(job('DONE', runId || 'RUN'));
       },
@@ -79,7 +81,7 @@ async function clickScope(page) {
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     for (const width of [1440, 390]) {
-      for (const mode of ['recovered', 'unknown', 'late', 'refused', 'status-hung', 'refresh-hung', 'real-refresh-failed', 'real-refresh-context', 'precheck-hung', 'submit-late', 'submit-refused']) {
+      for (const mode of ['recovered', 'unknown', 'late', 'refused', 'status-hung', 'status-lost', 'status-delayed', 'refresh-hung', 'real-refresh-failed', 'real-refresh-context', 'precheck-hung', 'submit-late', 'submit-refused']) {
         const page = await browser.newPage({ viewport: { width, height: 950 } }), errors = [], outbound = [];
         page.on('pageerror', e => errors.push(e.message));
         await page.route('**/*', r => {
@@ -116,7 +118,14 @@ async function clickScope(page) {
             check(width + ' reload before dispatch retains no false unknown lock', await page.evaluate(() => sessionStorage.length === 0));
           } else {
             await page.waitForFunction(() => calls.starts === 1);
-            if (mode === 'refused' || mode === 'refresh-hung' || mode === 'recovered' || mode.startsWith('real-refresh-')) {
+            if (mode === 'status-delayed') {
+              await page.waitForFunction(() => typeof resolveStatus === 'function');
+              check(width + ' acknowledged run leaves Starting while first status read is pending', (await trigger.innerText()).includes('Calculating') && await trigger.getAttribute('aria-busy') === 'true');
+              await page.screenshot({ path: path.join(output, 'acknowledged-calculating-' + width + '.png'), fullPage: true });
+              await page.evaluate(() => resolveStatus(job('DONE')));
+              await page.waitForFunction(() => !_irRecalcAllBusy && !_irAiSupportTriggerOwner);
+              check(width + ' terminal run restores the literal AI Support label', await trigger.innerText() === '\u2726 AI Support' && await trigger.getAttribute('aria-busy') === null && await page.evaluate(() => calls.starts === 1 && calls.refreshes === 1));
+            } else if (mode === 'refused' || mode === 'refresh-hung' || mode === 'recovered' || mode.startsWith('real-refresh-')) {
               await page.waitForFunction(() => !_irRecalcAllBusy);
               const notice = await page.locator('#replen-ai-support-notice').innerText();
               check(width + ' ' + mode + ' leaves Starting with truthful terminal notice', !/Starting/.test(await trigger.innerText()) &&
@@ -127,6 +136,7 @@ async function clickScope(page) {
             } else {
               await page.waitForFunction(() => _irManualGap && _irManualGap.unknown);
               check(width + ' ' + mode + ' unknown outcome has a visible read-only status action', (await trigger.innerText()).includes('Status unconfirmed') && await page.getByRole('button', { name: 'Check status', exact: true }).isVisible());
+              if (mode === 'status-lost') check(width + ' three unusable polls stop spinning without marking backend failed', await page.evaluate(() => calls.statuses === 4) && await trigger.getAttribute('aria-busy') === null);
               await page.evaluate(() => { for (let i = 0; i < 8; i++) handleRecalcAllInventoryGap(scope); });
               check(width + ' ' + mode + ' unknown holds prevent duplicate job starts', await page.evaluate(() => calls.starts === 1 && !!sessionStorage.getItem(_irManualGapKey_())));
               await page.screenshot({ path: path.join(output, mode + '-' + width + '.png'), fullPage: true });

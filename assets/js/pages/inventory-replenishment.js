@@ -2619,6 +2619,7 @@ function _irSuggestedQtyState_(item) {
       return { state: 'NONE', value: null, reason: (st === 'EMPTY') ? 'READ_EMPTY' : 'NO_ROW_FOR_SKU' };
     }
     var cs = String(row.calculation_status || '');
+    if (_irMatIsStale(row)) return { state: 'NONE', value: null, reason: 'REFUSED', detail: 'Recalculate required' };
     if (cs !== 'READY') {
       // The row EXISTS and the calculation declined it. `note` is the stored reason, and it is the only one
       // of these that can speak for itself — so it is carried, and every renderer must escape it.
@@ -13563,7 +13564,7 @@ function handleRecalcAllInventoryGap(scopeSpec) {
     product: 'INVENTORY',   // LIVE7 §3 — names the product in the [GapJob] START_ERROR DevTools diagnostic
     refresh: refreshFn,
     observeBeforeStart: true,
-    startTimeoutMs: 30000, readTimeoutMs: 30000,
+    startTimeoutMs: 30000, readTimeoutMs: 30000, maxLostPolls: 3,
     acceptRecoveredStart: function (st) { return _irManualGapAccept_(st, attempt.scope); },
     onLateStart: function (res) {
       if (_irManualGap !== attempt || !res) return;
@@ -13666,15 +13667,21 @@ function _irResumeGapJobNow_() {
   var btn = _irRecalcBtn_();
   var label = (btn && btn.dataset && btn.dataset.idleLabel) ? btn.dataset.idleLabel : (btn ? btn.textContent : 'Recalculate All Sites');
   if (btn && btn.dataset) btn.dataset.idleLabel = label;
-  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } }
+  function setBtn(txt, disabled) { if (btn) { btn.disabled = !!disabled; btn.textContent = txt; } if (disabled) _irAiSupportTriggerBusy_('recalc', txt); else _irAiSupportTriggerIdle_('recalc'); }
   function resReset() { _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false); setBtn(label, false); }
   _irCancelRequested = false;
   return gr.resumeIfRunning(function () { return db.getGapJobStatus('INVENTORY'); }, {
     product: 'INVENTORY',   // S4-R3 §7 — no known active job, no status read
+    readTimeoutMs: 30000, maxLostPolls: 3,
     refresh: function () { if (typeof refreshInventoryGapAfterRecalc_ === 'function') return refreshInventoryGapAfterRecalc_(); },
     isCancelled: function () { return _irCancelRequested; },
     ui: {
-      resume: function (st) { _irRecalcAllBusy = true; if (st && st.runId) _irActiveRunId = st.runId; },   // a resumed job is cancellable too
+      resume: function (st) {
+        _irRecalcAllBusy = true;
+        if (st && st.runId) _irActiveRunId = st.runId;
+        setBtn('Calculating\u2026 ' + (st.scopesProcessed || 0) + ' / ' + (st.scopesTotal || 0), true);
+        _irShowCancel_(true);
+      },
       progress: function (st) { if (!(st && st.status)) return; if (st && st.runId) _irActiveRunId = st.runId; var n = (st && st.scopesProcessed != null) ? st.scopesProcessed : 0, m = (st && st.scopesTotal != null) ? st.scopesTotal : 0; setBtn((st && st.recovering ? 'Recovering… ' : 'Calculating… ') + n + ' / ' + m, true); _irShowCancel_(true); },
       refreshing: function () { _irShowCancel_(false); setBtn('Refreshing…', true); },
       done: function () { _irShowCancel_(false); setBtn('Completed', true); if (typeof setTimeout === 'function') setTimeout(resReset, 1500); else resReset(); },
@@ -16524,7 +16531,7 @@ function _irAggregateActionableRecommendedQty(lines) {
 // read policy. The storage key moves with the shape so that records written by the previous build are not
 // merely ignored but unreachable, and the superseded key is dropped rather than left to sit in the
 // operator's session for the rest of the day.
-var _IR_RECO_CACHE_SHAPE = 'horizonBasis.siteDaily.v2';    // daily event policy and site-local date authority
+var _IR_RECO_CACHE_SHAPE = 'horizonBasis.siteDaily.3pl.v1';
 var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_' + _IR_RECO_CACHE_SHAPE;
 var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
 // S8-B3-R3-CP2T-R1 — THE SHAPE IS NOT THE COMPUTATION, AND A MATCHING SHAPE IS NOT A COMPATIBLE ANSWER.
@@ -16990,6 +16997,7 @@ function _irRecoMapLine(L) {
     arrivalUndetermined: Array.isArray(L.arrivalUndetermined) ? L.arrivalUndetermined.slice() : [],
     shippedEtaMissing: Array.isArray(L.shippedEtaMissing) ? L.shippedEtaMissing.slice() : [],
     inventoryShares: Array.isArray(L.inventoryShares) ? L.inventoryShares.slice() : [],
+    overseasAllocation: L.overseasAllocation && L.overseasAllocation.version === 'DAILY_3PL_V1' ? L.overseasAllocation : null,
     inventoryShareUnknown: Array.isArray(L.inventoryShareUnknown) ? L.inventoryShareUnknown.slice() : [],
     inventoryShareReconciliation: Array.isArray(L.inventoryShareReconciliation) ? L.inventoryShareReconciliation.slice() : [],
     incomingAttribution: Array.isArray(L.incomingAttribution) ? L.incomingAttribution.slice() : [],
@@ -17419,6 +17427,14 @@ function _irRecoDiagnosticsInnerHtml(line) {
     items.push('<li>' + code + msg + '</li>');
   });
   var meta = [];
+  var allocation = line.overseasAllocation;
+  if (allocation) {
+    items.push('<li>Allocated 3PL stock: ' + esc(allocation.openingQty) + ' · 90-day allocation: ' + esc(allocation.allocatedQty) + '</li>');
+    (allocation.reconciliation || []).forEach(function (r) {
+      items.push('<li>' + esc(r.warehouseId) + ' · ' + esc(r.lotId) + ': ' + esc(r.poolQty) +
+        ' = ' + esc(r.allocatedQty) + ' allocated + ' + esc(r.unallocatedQty) + ' unallocated</li>');
+    });
+  }
   if (line.formulaVersion) meta.push('formulaVersion: ' + esc(line.formulaVersion));
   if (line.sourceDataAsOf) meta.push('sourceDataAsOf: ' + esc(line.sourceDataAsOf));
   if (_irRecoState.requestId) meta.push('requestId: ' + esc(_irRecoState.requestId));
@@ -18007,6 +18023,7 @@ function _irMatExpectedCalcDate() { return (typeof window !== 'undefined' && win
 function _irMatIsStale(row) {
   if (!row) return false;
   if (String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1) return true;
+  if (String(row.note || '').indexOf('ALLOC=DAILY_3PL_V1') === -1) return true;
   var exp = _irMatExpectedCalcDate();
   try { if (!exp && window.KM && window.KM.siteCalendar) exp = window.KM.siteCalendar.localDate(Date.now(), row.country); } catch (e) {}
   var cd = row.calculation_date ? String(row.calculation_date) : '';
@@ -18019,7 +18036,7 @@ function _irMatIsStale(row) {
 // per-window business Note is derived (No shortage / Replenishment required) from the stored gap. Stored values only.
 function _irMatToLine(row) {
   var st = row.calculation_status ? String(row.calculation_status) : '';
-  var oldFormula = String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1;
+  var oldFormula = String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1 || String(row.note || '').indexOf('ALLOC=DAILY_3PL_V1') === -1;
   // F1-4B-FM5-R4UI-R5A §3 — the normal Recommendation Summary must NOT surface raw internal codes
   // (SALES_BASIS_* / HORIZONS_NOT_AVAILABLE / …). Show a short user-safe note; the technical row.note stays in the
   // DB and is still visible under Diagnostics (IR_DEBUG_DIAGNOSTICS). READY rows keep the derived business note.
@@ -18698,7 +18715,7 @@ function _irAiSupportTriggerBusy_(owner, text) {
     var t = _irAiSupportTriggerEl_(); if (!t) return false;
     if (_irAiSupportTriggerOwner && _irAiSupportTriggerOwner !== owner) return false;   // the other flow owns it
     _irAiSupportTriggerOwner = owner;
-    if (t.dataset && t.dataset.idleLabel == null) t.dataset.idleLabel = t.textContent;
+    if (t.dataset) t.dataset.idleLabel = '\u2726 AI Support';
     t.textContent = '✦ ' + String(text == null ? '' : text);
     t.setAttribute('aria-busy', 'true');
     return true;
@@ -18708,7 +18725,7 @@ function _irAiSupportTriggerIdle_(owner) {
     if (_irAiSupportTriggerOwner && owner && _irAiSupportTriggerOwner !== owner) return;
     _irAiSupportTriggerOwner = null;
     if (!t) return;
-    var idle = (t.dataset && t.dataset.idleLabel) ? t.dataset.idleLabel : '✦ AI Support';
+    var idle = '\u2726 AI Support';
     t.textContent = idle; t.removeAttribute('aria-busy');
     if (t.dataset) delete t.dataset.idleLabel;
 }

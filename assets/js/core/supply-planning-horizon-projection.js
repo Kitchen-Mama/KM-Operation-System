@@ -165,9 +165,11 @@
       return { windowCode: wc, requiredByDate: reqBy, demandQty: demandQty, openingSupplyQty: opening, incomingAddedQty: incomingAddedQty, coveredQty: coveredQty, remainingSupplyQty: remainingSupplyQty, gapQty: gapQty, suggestedOrderQty: sug };
     });
 
-    return { ready: true, horizons: horizons, issues: [],
+    var result = { ready: true, horizons: horizons, issues: [],
       meta: { deterministic: true, calculationDate: calcDate, destination: destination, openingSupplyQty: opening, horizonDays: horizonDays,
         demandMode: demandMode, avgSalesPerDay: (demandMode === 'sales_driven' ? salesRate : null) } };
+    if (input.includeTimeline === true) result.timeline = proj.timeline;
+    return result;
 
     function fail(dummy, code, message, details) {
       return { ready: false, horizons: [], issues: [{ code: code, message: message || code, details: details || null }],

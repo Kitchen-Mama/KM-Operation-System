@@ -542,7 +542,7 @@ if (!out.gated.length) return out;
 out.rows = (evtRows || []).filter(function (r) { var ed = null; try { ed = KMPD.eventDates(r); } catch (eD) { ed = null; } return !(ed && ed.firstSuggestionMonday && ed.firstSuggestionMonday > cd); });
 return out;
 }
-function recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination, demandMode, avgSalesPerDay) {
+function recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, openingSupplyQty, incomingEvents, unitsPerCarton, destination, demandMode, avgSalesPerDay, includeProjection) {
 if (typeof KMHP === 'undefined' || !KMHP || typeof KMHP.projectHorizons !== 'function') return null;
 if (!calc || !calc.calculationDate) return null;
 var mode = (demandMode === 'sales_driven' || demandMode === 'forecast_driven') ? demandMode : 'forecast_driven';
@@ -562,7 +562,8 @@ var hr = KMHP.projectHorizons({ destination: destination || null, calculationDat
 openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, specialEventDemands: specialEventDemands,
 specialEventTiming: calc.siteInventoryDaily ? 'selling_days' : 'prep_date',
 incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton,
-demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null) });
+demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null), includeTimeline: includeProjection === true });
+if (includeProjection) return hr;
 return (hr && hr.ready) ? hr.horizons : null;
 }
 
@@ -1515,6 +1516,7 @@ hzIncoming = (KMDR.resolveMarketplaceQualifiedIncoming({ candidates: shipmentRow
 var mHz = (planModel === 'sales_driven' && salesRate === null) ? null
 : recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, hzIncoming, upc, nd.destination, planModel, salesRate);
 if (mHz) mLine.horizons = mHz;
+if (read.__dailyAllocationCollect) mLine.__allocationProjection = recoWsBuildHorizons_(calc, fcRows, tgtRows, evtRows, skuMeta, scope, sku, horizonOpening, hzIncoming, upc, nd.destination, planModel, salesRate, true);
 
 
 
@@ -1576,7 +1578,147 @@ basisQualityError: (sr.ok ? null : (sr.reason || null)), contaminationSource: (s
 
 
 
+function recoWsSkuInactive_(read, scope, sku) {
+var rows = recoWsRows_(read, 'marketplaceSkus').filter(function (r) {
+return recoWsStr_(r.company) === scope.company && recoWsStr_(r.country) === scope.country &&
+recoWsStr_(r.marketplace) === scope.marketplace && recoWsStr_(r.sku) === sku;
+});
+return rows.length > 0 && rows.every(function (r) { return recoWsStr_(r.marketplace_sku_status).toLowerCase() === 'inactive'; });
+}
+
+function recoWsDailyWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
+var cache = read.__dailyWarehouseCache || (read.__dailyWarehouseCache = {});
+var groupKey = [scope.company, scope.country, sku, calc.calculationDate].join('||');
+var wanted = recoWsSiteKey_(scope.company, scope.country, scope.marketplace);
+function blocked(code) {
+return { lines: [KMDR.buildRecommendationLine({ destination: { destinationType: 'WAREHOUSE', company: scope.company,
+country: scope.country, marketplace: scope.marketplace, warehouseId: null, destinationKey: 'WAREHOUSE||' + wanted + '||' },
+recommendationMode: 'WAREHOUSE_REPLENISHMENT', sku: sku, siteSku: siteSku, blocked: true, blockedReason: code,
+formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf })] };
+}
+if (typeof KMDWA === 'undefined') return blocked('DAILY_ALLOCATION_RUNTIME_MISSING');
+if (cache[groupKey] && cache[groupKey][wanted]) return cache[groupKey][wanted];
+var mappings = recoWsRows_(read, 'marketplaceSkus'), marketRows = recoWsRows_(read, 'marketplaces');
+var rules = recoWsRows_(read, 'replenishmentDemandAllocationRules'), whRows = recoWsRows_(read, 'warehouses'), whById = {};
+whRows.forEach(function (w) { whById[recoWsStr_(w.warehouse_id)] = w; });
+var sites = {}, candidates = {};
+mappings.forEach(function (r) {
+if (recoWsStr_(r.company) !== scope.company || recoWsStr_(r.country) !== scope.country || recoWsStr_(r.sku) !== sku) return;
+var sc = { company: scope.company, country: scope.country, marketplace: recoWsStr_(r.marketplace) };
+var key = recoWsSiteKey_(sc.company, sc.country, sc.marketplace);
+if (sites[key] || recoWsSkuInactive_(read, sc, sku)) return;
+var f = recoWsResolveFulfillment_(marketRows, sc), model = recoWsStr_(f && f.row && f.row.fulfillment_model).toLowerCase();
+var masters = marketRows.filter(function (m) {
+var st = recoWsStr_(m.status).toLowerCase();
+return recoWsStr_(m.company) === sc.company && recoWsStr_(m.country) === sc.country &&
+recoWsStr_(m.marketplace) === sc.marketplace && (st === '' || st === 'active' || st === 'true');
+});
+if (f && f.row && recoWsStr_(f.row.status).toLowerCase() === 'inactive') return;
+if (model === 'hybrid') model = recoWsStr_(recoWsFulfillmentModelBySku_(mappings, sc)[sku]).toLowerCase();
+var active = KMDA.readActiveAllocationRules(rules, sc, calc.calculationMonth);
+if (!active.length && model === 'platform_fulfilled') return; // no 3PL membership, hence no 3PL reserve
+var valid = KMDA.validateAllocationRules(active, sc, whById);
+var members = valid.ok ? valid.warehouses.map(function (w) { return w.warehouseId; })
+: active.map(function (a) { return recoWsStr_(a.destination_warehouse_id); }).filter(Boolean);
+var priorityRaw = f && f.row && f.row.allocation_priority;
+sites[key] = { scope: sc, siteSku: recoWsSiteSkuBySku_(mappings, sc)[sku] || null, members: members,
+model: model, priority: priorityRaw === '' || priorityRaw == null ? 100 : recoWsNum_(priorityRaw), rulesValid: valid.ok && masters.length === 1 };
+});
+if (!sites[wanted]) return blocked('DEMAND_ALLOCATION_RULE_NOT_CONFIGURED');
+
+// Solve the complete connected component, even when the request only names one marketplace.
+var component = {}, whSet = {}, changed = true;
+component[wanted] = true;
+while (changed) {
+changed = false;
+Object.keys(component).forEach(function (key) { sites[key].members.forEach(function (wid) { whSet[wid] = true; }); });
+Object.keys(sites).forEach(function (key) {
+if (!component[key] && sites[key].members.some(function (wid) { return whSet[wid]; })) { component[key] = true; changed = true; }
+});
+}
+var keys = Object.keys(component).sort(), error = null;
+read.__dailyAllocationCollect = true;
+try {
+keys.forEach(function (key) {
+if (error) return;
+var s = sites[key];
+if (!s.rulesValid || s.priority === null || s.priority < 0 || ['self_fulfilled', 'platform_fulfilled'].indexOf(s.model) === -1) {
+error = 'DAILY_ALLOCATION_RECEIVER_UNRESOLVED: ' + key; return;
+}
+if (s.members.some(function (wid) {
+var w = whById[wid] || {};
+return recoWsStr_(w.company) !== scope.company || recoWsStr_(w.country).toUpperCase() !== scope.country.toUpperCase() ||
+recoWsStr_(w.warehouse_type).toLowerCase() !== '3pl' || recoWsStr_(w.is_factory_warehouse).toLowerCase() === 'true';
+})) { error = 'DAILY_ALLOCATION_WAREHOUSE_SCOPE_INVALID: ' + key; return; }
+var c = recoWsExpandWarehouse_(read, ss, s.scope, sku, s.siteSku, calc, vmeta);
+if (!c.dailySource) { error = 'DAILY_ALLOCATION_SOURCE_BLOCKED: ' + key + ': ' + recoWsStr_(c.lines && c.lines[0] && c.lines[0].blockedReason); return; }
+var hp = c.dailySource.projection;
+if (s.model === 'platform_fulfilled') {
+var p = recoWsExpandMarketplace_(read, s.scope, sku, s.siteSku, calc, vmeta, null);
+hp = p && !p.blocked ? p.__allocationProjection : null;
+}
+if (!hp || !hp.ready || hp.horizons.some(function (h) { return h.demandQty === null; })) { error = 'DAILY_ALLOCATION_DEMAND_UNKNOWN: ' + key; return; }
+candidates[key] = { collector: c, demand: hp.timeline.filter(function (t) { return t.kind === 'DEMAND'; }).map(function (t) {
+return { date: t.date, qty: s.model === 'platform_fulfilled' ? t.shortageQty : t.qty };
+}), ownedIncoming: [] };
+});
+} finally { delete read.__dailyAllocationCollect; }
+if (error) return blocked(error);
+
+var stock = {}, incoming = {}, lineage = recoWsLineageByKey_(read), lots = [];
+keys.forEach(function (key) {
+var raw = candidates[key].collector.dailySource;
+raw.members.forEach(function (wid) {
+var q = raw.openingByWarehouse[wid];
+if (q === undefined || q === null || (stock[wid] !== undefined && stock[wid] !== q)) error = 'DAILY_ALLOCATION_STOCK_UNKNOWN: ' + wid;
+stock[wid] = q;
+});
+raw.incoming.forEach(function (e) {
+if (e.crossCompanyHeader) return;
+var id = recoWsStr_(e.incomingId);
+if (!id || !recoWsValidYmd_(e.eta) || recoWsNum_(e.qty) === null) { error = 'DAILY_ALLOCATION_INCOMING_INVALID'; return; }
+var previous = incoming[id];
+if (previous && (previous.qty !== e.qty || previous.eta !== e.eta || previous.warehouseId !== e.warehouseId)) error = 'DAILY_ALLOCATION_INCOMING_CONFLICT: ' + id;
+incoming[id] = e;
+});
+});
+Object.keys(stock).sort().forEach(function (wid) {
+lots.push({ id: 'STOCK:' + wid, warehouseId: wid, company: scope.company, country: scope.country, sku: sku,
+date: calc.calculationDate, qty: stock[wid], opening: true });
+});
+Object.keys(incoming).sort().forEach(function (id) {
+var e = incoming[id], owner = lineage[id];
+if (owner && owner.resolved) {
+if (owner.company && owner.company !== scope.company) return;
+// Lineage-owned supply is never redistributed, including an inactive/non-member owner's reservation.
+if (candidates[owner.siteKey] && sites[owner.siteKey].members.indexOf(e.warehouseId) !== -1) candidates[owner.siteKey].ownedIncoming.push(e);
+return;
+}
+lots.push({ id: id, warehouseId: e.warehouseId, company: scope.company, country: scope.country, sku: sku, date: e.eta,
+qty: e.qty, sourceType: e.sourceType, opening: false });
+});
+if (error) return blocked(error);
+var allocation = KMDWA.allocate({ company: scope.company, country: scope.country, sku: sku, calculationDate: calc.calculationDate,
+lots: lots, receivers: keys.map(function (key) {
+return { key: key, company: scope.company, country: scope.country, sku: sku, priority: sites[key].priority,
+warehouseIds: sites[key].members, demand: candidates[key].demand, ownedOpeningQty: 0, ownedIncoming: candidates[key].ownedIncoming };
+}) });
+if (!allocation.ready) return blocked('DAILY_ALLOCATION_BLOCKED: ' + recoWsStr_(allocation.issues && allocation.issues[0] && allocation.issues[0].code));
+var results = cache[groupKey] || (cache[groupKey] = {});
+keys.forEach(function (key) {
+var a = allocation.bySite[key], c = candidates[key], s = sites[key];
+if (s.model !== 'self_fulfilled') return; // a platform's reserve never enters FBA sellable stock
+var summary = { version: allocation.version, calculationDate: calc.calculationDate, horizonDays: 90,
+priority: s.priority, openingQty: a.openingQty, allocatedQty: a.allocatedQty, exactQty: a.exactQty,
+warehouseQty: a.warehouses, receiverCount: keys.length, reconciliation: allocation.reconciliation };
+results[key] = c.collector.finishDaily({ openingQty: a.openingQty, incoming: a.incoming.concat(c.ownedIncoming),
+reconciliation: [], summary: summary });
+});
+return results[wanted] || blocked('DAILY_ALLOCATION_RESULT_MISSING');
+}
+
 function recoWsExpandWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta) {
+if (calc.siteInventoryDaily && !read.__dailyAllocationCollect) return recoWsDailyWarehouse_(read, ss, scope, sku, siteSku, calc, vmeta);
 var snaps = read.snapshots || {}, lines = [];
 var whRows = recoWsRows_(read, 'warehouses'), ruleRows = recoWsRows_(read, 'replenishmentDemandAllocationRules'), fcRows = recoWsRows_(read, 'fcRegularForecast');
 var skuDetailRowsW = recoWsRows_(read, 'skuDetails');
@@ -1662,6 +1804,8 @@ if (wco0 && recoWsStr_(r.company).toLowerCase() !== wco0) { if (members.indexOf(
 var mySiteKey = recoWsSiteKey_(scope.company, scope.country, scope.marketplace), shareByWh = {};
 var fcRatioByWh = {}; allActive.forEach(function (r) { var w9 = recoWsStr_(r.destination_warehouse_id); if (!w9) return; (fcRatioByWh[w9] = fcRatioByWh[w9] || {})[recoWsSiteKey_(r.company, r.country, r.marketplace)] = r.forecast_allocation_ratio; });   // D5-V3-R5E: used only when RECO_WS_INTRANSIT_RATIO_SOURCE_ = forecast_ratio
 members.forEach(function (wid1) { var ls = (linkedByWh[wid1] || []).slice(); if (ls.indexOf(mySiteKey) === -1) ls.push(mySiteKey); shareByWh[wid1] = recoWsInventoryShareOf_(read.__inventoryShares, wid1, mySiteKey, ls.sort()); shareByWh[wid1].linkedSites = ls.length; });
+// Collection reads each physical source in full. No collector line is returned as a site's available stock.
+if (read.__dailyAllocationCollect) members.forEach(function (wid) { shareByWh[wid] = { factor: 1, bp: 10000, source: 'DAILY_COLLECTION', linkedKeys: [mySiteKey], bpBySite: {} }; });
 allActive.forEach(function (r) {
 var same = recoWsStr_(r.company).toLowerCase() === recoWsStr_(scope.company).toLowerCase() && recoWsStr_(r.country).toLowerCase() === recoWsStr_(scope.country).toLowerCase()
 && recoWsStr_(r.marketplace).toLowerCase() === recoWsStr_(scope.marketplace).toLowerCase();
@@ -1687,11 +1831,25 @@ var nd = KMDR.normalizeRecommendationDestination({ destinationType: 'WAREHOUSE',
 if (!nd.ok) return siteBlocked_((nd.issues && nd.issues[0] && nd.issues[0].code) || 'DESTINATION_WAREHOUSE_INVALID', 'member warehouse ' + whId + ' is not a valid destination');
 memberNodes.push(nd.destination);
 var skuReq = { recommendationType: 'WEEKLY_SHIPPING', company: scope.company, country: scope.country, marketplace: scope.marketplace, sku: sku, destinationWarehouseId: whId, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, regularForecastByMonthOverride: override[whId], formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf };
+var src;
+if (read.__dailyAllocationCollect) {
+// Read the canonical supply projection independently of its legacy monthly demand readiness.
+// KMHP owns actual daily demand; Sales mode needs no FC and FC mode needs only its real 90-day window.
+var supplySnaps = Object.assign({}, read.snapshots);
+supplySnaps.shipmentLines = recoWsRows_(read, 'shipmentLines').filter(function (r) { return recoWsStr_(r.sku) === sku; });
+var physical = KMSP.projectRecommendationProductionSources({ recommendationType: 'WEEKLY_SHIPPING',
+planningCycle: calc.planningCycle, businessScope: { company: scope.company, country: scope.country, marketplace: scope.marketplace,
+sku: sku, destinationWarehouseId: whId }, sourceSnapshots: supplySnaps, requiredByDate: recoWsHorizonEnd_(calc) });
+src = { ready: true, formulaVersion: vmeta.formulaVersion, sourceDataAsOf: physical.sourceDataAsOf,
+supplySourceEntries: (physical.supplySourceEntries || []).filter(function (e) { return recoWsStr_(e.sku) === sku; }),
+warehouseQualifiedEvents: physical.warehouseQualifiedEvents || [] };
+} else {
 var assembled = KMPA.assembleProductionRecommendationFacts(read, skuReq);
 if (!assembled.ready) { var a0 = (assembled.issues && assembled.issues[0]) || { code: 'RECOMMENDATION_RUNTIME_BLOCKED' }; return siteBlocked_(a0.code, 'member ' + whId + ': ' + (a0.message || '')); }
 var pr = assembled.productionRequest; pr.preReadSnapshots = read.snapshots;
-var src = KMPS.buildProductionRecommendationSource(ss, pr);
+src = KMPS.buildProductionRecommendationSource(ss, pr);
 if (src.ready !== true) { var s0 = (src.issues && src.issues[0]) || {}; return siteBlocked_(s0.code || s0.reason || 'RECOMMENDATION_RUNTIME_BLOCKED', 'member ' + whId + ': ' + (s0.reason || s0.message || '')); }
+}
 fwVer = fwVer || src.formulaVersion; asOf = asOf || src.sourceDataAsOf;
 var op = recoWsWarehouseOpeningStock_(src.supplySourceEntries, whId);
 if (op === null) { if (!(shareByWh[whId] && shareByWh[whId].unknown)) { openingKnown = false; unknownStock.push(whId); } } else { opByWh[whId] = op; }
@@ -1747,14 +1905,38 @@ var _dupW = recoWsDupTouch_(read, ((recoWsShipmentLineCandidates_(read).candidat
 if (_dupW.conflicts.length) return siteBlocked_('SHIPMENT_DUPLICATE_CONFLICT: ' + _dupW.conflicts.map(function (x) { return x.id; }).join(','), RECO_WS_DUP_CONFLICT_LABEL_ + ': ' + _dupW.conflicts.map(function (x) { return x.table + ' ' + x.id + ' (' + x.fields.join(', ') + ')'; }).join('; '), { shipmentDuplicates: { conflicts: _dupW.conflicts, identical: _dupW.identical } });
 if (plannedEtaGap.length) return siteBlocked_('PLANNED_SHIPMENT_ETA_MISSING: ' + plannedEtaGap.sort().join(','), 'pre-dispatch shipment(s) ' + plannedEtaGap.join(', ') + ' hold stock for this site but have no valid ETA and no plan date. ' + RECO_WS_ARRIVAL_UNDETERMINED_LABEL_,
 { arrivalUndetermined: plannedEtaGap.map(function (id) { return { shipmentId: id, dateSource: 'UNDETERMINED', reason: 'NO_ETA_NO_PLAN_DATE', label: RECO_WS_ARRIVAL_UNDETERMINED_LABEL_ }; }) });
+if (read.__dailyAllocationCollect) {
+(recoWsShipmentLineCandidates_(read).candidates || []).forEach(function (entry) {
+var c = entry && entry.candidate || {}, lk = recoWsStr_(c.lineageKey);
+if (!lk || seenIn[lk] || recoWsStr_(c.sku) !== sku || recoWsStr_(c.company) !== scope.company ||
+members.indexOf(recoWsStr_(c.destinationWarehouseId)) === -1 || !RECO_WS_SHIPPED_ST_[recoWsStr_(c.status).toLowerCase()]) return;
+var q = recoWsNum_(c.quantityRemaining), eta = recoWsEventEtaYmd_(read, lk, c.eta);
+if (q === null || q <= 0 || !recoWsValidYmd_(eta)) return;
+if ((c.reviewFlags || []).some(function (f) { return ['INVALID_QUANTITY', 'INVALID_RECEIVED_QUANTITY', 'RECEIVED_EXCEEDS_SHIPPED'].indexOf(f) !== -1; })) return;
+seenIn[lk] = 1;
+siteIncoming.push({ incomingId: lk, eta: eta, qty: q, sourceType: 'SHIPPED_IN_TRANSIT', warehouseId: recoWsStr_(c.destinationWarehouseId) });
+});
+}
 // D5-V3-R5 (Owner M4 = (a)+(c), 2026-11-18): each member's part = its available pool x inventory_share(W, this site),
 // rounded DOWN to whole units, so the parts of all sites never exceed the pool (sum of floors <= pool). The pool is
 // wh_available_stock (already net of reservations - nothing is deducted a second time) plus the warehouse's incoming,
 // each event scaled the same way. A warehouse whose share is unknown contributes NOTHING and is flagged; the rest of
 // the site is still calculated. Never normalised, never weighted by demand (KMMSA is not used), never guessed.
+if (read.__dailyAllocationCollect) {
+var dailyProjection = recoWsBuildHorizons_(calc, fcRows, tgtRowsW, evtRowsW, skuMetaW, scope, sku, 0, [], upc, siteDest, whPlanModel, whSalesRate, true);
+return { lines: [], dailySource: { members: members, openingByWarehouse: opByWh, incoming: siteIncoming, projection: dailyProjection },
+finishDaily: finishSite_ };
+}
+return finishSite_(null);
+function finishSite_(daily) {
 var shareApplied = [], shareUnknown = [], shareRecon = [], incomingAttribution = [];
 siteOpening = 0;
 var linMap = recoWsLineageByKey_(read), newIncoming = [];
+if (daily) {
+siteOpening = daily.openingQty;
+newIncoming = daily.incoming;
+shareRecon = daily.reconciliation;
+} else {
 members.forEach(function (wid2) {
 var sh = shareByWh[wid2] || { factor: 1, bp: 10000, source: 'SOLE_SITE_FULL', bpBySite: {}, linkedKeys: [mySiteKey] }, op2 = (opByWh[wid2] === undefined) ? null : opByWh[wid2];
 // STOCK: pool x share (exact); a pool that is not a whole number cannot be split exactly -> not counted (never guessed)
@@ -1776,6 +1958,7 @@ var cnt = recoWsShareSplit_(op2, stockSh.bp);
 siteOpening += cnt;
 if (stockSh.source === 'INVENTORY_SHARE') shareApplied.push({ warehouseId: wid2, inventoryShare: stockSh.factor, inventoryShareBp: stockSh.bp, poolStockQty: op2, countedStockQty: cnt, linkedSites: (sh.linkedKeys || []).length });
 });
+}
 // A2-B1 (Owner A0 conditions 2026-11-19; supersedes SPEC_R5 C5 / M4(c) 'the row is not blocked'): stock or incoming of a
 // shared warehouse whose share is unknown is NOT this site's stock 0. The site is BLOCKED - no gap, no suggestion, no plan,
 // no order - and the line keeps the warning detail (inventoryShareUnknown / reconciliation / attribution). A part with
@@ -1802,6 +1985,7 @@ diagnostics: { issues: single ? [] : [{ code: 'DESTINATION_WAREHOUSE_USER_CHOICE
 siteLine.siteLevel = true;
 siteLine.supplyBreakdown = recoWsSupplyBreakdown_(siteIncoming, statusByIdW);
 siteLine.memberWarehouses = members.slice().sort();
+if (daily) siteLine.overseasAllocation = daily.summary;
 siteLine.inventoryShares = shareApplied;   // D5-V3-R5: the parts counted by share (pool x share, floored)
 siteLine.inventoryShareUnknown = shareUnknown;   // the parts NOT counted (share missing / invalid / precision / sum > 100% / pool not whole)
 siteLine.inventoryShareReconciliation = shareRecon;   // D5-V3-R5E: per warehouse, pool = counted + rounding + unassigned + not counted
@@ -1836,6 +2020,7 @@ if (wHz) { var gW = recoWsAiGateEvents_(evtRowsW, scope, sku, calc); if (gW.gate
 siteLine.aiHorizons = recoWsBuildHorizons_(calc, fcRows, tgtRowsW, gW.rows, skuMetaW, scope, sku, siteOpening, siteIncoming, upc, lineDest, whPlanModel, whSalesRate) || null; } }
 lines.push(siteLine);
 return whReturn_(lines);
+}
 }
 
 function recoWsFilterLines_(lines, filters) {
@@ -2266,6 +2451,13 @@ var fulfillmentBySku = isHybridMarketplace ? recoWsFulfillmentModelBySku_(recoWs
 var lines = [], seen = {}, issues = [];
 for (var i = 0; i < scopeSkus.length; i++) {
 var sku = scopeSkus[i], siteSku = siteSkuBySku[sku] || null, produced;
+if (calc.siteInventoryDaily && recoWsSkuInactive_(read, v.scope, sku)) {
+var inactiveLine = KMDR.buildRecommendationLine({ destination: { destinationType: 'MARKETPLACE', company: v.scope.company,
+country: v.scope.country, marketplace: v.scope.marketplace, destinationKey: 'INACTIVE||' + v.scope.company + '||' + v.scope.country + '||' + v.scope.marketplace + '||' + sku },
+recommendationMode: 'INACTIVE', sku: sku, siteSku: siteSku, blocked: true, blockedReason: 'SKU_INACTIVE',
+formulaVersion: vmeta.formulaVersion, sourceDataAsOf: vmeta.sourceDataAsOf });
+inactiveLine.skipped = true; lines.push(inactiveLine); continue;
+}
 
 
 
@@ -2288,7 +2480,7 @@ seen[ln.recommendationLineId] = 1; lines.push(ln);
 if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
 
 var vm = recommendationWorkspaceBuild_(v, calc, lines);
-return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, siteTimeZone: calc.siteTimeZone || null, horizonFormula: calc.siteInventoryDaily ? 'SITE_DAILY_V2' : null, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
+return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, siteTimeZone: calc.siteTimeZone || null, horizonFormula: calc.siteInventoryDaily ? 'SITE_DAILY_V2' : null, warehouseAllocationVersion: calc.siteInventoryDaily ? 'DAILY_3PL_V1' : null, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
 } catch (e) {
 var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
 return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });

@@ -61,6 +61,7 @@ var MODULE_ORDER = [
   'supply-planning-planning-demand',           // canonical planning-demand owner: Target%-adjusted FC + special events + current-month remaining (F1-4B-FM3f-1; no deps)
   'supply-planning-time-phased-projection',    // standalone pure chronological projection owner (F1-4B-FM3b; no deps)
   'supply-planning-horizon-projection',        // day-horizon D18/D30/D45/D90 owner (F1-4B-FM4a; requires time-phased-projection + calculations)
+  'supply-planning-daily-warehouse-allocation',
   'supply-planning-production-source',         // requires source-projection + plan-builder + allocation-facts (Round 1S-P2 / F1-5-A)
   'supply-planning-production-safety',         // standalone safety layer (Production Safety Round S0) — before writer
   'supply-planning-production-writer',         // requires production-source + orchestrator + locking + repository + safety (Round 1S-P3 writer)
@@ -134,6 +135,7 @@ var GLOBALS = [
   ['KMPD', 'supply-planning-planning-demand'],
   ['KMTPP', 'supply-planning-time-phased-projection'],
   ['KMHP', 'supply-planning-horizon-projection'],
+  ['KMDWA', 'supply-planning-daily-warehouse-allocation'],
   ['KMPS', 'supply-planning-production-source'],
   ['KMSAFE', 'supply-planning-production-safety'],
   ['KMPW', 'supply-planning-production-writer'],

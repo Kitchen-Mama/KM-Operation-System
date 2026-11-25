@@ -47,6 +47,25 @@ const small = { startTimeoutMs: 15, readTimeoutMs: 15, interval: 1, maxPolls: 2,
   const resumed = await gr.resumeIfRunning(never, { ...small, force: true, ui: { failed: () => {} } });
   check('mount status read has a finite observation deadline too', resumed.status === 'POLL_TIMEOUT');
 
+  let progress = [], observedProgressBeforeRead = false;
+  starts = reads = 0;
+  const lost = await gr.runJob(() => { starts++; return state('ACK', 'PENDING'); }, () => {
+    observedProgressBeforeRead = progress.length > 0;
+    reads++;
+    return { success: false, error: { code: 'TEMPORARY_UNAVAILABLE' } };
+  }, { ...small, maxPolls: 20, maxLostPolls: 3, ui: { progress: s => progress.push(s.status) } });
+  check('acknowledged START reports progress before the first status read', observedProgressBeforeRead && progress[0] === 'PENDING');
+  check('three unusable reads leave Starting without retrying the write or claiming failure', reads === 3 && starts === 1 && lost.finalState.status === 'POLL_TIMEOUT' && lost.finalState.transportLost && lost.finalState.lastError.includes('STATUS_READ_UNCONFIRMED'));
+  reads = 0;
+  const recoveredStatus = await gr.pollJob(() => {
+    reads++;
+    return reads === 2 ? state('ACK', 'RUNNING') : reads === 5 ? state('ACK') : { success: false };
+  }, { ...small, runId: 'ACK', maxPolls: 20, maxLostPolls: 3, maxStallPolls: 20 });
+  check('usable status resets consecutive-loss count and can still finish', reads === 5 && recoveredStatus.status === 'DONE');
+  reads = 0;
+  const rejectedStatus = await gr.pollJob(() => { reads++; throw new Error('fixture disconnect'); }, { ...small, maxPolls: 20, maxLostPolls: 3 });
+  check('repeated thrown reads use the same observation bound', reads === 3 && rejectedStatus.status === 'POLL_TIMEOUT' && rejectedStatus.transportLost);
+
   const c = makeClient({});
   c.sb.window.KM_REQUEST_TIMEOUT_MS = { write: 5 };
   let bodyResolve, posts = 0;

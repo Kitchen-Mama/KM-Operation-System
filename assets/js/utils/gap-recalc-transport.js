@@ -110,7 +110,7 @@
   function _hasLiveness(st) { return !!(st && ((typeof st.scopesProcessed === 'number' && st.scopesProcessed > 0) || st.lastContinuationScheduledAt || st.lastWorkerStartedAt)); }
   // R4J-LIVE10 §11 — TRANSPORT FAILURE != CALCULATION FAILURE. A lost/broken status RESPONSE (null, a transport-error
   // envelope, or an envelope with no usable job status) must NEVER be inferred as a stalled/failed calculation. It is
-  // simply "no news this poll" — the poller keeps observing (bounded only by maxPolls), never counting it as a stall.
+  // simply "no news this poll"; observation is bounded, optionally by consecutive lost reads, never counted as a stall.
   function _isTransportLost(res) {
     if (!res) return true;                                                    // no response object at all
     if (res.success === false && isTransportError(res.error)) return true;    // structured transport-error envelope
@@ -200,21 +200,25 @@
     var interval = opts.interval || DEFAULT_JOB_POLL_MS;
     var maxPolls = opts.maxPolls || DEFAULT_JOB_MAX_POLLS;
     var maxStallPolls = opts.maxStallPolls || DEFAULT_JOB_MAX_STALL_POLLS;
-    var bestProgress = -1, stall = 0, bestLiveness = '', beganAt = Date.now();
+    var bestProgress = -1, stall = 0, bestLiveness = '', beganAt = Date.now(), lostPolls = 0;
     function loop(n) {
       if (Date.now() - beganAt >= (opts.maxDurationMs || 2400000)) return Promise.resolve({ status: 'POLL_TIMEOUT', lastError: 'OBSERVATION_DEADLINE' });
       // §6 cooperative CANCEL — the page sets this once its backend cancel write has been issued; stop polling now
       // (backend has/there will persist CANCELLED). READ-only: this never issues a write itself.
       if (typeof opts.isCancelled === 'function' && opts.isCancelled()) { _log('CLIENT_RESET', { status: JOB_STATUS.CANCELLED }); return Promise.resolve({ status: JOB_STATUS.CANCELLED, cancelledByClient: true }); }
       return boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
-        // §11 a LOST status response is NOT progress and NOT a stall — keep observing (bounded by maxPolls only). Never
+        // A lost response is not progress or a stall. The caller may bound consecutive losses as an unknown outcome.
         // surfaced as progress (so the button keeps its last-known N/M) and never inferred as a failed calculation.
         if (_isTransportLost(res)) {
           _log('POLL_TRANSPORT_LOST', null);
+          lostPolls++;
+          if (opts.maxLostPolls && lostPolls >= opts.maxLostPolls) return { status: 'POLL_TIMEOUT', transportLost: true,
+            lastError: 'STATUS_READ_UNCONFIRMED: ' + ((res && res.error && res.error.code) || 'NO_USABLE_STATUS') };
           if (n >= maxPolls) return { status: 'POLL_TIMEOUT', transportLost: true };
           return wait(interval).then(function () { return loop(n + 1); });
         }
         var st = _stateOf(res);
+        lostPolls = 0;
         if (opts.runId && st.runId !== opts.runId) return { status: 'POLL_TIMEOUT', lastError: 'JOB_ID_MISSING_OR_MISMATCH', last: st };
         if (typeof opts.onProgress === 'function') { try { opts.onProgress(st); } catch (e) {} }
         if (_isTerminalJob(st.status) || st.status === JOB_STATUS.NONE) { _log('CLIENT_TERMINAL', st); return st; }
@@ -230,9 +234,10 @@
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', last: st };
         return wait(interval).then(function () { return loop(n + 1); });
       }).catch(function (err) {
-        // §11 a THROWN/rejected status call is a transport loss, never a calculation failure — keep observing to the
-        // bounded max (only maxPolls ends it, as POLL_TIMEOUT); a single lost response never freezes or fails the UI.
+        // A rejected read is also transport loss, not proof of backend failure; observation stays bounded.
         _log('POLL_EXCEPTION', null);
+        lostPolls++;
+        if (opts.maxLostPolls && lostPolls >= opts.maxLostPolls) return { status: 'POLL_TIMEOUT', transportLost: true, lastError: 'STATUS_READ_UNCONFIRMED' };
         if (err && err.code === 'RESPONSE_DEADLINE') return { status: 'POLL_TIMEOUT', transportLost: true, lastError: 'STATUS_RESPONSE_DEADLINE' };
         if (n >= maxPolls) return { status: 'POLL_TIMEOUT', transportLost: true };
         return wait(interval).then(function () { return loop(n + 1); });
@@ -293,7 +298,9 @@
       // §7 — a job now exists that a later mount, or another tab, has to be able to pick up.
       markJobMayBeActive(opts.product, runId);
       _log('START', startRes.data);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: runId, readTimeoutMs: opts.readTimeoutMs,
+      // The acknowledged run already exists; do not leave Starting visible until a later status read succeeds.
+      if (typeof ui.progress === 'function') { try { ui.progress(startRes.data); } catch (eProgress) {} }
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxLostPolls: opts.maxLostPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: runId, readTimeoutMs: opts.readTimeoutMs,
         onProgress: function (st) { if (typeof ui.progress === 'function') ui.progress(st); } }).then(function (finalState) {
         var status = finalState && finalState.status;
         // An observation deadline is not a backend terminal state. Keep liveness for read-only recovery.
@@ -350,7 +357,7 @@
       if (!_hasLiveness(st)) { _log('RESUME_SKIPPED', st); return st; }
       _log('RESUME_ACTIVE', st);
       if (typeof ui.resume === 'function') ui.resume(st);
-      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: st.runId, readTimeoutMs: opts.readTimeoutMs,
+      return pollJob(statusFn, { wait: opts.wait, interval: opts.interval, maxPolls: opts.maxPolls, maxLostPolls: opts.maxLostPolls, maxStallPolls: opts.maxStallPolls, isCancelled: opts.isCancelled, runId: st.runId, readTimeoutMs: opts.readTimeoutMs,
         onProgress: function (s) { if (typeof ui.progress === 'function') ui.progress(s); } }).then(function (finalState) {
         var status = finalState && finalState.status;
         if (status === JOB_STATUS.DONE || status === JOB_STATUS.CANCELLED) {

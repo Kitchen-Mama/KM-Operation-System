@@ -1018,8 +1018,8 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "90_generated_supply_planning_bundle.gs",
     "symbol": "KM_BUNDLE_CONTENT_HASH_",
-    "expected": "d7077fac95f8d30a9c9917d2f787d1e1231cde61abbdcac48be9db134437db57",
-    "owns": "the generated shared-core bundle (61 UMD modules), including the Site Inventory calendar and calendar-30 sales policy; identified by content hash"
+    "expected": "2136cd321d69e1fe44df2685815c67c60ccbd77cf169d3426720d4f166cfec72",
+    "owns": "the generated shared-core bundle (62 UMD modules), including the Site Inventory daily warehouse allocation and calendar-30 sales policy; identified by content hash"
   },
   {
     "file": "22_shipment_dispatch_handlers.gs",
