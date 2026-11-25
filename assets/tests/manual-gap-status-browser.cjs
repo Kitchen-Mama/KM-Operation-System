@@ -14,7 +14,9 @@ async function mount(page, mode) {
   await page.evaluate(mode => {
     const nativeTimer = window.setTimeout;
     // Speed up observation timers only. Production defaults remain 30s for Inventory, 120s for Submit.
-    window.setTimeout = (fn, ms, ...args) => nativeTimer(fn, [30000, 60000, 120000].includes(ms) ? 120 : ms === 3000 ? 5 : ms === 1500 ? 10 : ms, ...args);
+    // The acknowledged-progress screenshot must not race a synthetic 120ms observation deadline.
+    window.setTimeout = (fn, ms, ...args) => nativeTimer(fn, mode === 'status-delayed' && ms === 30000 ? ms
+      : [30000, 60000, 120000].includes(ms) ? 120 : ms === 3000 ? 5 : ms === 1500 ? 10 : ms, ...args);
     window.calls = { starts: 0, statuses: 0, refreshes: 0, submits: 0, plans: 0 };
     window.fixtureMode = mode;
     window.scope = { mode: 'CURRENT_SCOPE', company: 'KM', country: 'US', marketplace: 'Amazon' };

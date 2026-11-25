@@ -39,7 +39,9 @@
  *     sku_details rows, and its entire purpose is to add snapshot rows for SKUs that are NOT in the snapshot
  *     yet. A snapshot-scoped filter would silently make exactly the SKUs the operator needs unselectable.
  *
- * AUTHORITY — READS ONLY. Writes nothing, takes no lock, creates no sheet, derives no quantity, and authors no
+ * AUTHORITY — READS ONLY. Writes nothing, takes no lock, creates no sheet. The optional include.lifecycle branch
+ * joins canonical unreceived Shipment quantities through 88_ / KMSLS, separately from persisted snapshots.
+ * The default (legacy) branch derives no quantity and authors no
  * business rule. Every returned array is RAW PASSTHROUGH of persisted rows (subject only to the row filter and
  * column projection above), so the client normalizes it with the SAME normalizeOperationDb it already uses and
  * the render is unchanged: BEFORE == AFTER. Snapshot semantics, movement log, filters, quantities and warning
@@ -50,7 +52,7 @@
  */
 
 // Deployment build stamp for the OVERSEAS WORKSPACE OWNER. New in R3.
-var OSW_BUILD_VERSION_ = 'F1-7N-FB-4E-R3';
+var OSW_BUILD_VERSION_ = 'WAREHOUSE-LIFECYCLE-20261125-V1';
 
 var OSW_WS_SEQ_ = 0;   // server correlation counter (diagnostic layer, not business runtime)
 
@@ -131,7 +133,9 @@ function oswWorkspaceBuild_(tables, payload) {
 
   var snapshot = oswCap_(rawSnapshot);
   var movements = oswCap_(rawMovements);
-  var warehouses = oswCap_(oswRelevantWarehouses_(rawWarehouses, snapshot.rows, movements.rows));
+  var lifecycle = include.lifecycle === true ? wilBuildOverseas_(tables) : null;
+  var warehouses = oswCap_(oswRelevantWarehouses_(rawWarehouses, snapshot.rows,
+    movements.rows.concat(lifecycle ? lifecycle.rows.map(function (r) { return { warehouse_id: r.warehouseId }; }) : [])));
   var skus = oswCap_(oswProject_(rawSkus, OSW_SKU_COLUMNS_));
   var regional = oswCap_(oswProject_(tables.sku_regional_details || [], ['sku', 'site_sku']));
 
@@ -144,6 +148,7 @@ function oswWorkspaceBuild_(tables, payload) {
     },
     // RAW PASSTHROUGH under the sheet's own column names, so the client's existing normalizers apply unchanged.
     overseas_inventory_snapshot: snapshot.rows,
+    lifecycle: lifecycle,
     overseas_inventory_movements: movements.rows,
     warehouses: warehouses.rows,
     sku_details: skus.rows,
@@ -215,6 +220,14 @@ function handleOverseasStockWorkspaceGet_(body, io) {
       var spec = OSW_WORKSPACE_TABLES_[i];
       tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, spec.optional === true);
       readCount++;
+    }
+    if (payload.include && payload.include.lifecycle === true) {
+      WIL_SHIPPING_TABLES_.forEach(function (spec) {
+        tables[spec.name] = io.readTable(ss, spec.name, spec.requiredCols, !!spec.optional); readCount++;
+      });
+      Object.keys(tables).forEach(function (name) {
+        if (tables[name].length > OSW_WS_ROW_MAX_) throw new Error('WAREHOUSE_LIFECYCLE_ROW_LIMIT:' + name);
+      });
     }
     var vm = oswWorkspaceBuild_(tables, payload);
     return oswBuildEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: readCount });

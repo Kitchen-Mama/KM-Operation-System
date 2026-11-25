@@ -97,6 +97,7 @@ return {
 'requestOrder.workspace.get': handleRequestOrderWorkspaceGet_,
 'inventoryReplenishment.workspace.get': handleInventoryReplenishmentWorkspaceGet_,
 'overseasStock.workspace.get': handleOverseasStockWorkspaceGet_,
+'factoryInventory.workspace.get': handleFactoryInventoryWorkspaceGet_,
 'productPricing.workspace.get': handleProductPricingWorkspaceGet_,
 
 
@@ -582,6 +583,9 @@ return jsonResponse_(handleFcSummaryWorkspaceGet_(body));
 
 if (action === 'overseasStock.workspace.get') {
 return jsonResponse_(handleOverseasStockWorkspaceGet_(body));
+}
+if (action === 'factoryInventory.workspace.get') {
+return jsonResponse_(handleFactoryInventoryWorkspaceGet_(body));
 }
 if (action === 'skuDetails.workspace.get') {
 return jsonResponse_(handleSkuDetailsWorkspaceGet_(body));
@@ -1306,6 +1310,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "orderPlanningGap.job.start",
     "orderPlanningGap.recalculate.all",
     "overseasStock.workspace.get",
+    "factoryInventory.workspace.get",
     "pricing.update",
     "pricing.write.status",
     "productPricing.siteUniverse.get",
@@ -1407,6 +1412,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "openPoRemaining.raw.get",
     "orderPlanningGap.get",
     "overseasStock.workspace.get",
+    "factoryInventory.workspace.get",
     "pricing.write.status",
     "productPricing.siteUniverse.get",
     "productPricing.workspace.get",

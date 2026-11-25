@@ -142,6 +142,8 @@
     { name: 'overseasStock', label: 'Overseas Stock',
       tables: ['overseas_inventory_snapshot', 'overseas_inventory_movements', 'warehouses', 'sku_details'],
       legacyRead: 'getTable(x4)' },
+    { name: 'factoryInventory', label: 'Factory Inventory',
+      tables: ['factory_stock', 'warehouses', 'sku_details', 'sku_regional_details'], legacyRead: 'getTable(x4)' },
     // Recommendation READ-ONLY workspace (F1-4B-A) — targeted canonical tables consumed by KMPA/KMPS (never getOperationDb).
     { name: 'recommendation', label: 'Recommendation',
       tables: ['sku_details', 'marketplace_skus', 'warehouses', 'marketplaces', 'fc_regular_forecast', 'fc_special_events',
@@ -462,8 +464,8 @@
     // F1-7B-R1: weeklyShipping READ is now production-canonical (its API-3A read cutover is complete + verified).
     // Canonical = master-flag-independent; the ONLY gate/kill-switch is setWorkspaceEnabled('weeklyShipping', false).
     // F1-7C: purchaseOrder READ is now production-canonical too.
-    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true, overseasStock: true };
-    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true, overseasStock: true };
+    var WORKSPACE_CANONICAL = { recommendation: true, weeklyShipping: true, purchaseOrder: true, requestOrder: true, shipment: true, fcSummary: true, skuDetails: true, inventoryReplenishment: true, overseasStock: true, factoryInventory: true };
+    var WORKSPACE_ENABLED_DEFAULT = { weeklyShipping: true, inventoryReplenishment: true, requestOrder: true, purchaseOrder: true, shipment: true, fcSummary: true, skuDetails: true, recommendation: true, overseasStock: true, factoryInventory: true };
     var wsEnabled = {}; for (var _w in WORKSPACE_ENABLED_DEFAULT) wsEnabled[_w] = WORKSPACE_ENABLED_DEFAULT[_w];
     if (isObj(deps.workspaceFlags)) { for (var _wf in deps.workspaceFlags) wsEnabled[_wf] = deps.workspaceFlags[_wf] === true; }
     function getWorkspaceFlags() { var o = {}; for (var k in wsEnabled) o[k] = wsEnabled[k]; return o; }
@@ -1276,6 +1278,17 @@
       });
     }
     register('overseasStock', { label: 'Overseas Stock', tables: getWorkspace('overseasStock').tables, legacyRead: 'getTable(x4)', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: overseasStockResolver });
+    function factoryInventoryResolver(params, helpers, opts) {
+      var signal = opts && opts.signal;
+      if (signal && signal.aborted) { var e = new Error('aborted'); e.apiCode = 'ABORTED'; return Promise.reject(e); }
+      var dto = buildRequestEnvelope('factoryInventory.workspace.get', {}, { requestId: params && params.requestId });
+      return Promise.resolve(_workspaceInvoke(dto.action, dto, signal)).then(function (serverEnv) {
+        var env = normalizeWorkspaceEnvelope(serverEnv, dto, opts && opts.sequence);
+        env.meta.workspace = 'factoryInventory'; return env;
+      });
+    }
+    register('factoryInventory', { label: 'Factory Inventory', tables: getWorkspace('factoryInventory').tables,
+      legacyRead: 'getTable(x4)', status: WORKSPACE_STATUS.IMPLEMENTED, resolver: factoryInventoryResolver });
 
     // ---- F1-7I · Inventory Replenishment READ workspace resolver -------------------------------------------
     // Scoped read for the Inventory Replenishment page primary render (the main-table assembly). The server (60_) returns

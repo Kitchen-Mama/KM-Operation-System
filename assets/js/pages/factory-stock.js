@@ -120,6 +120,25 @@ function _fsShowInitialLoading_(root) {
 //     not gain the row the user just wrote would be a lie, and lazy loading must not create one.
 function _fsAfterWrite(cb) {
     if (!_fsScopedActive()) { if (cb) cb(); return; }
+    if (typeof window.KM.DB.loadFactoryInventoryWorkspace === 'function') {
+        var visibleMovements = window.KM.deferredRead && _fsMovState_() === 'READY', gen = ++_fsReadGen_;
+        _fsLoad = { status: 'LOADING', error: null, requests: _fsLoad.requests + 1 };
+        return _fsLoadPrimary_().then(function (m) {
+            if (gen !== _fsReadGen_) return;
+            _fsReadModel = Object.assign({}, _fsReadModel, m);
+            _fsLoad.status = 'READY';
+            if (visibleMovements) return window.KM.DB.loadScopedTables(['factory_stock_movements']).then(function (moves) {
+                if (gen !== _fsReadGen_) return;
+                _fsReadModel.factoryStockMovements = moves.factoryStockMovements; if (cb) cb();
+            });
+            if (window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
+            if (cb) cb();
+        }).catch(function (e) {
+            if (gen !== _fsReadGen_) return;
+            _fsReadModel = null; _fsLoad.status = 'ERROR'; _fsLoad.error = _fsReadFailure_(e);
+            if (cb) cb();
+        });
+    }
     var holdsMovements = (_fsMovState_() === 'READY');
     if (!holdsMovements && window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
     if (!_fsReadModel) {
@@ -194,11 +213,12 @@ function _fsLoadState_() { return _fsLoad; }
 // The ONE gate on starting a scoped read. A failure is a terminal state for this entry; it is left by an
 // explicit operator action or by a fresh route entry, never by the render that the failure produced.
 function _fsMayStartRead_() { return _fsLoad.status === 'IDLE'; }
-// A fresh route entry re-arms a previous failure — and only a previous failure. LOADING keeps its flight,
-// READY keeps its data, so re-entry never duplicates a request that is already in the air or already answered.
+// A fresh route entry rereads lifecycle facts changed by PO/Shipment pages. Keep a live flight single-owned.
 function _fsRearmOnEntry_() {
-    if (_fsLoad.status === 'ERROR' || _fsLoad.status === 'EMPTY_CONFIGURATION') {
+    if (_fsLoad.status === 'ERROR' || _fsLoad.status === 'EMPTY_CONFIGURATION' || _fsLoad.status === 'READY') {
         _fsLoad = { status: 'IDLE', error: null, requests: _fsLoad.requests };
+        _fsReadModel = null;
+        if (window.KM && window.KM.deferredRead) window.KM.deferredRead.invalidate(FS_MOVEMENTS);
         _factoryDbLoadTried = false;
     }
 }
@@ -309,7 +329,7 @@ function initFactoryStockPage() {
         // re-render below would then start the next request, which is the loop this round removed.
         // S4-R4 — three tables, not four. factory_stock_movements moved to FS_MOVEMENTS, read when the
         // Movement Log tab is first opened.
-        window.KM.DB.loadScopedTables(['factory_stock', 'sku_details', 'warehouses', 'sku_regional_details'])
+        _fsLoadPrimary_()
             .then(function (m) {
                 if (myGen !== _fsReadGen_) return;          // a newer read owns the model
                 _fsReadModel = m;
@@ -501,7 +521,12 @@ function renderFactoryStockTable(root) {
     // here was \u-escaped, so it counted one and passed while two different code paths rendered it. That check
     // is replaced this round by one that decodes escapes first — spelling is not what the operator reads.
     var _stF = _fsStateHtml_();
-    if (_stF) { fixedBody.innerHTML = ''; scrollBody.innerHTML = _stF; return; }
+    if (_stF) {
+        ['current', 'reserved', 'available', 'inproduction', 'pendingshipout'].forEach(function (k) {
+            var el = document.getElementById('fi-kpi-' + k); if (el) el.textContent = '—';
+        });
+        fixedBody.innerHTML = ''; scrollBody.innerHTML = _stF; return;
+    }
 
     // 檢查資料是否存在
     var _factoryData = null; // Default: no data
@@ -514,6 +539,7 @@ function renderFactoryStockTable(root) {
     // Reaching here means the read SUCCEEDED and carried no rows, so the sentence says that and nothing else.
     // "Not connected" is now owned solely by EMPTY_CONFIGURATION, inside the state renderer above.
     if (!_factoryData || _factoryData.length === 0) {
+        _renderFactoryKpis([]);
         fixedBody.innerHTML = '';
         scrollBody.innerHTML = '<div style="padding:20px;text-align:center;color:#94A3B8">No factory stock rows.</div>';
         return;
@@ -576,11 +602,11 @@ function renderFactoryStockTable(root) {
             <div class="scroll-cell">${_fmvEscapeHtml(item.factory)}</div>
             <div class="scroll-cell scroll-cell--category">${_fmvEscapeHtml(item.category) || na}</div>
             <div class="scroll-cell scroll-cell--series">${_fmvEscapeHtml(item.series) || na}</div>
-            <div class="scroll-cell scroll-cell--num">${item.currentStock.toLocaleString()}</div>
-            <div class="scroll-cell scroll-cell--num">${item.reservedStock.toLocaleString()}</div>
-            <div class="scroll-cell scroll-cell--num">${item.availableStock.toLocaleString()}</div>
-            <div class="scroll-cell scroll-cell--num">${na}</div>
-            <div class="scroll-cell scroll-cell--num">${na}</div>
+            <div class="scroll-cell scroll-cell--num">${_fsMetric_(item.currentStock)}</div>
+            <div class="scroll-cell scroll-cell--num">${_fsMetric_(item.reservedStock)}</div>
+            <div class="scroll-cell scroll-cell--num">${_fsMetric_(item.availableStock)}</div>
+            <div class="scroll-cell scroll-cell--num">${_fsMetric_(item.inProduction, item.lifecycleIssues)}</div>
+            <div class="scroll-cell scroll-cell--num">${_fsMetric_(item.pendingShipout, item.lifecycleIssues)}</div>
             <div class="scroll-cell">${_fmvEscapeHtml(item.lastMovement) || na}</div>
         </div>
     `).join('');
@@ -602,9 +628,24 @@ function _renderFactoryKpis(rows) {
     set('fi-kpi-current', totals.current);
     set('fi-kpi-reserved', totals.reserved);
     set('fi-kpi-available', totals.available);
-    // In Production / Pending Shipout: no authoritative wired source (see _getDbFactoryStockData). Keep "—".
-    set('fi-kpi-inproduction', null);
-    set('fi-kpi-pendingshipout', null);
+    var known = _fsReadModel && _fsReadModel.warehouseLifecycle;
+    ['inProduction', 'pendingShipout'].forEach(function (key, i) {
+        var total = known && !(rows || []).some(function (r) { return r[key] == null; })
+            ? (rows || []).reduce(function (n, r) { return n + r[key]; }, 0) : null;
+        set(i ? 'fi-kpi-pendingshipout' : 'fi-kpi-inproduction', total);
+    });
+}
+
+function _fsLoadPrimary_() {
+    var db = window.KM.DB;
+    if (typeof db.loadFactoryInventoryWorkspace !== 'function') return db.loadScopedTables(['factory_stock', 'sku_details', 'warehouses', 'sku_regional_details']);
+    return db.loadFactoryInventoryWorkspace().catch(function (e) {
+        if (['DEPLOYMENT_CONTRACT_MISMATCH', 'WORKSPACE_API_UNAVAILABLE'].indexOf(e.apiCode || e.code) < 0) throw e;
+        return db.loadScopedTables(['factory_stock', 'sku_details', 'warehouses', 'sku_regional_details']);
+    });
+}
+function _fsMetric_(n, issues) {
+    return n == null ? '<span class="fi-na" title="' + _fsEscHtml_((issues || []).join('; ') || 'Lifecycle source unavailable; update Apps Script deployment') + '">—</span>' : Number(n).toLocaleString();
 }
 
 window.initFactoryStockPage = initFactoryStockPage;
@@ -667,18 +708,26 @@ function _getDbFactoryStockData() {
     //   (company = warehouses.company, factory = warehouses.warehouse_name, country = warehouses.country).
     // sku_details is used solely to join category/series metadata (NOT as a row universe).
     // available_factory_stock = MAX(currentStock - reservedStock, 0).
-    // In Production / Pending Shipout: NO authoritative wired source on factory_stock (only fac_current_stock /
-    //   fac_reserved_stock exist). They are intentionally left null → rendered "—" (not fabricated / not derived
-    //   from unrelated statuses). Documented gap: WAREHOUSE_OPERATIONS_SPEC §6A read-only joins not implemented.
-    var rows = _fsGet('factoryStock');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
+    // Lifecycle facts are separate read-only PO/Shipment joins; never add them to physical balances.
+    var rows = _fsGet('factoryStock').slice();
+    var life = _fsReadModel && _fsReadModel.warehouseLifecycle, byKey = Object.create(null), seen = Object.create(null);
+    var key = function (w, s) { return JSON.stringify([w || '', s || '']); };
+    rows.forEach(function (r) { seen[key(r.warehouseId, r.sku)] = true; });
+    ((life && life.rows) || []).forEach(function (r) {
+        var k = key(r.warehouseId, r.sku); byKey[k] = r;
+        if (!seen[k] && (r.inProduction > 0 || r.pendingShipout > 0 || r.issues.length)) {
+            rows.push({ warehouseId: r.warehouseId, sku: r.sku, lifecycleOnly: true }); seen[k] = true;
+        }
+    });
     var whMap = _factoryWarehouseMap();
     var skuMeta = _factorySkuMetaMap();
     return rows.map(function(r) {
         var meta = skuMeta[r.sku] || { category: '', series: '' };
         var wh = whMap[r.warehouseId] || {};
-        var current = Number(r.currentStock) || 0;
-        var reserved = Number(r.reservedStock) || 0;
-        var available = Math.max(current - reserved, 0);
+        var current = r.lifecycleOnly ? null : Number(r.currentStock) || 0;
+        var reserved = r.lifecycleOnly ? null : Number(r.reservedStock) || 0;
+        var available = r.lifecycleOnly ? null : Math.max(current - reserved, 0);
+        var metric = byKey[key(r.warehouseId, r.sku)];
         var cat = meta.category || '';
         var ser = meta.series || '';
         var catSer = (cat && ser) ? (cat + ' / ' + ser) : (cat || ser || '');
@@ -695,11 +744,11 @@ function _getDbFactoryStockData() {
             currentStock: current,
             reservedStock: reserved,
             availableStock: available,
-            stockStatus: available > 0 ? 'In Stock' : 'Out of Stock',
+            stockStatus: available == null ? '' : available > 0 ? 'In Stock' : 'Out of Stock',
             lastMovement: r.lastTransactionAt || '',
-            // No authoritative source — kept null; rendered as "—" (not tracked).
-            inProduction: null,
-            pendingShipout: null
+            inProduction: metric ? metric.inProduction : null,
+            pendingShipout: metric ? metric.pendingShipout : null,
+            lifecycleIssues: metric ? metric.issues : []
         };
     });
 }
@@ -2171,7 +2220,7 @@ function _ensureFactoryStockMarkup() {
     }
     if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
         return window.KM.partialLoader
-            .loadPartial('factory-stock', 'assets/html/pages/factory-stock.html', '#factory-stock-mount')
+            .loadPartial('factory-stock', 'assets/html/pages/factory-stock.html?v=warehouse-lifecycle-20261125-v1', '#factory-stock-mount')
             .then(function() {
                 if (!document.getElementById('factory-stock-section')) {
                     console.warn('[FactoryStock] partial loaded but #factory-stock-section not found');

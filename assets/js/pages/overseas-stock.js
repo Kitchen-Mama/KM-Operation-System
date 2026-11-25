@@ -49,6 +49,17 @@ var _OS_MUTABLE_TABLES = ['overseas_inventory_snapshot', 'overseas_inventory_mov
 var _OS_LOADING_TEXT = 'Loading overseas stock…';
 function _osAfterWrite(cb) {
     if (!_osScopedActive()) { if (cb) cb(); return; }
+    if (typeof window.KM.DB.loadOverseasStockWorkspace === 'function') {
+        var gen = ++_osReadGen_;
+        _osLoad = { status: 'LOADING', error: null, requests: _osLoad.requests + 1 };
+        return _osLoadPrimary_().then(function (m) {
+            if (gen !== _osReadGen_) return;
+            _osReadModel = m; _osLoad.status = 'READY'; if (cb) cb();
+        }).catch(function (e) {
+            if (gen !== _osReadGen_) return;
+            _osReadModel = null; _osLoad.status = 'ERROR'; _osLoad.error = _osReadFailure_(e); if (cb) cb();
+        });
+    }
     if (!_osReadModel) {
         window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osReadModel = m; if (cb) cb(); }).catch(function () { if (cb) cb(); });
         return;
@@ -98,8 +109,9 @@ function _osMayStartRead_() { return _osLoad.status === 'IDLE'; }
 // A fresh route entry re-arms a previous failure, and only a previous failure — LOADING keeps its
 // flight, READY keeps its data, so re-entry never duplicates a live request or re-reads held data.
 function _osRearmOnEntry_() {
-    if (_osLoad.status === 'ERROR' || _osLoad.status === 'EMPTY_CONFIGURATION') {
+    if (_osLoad.status === 'ERROR' || _osLoad.status === 'EMPTY_CONFIGURATION' || _osLoad.status === 'READY') {
         _osLoad = { status: 'IDLE', error: null, requests: _osLoad.requests };
+        _osReadModel = null;
         _overseasDbLoadTried = false;
     }
 }
@@ -197,7 +209,7 @@ function _osLoadPrimary_() {
     if (!(window.KM && window.KM.DB && typeof window.KM.DB.loadOverseasStockWorkspace === 'function')) {
         return window.KM.DB.loadScopedTables(_OS_TABLES).then(function (m) { _osFellBackToFanOut = true; return m; });
     }
-    return window.KM.DB.loadOverseasStockWorkspace({}).catch(function (err) {
+    return window.KM.DB.loadOverseasStockWorkspace({ include: { lifecycle: true } }).catch(function (err) {
         if (!_osDeploymentLacksAction_(err)) throw err;             // every other failure is reported, not widened
         _osFellBackToFanOut = true;
         return window.KM.DB.loadScopedTables(_OS_TABLES);
@@ -424,7 +436,16 @@ function _overseasSkuMetaMap() {
 // Snapshot view: source of truth = overseas_inventory_snapshot ONLY.
 // warehouses join → company / country / warehouse_name; sku_details join → category / series.
 function _getDbOverseasSnapshotData() {
-    var rows = _osGet('overseasInventorySnapshot');   // F1-7J-A3: scoped read-model (canonical) / broad getter (Legacy)
+    var rows = _osGet('overseasInventorySnapshot').slice();
+    var life = _osReadModel && _osReadModel.warehouseLifecycle, byKey = Object.create(null), seen = Object.create(null);
+    var key = function (w, s) { return JSON.stringify([w || '', s || '']); };
+    rows.forEach(function (r) { seen[key(r.warehouseId, r.sku)] = true; });
+    ((life && life.rows) || []).forEach(function (r) {
+        var k = key(r.warehouseId, r.sku); byKey[k] = r;
+        if (!seen[k] && (r.onTheWayQty > 0 || r.issues.length)) {
+            rows.push({ warehouseId: r.warehouseId, sku: r.sku, lifecycleOnly: true }); seen[k] = true;
+        }
+    });
     var whMap = _overseasWarehouseMap();
     var skuMeta = _overseasSkuMetaMap();
     return rows.map(function(r) {
@@ -432,6 +453,7 @@ function _getDbOverseasSnapshotData() {
         var found = !!wh;
         if (!wh) wh = {};
         var meta = skuMeta[r.sku] || { category: '', series: '' };
+        var metric = byKey[key(r.warehouseId, r.sku)];
         return {
             snapshotId: r.snapshotId,
             sku: r.sku,
@@ -447,12 +469,15 @@ function _getDbOverseasSnapshotData() {
             warehouseFound: found,
             category: meta.category,
             series: meta.series,
-            availableStock: Number(r.availableStock) || 0,
-            reservedStock: Number(r.reservedStock) || 0,
-            damagedStock: Number(r.damagedStock) || 0,
-            onTheWayQty: Number(r.onTheWayQty) || 0,
-            onTheWayEta: r.onTheWayEta,
-            onTheWayBucket: r.onTheWayBucket,
+            availableStock: r.lifecycleOnly ? null : Number(r.availableStock) || 0,
+            reservedStock: r.lifecycleOnly ? null : Number(r.reservedStock) || 0,
+            damagedStock: r.lifecycleOnly ? null : Number(r.damagedStock) || 0,
+            onTheWayQty: metric ? metric.onTheWayQty : null,
+            snapshotOnTheWayQty: r.lifecycleOnly ? null : Number(r.onTheWayQty) || 0,
+            lifecycleIssues: (metric ? metric.issues : ['LIFECYCLE_SOURCE_UNAVAILABLE']).concat((life && life.issues) || []),
+            incomingShipments: metric ? metric.shipments : [],
+            onTheWayEta: metric ? metric.shipments.map(function (s) { return s.eta || 'ETA unknown'; }).join('; ') : r.onTheWayEta,
+            onTheWayBucket: '',
             eventStatus: r.eventStatus,
             reorderPoint: Number(r.reorderPoint) || 0,
             overstockPoint: Number(r.overstockPoint) || 0,
@@ -471,6 +496,8 @@ function _getDbOverseasSnapshotData() {
 // reorder_point / overstock_point are OPTIONAL snapshot columns; absent -> 0 (rule skipped).
 // This is intentionally a placeholder for the future Inventory Projection Engine.
 function _overseasWarning(item) {
+    if (item.onTheWayQty == null || (item.lifecycleIssues || []).length) return 'CHECK SOURCE';
+    if (item.availableStock == null) return 'NO SNAPSHOT';
     if (item.damagedStock > 0) return 'DAMAGED';
     if (item.overstockPoint > 0 && item.availableStock >= item.overstockPoint) return 'OVER STOCK';
     if (item.reorderPoint > 0 && item.availableStock <= item.reorderPoint) return 'LOW STOCK';
@@ -479,6 +506,7 @@ function _overseasWarning(item) {
 }
 
 function _overseasWarningHtml(warn) {
+    if (warn === 'CHECK SOURCE' || warn === 'NO SNAPSHOT') return '<span class="ovs-warn">' + warn + '</span>';
     if (warn === 'DAMAGED') return '<span class="ovs-warn ovs-warn--damaged">DAMAGED</span>';
     if (warn === 'OVER STOCK') return '<span class="ovs-warn ovs-warn--over">OVER STOCK</span>';
     if (warn === 'LOW STOCK') return '<span class="ovs-warn ovs-warn--low">LOW STOCK</span>';
@@ -490,6 +518,7 @@ function _ovsEscapeHtml(s) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function _osMetric_(n) { return n == null ? '<span title="Source unavailable">—</span>' : Number(n).toLocaleString(); }
 
 // ----------------------------------------------------------------------------
 // Snapshot country tabs — generated from distinct joined warehouses.country.
@@ -582,10 +611,10 @@ function renderOverseasSnapshotTable(root) {
             '<div class="scroll-cell">' + _ovsEscapeHtml(item.category) + '</div>' +
             '<div class="scroll-cell">' + _ovsEscapeHtml(item.series) + '</div>' +
             '<div class="scroll-cell">' + _ovsEscapeHtml(item.warehouseName) + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + item.availableStock.toLocaleString() + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + item.reservedStock.toLocaleString() + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + item.damagedStock.toLocaleString() + '</div>' +
-            '<div class="scroll-cell scroll-cell--num">' + item.onTheWayQty.toLocaleString() + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + _osMetric_(item.availableStock) + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + _osMetric_(item.reservedStock) + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + _osMetric_(item.damagedStock) + '</div>' +
+            '<div class="scroll-cell scroll-cell--num">' + _osMetric_(item.onTheWayQty) + '</div>' +
             '<div class="scroll-cell">' + _overseasWarningHtml(warn) + '</div>' +
             '<div class="scroll-cell"><button type="button" class="ovs-info-btn" onclick="openOverseasInfo(' + idx + ')">More Info</button></div>' +
             '</div>';
@@ -860,6 +889,10 @@ function openOverseasInfo(idx) {
         row('Warehouse Name', item.warehouseName) +
         row('Warehouse ID', item.warehouseId) +
         row('Site SKU', item.siteSku) +
+        row('Shipment On The Way Qty', item.onTheWayQty == null ? 'Unavailable' : item.onTheWayQty) +
+        row('Reported Snapshot On The Way Qty', item.snapshotOnTheWayQty) +
+        row('Incoming Shipments', item.incomingShipments.map(function (s) { return s.shipmentNo + ': ' + s.quantity; }).join('; ')) +
+        row('Source Checks', item.lifecycleIssues.join('; ')) +
         row('On The Way ETA', item.onTheWayEta) +
         row('On The Way Bucket', item.onTheWayBucket) +
         row('Shipment Status', item.eventStatus) +

@@ -1,0 +1,32 @@
+'use strict';
+const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), assert = require('node:assert/strict');
+const { world, fixture, root } = require('./warehouse-lifecycle.test.cjs');
+const { parts } = require('./helpers/write-command-flight-world.cjs');
+const { createApiFoundation } = require('../js/api/km-api-foundation.js');
+(async () => {
+  let checks = 0, reads = 0;
+  const eq = (a, b) => { assert.deepEqual(a, b); checks++; };
+  const c = world(), t = fixture();
+  const io = { openTarget: () => ({}), readTable: (ss, name) => t[name] || [] };
+  const api = createApiFoundation({ workspaceInvoke: async (action, dto) => {
+    reads++; eq(action, 'factoryInventory.workspace.get'); eq(dto.action, action);
+    eq(Object.isFrozen(dto.payload), true);
+    return c.handleFactoryInventoryWorkspaceGet_(dto, io);
+  } });
+  eq(api.workspaceApiActive('factoryInventory'), true);
+  const a = await api.getWorkspace('factoryInventory', { requestId: 'FACTORY-1' });
+  eq(a.success, true); eq(a.meta.workspace, 'factoryInventory'); eq(a.data.lifecycle.rows[0].inProduction, 60);
+  await api.getWorkspace('factoryInventory', { requestId: 'FACTORY-2' }); eq(reads, 2);
+  const source = fs.readFileSync(path.join(root, 'assets/specs/active/apps-script/01_router.gs'), 'utf8');
+  const body = parts(source, ['rtrGetReadHandlers_', 'rtrIsRead_']);
+  const sb = { RTR_POST_READS_: '' };
+  for (const m of body.matchAll(/:\s*([\w$]+)\s*[,}]/g)) sb[m[1]] = () => m[1];
+  vm.createContext(sb); vm.runInContext(body, sb);
+  eq(typeof sb.rtrGetReadHandlers_()['factoryInventory.workspace.get'], 'function');
+  eq(sb.rtrIsRead_('factoryInventory.workspace.get'), true);
+  eq((source.match(/"factoryInventory\.workspace\.get"/g) || []).length, 2);
+  const health = fs.readFileSync(path.join(root, 'assets/specs/active/apps-script/63_api_v1_system_health.gs'), 'utf8');
+  eq(health.includes("handler: 'handleFactoryInventoryWorkspaceGet_'"), true);
+  eq(health.includes('88_api_v1_warehouse_lifecycle.gs'), true);
+  console.log('WAREHOUSE_LIFECYCLE_WORKSPACE_PASS ' + checks + ' live_writes=0');
+})().catch(e => { console.error(e); process.exitCode = 1; });

@@ -5,14 +5,13 @@
                 <h2 class="module-title">Factory Inventory</h2>
 
                 <!-- KPI cards (Snapshot tab): Current / Reserved / Available / In Production / Pending Shipout.
-                     available_factory_stock = MAX(current - reserved, 0). In Production & Pending Shipout have no
-                     authoritative wired source yet → rendered as an explicit "—" (not tracked) state, never fabricated. -->
+                     Physical stock stays separate from the read-only PO production and Shipment reservation joins. -->
                 <div class="fi-kpi-row" id="factory-kpi-row" role="group" aria-label="Factory Inventory summary">
                     <div class="fi-kpi-card"><div class="fi-kpi-label">Current Stock</div><div class="fi-kpi-value" id="fi-kpi-current">—</div></div>
                     <div class="fi-kpi-card"><div class="fi-kpi-label">Reserved Stock</div><div class="fi-kpi-value" id="fi-kpi-reserved">—</div></div>
                     <div class="fi-kpi-card fi-kpi-card--accent"><div class="fi-kpi-label">Available Stock</div><div class="fi-kpi-value" id="fi-kpi-available">—</div></div>
-                    <div class="fi-kpi-card fi-kpi-card--muted"><div class="fi-kpi-label">In Production</div><div class="fi-kpi-value" id="fi-kpi-inproduction">—</div><div class="fi-kpi-note">Not tracked yet</div></div>
-                    <div class="fi-kpi-card fi-kpi-card--muted"><div class="fi-kpi-label">Pending Shipout</div><div class="fi-kpi-value" id="fi-kpi-pendingshipout">—</div><div class="fi-kpi-note">Not tracked yet</div></div>
+                    <div class="fi-kpi-card"><div class="fi-kpi-label">In Production</div><div class="fi-kpi-value" id="fi-kpi-inproduction">—</div></div>
+                    <div class="fi-kpi-card"><div class="fi-kpi-label">Pending Shipout</div><div class="fi-kpi-value" id="fi-kpi-pendingshipout">—</div></div>
                 </div>
 
                 <!-- Tabs: Stock Snapshot / Movement Log -->

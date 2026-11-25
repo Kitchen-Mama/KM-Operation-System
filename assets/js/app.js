@@ -199,7 +199,7 @@ var KM_ROUTE_ASSETS_ = {
     'overseas-stock': {
         sectionId: 'overseas-stock-section',
         scripts: [
-            'assets/js/pages/overseas-stock.js?v=write-flight-done-20261124'
+            'assets/js/pages/overseas-stock.js?v=warehouse-lifecycle-20261125-v1'
         ],
         partial: { key: 'overseas-stock', url: 'assets/html/pages/overseas-stock.html',
             target: '#overseas-stock-mount' },

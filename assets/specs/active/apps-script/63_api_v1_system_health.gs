@@ -647,6 +647,7 @@ var SYS_REQUIRED_ACTIONS_ = [
 
 
 { action: 'overseasStock.workspace.get', handler: 'handleOverseasStockWorkspaceGet_', used_by: 'Overseas Inventory scoped read (owner = 70_)' },
+{ action: 'factoryInventory.workspace.get', handler: 'handleFactoryInventoryWorkspaceGet_', used_by: 'Factory Inventory lifecycle read (owner = 88_)' },
 
 
 
@@ -892,8 +893,14 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "70_api_v1_overseas_stock_workspace.gs",
     "symbol": "OSW_BUILD_VERSION_",
-    "expected": "F1-7N-FB-4E-R3",
+    "expected": "WAREHOUSE-LIFECYCLE-20261125-V1",
     "owns": "Overseas Stock scoped read workspace"
+  },
+  {
+    "file": "88_api_v1_warehouse_lifecycle.gs",
+    "symbol": "FIW_BUILD_VERSION_",
+    "expected": "WAREHOUSE-LIFECYCLE-20261125-V1",
+    "owns": "Read-only warehouse Shipment incoming and factory PO production / Shipment reservation joins"
   },
   {
     "file": "72_api_v1_product_pricing_workspace.gs",

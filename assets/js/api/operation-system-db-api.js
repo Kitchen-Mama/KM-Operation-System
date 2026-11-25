@@ -2671,6 +2671,23 @@ window.KM.DB.loadOverseasStockWorkspace = async function (opts) {
     scoped._scopedTables = Object.keys(rawDb);
     scoped._workspaceMeta = { action: 'overseasStock.workspace.get', counts: d.counts || null,
         capped: d.capped || null, projection: d.projection || null, requests: 1 };
+    scoped.warehouseLifecycle = d.lifecycle || null;
+    return scoped;
+};
+
+window.KM.DB.loadFactoryInventoryWorkspace = async function () {
+    var api = window.KM && window.KM.api;
+    if (!api || typeof api.getWorkspace !== 'function') { var missing = new Error('Workspace API unavailable'); missing.apiCode = 'WORKSPACE_API_UNAVAILABLE'; throw missing; }
+    var env = await api.getWorkspace('factoryInventory', {});
+    if (!env || env.success === false) {
+        var err = env && env.errors && env.errors[0];
+        var e = new Error((err && err.message) || 'Factory Inventory read failed');
+        e.apiCode = (err && err.code) || 'FACTORY_LIFECYCLE_READ_FAILED'; throw e;
+    }
+    var d = env.data || {}, scoped = normalizeOperationDb({ factory_stock: d.factory_stock || [],
+        warehouses: d.warehouses || [], sku_details: d.sku_details || [], sku_regional_details: d.sku_regional_details || [] });
+    scoped.warehouseLifecycle = d.lifecycle || null;
+    scoped._sourceMode = 'google-sheet'; scoped._workspaceMeta = env.meta || {};
     return scoped;
 };
 
@@ -5018,6 +5035,7 @@ var KM_REQUIRED_DEPLOYED_ACTIONS_ = [
     // cut over, so a deployment without this action cannot render Overseas Inventory at all, and that must be a
     // named deployment fact rather than a failed read the user has to interpret.
     'overseasStock.workspace.get',
+    'factoryInventory.workspace.get',
     // F1-7N-FB-4D §E — the Site Inventory WRITE chain. Every step of Add Route -> save -> readback -> Submit
     // depends on these, and a deployment missing any one of them fails in a way that looks like a data problem.
     'upsertShippingAllocationDraftLines', 'getShippingAllocationDraftWorkspace',
