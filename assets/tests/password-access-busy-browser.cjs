@@ -34,7 +34,8 @@ async function fixture(browser, width, options = {}) {
     if (body.action === 'auth.config') reply = options.configBad ? { success: false, code: 'AUTH_NOT_CONFIGURED' } : { success: true, version: 1, salt, iterations: 600000, hash: 'SHA-256' };
     else if (body.action === 'auth.login') {
       if (options.networkFailure) return route.abort('failed');
-      reply = body.password_key !== expected ? { success: false, code: 'AUTH_INVALID_PASSWORD' } : replies.length ? replies.shift() : { success: true, access_session: session, expires_at: Date.now() + 3600000 };
+      const expiry = Date.now() + (options.expiryOffsetMs || 3600000);
+      reply = body.password_key !== expected ? { success: false, code: 'AUTH_INVALID_PASSWORD' } : replies.length ? replies.shift() : { success: true, access_session: session, expires_at: options.expiryType === 'string' ? String(expiry) : expiry };
     } else reply = businessReply;
     return route.fulfill({ contentType: 'application/json', headers: { 'access-control-allow-origin': '*' }, body: JSON.stringify(reply) });
   });
@@ -53,7 +54,8 @@ async function fixture(browser, width, options = {}) {
   };
   return { page, context, requests, errors, outbound, logins, business, submit, mount, setBusinessReply: r => { businessReply = r; } };
 }
-(async () => {
+module.exports = { fixture, endpoint, root };
+if (require.main === module) (async () => {
   fs.mkdirSync(out, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {

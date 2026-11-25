@@ -1,6 +1,10 @@
 (function () {
     'use strict';
     var nativeFetch = window.fetch.bind(window), session = '', expires = 0, endpoint = '', lastFailure = null;
+    var restoreState = 'ABSENT', storageAvailable = true;
+    function expiryNumber(value) {
+        return typeof value === 'number' || typeof value === 'string' && /^\d{10,16}$/.test(value) ? Number(value) : NaN;
+    }
     // Public endpoint only. Never copy the Sandbox caller credential into the login layer.
     endpoint = window.KM_PRODUCTION_CONFIG_ && window.KM_PRODUCTION_CONFIG_.endpoint || '';
     var meta = document.querySelector('meta[name="km-access-endpoint"]');
@@ -8,30 +12,33 @@
     var endpointOk = /^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/.test(endpoint);
     var storageKey = 'km-password-access-v1:' + endpoint;
     function forgetSession() {
-        try { window.sessionStorage.removeItem(storageKey); } catch (e) { /* Storage may be disabled. */ }
+        try { window.sessionStorage.removeItem(storageKey); } catch (e) { storageAvailable = false; }
     }
     function rememberSession() {
-        try { window.sessionStorage.setItem(storageKey, JSON.stringify({ version: 1, endpoint: endpoint, access_session: session, expires_at: expires })); } catch (e) { /* Keep memory-only access when storage is unavailable. */ }
+        try { window.sessionStorage.setItem(storageKey, JSON.stringify({ version: 1, endpoint: endpoint, access_session: session, expires_at: expires })); } catch (e) { storageAvailable = false; }
     }
     function restoreSession() {
         if (!endpointOk) return;
         try {
             var saved = JSON.parse(window.sessionStorage.getItem(storageKey) || 'null'), now = Date.now();
             if (!saved) return;
+            var expiry = expiryNumber(saved.expires_at);
             if (saved.version !== 1 || saved.endpoint !== endpoint || typeof saved.access_session !== 'string' ||
-                !/^[0-9a-f]{64}$/.test(saved.access_session) || typeof saved.expires_at !== 'number' ||
-                !isFinite(saved.expires_at) || saved.expires_at <= now || saved.expires_at - now > 4 * 60 * 60 * 1000) {
+                !/^[0-9a-f]{64}$/.test(saved.access_session) ||
+                !isFinite(expiry) || expiry <= now || expiry - now > 4 * 60 * 60 * 1000) {
+                restoreState = isFinite(expiry) && expiry <= now ? 'EXPIRED' : 'INVALID';
                 forgetSession(); return;
             }
-            session = saved.access_session; expires = saved.expires_at;
-        } catch (e) { forgetSession(); }
+            session = saved.access_session; expires = expiry; restoreState = 'RESTORED';
+        } catch (e) { restoreState = 'STORAGE_UNAVAILABLE'; storageAvailable = false; forgetSession(); }
     }
     // Same-tab reload only. The server still checks expiry and revocation on every request.
     restoreSession();
     var waiting = [], cover, form, error, field, busy = false, configFlight = null, configStarted = 0;
     function locked() { return !session || Date.now() >= expires; }
     function sessionRefused(code) {
-        return /^AUTH_/.test(code) && !/^AUTH_(MODULE_MISSING|RATE_LIMIT|LOCK_UNAVAILABLE|LOCK_TIMEOUT|BUSY|SERVICE_UNAVAILABLE|INTERNAL_ERROR)$/.test(code);
+        // Only an explicit session rejection invalidates a login; infrastructure/configuration errors do not.
+        return /^(AUTH_REQUIRED|AUTH_SESSION_(REQUIRED|MISSING|INVALID|INVALIDATED|EXPIRED|REVOKED|NOT_FOUND)|AUTH_(INVALID|EXPIRED|REVOKED|MISSING)_SESSION|AUTH_EXPIRED|AUTH_REVOKED)$/.test(code);
     }
     function show(message) {
         session = ''; expires = 0; forgetSession();
@@ -54,6 +61,9 @@
     window.KM = window.KM || {};
     window.KM.passwordAccess = { whenSignedIn: ready, isSignedIn: function () { return !locked(); }, assertWriteAllowed: function () { if (locked()) { show('Please sign in again.'); throw authError(); } } };
     window.KM.passwordAccess.lastFailure = function () { return lastFailure ? { code: lastFailure.code, phase: lastFailure.phase || 'request', at: lastFailure.at } : null; };
+    window.KM.passwordAccess.diagnostics = function () { return { build: 'auth-reload-20261125-v3', signedIn: !locked(),
+        restoreState: restoreState, storageAvailable: storageAvailable,
+        expiresAt: expires ? new Date(expires).toISOString() : null, lastFailure: window.KM.passwordAccess.lastFailure() }; };
     function failureCode(r, fallback) { return r && typeof r.code === 'string' && /^[A-Z][A-Z0-9_]{1,63}$/.test(r.code) ? r.code : fallback; }
     function loginMessage(code) {
         if (/^AUTH_(BUSY|LOCK_UNAVAILABLE|LOCK_TIMEOUT|SERVICE_UNAVAILABLE)$/.test(code)) return 'Sign-in service is busy. Please wait a moment and try again. (' + code + ')';
@@ -101,13 +111,15 @@
             var bytes = new Uint8Array(await crypto.subtle.deriveBits({ name: 'PBKDF2', salt: salt, iterations: 600000, hash: 'SHA-256' }, key, 256));
             derived = Array.from(bytes, function (b) { return ('0' + b.toString(16)).slice(-2); }).join(''); bytes.fill(0);
             var r = await requestLogin(derived); derived = '';
-            if (!r || !r.success || !/^[0-9a-f]{64}$/.test(r.access_session) || !isFinite(r.expires_at) || r.expires_at <= Date.now()) {
+            var reportedExpiry = expiryNumber(r && r.expires_at);
+            if (!r || !r.success || !/^[0-9a-f]{64}$/.test(r.access_session) || !isFinite(reportedExpiry) || reportedExpiry <= Date.now()) {
                 configFlight = null;
                 var code = failureCode(r, 'AUTH_RESPONSE_INVALID');
                 lastFailure = { code: code, phase: 'login', at: Date.now() };
                 error.textContent = loginMessage(code); return;
             }
-            session = r.access_session; expires = r.expires_at; lastFailure = null; rememberSession(); cover.hidden = true;
+            session = r.access_session; expires = Math.min(reportedExpiry, Date.now() + 4 * 60 * 60 * 1000);
+            restoreState = 'SIGNED_IN'; lastFailure = null; rememberSession(); cover.hidden = true;
             var q = waiting; waiting = []; q.forEach(function (w) { w.resolve(); });
         } catch (e) {
             configFlight = null;

@@ -22,11 +22,11 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
-test('baseline reproduces blocked edits; only monthly edit and warehouse read are newly allowed', () => {
+test('baseline reproduces blocked edits; only monthly edit, warehouse read and job-status read are newly allowed', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
-  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', body.action].sort());
-  assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action));
-  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get'), oldP.reads);
+  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', body.action].sort());
+  assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action && a !== 'gapJob.status.get'));
+  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get'), oldP.reads);
   assert.equal(p.ai_plan_enabled, false);
 });
 test('policy hash, public config and health module stamps agree', () => {
@@ -147,4 +147,30 @@ test('pre-warehouse exact policy keeps existing reads and manual edit, but block
   const before = g.sent.length;
   await assert.rejects(g.w.fetch(p.endpoint + '?action=factoryInventory.workspace.get'), /WAREHOUSE_BACKEND_UPDATE_REQUIRED/);
   assert.equal(g.sent.length, before);
+});
+
+test('Check status passes both real production gates as a read, without a write assertion', async () => {
+  const g = guard(), request = { action: 'gapJob.status.get', payload: { product: 'INVENTORY', runId: 'RUN' } };
+  assert.equal(c.rtrActionGate_(request.action, request), null);
+  assert.equal(p.reads.includes(request.action), true); assert.equal(p.blocked.includes(request.action), false);
+  await g.w.fetch(p.endpoint + '?action=gapJob.status.get&km_body=' + encodeURIComponent(JSON.stringify(request)), { method: 'GET' });
+  assert.equal(g.sent.length, 2); assert.equal(g.writes.length, 0);
+  assert(g.sent[1].url.includes('gapJob.status.get'));
+});
+
+test('pre-status exact policy retains warehouse reads but requires the new router for job status', async () => {
+  const previous = { ...p, policy_sha256: 'ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab' }, g = guard(previous);
+  await g.w.fetch(p.endpoint + '?action=factoryInventory.workspace.get');
+  const before = g.sent.length;
+  await assert.rejects(g.w.fetch(p.endpoint + '?action=gapJob.status.get'), /STATUS_BACKEND_UPDATE_REQUIRED/);
+  assert.equal(g.sent.length, before);
+});
+
+test('real status transport preserves production guard refusal instead of disguising it as a network error', async () => {
+  const { makeClient } = require('./helpers/write-command-flight-world.cjs'), h = makeClient();
+  let calls = 0;
+  h.sb._kmFetchBounded_ = () => { calls++; return Promise.reject(new Error('PRODUCTION_STATUS_BACKEND_UPDATE_REQUIRED')); };
+  const result = await h.DB.getGapJobStatus('INVENTORY', 'RUN');
+  assert.equal(result.success, false); assert.equal(result.error.code, 'PRODUCTION_STATUS_BACKEND_UPDATE_REQUIRED');
+  assert.equal(calls, 1);
 });

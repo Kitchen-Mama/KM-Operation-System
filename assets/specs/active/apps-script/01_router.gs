@@ -1279,6 +1279,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "fcSummary.workspace.get",
     "finalizeShipmentFinalOutput",
     "fxRateBook.get",
+    "gapJob.status.get",
     "generateShipmentLineAllocations",
     "getClientCapabilities",
     "getOperationDb",
@@ -1394,6 +1395,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "fcSummary.raw.get",
     "fcSummary.workspace.get",
     "fxRateBook.get",
+    "gapJob.status.get",
     "getClientCapabilities",
     "getOperationDb",
     "getRecommendationDraftToken",
@@ -1449,7 +1451,6 @@ var RTR_PRODUCTION_PROFILE_ = {
     "factoryOperationConfig.save",
     "flowASchemaLineagePreflight",
     "fxRateBook.save",
-    "gapJob.status.get",
     "generateRecommendationDraftLocked",
     "marketplace.allocationPriority.set",
     "overseasAllocationPreview.job.cancel",
@@ -1793,7 +1794,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab"
+  "policy_sha256": "320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

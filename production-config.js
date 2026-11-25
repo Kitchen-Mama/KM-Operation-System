@@ -35,6 +35,7 @@
     "fcSummary.workspace.get",
     "finalizeShipmentFinalOutput",
     "fxRateBook.get",
+    "gapJob.status.get",
     "generateShipmentLineAllocations",
     "getClientCapabilities",
     "getOperationDb",
@@ -150,6 +151,7 @@
     "fcSummary.raw.get",
     "fcSummary.workspace.get",
     "fxRateBook.get",
+    "gapJob.status.get",
     "getClientCapabilities",
     "getOperationDb",
     "getRecommendationDraftToken",
@@ -217,5 +219,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab"
+  "policy_sha256": "320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

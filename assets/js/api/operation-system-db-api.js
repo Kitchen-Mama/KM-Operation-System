@@ -5909,7 +5909,8 @@ async function _kmGapRead_(action, payload) {
         catch (netErr) {
             try { if (typeof _kmReportSample_ === 'function') _kmReportSample_(action, 'read', _t0, (netErr && netErr.kmTimeout) ? 'REQUEST_TIMEOUT' : 'HTTP_TRANSPORT_ERROR', 'DISPATCH', 0); } catch (e) {}
             if (netErr && netErr.kmTimeout) return { success: false, error: _kmTimeoutError_(action, 'read', netErr.timeoutMs) };
-            return { success: false, error: { code: 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
+            var guardCode = netErr && /^PRODUCTION_[A-Z0-9_]+$/.test(netErr.message || '') ? netErr.message : null;
+            return { success: false, error: { code: guardCode || 'HTTP_TRANSPORT_ERROR', message: 'Network error: ' + (netErr && netErr.message ? netErr.message : netErr) } };
         }
         text = ''; try { text = await resp.text(); } catch (e) { text = ''; }
         _cls = _kmClassifyAnswer_(action, 'read', resp, text, url);

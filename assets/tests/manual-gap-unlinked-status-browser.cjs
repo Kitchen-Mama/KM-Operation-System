@@ -40,6 +40,11 @@ const action = (page, label) => page.getByRole('button', { name: label, exact: t
           await page.evaluate(() => calls.statuses === 1) && await page.getByRole('button', { name: 'Checking...', exact: true }).isDisabled());
         await page.evaluate(() => { for (let i = 0; i < 8; i++) _irManualGapCheck_(); resolveStatusCheck(job('DONE', 'OLD')); });
         await page.waitForFunction(() => _irManualGap && !_irManualGap.checking);
+        check(width + ' completed check has visible time/result and a credential-free Console diagnostic',
+          (await notice(page)).includes('Last check:') && await page.evaluate(() => {
+            const d = _irJobStatusDiagnostic_(); return d.requestCount >= 1 && d.serverStatus === 'DONE' &&
+              d.build === 'forecast-year-reset-20261125-v3' && !JSON.stringify(d).includes('access_session');
+          }));
         check(width + ' unrelated DONE is displayed but never confirms the original request',
           (await notice(page)).includes('Latest server job: DONE') && (await notice(page)).includes('cannot prove') &&
           await page.evaluate(() => calls.statuses === 1 && !_irManualGap.runId && calls.refreshes === 0));

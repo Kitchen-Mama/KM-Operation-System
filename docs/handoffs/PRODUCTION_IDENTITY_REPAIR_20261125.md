@@ -7,7 +7,8 @@ This repair keeps all production identity checks enabled:
 - Router and health both require the actual OSW/FIW warehouse lifecycle module stamps.
 - Router policy SHA-256 is regenerated from the complete structured profile, excluding its digest field.
 - Public frontend config is the exact permitted projection of that profile.
-- The guard accepts only the current policy or two explicitly pinned prior rollout policies, and blocks actions unavailable in a prior policy.
+- The guard accepts only the current policy or three explicitly pinned prior rollout policies, and blocks actions unavailable in a prior policy.
+- `gapJob.status.get` was separately still blocked by the original production policy. It is now explicitly allowed as a READ in both frontend and router, not as a write or a policy bypass.
 - A failed identity read no longer poisons every later read with a permanently cached rejected promise. A retry still performs all identity checks.
 
 ## Required Owner Deployment
@@ -18,7 +19,8 @@ Otherwise install `01_router.gs`, `63_api_v1_system_health.gs`, `70_api_v1_overs
 
 Do not change endpoint, database, credentials, configuration, or other installed handlers. The frontend `production-config.js` and `production-guard.js` must also be published from this repair; hard-refresh the app after GitHub Pages deployment.
 
-Policy SHA-256: `ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab`.
+Policy SHA-256: `320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221`.
+The earlier `ab29...` / v2 package is superseded for status-query recovery. Use `output/production-identity-20261125/km-production-status-20261125-v3.zip` or the current repository router.
 OSW/FIW stamps: `WAREHOUSE-LIFECYCLE-20261125-V1`.
 
 The updated production integration suite checks profile digest, config projection, actual module stamps, backend readiness, old-policy compatibility, wrong-database rejection, partial-deployment rejection, and failed-read recovery.

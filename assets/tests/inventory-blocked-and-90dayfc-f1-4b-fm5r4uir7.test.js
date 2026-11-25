@@ -56,27 +56,28 @@ var MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oc
 function num(v) { v = parseFloat(v); return isFinite(v) ? v : 0; }
 function eqf(a, b) { return String(a == null ? '' : a).trim().toLowerCase() === String(b == null ? '' : b).trim().toLowerCase(); }
 function targetPct() { return 100; }
-var mod = (new Function('num', 'eq', 'MONTHS', 'targetPct', slice + '\n;return { forecast60d: forecast60d };'))(num, eqf, MONTHS, targetPct);
+var mod = require('./inventory-forecast-year.test.cjs').world().window.IRMap;
 var f90 = mod.forecast60d;
 
-var cm = new Date().getMonth();
+var cm = 10; // The shared fixture is fixed at the AU planning date 2026-11-25.
 var m1 = MONTHS[(cm + 1) % 12], m2 = MONTHS[(cm + 2) % 12], m3 = MONTHS[(cm + 3) % 12];
 var allowedMo = ((cm + 1) % 12) + 1;          // a calendar month inside the next-3-month window
 var outsideMo = ((cm + 5) % 12) + 1;          // a month outside the window
-var fcRow = { sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'Amazon' };
+var fcRow = { sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'Amazon', year: 2026 };
 MONTHS.forEach(function (mn, i) { fcRow[mn] = (i + 1) * 10; });   // jan=10, feb=20, … dec=120 (distinct)
 var base3 = fcRow[m1] + fcRow[m2] + fcRow[m3];
+var fcRows = [fcRow, Object.assign({}, fcRow, { year: 2027 })];
 var scope = { sku: 'CO1100-R', company: 'KM', country: 'US', marketplace: 'Amazon', series: '', category: '' };
 
-eq(f90([fcRow], [], scope, []), base3, 'F1 three next-month Base FC values summed (no Target%, no 2-month legacy)');
-var evIn = { sku: 'CO1100-R', status: '', eventMonth: allowedMo, fcQty: 100 };
-eq(f90([fcRow], [], scope, [evIn]), base3 + 100, 'F2 a Special Event inside the 3-month window adds its fcQty ONCE');
-var evOut = { sku: 'CO1100-R', status: '', eventMonth: outsideMo, fcQty: 100 };
-eq(f90([fcRow], [], scope, [evOut]), base3, 'F3 a Special Event OUTSIDE the window is excluded');
-eq(f90([fcRow], [], scope, [evIn, evIn]), base3 + 200, 'F4 model-independent: same reference rule regardless of Planning Model (function takes no model)');
-eq(f90([fcRow], [], scope, []), base3, 'F5 no events → Base FC only (missing event ≠ missing total when Base FC exists)');
+eq(f90(fcRows, [], scope, []), base3, 'F1 three next-month Base FC values summed (no Target%, no 2-month legacy)');
+var evIn = { sku: 'CO1100-R', status: '', year: 2026, eventMonth: allowedMo, fcQty: 100 };
+eq(f90(fcRows, [], scope, [evIn]), base3 + 100, 'F2 a Special Event inside the year-month window adds its fcQty ONCE');
+var evOut = { sku: 'CO1100-R', status: '', year: 2027, eventMonth: outsideMo, fcQty: 100 };
+eq(f90(fcRows, [], scope, [evOut]), base3, 'F3 a Special Event OUTSIDE the window is excluded');
+eq(f90(fcRows, [], scope, [evIn, evIn]), base3 + 200, 'F4 model-independent: same reference rule regardless of Planning Model (function takes no model)');
+eq(f90(fcRows, [], scope, []), base3, 'F5 no events → Base FC only (missing event ≠ missing total when Base FC exists)');
 ok(!/avgSalesPerDay|d90|demandQty|currentStock|gap/i.test(slice), 'F6 the reference owner never references avg-sales / D90 demand / current stock / gap (pure FC reference)');
-eq(f90([], [], scope, [evIn]), 100, 'F7 no Base FC row → 0 base, event still counts (no inventory subtraction anywhere)');
+eq(f90([], [], scope, [evIn]), null, 'F7 missing annual FC stays unknown, never a fabricated zero base');
 
 section('§F the 3PL planning calc is DECOUPLED from the reference field (no planning formula consumes it)');
 ok(/function _irForecastPlanning2mo/.test(JS), 'P1 a separate planning-only 2-month owner exists');

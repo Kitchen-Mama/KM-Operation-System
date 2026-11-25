@@ -605,57 +605,53 @@ window.IRMap = (function () {
   //   It reuses the SAME already-loaded fc_regular_forecast + fc_special_events facts that power the Forecast
   //   Breakdown + Upcoming Event cards. Sales-Driven and Forecast-Driven SKUs display the SAME reference.
   //   (`rules` retained in the signature for call-site compatibility; Target% is intentionally NOT applied.)
-  function forecast60d(fcRows, rules, scope, events) {
-    var cm = new Date().getMonth();
-    var base = 0;
-    if (fcRows && fcRows.length) {
-      var fc = fcRows.find(function (r) {
-        return eq(r.sku, scope.sku)
-          && (!scope.company || !r.company || eq(r.company, scope.company))
-          && (!scope.country || !r.country || eq(r.country, scope.country))
-          && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
-      });
-      if (fc) base = num(fc[MONTHS[(cm + 1) % 12]]) + num(fc[MONTHS[(cm + 2) % 12]]) + num(fc[MONTHS[(cm + 3) % 12]]);
+  function forecastWindow(fcRows, rules, scope, epochMs) {
+    var A = trAuthority(), cal = window.KM && window.KM.siteCalendar, months = [], day;
+    try { day = cal.localDate(epochMs == null ? Date.now() : epochMs, scope.country); }
+    catch (e) { return { months: [], baseTotal: null, adjustedTotal: null }; }
+    var year = Number(day.slice(0, 4)), month = Number(day.slice(5, 7)) - 1;
+    var raw = (fcRows || []).map(function (r) { return r.raw || r; });
+    var labels = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
+    for (var off = 1; off <= 3; off++) {
+      var t = month + off, y = year + Math.floor(t / 12), mi = t % 12;
+      var ym = y + '-' + ('0' + (mi + 1)).slice(-2);
+      // Use the same exact-year, exact-scope base authority as the daily Forecast-Driven core.
+      var base = A && A.baseRegularFc ? A.baseRegularFc(raw, scope, scope.sku, ym) : null;
+      var meta = raw.find(function (r) { return Number(r.year) === y && eq(r.sku, scope.sku)
+        && eq(r.company, scope.company) && eq(r.country, scope.country) && eq(r.marketplace, scope.marketplace); }) || {};
+      var pct = targetPct(rules, Object.assign({}, scope, { category: scope.category || meta.category, series: scope.series || meta.series }), ym);
+      months.push({ ym: ym, label: labels[mi] + ' ' + y, base: base,
+        adjusted: base === null || pct === null ? null : Math.round(base * pct / 100) });
     }
-    // Special events whose applicable calendar month ∈ the next-3 forecast months, active + scope-matched, once.
-    var allowed = {}; allowed[((cm + 1) % 12) + 1] = 1; allowed[((cm + 2) % 12) + 1] = 1; allowed[((cm + 3) % 12) + 1] = 1;
+    function total(key) {
+      return months.some(function (m) { return m[key] === null; }) ? null
+        : months.reduce(function (n, m) { return n + m[key]; }, 0);
+    }
+    return { months: months, baseTotal: total('base'), adjustedTotal: total('adjusted') };
+  }
+  function forecast60d(fcRows, rules, scope, events, epochMs, windowFacts) {
+    var facts = windowFacts || forecastWindow(fcRows, rules, scope, epochMs);
+    if (facts.baseTotal === null) return null;
+    var allowed = {}; facts.months.forEach(function (m) { allowed[m.ym] = true; });
     var evtQty = 0;
     (events || []).forEach(function (ev) {
       if (!_irEventActive(ev) || !_irEventScopeMatch(ev, scope)) return;
-      var mo = parseEventMonth(ev);
-      if (mo === null) { var sd = _irParseDate(ev.eventStartDate); if (sd) mo = sd.getMonth() + 1; }
-      if (mo === null || !allowed[mo]) return;
+      var sd = _irParseDate(ev.eventStartDate), mo = parseEventMonth(ev);
+      if (mo === null && sd) mo = sd.getMonth() + 1;
+      var year = /^\d{4}$/.test(String(ev.year || '')) ? Number(ev.year) : sd ? sd.getFullYear() : null;
+      if (mo === null || year === null || !allowed[year + '-' + ('0' + mo).slice(-2)]) return;
       evtQty += num(ev.fcQty);
     });
-    return Math.round(base + evtQty);
+    return Math.round(facts.baseTotal + evtQty);
   }
 
   // Planning-only 2-month Target%-adjusted forecast used by the 3PL 18-day site-planning allocation (§20/§23/§24).
   // Kept SEPARATE from the UI "90 days FC" reference (forecast60d) so the R7 §F reference-field redefinition never
   // leaks into a planning/shortage calc. This preserves the pre-R7 3PL allocation behavior byte-for-byte.
   function _irForecastPlanning2mo(fcRows, rules, scope) {
-    if (!fcRows || !fcRows.length) return 0;
-    var fc = fcRows.find(function (r) {
-      return eq(r.sku, scope.sku)
-        && (!scope.company || !r.company || eq(r.company, scope.company))
-        && (!scope.country || !r.country || eq(r.country, scope.country))
-        && (!scope.marketplace || !r.marketplace || eq(r.marketplace, scope.marketplace));
-    });
-    if (!fc) return 0;
-    // Each month carries its OWN percentage. The single flat multiplier this used to apply is exactly the
-    // defect: jan_pct..dec_pct are twelve independent values, not twelve copies of one.
-    var sc = {
-      company: scope.company, country: scope.country, marketplace: scope.marketplace,
-      sku: scope.sku, series: fc.series || scope.series, category: fc.category || scope.category
-    };
-    var total = 0;
-    for (var off = 1; off <= 2; off++) {
-      var t = new Date().getMonth() + off, mi = t % 12;
-      var p = targetPct(rules, sc, trYm(off));
-      if (p === null) return null;               // refusal — never a fabricated planning number
-      total += Math.round(num(fc[MONTHS[mi]]) * p / 100);
-    }
-    return total;
+    var months = forecastWindow(fcRows, rules, scope).months.slice(0, 2);
+    return months.length !== 2 || months.some(function (m) { return m.adjusted === null; }) ? null
+      : months.reduce(function (n, m) { return n + m.adjusted; }, 0);
   }
 
   function parseEventMonth(ev) {
@@ -1070,7 +1066,7 @@ window.IRMap = (function () {
   return {
     num: num, latestSnapshot: latestSnapshot, stockCard: stockCard,
     longTermStorage: longTermStorage, salesTrend7d: salesTrend7d, avgSalesPerDay: avgSalesPerDay,
-    targetPct: targetPct, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty, upcomingEvents: upcomingEvents,
+    targetPct: targetPct, forecastWindow: forecastWindow, forecast60d: forecast60d, upcomingEventQty: upcomingEventQty, upcomingEvents: upcomingEvents,
     thirdPartyStock: thirdPartyStock, physicalFactoryByCountry: physicalFactoryByCountry,
     factorySiteAllocation: factorySiteAllocation,
     eligible3plWarehouses: eligible3plWarehouses, sharedPhysicalPool: sharedPhysicalPool,
@@ -1079,6 +1075,21 @@ window.IRMap = (function () {
     resolveFulfillment: resolveFulfillment, needBuckets: needBuckets
   };
 })();
+
+function _irForecastQtyText_(value) {
+    return value == null || !Number.isFinite(Number(value)) ? '\u2014' : String(Number(value));
+}
+function _irForecastBreakdownHtml_(data) {
+    var d = data || {}, values = [d.fcNextMonth, d.fcNext2Month, d.fcNext3Month];
+    var labels = [d.nextMonth, d.next2Month, d.next3Month];
+    var total = values.some(function (v) { return v == null; }) ? null
+        : values.reduce(function (n, v) { return n + v; }, 0);
+    return values.concat([total]).map(function (v, i) {
+        return '<div class="replen-card__row"' + (i === 3 ? ' style="font-weight:600"' : '') + '>'
+            + '<span class="replen-card__label">' + escapeReplenHtml(i === 3 ? 'Total' : labels[i] || '-') + '</span>'
+            + '<span class="replen-card__value">' + _irForecastQtyText_(v) + '</span></div>';
+    }).join('');
+}
 
 // Format an Upcoming Event date range as "M.D~M.D" for the 3-month window (year always dropped —
 // same-month 7.27~7.31, cross-month 7.29~8.4, cross-year 12.29~1.4 all render year-less). Parsing is
@@ -2363,7 +2374,7 @@ function _irScrollRowHtml_(item, pendingRoutes) {
         '<div class="scroll-cell" title="' + String(item.thirdPartyTitle || '').replace(/"/g, '&quot;') + '">' + item.thirdPartyStock + '</div>' +
         _irOnTheWayCellHtml_(item) +   // A final4 Cut B: was the literal DTO onTheWay (0); the DTO field itself is unchanged
         '<div class="scroll-cell replen-avg-cell' + _irAvgSalesCellClass_(item) + '"' + _irAvgSalesTitleAttr_(item) + '>' + item.avgDailySales + _irAvgSalesFlagHtml_(item) + '</div>' +
-        '<div class="scroll-cell">' + item.forecast60d + '</div>' +
+        '<div class="scroll-cell">' + _irForecastQtyText_(item.forecast60d) + '</div>' +
         '<div class="scroll-cell">' + (item.upcomingEventQty != null ? Math.ceil(Number(item.upcomingEventQty)).toLocaleString() : '-') + '</div>' +
         '<div class="scroll-cell replen-dos-cell ' + _irDosCellClass_(item) + '"' + _irDosTitleAttr16_(item) + '>' + item.daysOfSupply + '</div>' +
         '<div class="scroll-cell replen-suggested-cell">' + _irSuggestedCellHtml(item) + '</div>' +
@@ -3612,10 +3623,7 @@ function toggleReplenRow(sku) {
                     <article class="ir-panel replen-card replen-card--forecast">
                         <h4 class="replen-card__title">Forecast Breakdown</h4>
                         <div class="replen-card__row" style="font-weight: 600; margin-top: 4px;"><span class="replen-card__label">The Following</span><span class="replen-card__value"></span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.nextMonth || '-'}</span><span class="replen-card__value">${skuData?.fcNextMonth || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.next2Month || '-'}</span><span class="replen-card__value">${skuData?.fcNext2Month || 0}</span></div>
-                        <div class="replen-card__row"><span class="replen-card__label">${skuData?.next3Month || '-'}</span><span class="replen-card__value">${skuData?.fcNext3Month || 0}</span></div>
-                        <div class="replen-card__row" style="font-weight: 600;"><span class="replen-card__label">Total</span><span class="replen-card__value">${(skuData?.fcNextMonth || 0) + (skuData?.fcNext2Month || 0) + (skuData?.fcNext3Month || 0)}</span></div>
+                        ${_irForecastBreakdownHtml_(skuData)}
                     </article>
                     <article class="ir-panel replen-card replen-card--upcoming">
                         <h4 class="replen-card__title">Upcoming Event</h4>
@@ -13445,6 +13453,34 @@ var _irRecalcAllBusy = false;
 var _irActiveRunId = null;         // LIVE4 — the backend runId of the in-flight job (for a targeted Cancel)
 var _irCancelRequested = false;    // LIVE4 — set once by the Cancel button so the poller stops cooperatively
 var _irManualGap = null;
+var _irStatusReadDiag_ = { build: 'forecast-year-reset-20261125-v3', phase: 'IDLE', requestCount: 0 };
+function _irJobStatusDiagnostic_() {
+  return Object.assign({}, _irStatusReadDiag_, { productionGuard: window.KM_PRODUCTION_GUARD_ ? window.KM_PRODUCTION_GUARD_.verdict : null });
+}
+function _irManualGapReadStatus_(runId) {
+  var started = Date.now(), request = ++_irStatusReadDiag_.requestCount;
+  Object.assign(_irStatusReadDiag_, { phase: 'REQUEST_SENT', requestedRunId: runId || null,
+    startedAt: new Date(started).toISOString(), finishedAt: null, serverRunId: null, serverStatus: null, errorCode: null });
+  if (window.console && console.info) console.info('[Inventory status] request', _irJobStatusDiagnostic_());
+  return Promise.resolve().then(function () { return window.KM.DB.getGapJobStatus('INVENTORY', runId || null); }).then(function (res) {
+    if (request === _irStatusReadDiag_.requestCount) {
+      var st = res && res.data;
+      Object.assign(_irStatusReadDiag_, { phase: res && res.success === true ? 'REPLY_RECEIVED' : 'READ_FAILED',
+        finishedAt: new Date().toISOString(), elapsedMs: Date.now() - started,
+        serverRunId: st && st.runId || null, serverStatus: st && st.status || null,
+        errorCode: res && res.error && res.error.code || res && res.code || null });
+      if (window.console && console.info) console.info('[Inventory status] response', _irJobStatusDiagnostic_());
+    }
+    return res;
+  }, function (err) {
+    if (request === _irStatusReadDiag_.requestCount) {
+      Object.assign(_irStatusReadDiag_, { phase: 'READ_FAILED', finishedAt: new Date().toISOString(),
+        elapsedMs: Date.now() - started, errorCode: /^[A-Z][A-Z0-9_]+$/.test(err && err.message || '') ? err.message : 'STATUS_READ_FAILED' });
+      if (window.console && console.info) console.info('[Inventory status] failure', _irJobStatusDiagnostic_());
+    }
+    throw err;
+  });
+}
 function _irManualGapKey_() { return 'km.ir.manualGap.' + ((window.KM.DB.envId && window.KM.DB.envId()) || 'default'); }
 function _irManualGapStore_(state) {
   try { if (state) sessionStorage.setItem(_irManualGapKey_(), JSON.stringify({ scope: state.scope, runId: state.runId || null, dispatched: true,
@@ -13463,7 +13499,10 @@ function _irManualGapUnknown_(message) {
   var trigger = _irAiSupportTriggerEl_(); if (trigger) trigger.removeAttribute('aria-busy');
   _irAiSupportNotice_('warn', 'Recalculate', message || 'Completion is not confirmed. No second start was sent. Check status before starting another calculation.');
   var notice = _irAiSupportNoticeEl_();
-  if (notice) { var check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check status'; check.onclick = _irManualGapCheck_; notice.appendChild(check); }
+  if (notice) {
+    var check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check status'; check.onclick = _irManualGapCheck_; notice.appendChild(check);
+    var reset = document.createElement('button'); reset.type = 'button'; reset.textContent = 'Reset calculation'; reset.onclick = _irManualGapReset_; notice.appendChild(reset);
+  }
 }
 function _irManualGapRelease_() {
   _irManualGapStore_(null); _irManualGap = null; _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false);
@@ -13487,7 +13526,7 @@ function _irManualGapRefresh_(scope) {
   });
 }
 function _irManualGapLatestRead_(gr) {
-  return gr.boundedCall(function () { return window.KM.DB.getGapJobStatus('INVENTORY'); }, 30000).then(function (res) {
+  return gr.boundedCall(function () { return _irManualGapReadStatus_(null); }, 30000).then(function (res) {
     var st = res && res.data;
     if (!res || res.success !== true || !st || !/^(NONE|PENDING|RUNNING|DONE|CANCELLED|FAILED|ERROR|BLOCKED|STALLED)$/.test(st.status || '') ||
         (st.product && st.product !== 'INVENTORY') || (st.status !== 'NONE' && !(typeof st.runId === 'string' && st.runId.trim()))) {
@@ -13531,17 +13570,57 @@ function _irManualGapClearWait_(held, observed, waitingRunId) {
     if (_irManualGap === held) _irManualGapUnknown_('Server status could not be confirmed (' + String(err && err.message || err) + '). The local wait was not cleared. No second start was sent.');
   }).then(function () { held.checking = false; });
 }
-function _irManualGapCheck_() {
+function _irManualGapReset_() {
   var held = _irManualGapHeld_(), gr = window.KM && window.KM.gapRecalc;
   if (!held || held.checking) return Promise.resolve();
+  if (!gr || !gr.boundedCall || !window.KM.DB || typeof window.KM.DB.getGapJobStatus !== 'function') {
+    _irManualGapUnknown_('Reset unavailable: the status service is not loaded. Nothing was cancelled or restarted.'); return Promise.resolve();
+  }
+  held.checking = true;
+  _irAiSupportNotice_('info', 'Recalculate', 'Checking the server before reset...');
+  return _irManualGapLatestRead_(gr).then(function (st) {
+    if (_irManualGap !== held) return;
+    if (!/^(PENDING|RUNNING)$/.test(st.status)) {
+      held.checking = false; _irManualGapUnlinkedStatus_(held, st);
+      return _irManualGapClearWait_(held, st, held.runId || null);
+    }
+    if (!held.runId && held.baselineKnown && st.runId !== held.baselineRunId && _irManualGapAccept_(st, held.scope)) {
+      held.runId = st.runId; _irManualGapStore_(held);
+    }
+    if (st.runId !== held.runId || !_irManualGapAccept_(st, held.scope)) {
+      _irManualGapUnlinkedStatus_(held, st); return;
+    }
+    if (typeof window.KM.DB.cancelInventoryReplenishmentGapJob !== 'function') throw new Error('CANCEL_SERVICE_UNAVAILABLE');
+    if (!window.confirm('Stop calculation run ' + st.runId + ' and clear this browser wait?\n\nCompleted results will be kept. No data will be deleted and no new calculation will start.')) {
+      _irManualGapUnlinkedStatus_(held, st); return;
+    }
+    _irAiSupportNotice_('info', 'Recalculate', 'Stopping the confirmed run. Waiting for server confirmation...');
+    return gr.boundedCall(function () { return window.KM.DB.cancelInventoryReplenishmentGapJob(st.runId); }, 30000).then(function (res) {
+      if (_irManualGap !== held) return;
+      var result = res && res.data;
+      if (!res || res.success !== true || !result || result.runId !== st.runId ||
+          !/^(CANCELLED|DONE|FAILED|ERROR|BLOCKED|STALLED)$/.test(result.status || '')) throw new Error('RESET_NOT_CONFIRMED');
+      _irManualGapRelease_();
+      _irAiSupportNotice_('ok', 'Recalculate', 'Run ' + st.runId + ': ' + result.status + ' confirmed. Waiting state cleared; completed results were kept. Press Search to read results before starting a new calculation.');
+    });
+  }).catch(function (err) {
+    if (_irManualGap === held) _irManualGapUnknown_('Reset was not confirmed (' + String(err && err.message || err) + '). The wait was kept; no automatic retry or new calculation was sent.');
+  }).then(function () { held.checking = false; });
+}
+function _irManualGapCheck_() {
+  var held = _irManualGapHeld_(), gr = window.KM && window.KM.gapRecalc;
+  if (!held) {
+    _irAiSupportNotice_('info', 'Recalculate', 'No local calculation is awaiting confirmation. Press Search to read the latest results.'); return Promise.resolve();
+  }
+  if (held.checking) return Promise.resolve();
   if (!gr || !gr.boundedCall || !window.KM.DB || typeof window.KM.DB.getGapJobStatus !== 'function') {
     _irManualGapUnknown_('The server status service is unavailable. Reload the updated application; nothing was restarted.'); return Promise.resolve();
   }
   held.checking = true;
-  _irAiSupportNotice_('info', 'Recalculate', 'Checking server job status...');
+  _irAiSupportNotice_('info', 'Recalculate', 'Checking server job status... (up to 30 seconds per request)');
   var notice = _irAiSupportNoticeEl_();
   if (notice) { var checking = document.createElement('button'); checking.type = 'button'; checking.textContent = 'Checking...'; checking.disabled = true; notice.appendChild(checking); }
-  var query = held.runId ? gr.pollJob(function () { return window.KM.DB.getGapJobStatus('INVENTORY', held.runId); }, {
+  var query = held.runId ? gr.pollJob(function () { return _irManualGapReadStatus_(held.runId); }, {
     runId: held.runId, maxPolls: 3, maxLostPolls: 3, maxStallPolls: 3, readTimeoutMs: 30000
   }) : _irManualGapLatestRead_(gr);
   function reconcile(st, latestRead) {
@@ -13580,7 +13659,18 @@ function _irManualGapCheck_() {
   }
   return query.then(function (st) { return reconcile(st, false); })
     .catch(function (err) { if (_irManualGap === held) _irManualGapUnknown_('The status read did not complete (' + String(err && err.message || err) + '). No second start was sent.'); })
-    .then(function () { held.checking = false; });
+    .then(function () {
+      held.checking = false;
+      if (_irStatusReadDiag_.phase === 'REQUEST_SENT') _irStatusReadDiag_.phase = 'OBSERVATION_ENDED_UNCONFIRMED';
+      var notice = _irAiSupportNoticeEl_();
+      if (notice) {
+        var stamp = document.createElement('div'); stamp.style.cssText = 'font-size:11px;margin-top:6px;overflow-wrap:anywhere';
+        stamp.textContent = 'Last check: ' + new Date().toLocaleTimeString() + ' · ' +
+          (_irStatusReadDiag_.errorCode || _irStatusReadDiag_.serverStatus || _irStatusReadDiag_.phase) +
+          (_irStatusReadDiag_.serverRunId ? ' · run ' + _irStatusReadDiag_.serverRunId : '');
+        notice.appendChild(stamp);
+      }
+    });
 }
 function _irRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null; }
 function _irCancelBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-cancel-recalc-btn') : null; }
@@ -15114,10 +15204,6 @@ function _getCloudReplenishmentData() {
         return { cn: mine.cn, tw: mine.tw, state: _irFactoryAllocCache[k].state, projection: proj };
     }
 
-    var monthNames = ['Jan.', 'Feb.', 'Mar.', 'Apr.', 'May', 'Jun.', 'Jul.', 'Aug.', 'Sep.', 'Oct.', 'Nov.', 'Dec.'];
-    var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
-    var cm = new Date().getMonth();
-
     var upcomingInstant = Date.now();
     var rows = filtered.map(function (mp) {
         var det = skuDetails.find(function (d) { return eqv(d.sku, mp.sku); }) || {};
@@ -15155,7 +15241,8 @@ function _getCloudReplenishmentData() {
         var lts = IR.longTermStorage(health);
         var trend = IR.salesTrend7d(_irNoBlankMk16_(dailyRows), scope);
         var avg = IR.avgSalesPerDay(_irNoBlankMk16_(weeklyRows), scope);
-        var fc60 = IR.forecast60d(fcRows, targetRules, scope, events);   // R7 §F: 3-month Base FC + scoped Special Events (once)
+        var forecast = IR.forecastWindow(fcRows, targetRules, scope, upcomingInstant);
+        var fc60 = IR.forecast60d(fcRows, targetRules, scope, events, upcomingInstant, forecast);
         var eventQty = IR.upcomingEventQty(events, scope, upcomingInstant);
         // 3rd Party Stock = Site Planning Available (18-day virtual planning allocation of the shared
         // 3PL pool; §20/§23/§24). Display-only — no movement, no reserve, no snapshot write.
@@ -15259,22 +15346,6 @@ function _getCloudReplenishmentData() {
         var _avgNormalDays = _canonBasis ? (_canonBasis.normalDayCount == null ? null : _canonBasis.normalDayCount) : null;
         var _avgExcluded = _canonBasis && Array.isArray(_canonBasis.excludedDates) ? _canonBasis.excludedDates : null;
 
-        // Forecast breakdown (next 3 months, Target Rule applied)
-        var fcRow = fcRows.find(function (r) {
-            return eqv(r.sku, mp.sku) && (!r.company || eqv(r.company, mp.company)) &&
-                (!r.country || eqv(r.country, mp.country)) && (!r.marketplace || eqv(r.marketplace, mp.marketplace));
-        });
-        // Per-month, through the canonical authority. A refused resolution renders 0 rather than a number
-        // computed from a rule whose identity could not be established.
-        function fcMonth(off) {
-            if (!fcRow) return 0;
-            var t = cm + off, mi = t % 12;
-            var y = new Date().getFullYear() + Math.floor(t / 12);
-            var p = IR.targetPct(targetRules, scope, y + '-' + ('0' + (mi + 1)).slice(-2));
-            if (p === null) return 0;
-            return Math.round((parseFloat(fcRow[MK[mi]]) || 0) * p / 100);
-        }
-
         // Fulfillment model resolution — reuse the company-safe registry match resolved above.
         var ff = IR.resolveFulfillment(scopeMktReg, mp);
 
@@ -15356,8 +15427,12 @@ function _getCloudReplenishmentData() {
             // 3rd Party detail (only aggregate available in Phase 1)
             winitStock: 0, onusStock: 0,
             // Forecast breakdown (next 3 months)
-            nextMonth: monthNames[(cm + 1) % 12], next2Month: monthNames[(cm + 2) % 12], next3Month: monthNames[(cm + 3) % 12],
-            fcNextMonth: fcMonth(1), fcNext2Month: fcMonth(2), fcNext3Month: fcMonth(3),
+            nextMonth: forecast.months[0] ? forecast.months[0].label : '-',
+            next2Month: forecast.months[1] ? forecast.months[1].label : '-',
+            next3Month: forecast.months[2] ? forecast.months[2].label : '-',
+            fcNextMonth: forecast.months[0] ? forecast.months[0].adjusted : null,
+            fcNext2Month: forecast.months[1] ? forecast.months[1].adjusted : null,
+            fcNext3Month: forecast.months[2] ? forecast.months[2].adjusted : null,
             upcomingEventsText: upcomingEventsText,
             // Sales trend (past 7 completed days)
             salesTrend7d: trend,
