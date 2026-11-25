@@ -65,6 +65,18 @@ const small = { startTimeoutMs: 15, readTimeoutMs: 15, interval: 1, maxPolls: 2,
   reads = 0;
   const rejectedStatus = await gr.pollJob(() => { reads++; throw new Error('fixture disconnect'); }, { ...small, maxPolls: 20, maxLostPolls: 3 });
   check('repeated thrown reads use the same observation bound', reads === 3 && rejectedStatus.status === 'POLL_TIMEOUT' && rejectedStatus.transportLost);
+  let baseline = null, baselineBeforeWrite = false;
+  reads = starts = 0;
+  await gr.runJob(() => { starts++; baselineBeforeWrite = baseline && baseline.status === 'NONE'; return state('ACK', 'PENDING'); },
+    () => { reads++; return state(reads === 1 ? null : 'ACK', reads === 1 ? 'NONE' : 'DONE'); }, {
+      ...small, observeBeforeStart: true, onBaselineState: st => { baseline = st; }
+    });
+  check('known pre-start identity is handed to persistence before the single write', baselineBeforeWrite && starts === 1 && baseline.runId === null);
+  baseline = null; failure = null; starts = reads = 0;
+  await gr.runJob(() => { starts++; return never(); }, () => { reads++; return { success: true, data: { runId: 'NOT-A-STATUS' } }; }, {
+    ...small, observeBeforeStart: true, onBaselineState: st => { baseline = st; }, acceptRecoveredStart: () => true, ui: { failed: s => { failure = s; } }
+  });
+  check('malformed pre-start reply cannot be used as recovery proof', baseline === null && starts === 1 && reads === 1 && failure.status === 'POLL_TIMEOUT');
 
   const c = makeClient({});
   c.sb.window.KM_REQUEST_TIMEOUT_MS = { write: 5 };

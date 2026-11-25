@@ -7,7 +7,21 @@
 - A lost status or observation timeout is unconfirmed, not a failed backend calculation. The manual run keeps its run ID and read-only Check status action; it never automatically resends START.
 - Mount recovery mirrors progress on the visible AI Support trigger immediately after confirming an active run.
 - Returning to idle uses the fixed AI Support label, never a captured Starting label.
-- Frontend cache tag: daily-3pl-20261125-v5.
+- Frontend cache tag: gap-status-recovery-20261125-v6.
+
+## Missing Run ID Recovery Follow-Up
+
+The owner reproduced a dead end: an old persisted manual wait had no run ID. Check status returned before dispatching any read. Pressing Search could not repair that missing identity.
+
+- Check status now performs a bounded read of the latest Inventory server job even without a run ID. The button visibly shows Checking while the read is pending.
+- Latest server status, run ID, scope and active progress are displayed. A legacy unrelated DONE is never treated as proof that the original request completed.
+- New attempts persist a validated pre-START baseline. After a lost acknowledgment, a new exact-scope run can be recovered against that baseline, including after reload.
+- A legacy wait with no identity has an explicit Clear local wait action only after a successful inactive/terminal server observation. The action asks for confirmation and re-reads the server before clearing browser state. A newly active job, changed status, or failed read prevents clearing.
+- Clearing does not cancel, restart, or confirm the original server operation. The original outcome stays explicitly unknown. There is no automatic START retry.
+- A known run's confirmed DONE can release the wait even before a site has been searched. Failed result readback is reported separately and no longer re-locks a finished job.
+- Confirmed server STALLED is terminal; a client-generated observation timeout with no matching run identity is not.
+
+This follow-up needs no Apps Script changes and does not change demand, allocation or gap formulas. Deploy the earlier six-file backend package for the daily allocation separately; this browser recovery update ships through GitHub Pages.
 
 The observer change is frontend-only. The combined release also contains the separately implemented daily allocation repair described in SITE_INVENTORY_DAILY_3PL_20261125.md. No production deployment or production recalculation was performed by this task. DB row writes alone do not prove a backend job reached DONE.
 
@@ -34,6 +48,7 @@ Offline tests:
 
     node assets/tests/manual-gap-response-deadlines.test.cjs
     node assets/tests/manual-gap-status-browser.cjs
+    node assets/tests/manual-gap-unlinked-status-browser.cjs
     node assets/tests/gap-recalc-transport-f1-4b-fm5r4t.test.js
     node assets/tests/gap-job-startup-hydration-f1-4b-fm5r4jlive6.test.js
 

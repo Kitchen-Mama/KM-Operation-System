@@ -76,7 +76,8 @@ async function clickScope(page) {
   await page.getByRole('menuitem', { name: 'Recalculate Current Scope', exact: true }).click();
   await page.evaluate(() => { window.operation = scopeOptions.onConfirm(scope); for (let i = 0; i < 8; i++) handleRecalcAllInventoryGap(scope); });
 }
-(async () => {
+module.exports = { mount, clickScope };
+if (require.main === module) (async () => {
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {

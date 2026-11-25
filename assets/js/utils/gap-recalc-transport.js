@@ -255,7 +255,12 @@
     var priorRunId = null, priorObserved = false, activeRunId = null, stage = 'START';
     if (opts.observeBeforeStart && typeof ui.checking === 'function') { try { ui.checking(); } catch (eChecking) {} }
     var before = opts.observeBeforeStart ? boundedCall(statusFn, opts.readTimeoutMs || 60000).then(function (res) {
-      if (res && res.success === true) { priorObserved = true; priorRunId = (_stateOf(res).runId || null); }
+      var st = _stateOf(res);
+      if (res && res.success === true && Object.prototype.hasOwnProperty.call(JOB_STATUS, st.status) &&
+          (st.status === JOB_STATUS.NONE || (typeof st.runId === 'string' && st.runId.trim()))) {
+        priorObserved = true; priorRunId = st.runId || null;
+        if (typeof opts.onBaselineState === 'function') { try { opts.onBaselineState(st); } catch (eBaseline) {} }
+      }
     }, function () {}) : Promise.resolve();
     return before.then(function () {
       if (typeof ui.starting === 'function') ui.starting();
