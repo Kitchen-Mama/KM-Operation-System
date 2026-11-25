@@ -1613,7 +1613,12 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "OSW_BUILD_VERSION_",
-      "expected": "F1-7N-FB-4E-R3",
+      "expected": "WAREHOUSE-LIFECYCLE-20261125-V1",
+      "optional": false
+    },
+    {
+      "symbol": "FIW_BUILD_VERSION_",
+      "expected": "WAREHOUSE-LIFECYCLE-20261125-V1",
       "optional": false
     },
     {
@@ -1788,7 +1793,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420"
+  "policy_sha256": "ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

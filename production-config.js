@@ -66,6 +66,7 @@
     "orderPlanningGap.job.start",
     "orderPlanningGap.recalculate.all",
     "overseasStock.workspace.get",
+    "factoryInventory.workspace.get",
     "pricing.update",
     "pricing.write.status",
     "productPricing.siteUniverse.get",
@@ -167,6 +168,7 @@
     "openPoRemaining.raw.get",
     "orderPlanningGap.get",
     "overseasStock.workspace.get",
+    "factoryInventory.workspace.get",
     "pricing.write.status",
     "productPricing.siteUniverse.get",
     "productPricing.workspace.get",
@@ -215,5 +217,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420"
+  "policy_sha256": "ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

@@ -22,11 +22,11 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
-test('baseline reproduces blocked edits; only the monthly edit action is newly allowed', () => {
+test('baseline reproduces blocked edits; only monthly edit and warehouse read are newly allowed', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
-  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)), [body.action]);
+  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', body.action].sort());
   assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action));
-  assert.deepEqual(p.reads, oldP.reads);
+  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get'), oldP.reads);
   assert.equal(p.ai_plan_enabled, false);
 });
 test('policy hash, public config and health module stamps agree', () => {
@@ -109,4 +109,42 @@ test('backend identity requires the updated manual allocation module, not only 0
   assert.equal(c.rtrProductionTargetCheck_(),null);
   delete values.RAEE_BUILD_VERSION_;
   assert.equal(c.rtrProductionTargetCheck_().code,'PRODUCTION_MODULE_MISMATCH');
+});
+
+test('actual warehouse module stamps satisfy the router gate and health manifest together', () => {
+  const ctx = vm.createContext({});
+  for (const file of ['01_router.gs','63_api_v1_system_health.gs','70_api_v1_overseas_stock_workspace.gs','88_api_v1_warehouse_lifecycle.gs']) {
+    vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/' + file, 'utf8'), ctx);
+  }
+  const actual = Object.fromEntries(p.module_stamps.map(m => [m.symbol, m.expected]));
+  for (const symbol of ['RTR_BUILD_VERSION_','SYS_BUILD_VERSION_','OSW_BUILD_VERSION_','FIW_BUILD_VERSION_']) {
+    actual[symbol] = ctx[symbol];
+    assert.equal(p.module_stamps.find(m => m.symbol === symbol).expected, actual[symbol]);
+    assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m => m.symbol === symbol).expected, actual[symbol]);
+  }
+  ctx.SpreadsheetApp = { getActiveSpreadsheet: () => ({ getId: () => 'fixture' }) };
+  ctx.prodExpectedDbId_ = () => 'fixture'; ctx.rtrSha256Hex_ = () => p.db_fp;
+  ctx.requestOrderDraftV2FlatCutoverEnabled_ = () => true; ctx.sysGlobalValue_ = symbol => actual[symbol];
+  assert.equal(ctx.rtrProductionTargetCheck_(), null);
+  actual.OSW_BUILD_VERSION_ = 'F1-7N-FB-4E-R3';
+  assert.equal(ctx.rtrProductionTargetCheck_().code, 'PRODUCTION_MODULE_MISMATCH');
+  assert.deepEqual(plain(ctx.rtrProductionTargetCheck_().modules), ['OSW_BUILD_VERSION_']);
+});
+
+test('failed identity can recover after deployment without retaining a rejected promise forever', async () => {
+  const flags = { module_stamps_ok: false }, g = guard(p, flags);
+  await assert.rejects(g.w.fetch(p.endpoint + '?action=shipment.workspace.get'), /IDENTITY_MISMATCH/);
+  flags.module_stamps_ok = true;
+  await g.w.fetch(p.endpoint + '?action=shipment.workspace.get');
+  assert.equal(g.w.KM_PRODUCTION_GUARD_.verdict, 'VERIFIED');
+  assert.equal(g.sent.length, 3);
+});
+
+test('pre-warehouse exact policy keeps existing reads and manual edit, but blocks the new warehouse action', async () => {
+  const previous = { ...p, policy_sha256: 'cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420' }, g = guard(previous);
+  await g.w.fetch(p.endpoint + '?action=inventoryReplenishment.workspace.get');
+  await g.w.fetch(p.endpoint, { method: 'POST', body: JSON.stringify(body) });
+  const before = g.sent.length;
+  await assert.rejects(g.w.fetch(p.endpoint + '?action=factoryInventory.workspace.get'), /WAREHOUSE_BACKEND_UPDATE_REQUIRED/);
+  assert.equal(g.sent.length, before);
 });

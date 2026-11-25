@@ -4,6 +4,7 @@
     var G = { verdict: null, mode: 'PRODUCTION', profile: C && C.profile_id, identity: null };
     // During the manual GS rollout, retain the exact prior policy for its existing actions only.
     var priorPolicy = '27eedfe4914bcebb1431b7680f5720046e937f49e3f35a7f205212f4c949add8';
+    var preWarehousePolicy = 'cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420';
     window.KM_PRODUCTION_GUARD_ = G;
     function fail(code) { G.verdict = code; G.identity = null; return new Error(code); }
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
@@ -20,17 +21,19 @@
         if (!C || !/^https:\/\/script\.google\.com\/macros\/s\/[A-Za-z0-9_-]{20,}\/exec$/.test(C.endpoint)) return Promise.reject(fail('PRODUCTION_CONFIGURATION_REQUIRED'));
         flight = nativeFetch(C.endpoint + '?action=getClientCapabilities', { method: 'GET', cache: 'no-store' }).then(function (r) { return r.json(); }).then(function (r) {
             var p = r && r.production_gate;
+            if (r && r.success === false && /^PRODUCTION_(MODULE_MISMATCH|TARGET_MISMATCH|TARGET_UNAVAILABLE|FLAT_V2_REQUIRED)$/.test(r.code || '')) throw fail(r.code);
             if (!r.success || !p || p.environment !== 'KM_PRODUCTION' || p.profile_id !== C.profile_id ||
-                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
+                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
                 p.administration_enabled !== false || p.ai_plan_enabled !== false) throw fail('PRODUCTION_IDENTITY_MISMATCH');
             G.identity = p; G.verdict = 'VERIFIED'; return true;
-        }).catch(function (e) { if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
+        }).catch(function (e) { flight = null; if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
         return flight;
     }
     G.ready = identity;
     G.environmentKey = function () { return G.verdict === 'VERIFIED' ? 'production:' + C.endpoint_sha256 + ':' + C.db_fp + ':' + C.profile_id : ''; };
     G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0 &&
-        !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)); };
+        !(a === 'factoryInventory.workspace.get' && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)) &&
+        !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 === priorPolicy)); };
     window.fetch = function (input, init) {
         var u;
         try { u = new URL(typeof input === 'string' ? input : input.url, location.href); } catch (e) { return Promise.reject(e); }
@@ -47,7 +50,8 @@
             if (C.reads.indexOf(action) < 0) window.KM.passwordAccess.assertWriteAllowed();
         } catch (e) { return Promise.reject(e); }
         return identity().then(function () {
-            if (!G.isActionAllowed(action)) throw new Error('PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED');
+            if (!G.isActionAllowed(action)) throw new Error(action === 'factoryInventory.workspace.get'
+                ? 'PRODUCTION_WAREHOUSE_BACKEND_UPDATE_REQUIRED' : 'PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED');
             return nativeFetch(input, init);
         });
     };
