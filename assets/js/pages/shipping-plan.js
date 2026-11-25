@@ -1447,6 +1447,17 @@ function _spAdoptLineTok_(lines, res) {
     var t = _spTok_(res && res.data && res.data.updated_at); if (!t) return;
     (lines || []).forEach(function (x) { var l = _spLineRec_(x.shipping_plan_line_id); if (l) { l.raw = l.raw || {}; l.raw.updated_at = t; } });
 }
+function _spAdoptQtyPlanTok_(planId, res, previous) {
+    var data = res && res.data;
+    if (!data || !Object.prototype.hasOwnProperty.call(data, 'repriced_plans')) return previous;
+    var matches = Array.isArray(data.repriced_plans) ? data.repriced_plans.filter(function (p) { return String(p.shipping_plan_id) === String(planId); }) : [];
+    var token = matches.length === 1 ? _spTok_(matches[0].updated_at) : '';
+    if (!token || _spPlanTok_(planId) !== previous) return '';
+    var plan = _spPlanRec_(planId);
+    if (!plan) return '';
+    plan.raw = plan.raw || {}; plan.raw.updated_at = token; plan.updatedAt = token;
+    return token;
+}
 // EDIT_CONFLICT: nothing was written. The card is NOT re-rendered (the operator's typed values stay on screen), nothing is retried with
 // the new token, and the box names what differs and offers Reload (which shows the current values and drops the typed ones).
 function _spShowEditConflict_(planId, err, sent) {
@@ -1633,8 +1644,9 @@ function _spRunCommand_(key, invokeFn, opts) {
 function spDbSaveQty(planId) {
     var lines = _spCollectQtyLines(planId);
     if (!lines.length) { renderShippingPlan(); return; }
-    _spRunCommand_(planId + ':saveqty', function () {
-        return window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)).then(function (res) { if (res && res.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, res); } return res; });   // R71-FE-1: tokens
+    return _spRunCommand_(planId + ':saveqty', function () {
+        var previous = _spPlanTok_(planId);
+        return window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)).then(function (res) { if (res && res.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, res); _spAdoptQtyPlanTok_(planId, res, previous); } return res; });
     }, { successMsg: 'Shipping Qty saved.', failPrefix: 'Save failed', planId: planId, sent: lines });
 }
 
@@ -1910,17 +1922,21 @@ function spDbSubmit(planId) {
     // One guarded flow: persist qty (if any) then Submit; ONE readback after Submit. A genuine qty-save failure
     // is surfaced and STOPS the Submit — no more "qty error shown while the plan already became Pending".
     var lines = _spCollectQtyLines(planId);
-    _spRunCommand_(planId + ':submit', function () {
+    return _spRunCommand_(planId + ':submit', function () {
         var spTok_ = _spPlanTok_(planId), pre = lines.length ? window.KM.DB.updateShippingPlanLineQty(_spQtyBody_(planId, lines)) : Promise.resolve({ success: true });   // R71-FE-1: tokens
         return Promise.resolve(pre).then(function (qtyRes) {
             if (qtyRes && qtyRes.success === false && qtyRes.error && qtyRes.error.code !== 'ALREADY_IN_TARGET_STATE') return qtyRes; // stop
-            if (lines.length && qtyRes && qtyRes.success) { _spPatchLocalQty(lines); _spAdoptLineTok_(lines, qtyRes); }
+            if (lines.length && qtyRes && qtyRes.success) {
+                _spPatchLocalQty(lines); _spAdoptLineTok_(lines, qtyRes);
+                spTok_ = _spAdoptQtyPlanTok_(planId, qtyRes, spTok_);
+                if (!spTok_) return { success: false, error: { code: 'PLAN_WRITE_TOKEN_UNVERIFIED', qtySaved: true, message: 'Shipping Qty was saved, but its new Plan version was not confirmed. Reload before submitting; no status change was sent.' } };
+            }
             var qtySaved_ = !!(lines.length && qtyRes && qtyRes.success);   // R71-FE-2 (m-6): a refusal of the transition below must not say "nothing was written"
             // R6-R7-R5 §4 — SUBMIT, and if the server says an overage must be confirmed, ask a person and
             // send ONCE more with the confirmation attached. At most two attempts: looping here would turn a
             // stale fingerprint into a retry storm, and a stale fingerprint means the facts moved and somebody
             // has to look at them again.
-            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system', expected_updated_at: spTok_ || undefined })   /* R71-FE-1: the plan token (a qty save does not move it) */
+            return window.KM.DB.updateShippingPlanStatus({ shipping_plan_id: planId, transition: 'submit', actor: 'operation-system', expected_updated_at: spTok_ || undefined })
                 .then(function (res) {
                     var challenge = _spIsOverageChallenge(res);
                     if (!challenge) return res;
