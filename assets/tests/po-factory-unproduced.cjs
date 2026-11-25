@@ -107,14 +107,19 @@ for (const fault of ['movement_throw', 'opening_silent_change']) test('failed im
   const names = ['purchase_orders', 'purchase_order_lines', 'factory_stock', 'factory_stock_movements'];
   const before = JSON.stringify(names.map(n => h.tables[n].grid));
   if (fault === 'movement_throw') {
-    const sh = h.tables.factory_stock_movements, append = sh.appendRow; let once = false;
-    sh.appendRow = row => { append(row); if (!once) { once = true; throw Error('SYNTHETIC_MOVEMENT_FAILURE'); } };
+    const apply = h.c.imiFactoryApply_;
+    h.c.imiFactoryApply_ = (ss, plan, ctx) => { apply(ss, plan, ctx); throw Error('SYNTHETIC_MOVEMENT_FAILURE'); };
   } else {
-    const sh = h.tables.purchase_order_lines, append = sh.appendRow;
-    sh.appendRow = row => { const copy = row.slice(); copy[sh.grid[0].indexOf('opening_shipped_qty')] = 499; append(copy); };
+    const apply = h.c.pmiApply_;
+    h.c.pmiApply_ = (ss, plan, ctx) => {
+      const result = apply(ss, plan, ctx), sh = ss.getSheetByName('purchase_order_lines');
+      sh.getRange(2, sh.getDataRange().getValues()[0].indexOf('opening_shipped_qty') + 1).setValue(499);
+      return result;
+    };
   }
   const r = h.c.handleImportCommit_({ ...b, preview_digest: v.preview_digest });
-  assert.equal(r.code, 'IMPORT_FAILED_ROLLED_BACK', JSON.stringify(r)); assert.equal(JSON.stringify(names.map(n => h.tables[n].grid)), before);
+  assert.equal(r.code, fault === 'opening_silent_change' ? 'PFI_PO_READBACK_MISMATCH' : 'IMPORT_FAILED_ROLLED_BACK', JSON.stringify(r)); assert.equal(JSON.stringify(names.map(n => h.tables[n].grid)), before);
+  assert.equal(h.atomic.calls.length, 0); assert.equal(h.rows('import_batches').length, 0);
 });
 test('stock change after preview refuses commit without introducing historical consumed counters', () => {
   const h = world(), b = h.body(), v = h.c.handleImportValidate_(b); assert.equal(v.valid, true);

@@ -2,12 +2,13 @@
 const assert = require('node:assert/strict');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
+const { installFactoryAtomic } = require('./factory-atomic-world.cjs');
 const { extract } = require('../ad4/extract.cjs');
 const { root, read, plain } = require('./order-mainline-world.cjs');
 const gs = 'assets/specs/active/apps-script/';
 const parts = (file, names, vars = []) => extract(read(file), n => names.includes(n), n => vars.includes(n)).map(p => p.text).join('\n');
 const host = new Function('assert', 'vm', 'read', 'gs', 'crypto', parts('assets/tests/order-mainline-phase1.cjs', ['host'], ['stockHeaders', 'movementHeaders']) + '\nreturn host;')(assert, vm, read, gs, crypto);
-const make = new Function('host', 'vm', 'read', 'gs', parts('assets/tests/inventory-site-sku.cjs', ['world']) + '\nreturn world;')(host, vm, read, gs);
+const make = new Function('host', 'vm', 'read', 'gs', 'installFactoryAtomic', parts('assets/tests/inventory-site-sku.cjs', ['world']) + '\nreturn world;')(host, vm, read, gs, installFactoryAtomic);
 const receipt = new Function(parts('assets/tests/order-mainline-phase1.cjs', ['receiptBody']) + '\nreturn receiptBody;')();
 function world() {
   const h = make();

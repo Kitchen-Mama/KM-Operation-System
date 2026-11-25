@@ -4,6 +4,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const vm = require('node:vm');
 const crypto = require('node:crypto');
+const { installFactoryAtomic } = require('./helpers/factory-atomic-world.cjs');
 const { extract } = require('./ad4/extract.cjs');
 const root = path.resolve(__dirname, '../..');
 const read = p => {
@@ -49,6 +50,7 @@ function world() {
   ]);
   h.sheet('overseas_inventory_snapshot', ['overseas_inventory_id', 'warehouse_id', 'sku', 'site_sku', 'wh_available_stock', 'wh_reserved_stock', 'wh_damaged_stock', 'wh_on_the_way_qty', 'wh_on_the_way_eta', 'note', 'created_at', 'updated_at']);
   h.sheet('overseas_inventory_movements', c.IMI_OVS_MOV_REQUIRED_);
+  installFactoryAtomic(h, read, gs);
   return h;
 }
 function body(h, domain, mode, skus = ['CO1150-N-TG'], id = 'SITE-SKU-BATCH-01') {
@@ -144,13 +146,18 @@ test('existing variant StockPO update changes only its own PO and stock; base re
   assert.equal(h.rows('purchase_order_lines').find(r => r.sku === 'CO1150-N-TG').remaining_qty, 35);
 });
 for (const domain of ['factory_inventory', 'overseas_inventory', 'po_factory_stock']) {
-  test(domain + ': 250 registered site SKUs accepted without merging, unknowns still skipped', () => {
+  test(domain + ': registered site SKUs respect the domain batch limit without merging', () => {
     const h = world(), skus = Array.from({ length: 250 }, (_, i) => 'SITE-VARIANT-' + i);
     h.sheet('sku_regional_details', ['sku', 'site_sku'], skus.map(site_sku => ({ sku: 'CO1150-N', site_sku })));
     const mode = domain === 'po_factory_stock' ? 'NEW_RECEIPT' : 'ADD';
+    if (domain === 'po_factory_stock') {
+      const count = h.writes(), tooLarge = h.c.handleImportValidate_(body(h, domain, mode, skus));
+      assert.equal(tooLarge.success, false); assert.match(JSON.stringify(tooLarge), /IMPORT_TOO_MANY_ROWS/); assert.equal(h.writes(), count);
+      skus.splice(24);
+    }
     const { v } = commit(h, body(h, domain, mode, skus.concat('NOT-REGISTERED')));
     assert.equal(v.preview.counts.skipped, 1);
-    assert.equal(h.rows(domain === 'overseas_inventory' ? 'overseas_inventory_snapshot' : 'factory_stock').length, 250);
+    assert.equal(h.rows(domain === 'overseas_inventory' ? 'overseas_inventory_snapshot' : 'factory_stock').length, skus.length);
   });
   test(domain + ': failed movement append rolls back variant stock and PO writes', () => {
     const h = world(), b = body(h, domain, domain === 'po_factory_stock' ? 'NEW_RECEIPT' : 'ADD');
@@ -158,8 +165,14 @@ for (const domain of ['factory_inventory', 'overseas_inventory', 'po_factory_sto
     const tableNames = ['purchase_orders', 'purchase_order_lines', 'factory_stock', 'factory_stock_movements', 'overseas_inventory_snapshot', 'overseas_inventory_movements'];
     const before = JSON.stringify(tableNames.map(n => h.tables[n].grid));
     const name = domain === 'overseas_inventory' ? 'overseas_inventory_movements' : 'factory_stock_movements';
-    const sh = h.tables[name], append = sh.appendRow; let failed = false;
-    sh.appendRow = row => { append(row); if (!failed) { failed = true; throw Error('SYNTHETIC_APPEND_FAILURE'); } };
+    let failed = false;
+    if (domain === 'overseas_inventory') {
+      const sh = h.tables[name], append = sh.appendRow;
+      sh.appendRow = row => { append(row); if (!failed) { failed = true; throw Error('SYNTHETIC_APPEND_FAILURE'); } };
+    } else {
+      const apply = h.c.imiFactoryApply_;
+      h.c.imiFactoryApply_ = (ss, plan, ctx) => { apply(ss, plan, ctx); failed = true; throw Error('SYNTHETIC_APPEND_FAILURE'); };
+    }
     const result = h.c.handleImportCommit_({ ...b, preview_digest: v.preview_digest });
     assert.equal(failed, true); assert.equal(result.code, 'IMPORT_FAILED_ROLLED_BACK', JSON.stringify(result));
     assert.equal(JSON.stringify(tableNames.map(n => h.tables[n].grid)), before);

@@ -222,6 +222,10 @@ row = prior.__sheetRow;
 var ev = imbEvaluate_(ss, dom, req);
 if (!ev.ok) return imbOut_(imbNo_('IMPORT_VALIDATION_FAILED', 'the file no longer validates - nothing was written. Every refused row is named in issues (row + code); fix those rows in the file and validate it again - the rows not named are not refused by themselves', { issues: ev.issues, writes_performed: 0 }));
 if (imbStr_(body.preview_digest) !== ev.state_digest) return imbOut_(imbNo_('IMPORT_PREVIEW_STALE', 'the data changed since the preview (another receipt, shipment or import) - nothing was written; validate again', { preview: ev.preview, preview_digest: ev.state_digest, writes_performed: 0 }));
+if (dom.domain === 'po_factory_stock' || dom.domain === 'factory_inventory') {
+if (typeof pfaCommit_ !== 'function') return imbOut_(imbNo_('IMPORT_ATOMIC_WRITER_MISSING', 'Install the matching 82a_factory_atomic_commit.gs module before importing factory stock. Nothing was written.', { writes_performed: 0 }));
+return imbOut_(pfaCommit_(ss, dom, req, ev, S, row, hash));
+}
 var now = imbNow_();
 row = imbSetReceipt_(S, row, { import_batch_id: req.id, domain: dom.domain, mode: req.mode, schema_version: dom.schema_version, scope_key: imbScopeKey_(req.scope), content_hash: hash, status: IMB_STATUS_.COMMITTING,
 row_counts_json: JSON.stringify((ev.preview && ev.preview.counts) || {}), result_json: '', actor_claimed: req.actor, actor_source: 'CLIENT_CLAIM_UNVERIFIED', file_name: req.file_name, created_at: now, updated_at: now, committed_at: '', error: '' });

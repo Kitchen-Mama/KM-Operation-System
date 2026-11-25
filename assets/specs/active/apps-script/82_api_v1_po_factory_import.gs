@@ -3,7 +3,7 @@ var PFI_SCHEMA_ = 'PO-FACTORY-IMPORT-1';
 var PFI_BUILD_VERSION_ = "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4";
 var PFI_FIELDS_ = ['row_type', 'transaction_id', 'company', 'po_no', 'sku', 'warehouse_id', 'quantity', 'unproduced_qty', 'ordered_qty', 'currency', 'order_date', 'purchase_order_line_id', 'row_version', 'note'];
 var PFI_MODES_ = ['NEW_RECEIPT', 'OPENING_PO_FOR_EXISTING_STOCK', 'UPDATE_REMAINING'];
-// Until the stock writer supports resumable commits, keep synchronous dual-book batches small.
+// Keep staging and readback bounded even with the atomic factory writer.
 var PFI_MAX_INPUT_ROWS_ = 25;
 
 function pfiFail_(code, text) { var e = new Error(text || code); e.importCode = code; throw e; }
