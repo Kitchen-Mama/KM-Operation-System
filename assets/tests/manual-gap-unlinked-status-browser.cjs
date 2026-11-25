@@ -135,6 +135,34 @@ const action = (page, label) => page.getByRole('button', { name: label, exact: t
         check(width + ' a bounded check reports known RUNNING without mistaking client stall for server failure',
           (await notice(page)).includes('Run ACK: RUNNING') && await page.evaluate(() => _irManualGap.runId === 'ACK' && calls.refreshes === 0));
       });
+      await scenario(browser, width, 'known ID no longer current', async page => {
+        await page.evaluate(() => {
+          _irManualGap.runId = 'SUPERSEDED';
+          KM.DB.getGapJobStatus = (product, runId) => {
+            calls.statuses++;
+            return Promise.resolve(runId ? job('NONE', runId) : job('DONE', 'CURRENT'));
+          };
+        });
+        await action(page, 'Check status'); await page.waitForFunction(() => _irManualGap && !_irManualGap.checking);
+        check(width + ' missing known ID falls back to latest server status without claiming completion',
+          (await notice(page)).includes('Requested run SUPERSEDED was not confirmed') && (await notice(page)).includes('CURRENT') &&
+          await page.evaluate(() => calls.statuses === 2 && _irManualGap.runId === 'SUPERSEDED'));
+        await action(page, 'Clear local wait'); await page.waitForFunction(() => !_irManualGap);
+        check(width + ' an explicitly cleared superseded ID remains an unknown original outcome',
+          (await notice(page)).includes('original request outcome is still unknown') && await page.evaluate(() => calls.statuses === 3 && calls.refreshes === 0));
+      });
+      await scenario(browser, width, 'missing targeted identity then same run recovered', async page => {
+        await page.evaluate(() => {
+          _irManualGap.runId = 'ACK';
+          KM.DB.getGapJobStatus = (product, runId) => {
+            calls.statuses++;
+            return Promise.resolve(runId ? { success: true, data: { status: 'DONE' } } : job('DONE', 'ACK'));
+          };
+        });
+        await action(page, 'Check status'); await page.waitForFunction(() => !_irManualGap);
+        check(width + ' latest endpoint may confirm the exact known ID after an unusable targeted reply',
+          (await notice(page)).includes('Recalculation completed') && await page.evaluate(() => calls.statuses === 2 && calls.refreshes === 1));
+      });
       await scenario(browser, width, 'hung unlinked read', async page => {
         await page.evaluate(() => { KM.DB.getGapJobStatus = () => { calls.statuses++; return new Promise(() => {}); }; });
         await action(page, 'Check status'); await page.waitForFunction(() => _irManualGap && !_irManualGap.checking);

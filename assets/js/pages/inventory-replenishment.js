@@ -13504,22 +13504,24 @@ function _irManualGapUnlinkedStatus_(held, st) {
   _irManualGapUnknown_('Latest server job: ' + st.status + (st.runId ? ' (run ' + st.runId + ')' : '') +
     (label ? '\nScope: ' + label : '') +
     (active ? '\nProgress: ' + (st.scopesProcessed || 0) + ' / ' + (st.scopesTotal || 0) : '') +
-    '\nThe original start response had no run ID, so this latest job cannot prove that request completed. No second start was sent.');
+    (held.runId ? '\nRequested run ' + held.runId + ' was not confirmed. This latest job cannot prove that request completed.'
+      : '\nThe original start response had no run ID, so this latest job cannot prove that request completed.') + ' No second start was sent.');
   if (active) return;
   var notice = _irAiSupportNoticeEl_();
   if (notice) {
     var clear = document.createElement('button'); clear.type = 'button'; clear.textContent = 'Clear local wait';
-    clear.onclick = function () { return _irManualGapClearWait_(held, st); }; notice.appendChild(clear);
+    var waitingRunId = held.runId || null;
+    clear.onclick = function () { return _irManualGapClearWait_(held, st, waitingRunId); }; notice.appendChild(clear);
   }
 }
-function _irManualGapClearWait_(held, observed) {
+function _irManualGapClearWait_(held, observed, waitingRunId) {
   var gr = window.KM && window.KM.gapRecalc;
-  if (_irManualGap !== held || held.checking || !gr || held.runId) return Promise.resolve();
+  if (_irManualGap !== held || held.checking || !gr || (held.runId || null) !== (waitingRunId || null)) return Promise.resolve();
   if (!window.confirm('Clear only this browser\'s unconfirmed wait?\n\nThis does not prove the original request finished and does not cancel or restart any server job. The server status will be checked again first.')) return Promise.resolve();
   held.checking = true;
   _irAiSupportNotice_('info', 'Recalculate', 'Checking that no server job is running before clearing the local wait...');
   return _irManualGapLatestRead_(gr).then(function (st) {
-    if (_irManualGap !== held || held.runId) return;
+    if (_irManualGap !== held || (held.runId || null) !== (waitingRunId || null)) return;
     if (/^(PENDING|RUNNING)$/.test(st.status) || st.status !== observed.status || (st.runId || null) !== (observed.runId || null)) {
       _irManualGapUnlinkedStatus_(held, st); return;
     }
@@ -13542,7 +13544,7 @@ function _irManualGapCheck_() {
   var query = held.runId ? gr.pollJob(function () { return window.KM.DB.getGapJobStatus('INVENTORY', held.runId); }, {
     runId: held.runId, maxPolls: 3, maxLostPolls: 3, maxStallPolls: 3, readTimeoutMs: 30000
   }) : _irManualGapLatestRead_(gr);
-  return query.then(function (st) {
+  function reconcile(st, latestRead) {
     if (_irManualGap !== held) return;
     if (!held.runId) {
       if (held.baselineKnown && st.runId && st.runId !== held.baselineRunId && _irManualGapAccept_(st, held.scope)) {
@@ -13550,7 +13552,11 @@ function _irManualGapCheck_() {
       } else { _irManualGapUnlinkedStatus_(held, st); return; }
     }
     if (st && !st.runId && st.last && st.last.runId === held.runId && /^(PENDING|RUNNING)$/.test(st.last.status || '')) st = st.last;
-    if (!st || st.runId !== held.runId) { _irManualGapUnknown_('The server did not confirm the requested run ID. No second start was sent.'); return; }
+    if (!st || st.runId !== held.runId || st.status === 'NONE') {
+      if (latestRead) { _irManualGapUnlinkedStatus_(held, st); return; }
+      _irAiSupportNotice_('info', 'Recalculate', 'The requested run was not confirmed. Checking the latest server job...');
+      return _irManualGapLatestRead_(gr).then(function (latest) { return reconcile(latest, true); });
+    }
     if (/^(PENDING|RUNNING)$/.test(st.status)) {
       _irManualGapUnknown_('Run ' + st.runId + ': ' + st.status + ', ' + (st.scopesProcessed || 0) + ' / ' + (st.scopesTotal || 0) + ' sites processed. No second start was sent.'); return;
     }
@@ -13571,7 +13577,9 @@ function _irManualGapCheck_() {
       });
     }
     _irAiSupportNotice_('bad', 'Recalculate', _irGapJobFailMsg_('Inventory', st)); _irManualGapRelease_();
-  }).catch(function (err) { if (_irManualGap === held) _irManualGapUnknown_('The status read did not complete (' + String(err && err.message || err) + '). No second start was sent.'); })
+  }
+  return query.then(function (st) { return reconcile(st, false); })
+    .catch(function (err) { if (_irManualGap === held) _irManualGapUnknown_('The status read did not complete (' + String(err && err.message || err) + '). No second start was sent.'); })
     .then(function () { held.checking = false; });
 }
 function _irRecalcBtn_() { return (typeof document !== 'undefined' && document.getElementById) ? document.getElementById('replen-recalc-all-btn') : null; }

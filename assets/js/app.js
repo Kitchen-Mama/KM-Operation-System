@@ -134,7 +134,7 @@ var KM_ROUTE_ASSETS_ = {
             // KMMSA / 43_ / 71_ use, and is itself a declared mirror of this page's frozen IRCountry alias
             // table, so this borrows one authority rather than introducing a second.
             'assets/js/core/supply-planning-country-identity.js?v=r65-dc2r2-20261022',
-            'assets/js/pages/inventory-replenishment.js?v=gap-status-recovery-20261125-v6'
+            'assets/js/pages/inventory-replenishment.js?v=gap-status-recovery-20261125-v7'
         ],
         partial: { key: 'inventory-replenishment', url: 'assets/html/pages/inventory-replenishment.html',
             target: '#inventory-replenishment-mount' },

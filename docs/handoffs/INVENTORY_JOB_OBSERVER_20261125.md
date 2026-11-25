@@ -7,7 +7,7 @@
 - A lost status or observation timeout is unconfirmed, not a failed backend calculation. The manual run keeps its run ID and read-only Check status action; it never automatically resends START.
 - Mount recovery mirrors progress on the visible AI Support trigger immediately after confirming an active run.
 - Returning to idle uses the fixed AI Support label, never a captured Starting label.
-- Frontend cache tag: gap-status-recovery-20261125-v6.
+- Frontend cache tag: gap-status-recovery-20261125-v7.
 
 ## Missing Run ID Recovery Follow-Up
 
@@ -20,6 +20,7 @@ The owner reproduced a dead end: an old persisted manual wait had no run ID. Che
 - Clearing does not cancel, restart, or confirm the original server operation. The original outcome stays explicitly unknown. There is no automatic START retry.
 - A known run's confirmed DONE can release the wait even before a site has been searched. Failed result readback is reported separately and no longer re-locks a finished job.
 - Confirmed server STALLED is terminal; a client-generated observation timeout with no matching run identity is not.
+- A remembered run ID returning NONE, an identity mismatch, or an unusable targeted reply now falls back to a fresh latest-job read. A newer/different terminal job is shown separately and can permit an explicitly confirmed local-clear only after a second idle check; it never proves the old run completed. The exact same known run may be confirmed by the latest endpoint.
 
 This follow-up needs no Apps Script changes and does not change demand, allocation or gap formulas. Deploy the earlier six-file backend package for the daily allocation separately; this browser recovery update ships through GitHub Pages.
 
