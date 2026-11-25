@@ -7,6 +7,7 @@
     var preWarehousePolicy = 'cc77c5a4692be7e787c65557198f7d673bcc06ece2cfb658f6655601fffd9420';
     var preStatusPolicy = 'ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab';
     var preMixedPolicy = '320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221';
+    var preCampaignPolicy = 'ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c';
     window.KM_PRODUCTION_GUARD_ = G;
     function fail(code) { G.verdict = code; G.identity = null; return new Error(code); }
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
@@ -25,7 +26,7 @@
             var p = r && r.production_gate;
             if (r && r.success === false && /^PRODUCTION_(MODULE_MISMATCH|TARGET_MISMATCH|TARGET_UNAVAILABLE|FLAT_V2_REQUIRED)$/.test(r.code || '')) throw fail(r.code);
             if (!r.success || !p || p.environment !== 'KM_PRODUCTION' || p.profile_id !== C.profile_id ||
-                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
+                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy && p.policy_sha256 !== preCampaignPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
                 p.administration_enabled !== false || p.ai_plan_enabled !== false) throw fail('PRODUCTION_IDENTITY_MISMATCH');
             G.identity = p; G.verdict = 'VERIFIED'; return true;
         }).catch(function (e) { flight = null; if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
@@ -34,9 +35,10 @@
     G.ready = identity;
     G.environmentKey = function () { return G.verdict === 'VERIFIED' ? 'production:' + C.endpoint_sha256 + ':' + C.db_fp + ':' + C.profile_id : ''; };
     G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0 &&
-        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy))) &&
-        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy))) &&
-        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)) &&
+        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy))) &&
+        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy))) &&
+        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preCampaignPolicy))) &&
+        !(/^campaign\.builder\./.test(a) && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)) &&
         !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 === priorPolicy)); };
     window.fetch = function (input, init) {
         var u;
@@ -57,7 +59,8 @@
             if (!G.isActionAllowed(action)) throw new Error(action === 'factoryInventory.workspace.get'
                 ? 'PRODUCTION_WAREHOUSE_BACKEND_UPDATE_REQUIRED' : action === 'gapJob.status.get'
                 ? 'PRODUCTION_STATUS_BACKEND_UPDATE_REQUIRED' : action === 'shippingPlan.mixedCartons.save'
-                ? 'PRODUCTION_MIXED_CARTONS_BACKEND_UPDATE_REQUIRED' : 'PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED');
+                ? 'PRODUCTION_MIXED_CARTONS_BACKEND_UPDATE_REQUIRED' : /^campaign\.builder\./.test(action)
+                ? 'PRODUCTION_CAMPAIGN_BACKEND_UPDATE_REQUIRED' : 'PRODUCTION_ALLOCATION_EDIT_BACKEND_UPDATE_REQUIRED');
             return nativeFetch(input, init);
         });
     };

@@ -5723,6 +5723,8 @@ async function _kmWeeklyCommand_(command, payload) {
         // F1-7N-FB-2A §E — also carry the handler's own `stage` and the PROVEN zero-write fact, so the page can
         // state "nothing was written" only when the server's own reason establishes it.
         var _det = (_structured && _structured.details) || ((json.data && typeof json.data === 'object') ? json.data : null) || {};
+        if(command === 'campaign.builder.save' && Array.isArray(json.issues)) _det.issues=json.issues;
+        if(command === 'campaign.builder.save' && (json.zero_write===true || json.writes_performed===0 || json.code==='IMPORT_FAILED_ROLLED_BACK')) _det.zero_write=true;
         if ((command === 'updateShippingPlanLineQty' || command === 'shippingPlan.mixedCartons.save') && payload && payload.line_edits && Array.isArray(json.issues)) _det.issues = json.issues;
         if (json.stage != null && _det.stage == null) _det.stage = String(json.stage);
         if (_det.zero_write == null && _kmZeroWriteProven_(_emsg)) _det.zero_write = true;
@@ -5768,6 +5770,20 @@ window.KM.DB.saveMixedCartons = async function(payload) {
     if(guard){try{await guard.ready();}catch(e){return _kmCmdErr_('shippingPlan.mixedCartons.save',String(e.message),'Production identity could not be verified.');}
         if(!guard.isActionAllowed('shippingPlan.mixedCartons.save'))return _kmCmdErr_('shippingPlan.mixedCartons.save','PRODUCTION_MIXED_CARTONS_BACKEND_UPDATE_REQUIRED','Update the matching Apps Script mixed-carton release before saving. Nothing was sent.');}
     return _kmWeeklyCommand_('shippingPlan.mixedCartons.save', payload);
+};
+async function _kmCampaignRead_(action,payload) {
+    var guard=window.KM_PRODUCTION_GUARD_;
+    if(guard){try{await guard.ready();}catch(e){return {success:false,error:{code:String(e.message),message:'Production identity could not be verified.'}};}
+        if(!guard.isActionAllowed(action))return {success:false,zero_write:true,error:{code:'PRODUCTION_CAMPAIGN_BACKEND_UPDATE_REQUIRED',message:'Install the matching Campaign Builder Apps Script release before using this builder.'}};}
+    return _kmGapRead_(action,payload);
+}
+window.KM.DB.getCampaignBuilder = function(scope) { return _kmCampaignRead_('campaign.builder.get', {scope:scope||{}}); };
+window.KM.DB.getCampaignBuilderStatus = function(requestId) { return _kmCampaignRead_('campaign.builder.status', {request_id:requestId}); };
+window.KM.DB.saveCampaignBundle = async function(payload) {
+    var guard=window.KM_PRODUCTION_GUARD_;
+    if(guard){try{await guard.ready();}catch(e){return _kmCmdErr_('campaign.builder.save',String(e.message),'Production identity could not be verified.');}
+        if(!guard.isActionAllowed('campaign.builder.save'))return _kmCmdErr_('campaign.builder.save','PRODUCTION_CAMPAIGN_BACKEND_UPDATE_REQUIRED','Install the matching Campaign Builder Apps Script release. Nothing was sent.',{zero_write:true});}
+    return _kmWeeklyCommand_('campaign.builder.save',payload);
 };
 // Append a note to shipping_plans.note (append-only history): { shipping_plan_id, note, actor? }.
 window.KM.DB.appendShippingPlanNote = function(payload) { return _kmWeeklyCommand_('appendShippingPlanNote', payload); };
@@ -5834,6 +5850,8 @@ window.KM.DB.cancelOrderPlanningGapJob = function(runId) { return _kmWeeklyComma
 // own GET branches — and (b) zero-write when EXECUTED against an instrumented spreadsheet.
 // =============================================================================================================
 var _KM_GET_READ_ACTIONS_ = {
+    'campaign.builder.get': 1,
+    'campaign.builder.status': 1,
     // Already GET-routed before R4A1 (their own branches in doGet); now dispatched as GET by the client too.
     'system.health': 1,
     'getClientCapabilities': 1,
@@ -7536,6 +7554,7 @@ var _KM_SOURCE_WRITE_FAMILIES_ = {
     createShippingPlansBatch: ['planning', 'exposure'], updateShippingPlanStatus: ['planning', 'exposure'],
     updateShippingPlanLineQty: ['planning', 'exposure'], appendShippingPlanNote: ['planning', 'exposure'],
     saveMixedCartons: ['planning', 'exposure'],
+    saveCampaignBundle: ['planning', 'exposure'],
     completeShippingPlan: ['planning', 'exposure'], updateShippingPlanRationale: ['planning', 'exposure'],
     selectShippingPlanCarrier: ['planning', 'exposure'], combineShippingPlans: ['planning', 'exposure'],
     uncombineShippingPlans: ['planning', 'exposure'], createShipmentFromPlan: ['planning', 'exposure'],

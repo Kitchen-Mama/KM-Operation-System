@@ -3970,6 +3970,7 @@ function _evtHydrateExisting_(campaignId) {
     campaignId: campaignId,
     campaignVersion: campRaw ? _cmpFingerprint_(campRaw) : '',
     campaignKnown: !!campRaw,
+    promotionType: campRaw ? campRaw.promotion_type : '',
     eventName: g.eventName, startDate: g.startDate, endDate: g.endDate, year: g.year,
     // §9 — how many SKUs the SAVED event holds. Counted here rather than from the form, which the
     // operator may already have added a row to; the banner reports what is stored.
@@ -4043,6 +4044,11 @@ var _evtGroups = [];   // batch-mode group cards: { category, series, regularPri
 
 // Open Event Modal (Scope → Event Info → Mode → Single-SKU rows OR Category/Series group cards).
 function openEventModal() {
+  window.KM.campaignBuilder.open({origin:'forecast',onExisting:_evtOpenLegacyModal_,onSaved:function(){
+    return _fcAfterWriteScoped_(FC_SLICE_.EVENTS,function(){if(typeof renderFcEventTable==='function')renderFcEventTable();});
+  }});
+}
+function _evtOpenLegacyModal_() {
   // SECONDARY surface: the Special Event Builder reads campaigns / marketplace_skus / sku_details / pricing_list from
   // the broad cache. In Workspace mode the primary render never loads it, so lazy-load it here (once) before opening.
   // FC-SUMMARY-R1 — see openRegularUpdateModal: refuse visibly, never re-enter.
@@ -4295,8 +4301,8 @@ function _evtUpdateDiscountRow() {
 }
 
 // Toggle Event Flag behaviour.
-//   Normal    → NOT a special event; Save creates nothing.
-//   != Normal → Forecast Qty required per SKU row / group card.
+// Normal is a general promotion with period FC. New creates use the shared campaign builder.
+// The legacy editor below remains available for persisted event rows.
 //
 // FC-SUMMARY-R2B-A3-R10 §10.2 — THIS NO LONGER DECIDES WHETHER THE DATE CONTROLS EXIST.
 //
@@ -4308,9 +4314,7 @@ function _evtUpdateDiscountRow() {
 // showing, and A3-R9 had just made those dates load-bearing for the save. The two halves of one
 // feature were owned by different functions and only one of them ran.
 //
-// The flag still decides whether a period is MEANINGFUL — 'Normal' writes no event at all, and the
-// description below still says so. Visibility belongs to `_evtSyncPeriodUi_`, which derives it from
-// the mode the builder is actually in.
+// Every flag, including Normal, has a period. Editing visibility belongs to `_evtSyncPeriodUi_`.
 function toggleEventFlagFields() {
   var flag = (document.getElementById('event-name-input') || {}).value || 'Normal';
   var isNormal = flag === 'Normal';
@@ -4318,7 +4322,7 @@ function toggleEventFlagFields() {
   var desc = document.getElementById('event-method-description');
   if (desc) {
     desc.innerHTML = isNormal
-      ? '<strong>Normal:</strong> no special-event forecast is created — regular monthly forecast (fc_regular_forecast) already covers baseline demand. Nothing is written to campaigns / fc_special_events.'
+      ? '<strong>Normal:</strong> General promotion with a dated campaign forecast.'
       : '<strong>' + flag + ':</strong> Event Period + Target Year required. Forecast Qty is required per SKU row (Single) / group card (Category-Series). Save targets campaigns → campaign_sku_lines → fc_special_events.';
   }
 }
@@ -5933,15 +5937,14 @@ async function saveEventUpdate() {
 
   if (!country || !site.marketplace) { alert('Country and Marketplace are required.'); return; }
 
-  if (eventFlag === 'Normal') {
-    alert('Event Flag is "Normal" — no campaign / special-event forecast is created.\n\n' +
-      'Baseline demand is covered by the regular monthly forecast (fc_regular_forecast).');
+  if (!_evtEditingActive_()) {
     closeFcModal();
+    openEventModal();
     return;
   }
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
   if (!demoOn && !company) { alert('Select a Marketplace (company scope) — company could not be resolved. KM and ResUS are separate scopes.'); return; }
-  if (!eventStartDate || !eventEndDate) { alert('Event Start Date and Event End Date are required for a non-Normal event.'); _evtShowPeriodError('Event Start Date and Event End Date are required.'); return; }
+  if (!eventStartDate || !eventEndDate) { alert('Event Start Date and Event End Date are required.'); _evtShowPeriodError('Event Start Date and Event End Date are required.'); return; }
   if (!_evtValidatePeriod()) { alert('Event Start Date must be on or before Event End Date.'); return; }
   var targetYear = parseInt(eventStartDate.slice(0, 4), 10) || parseInt((document.getElementById('event-target-year') || {}).value, 10);
   if (!targetYear) { alert('Target Year is required.'); return; }
@@ -6075,7 +6078,7 @@ async function saveEventUpdate() {
 
   var campaignPayload = {
     campaign_name: eventFlag + ' ' + targetYear, company: company, marketplace_id: marketplaceId,
-    country: country, marketplace: mkey, promotion_type: eventFlag, event_flag: eventFlag,
+    country: country, marketplace: mkey, promotion_type: _evtEditing_ && _evtEditing_.promotionType || eventFlag, event_flag: eventFlag,
     major_event_flag: eventFlag, year: targetYear, start_date: eventStartDate, end_date: eventEndDate,
     event_period: eventPeriod, status: 'active', source: 'fc_summary_builder'
   };

@@ -31,7 +31,7 @@
 // An OLD 14_ beside the new page is the dangerous pairing, and it is silent: the page would send
 // expected_row_version and the old handler would IGNORE it — accepting every stale write it was added
 // to refuse, while returning success. Only a declared build separates those two deployments.
-var FCW_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
+var FCW_BUILD_VERSION_ = 'FCW-CAMPAIGN-NORMAL-20261125-V1';
 
 // fc_special_events header. event_name / event_month / fc_qty are the task-defined columns;
 // event_period + year are additional UI-continuity columns (FC Summary Event table shows/filters them).
@@ -281,7 +281,8 @@ function fcEvtUp_(v) { return String(v == null ? '' : v).trim().toUpperCase(); }
 // migration this round is not authorised to make.
 var FC_SE_UNIQUENESS_FIELDS_ = ['company', 'country', 'marketplace', 'sku', 'event_name', 'year'];
 function fcSeUniquenessKey_(get) {
-  return FC_SE_UNIQUENESS_FIELDS_.map(function (fld) { return fcEvtUp_(get(fld)); }).join('|');
+  var key = FC_SE_UNIQUENESS_FIELDS_.map(function (fld) { return fcEvtUp_(get(fld)); }).join('|');
+  return fcEvtUp_(get('event_name')) === 'NORMAL' ? key + '|' + fcEvtUp_(get('campaign_id')) : key;
 }
 // Returns the conflicting row {event_fc_id, event_start_date, event_end_date} or null. `selfRow` is the
 // 1-based sheet row this write already owns, so an UPDATE never conflicts with itself.

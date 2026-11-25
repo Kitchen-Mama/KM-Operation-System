@@ -939,6 +939,22 @@ function buildPriceGroupsForBatchSelection(category, series) {
 }
 
 function openAddPromotionModal() {
+    if (!crScopeReady()) { alert('Select Country and Marketplace first.'); return; }
+    var scope={marketplace_id:CampaignRiskState.marketplaceId,company:CampaignRiskState.company,country:CampaignRiskState.country,marketplace:CampaignRiskState.marketplace};
+    var localCount=promotionMockData.filter(function(p){return _crEqv(p.country,scope.country)&&_crEqv(p.marketplace,scope.marketplace)&&(!p.company||_crEqv(p.company,scope.company));}).length;
+    window.KM.campaignBuilder.open({origin:'promotion',scope:scope,lockScope:true,missingLocalCount:localCount,onSaved:function(data){
+        if (!crScopeReady() || !_crEqv(CampaignRiskState.marketplaceId,scope.marketplace_id)) return;
+        var prior=_crReadModel||{},ids=Object.create(null),core=window.KM.campaignBuilderCore;
+        (prior.campaigns||[]).filter(function(c){return core.same(c,scope);}).forEach(function(c){ids[c.campaignId]=true;});
+        data.campaigns.forEach(function(c){ids[c.campaign_id]=true;});
+        _crReadModel=Object.assign({},prior,{campaigns:(prior.campaigns||[]).filter(function(c){return !core.same(c,scope);}).concat(data.campaigns.map(normalizeCampaignRecord)),
+            campaignSkuLines:(prior.campaignSkuLines||[]).filter(function(l){return !ids[l.campaignId];}).concat(data.campaignSkuLines.map(normalizeCampaignSkuLineRecord))});
+        _CR_SHIM=null;crRenderScoped();
+    }});
+}
+
+// Retained only for reading pre-release local drafts; live Add always uses the canonical builder above.
+function _crOpenLegacyPromotionModal_() {
     let modal = document.getElementById('cr-add-modal');
     if (!modal) { modal = document.createElement('div'); modal.id = 'cr-add-modal'; modal.className = 'cr-modal-overlay'; document.body.appendChild(modal); }
     crAddMode = 'single'; crPriceGroups = []; crAddPreview = null;

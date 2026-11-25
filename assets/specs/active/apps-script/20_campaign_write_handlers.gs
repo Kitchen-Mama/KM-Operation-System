@@ -32,7 +32,117 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32';
+var CAMPAIGN_BUILD_VERSION_ = 'CAMPAIGN-BUILDER-20261125-V1';
+
+// Both authoring screens use one journaled command and one period-demand authority.
+function cbTable_(ss, name, required) {
+  var t = pmiTable_(ss, name);
+  if (!t || (required || []).some(function(k){return t.col(k)<0;})) throw new Error('CAMPAIGN_SCHEMA_MISSING: '+name);
+  return t;
+}
+function cbSnapshot_(ss) {
+  return ['campaigns','campaign_sku_lines','fc_special_events'].map(function(n){return [n,ss.getSheetByName(n).getDataRange().getValues()];});
+}
+function cbDay_(v) {
+  return Object.prototype.toString.call(v)==='[object Date]' ? Utilities.formatDate(v,Session.getScriptTimeZone(),'yyyy-MM-dd') : String(v==null?'':v).slice(0,10);
+}
+function cbData_(ss, scope) {
+  var data={}, names={marketplaceSkus:'marketplace_skus',skuDetails:'sku_details',pricingList:'pricing_list',campaigns:'campaigns',campaignSkuLines:'campaign_sku_lines',fcSpecialEvents:'fc_special_events'};
+  Object.keys(names).forEach(function(k){data[k]=cbTable_(ss,names[k]).rows.map(function(r){var o=Object.assign({},r);delete o.__r;
+    ['start_date','end_date','event_start_date','event_end_date'].forEach(function(f){if(o[f])o[f]=cbDay_(o[f]);});return o;});});
+  data.pricingList=data.pricingList.map(function(r){return Object.assign({},r,{resolvedRegularPrice:pricingResolveEffective_(r,{field:'regular_price',auto:'auto_regular_price',flag:'regular_price_is_manual'}).value});});
+  data.marketplaceSkus=data.marketplaceSkus.filter(function(r){return KMCB.same(r,scope);});
+  var ids={};data.marketplaceSkus.forEach(function(r){ids[String(r.marketplace_sku_id)]=true;});
+  data.pricingList=data.pricingList.filter(function(r){return ids[String(r.marketplace_sku_id)];});
+  data.campaigns=data.campaigns.filter(function(r){return KMCB.same(r,scope);});
+  var campaigns={};data.campaigns.forEach(function(r){campaigns[String(r.campaign_id)]=true;});
+  data.campaignSkuLines=data.campaignSkuLines.filter(function(r){return campaigns[String(r.campaign_id)];});
+  data.fcSpecialEvents=data.fcSpecialEvents.filter(function(r){return KMCB.same(r,scope);});
+  return data;
+}
+function cbSite_(ss, claim) {
+  var sites=cbTable_(ss,'marketplaces',['marketplace_id','company','country','marketplace']).rows;
+  var hits=sites.filter(function(r){return String(r.marketplace_id)===String(claim.marketplace_id);});
+  if(hits.length!==1 || /^(inactive|false|0)$/i.test(String(hits[0].status||hits[0].is_active||'')))throw new Error('CAMPAIGN_SITE_INVALID');
+  var site=hits[0];
+  ['company','country','marketplace'].forEach(function(k){if(String(claim[k]||'').toUpperCase()!==String(site[k]).toUpperCase())throw new Error('CAMPAIGN_SITE_MISMATCH');});
+  return site;
+}
+function handleCampaignBuilderGet_(body) {
+  try {
+    var ss=imbDb_(),scope=body.scope||{},sites=cbTable_(ss,'marketplaces',['marketplace_id','company','country','marketplace']).rows;
+    sites=sites.filter(function(s){return !/^(inactive|false|0)$/i.test(String(s.status||s.is_active||''));}).map(function(s){return {marketplace_id:s.marketplace_id,company:s.company,country:s.country,marketplace:s.marketplace};});
+    if(!scope.marketplace_id)return jsonResponse_({success:true,data:{sites:sites}});
+    cbSite_(ss,scope);
+    var data=cbData_(ss,scope);
+    data.sites=sites;data.today=KMSC.localDate(Date.now(),scope.country,function(d,tz){return Utilities.formatDate(d,tz,'yyyy-MM-dd');});
+    return jsonResponse_({success:true,data:data});
+  }catch(e){return jsonResponse_({success:false,code:'CAMPAIGN_BUILDER_READ_FAILED',error:String(e.message||e)});}
+}
+function handleCampaignBuilderSave_(body) {
+  if(body.builder_version!=='CAMPAIGN_BUILDER_V1')return jsonResponse_({success:false,code:'CAMPAIGN_BUILDER_VERSION_INVALID',error:'Refresh the Campaign Builder.',zero_write:true});
+  var req={domain:'campaign_builder',mode:'CREATE',schema_version:'CAMPAIGN-BUILDER-1',import_batch_id:String(body.request_id||''),scope:body.scope||{},sheets:{Lines:body.lines},actor:body.actor||'operation-system',file:{name:'campaign-builder'}};
+  var preview=JSON.parse(handleImportValidate_(req).getContent());
+  req.preview_digest=preview.preview_digest;
+  // A committed receipt is resolved before stale live prices or overlap checks on replay.
+  if(preview.success===false)return jsonResponse_(preview);
+  var result=JSON.parse(handleImportCommit_(req).getContent());
+  if(result.success)result.data=Object.assign({},result.result,{request_id:req.import_batch_id});
+  return jsonResponse_(result);
+}
+function handleCampaignBuilderStatus_(body) {
+  var r=JSON.parse(handleImportReceiptGet_({domain:'campaign_builder',import_batch_id:String(body.request_id||'')}).getContent());
+  return jsonResponse_(r.success?{success:true,data:{receipt:r.receipt}}:r);
+}
+function cbValidate_(ss,req) {
+  try {
+    var scope=req.scope;
+    if(Object.keys(scope).some(function(k){return ['marketplace_id','company','country','marketplace','campaign_name','promotion_type','event_flag','start_date','end_date','source','source_campaign_id','growth_pct','discount_pct'].indexOf(k)<0;}))throw new Error('CAMPAIGN_FIELD_UNKNOWN');
+    if(Object.keys(scope).some(function(k){return scope[k]!==null&&typeof scope[k]==='object'||String(scope[k]||'').length>300||/^\s*=/.test(String(scope[k]||''));}))throw new Error('CAMPAIGN_FIELD_INVALID');
+    cbSite_(ss,scope);
+    var tables=[cbTable_(ss,'campaigns',CAMPAIGNS_HEADERS_),cbTable_(ss,'campaign_sku_lines',CAMPAIGN_SKU_LINES_HEADERS_),cbTable_(ss,'fc_special_events',FC_SPECIAL_EVENTS_HEADERS_)];
+    var receipts=imbSheets_(ss);
+    if(!receipts)throw new Error('IMPORT_SCHEMA_NOT_PROVISIONED');
+    imbRows_(receipts.receipts).forEach(function(r){if(r.domain!=='campaign_builder'||String(r.import_batch_id)===req.id||['COMMITTING','UNKNOWN_OUTCOME'].indexOf(String(r.status))<0)return;
+      var held=JSON.parse(String(r.scope_key));if(KMCB.same(held,scope))throw new Error('CAMPAIGN_PREVIOUS_OUTCOME_UNKNOWN');});
+    req.sheets.Lines.forEach(function(l){if(Object.keys(l).some(function(k){return ['__row','marketplace_sku_id','sku','regular_price','price_units','promo_price','fc_qty'].indexOf(k)<0;}))throw new Error('CAMPAIGN_LINE_FIELD_UNKNOWN');});
+    var data=cbData_(ss,scope),validated=KMCB.validate(scope,req.sheets.Lines,data),key=campaignKeyOf_(scope);
+    if(scope.source_campaign_id){var today=KMSC.localDate(Date.now(),scope.country,function(d,tz){return Utilities.formatDate(d,tz,'yyyy-MM-dd');});
+      if(!KMCB.history(data,scope,scope.promotion_type,validated.start,today).some(function(c){return String(c.campaign_id)===String(scope.source_campaign_id);}))throw new Error('CAMPAIGN_HISTORY_SCOPE_MISMATCH');}
+    if(data.campaigns.some(function(c){return campaignKeyOf_(c)===key;}))throw new Error('CAMPAIGN_ALREADY_EXISTS');
+    var id='CMP-CB-'+imbSha_(req.id).slice(0,24).toUpperCase(),now=imbNow_(),actor=req.actor;
+    var header={campaign_id:id,company:scope.company,country:scope.country,marketplace:scope.marketplace,marketplace_id:scope.marketplace_id,
+      campaign_name:String(scope.campaign_name||scope.event_flag+' '+validated.start),promotion_type:KMCB.type(scope.promotion_type),event_flag:scope.event_flag,major_event_flag:scope.event_flag,
+      start_date:validated.start,end_date:validated.end,year:Number(validated.start.slice(0,4)),duration:Math.round((Date.parse(validated.end+'T00:00:00Z')-Date.parse(validated.start+'T00:00:00Z'))/86400000)+1,
+      status:'active',source:'campaign_builder',created_by:actor,updated_by:actor,created_at:now,updated_at:now};
+    var lines=[],events=[];
+    validated.rows.forEach(function(r){var suffix=imbSha_(req.id+'|'+r.marketplaceSkuId).slice(0,24).toUpperCase(),lid='CSL-CB-'+suffix;
+      var event={event_fc_id:'EFC-CB-'+suffix,campaign_id:id,campaign_sku_line_id:lid,marketplace_id:scope.marketplace_id,company:scope.company,country:scope.country,marketplace:scope.marketplace,
+        scope_type:'SKU',scope_id:r.sku,sku:r.sku,series:r.series,category:r.category,event_name:scope.event_flag,event_period:validated.start+' - '+validated.end,event_start_date:validated.start,event_end_date:validated.end,
+        event_month:Number(validated.start.slice(5,7)),year:Number(validated.start.slice(0,4)),fc_qty:r.fcQty,note:JSON.stringify({origin:scope.source||'campaign_builder',source_campaign_id:scope.source_campaign_id||'',growth_pct:scope.growth_pct||'',discount_pct:scope.discount_pct||''}),
+        created_by:actor,updated_by:actor,created_at:now,updated_at:now};
+      var conflict=fcSeUniquenessConflict_({rows:[tables[2].headers].concat(tables[2].rows.map(function(o){return tables[2].headers.map(function(k){return o[k];});})),col:tables[2].col},event,0);
+      if(conflict)throw new Error('FC_SPECIAL_EVENT_DUPLICATE: '+r.sku);
+      lines.push({campaign_sku_line_id:lid,campaign_id:id,marketplace_sku_id:r.marketplaceSkuId,sku:r.sku,promo_price:r.dealPrice,regular_price:r.regularPrice,price_units:r.currency,discount_percent:r.discountPct,
+        line_status:'active',source:'campaign_builder',created_by:actor,updated_by:actor,created_at:now,updated_at:now});events.push(event);
+    });
+    var objects=[[header],lines,events];
+    objects.forEach(function(list,i){var field=['campaign_id','campaign_sku_line_id','event_fc_id'][i];if(list.some(function(o){return tables[i].rows.some(function(r){return String(r[field])===o[field];});}))throw new Error('CAMPAIGN_ID_COLLISION');});
+    return {issues:[],plan:{objects:objects,rollback:cbSnapshot_(ss)},state:{data:data,headers:tables.map(function(t){return t.headers;})},preview:{counts:{campaigns:1,sku_lines:lines.length,event_forecasts:events.length,skipped:validated.skipped}}};
+  }catch(e){return {issues:[{code:e.code||String(e.message||e).split(':')[0],message:String(e.message||e)}],plan:null,state:{},preview:{counts:{reject:1}}};}
+}
+function cbApply_(ss,plan,ctx) {
+  var names=['campaigns','campaign_sku_lines','fc_special_events'],fields=['campaign_id','campaign_sku_line_id','event_fc_id'];
+  names.forEach(function(name,i){var t=cbTable_(ss,name);ctx.journal.appendRows(t.sheet,t.headers,plan.objects[i]);ctx.journal.change({entity_table:name,entity_id:plan.objects[0][0].campaign_id,field:'created_rows',before:'',after:plan.objects[i].length});});
+  SpreadsheetApp.flush();
+  names.forEach(function(name,i){var rows=cbTable_(ss,name).rows;plan.objects[i].forEach(function(o){var hit=rows.filter(function(r){return String(r[fields[i]])===o[fields[i]];});
+    if(hit.length!==1||Object.keys(o).some(function(k){var a=hit[0][k],b=o[k];if(/^(start_date|end_date|event_start_date|event_end_date)$/.test(k))return cbDay_(a)!==b;
+      if(/^(created_at|updated_at)$/.test(k)&&Object.prototype.toString.call(a)==='[object Date]')a=Utilities.formatDate(a,Session.getScriptTimeZone(),'yyyy-MM-dd HH:mm:ss');return String(a)!==String(b);}))throw new Error('CAMPAIGN_READBACK_FAILED: '+name);});});
+  return {result:{campaign_id:plan.objects[0][0].campaign_id,sku_count:plan.objects[1].length,fc_count:plan.objects[2].length,readback_verified:true}};
+}
+function imbCampaignBuilderDomain_() {
+  return {domain:'campaign_builder',schema_version:'CAMPAIGN-BUILDER-1',modes:['CREATE'],sheets:['Lines'],maxRows:500,validate:cbValidate_,apply:cbApply_,verifyRollback:function(ss,p){return JSON.stringify(cbSnapshot_(ss))===JSON.stringify(p.rollback);}};
+}
 
 // campaigns canonical header (existing columns + additive `company`, `marketplace_id`).
 var CAMPAIGNS_HEADERS_ = [

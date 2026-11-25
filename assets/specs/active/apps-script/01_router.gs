@@ -88,6 +88,8 @@ var RTR_GET_BODY_MAX_ = 4000;
 
 function rtrGetReadHandlers_() {
 return {
+'campaign.builder.get': handleCampaignBuilderGet_,
+'campaign.builder.status': handleCampaignBuilderStatus_,
 'siteSku.planning.list': handleSiteSkuPlanningList_,
 
 'skuDetails.workspace.get': handleSkuDetailsWorkspaceGet_,
@@ -515,6 +517,7 @@ if (action === 'shippingPlan.mixedCartons.save') {
 if (body.packing_version !== 'MIXED_CARTONS_V1' || !Array.isArray(body.mixed_cartons) || !Array.isArray(body.line_edits)) return jsonResponse_({success:false,zero_write:true,code:'MIXED_PACKING_VERSION_INVALID'});
 return handleWeeklyDraftLines_(body);
 }
+if (action === 'campaign.builder.save') return handleCampaignBuilderSave_(body);
 if (action === 'shippingPlan.rateCardOptions') {   // SANDBOX-GATE-1f (read)
 return handleShippingPlanRateCardOptions_(body);
 }
@@ -1387,7 +1390,10 @@ var RTR_PRODUCTION_PROFILE_ = {
     "upsertTaxRateComponent",
     "upsertTaxReferralRate",
     "warehouseAllocation.get",
-    "weeklyShipping.workspace.get"
+    "weeklyShipping.workspace.get",
+    "campaign.builder.get",
+    "campaign.builder.status",
+    "campaign.builder.save"
   ],
   "reads": [
     "aiPlanFirstLayer.get",
@@ -1442,7 +1448,9 @@ var RTR_PRODUCTION_PROFILE_ = {
     "system.health",
     "system.sourceRevision",
     "warehouseAllocation.get",
-    "weeklyShipping.workspace.get"
+    "weeklyShipping.workspace.get",
+    "campaign.builder.get",
+    "campaign.builder.status"
   ],
   "blocked": [
     "adjustFactoryInventory",
@@ -1554,7 +1562,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "IMB_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5-CB1",
       "optional": false
     },
     {
@@ -1704,12 +1712,12 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "FCW_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+      "expected": "FCW-CAMPAIGN-NORMAL-20261125-V1",
       "optional": false
     },
     {
       "symbol": "CAMPAIGN_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+      "expected": "CAMPAIGN-BUILDER-20261125-V1",
       "optional": false
     },
     {
@@ -1729,7 +1737,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "KM_BUNDLE_CONTENT_HASH_",
-      "expected": "5aa21ae41f9878279c88173052db4ec6cec5fc360da3a6665120a2d1f9d2dada",
+      "expected": "a2899f18b09e16b24292dc49718b1b2003e726fbe85fa88741eb73e8efc81518",
       "optional": false
     },
     {
@@ -1799,7 +1807,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c"
+  "policy_sha256": "0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

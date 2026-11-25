@@ -22,11 +22,11 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
-test('baseline keeps explicit additions limited to monthly edit, warehouse/status reads and mixed packing', () => {
+test('baseline keeps explicit additions limited to monthly edit, warehouse/status reads, mixed packing and campaign builder', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
-  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', body.action].sort());
+  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', 'campaign.builder.get','campaign.builder.status','campaign.builder.save', body.action].sort());
   assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action && a !== 'gapJob.status.get'));
-  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get'), oldP.reads);
+  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get' && !/^campaign\.builder\./.test(a)), oldP.reads);
   assert.equal(p.ai_plan_enabled, false);
 });
 test('policy hash, public config and health module stamps agree', () => {
@@ -204,4 +204,23 @@ test('real mixed-packing client deduplicates writes and invalidates planning/exp
   assert.equal(h.epoch().planning,1);assert.equal(h.epoch().exposure,1);
   h.release(JSON.stringify({success:true,data:{readback_verified:true}}));await a;
   assert.equal(h.epoch().planning,2);assert.equal(h.epoch().exposure,2);
+});
+
+test('new campaign service requires matching release while pre-campaign retains existing actions',async()=>{
+ const prior={...p,policy_sha256:'ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c'},g=guard(prior);
+ for(const action of ['gapJob.status.get','factoryInventory.workspace.get','shippingPlan.mixedCartons.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ for(const action of ['campaign.builder.get','campaign.builder.status','campaign.builder.save']){const before=g.sent.length;await assert.rejects(g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})}),/CAMPAIGN_BACKEND_UPDATE_REQUIRED/);assert.equal(g.sent.length,before);}
+ const fresh=guard();for(const action of ['campaign.builder.get','campaign.builder.status','campaign.builder.save']){assert.equal(c.rtrActionGate_(action,{}),null);await fresh.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});}
+ assert.equal(fresh.writes.length,1);
+ assert.equal(c.rtrActionGate_('import.commit',{domain:'campaign_builder',mode:'CREATE'}).code,'PRODUCTION_IMPORT_SCOPE_REFUSED');
+});
+test('campaign module pins, core and health manifest agree; canonical client is single-flight and invalidates both source families',async()=>{
+ const context=vm.createContext({});for(const file of ['20_campaign_write_handlers.gs','14_fc_write_handlers.gs','78_api_v1_import_batch.gs','63_api_v1_system_health.gs','90_generated_supply_planning_bundle.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),context);
+ for(const symbol of ['CAMPAIGN_BUILD_VERSION_','FCW_BUILD_VERSION_','IMB_BUILD_VERSION_','KM_BUNDLE_CONTENT_HASH_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,context[symbol]);assert.equal(context.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,context[symbol]);}
+ assert.equal(context.KMCB.VERSION,'CAMPAIGN_BUILDER_V1');
+ const {makeClient}=require('./helpers/write-command-flight-world.cjs'),h=makeClient({hold:true});h.sb._kmWriterPostWrite_=async()=>{};
+ assert.deepEqual(plain(h.DB.sourceWriteFamilies('saveCampaignBundle')),['planning','exposure']);assert.equal(h.DB._sourceWriterListDrift.length,0);
+ const b={request_id:'CB-TEST-CLIENT',builder_version:'CAMPAIGN_BUILDER_V1',scope:{},lines:[]},a=h.DB.saveCampaignBundle(b),again=h.DB.saveCampaignBundle(b);assert.equal(a,again);
+ assert.equal(h.log.fetches.length,1);assert.equal(JSON.parse(h.log.fetches[0].body).action,'campaign.builder.save');assert.equal(h.epoch().planning,1);assert.equal(h.epoch().exposure,1);
+ h.release(JSON.stringify({success:true,data:{readback_verified:true}}));await a;assert.equal(h.epoch().planning,2);assert.equal(h.epoch().exposure,2);
 });

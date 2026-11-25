@@ -28,7 +28,7 @@
 
 
 
-var IMB_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5';   // SHIP-OPEN R4 (review B1): file_meta + read-only reconcile
+var IMB_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5-CB1';
 var IMB_RECEIPTS_ = 'import_batches', IMB_CHANGES_ = 'import_batch_changes';
 var IMB_RECEIPT_HEADERS_ = ['import_batch_id', 'domain', 'mode', 'schema_version', 'scope_key', 'content_hash', 'status', 'row_counts_json', 'result_json', 'actor_claimed', 'actor_source', 'file_name', 'created_at', 'updated_at', 'committed_at', 'error'];
 var IMB_CHANGE_HEADERS_ = ['change_id', 'import_batch_id', 'domain', 'entity_table', 'entity_id', 'line_id', 'field', 'before_value', 'after_value', 'result', 'movement_id', 'created_at'];
@@ -48,6 +48,7 @@ function imbDomain_(name) {
 var n = imbLc_(name);
 if (n === 'po_factory_stock' && typeof imbPoFactoryDomain_ === 'function') return imbPoFactoryDomain_();
 if (n === 'weekly_draft_lines' && typeof imbWeeklyDraftDomain_ === 'function') return imbWeeklyDraftDomain_();
+if (n === 'campaign_builder' && typeof imbCampaignBuilderDomain_ === 'function') return imbCampaignBuilderDomain_();
 if (n === 'purchase_order' && typeof imbPoDomain_ === 'function') return imbPoDomain_();
 if (n === 'shipment' && typeof imbShipmentDomain_ === 'function') return imbShipmentDomain_();
 if (n === 'factory_inventory' && typeof imbFactoryInventoryDomain_ === 'function') return imbFactoryInventoryDomain_();

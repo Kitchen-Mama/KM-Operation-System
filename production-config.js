@@ -139,7 +139,10 @@
     "upsertTaxRateComponent",
     "upsertTaxReferralRate",
     "warehouseAllocation.get",
-    "weeklyShipping.workspace.get"
+    "weeklyShipping.workspace.get",
+    "campaign.builder.get",
+    "campaign.builder.status",
+    "campaign.builder.save"
   ],
   "reads": [
     "aiPlanFirstLayer.get",
@@ -194,7 +197,9 @@
     "system.health",
     "system.sourceRevision",
     "warehouseAllocation.get",
-    "weeklyShipping.workspace.get"
+    "weeklyShipping.workspace.get",
+    "campaign.builder.get",
+    "campaign.builder.status"
   ],
   "import_domain": "po_factory_stock",
   "import_modes": [
@@ -220,5 +225,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c"
+  "policy_sha256": "0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

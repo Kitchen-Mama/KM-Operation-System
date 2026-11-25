@@ -1,0 +1,13 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),crypto=require('node:crypto'),assert=require('node:assert/strict');
+const root=path.resolve(__dirname,'../..'),base=path.join(root,'assets/specs/active/apps-script');
+const names=['01_router.gs','11_shipping_plan_handlers.gs','12_shipment_handlers.gs','14_fc_write_handlers.gs','20_campaign_write_handlers.gs','34_shipment_final_output_handlers.gs','35_shipment_document_renderer.gs','39_document_runtime_service.gs','63_api_v1_system_health.gs','70_api_v1_overseas_stock_workspace.gs','78_api_v1_import_batch.gs','80_api_v1_shipment_import.gs','83_api_v1_weekly_draft_lines.gs','88_api_v1_warehouse_lifecycle.gs','90_generated_supply_planning_bundle.gs'];
+const out=path.join(root,'output/campaign-builder-20261125/release'),dir=path.join(out,'AppsScript'),c=vm.createContext({}),sha=s=>crypto.createHash('sha256').update(s).digest('hex');
+const sources=names.map(name=>({name,text:fs.readFileSync(path.join(base,name),'utf8')}));sources.forEach(f=>vm.runInContext(f.text,c,{filename:f.name}));
+const p=JSON.parse(JSON.stringify(c.RTR_PRODUCTION_PROFILE_)),hash=p.policy_sha256;delete p.policy_sha256;assert.equal(hash,sha(JSON.stringify(p)));
+for(const pin of p.module_stamps)if(c[pin.symbol]!==undefined)assert.equal(c[pin.symbol],pin.expected,pin.symbol);
+assert.equal(c.KMCB.VERSION,'CAMPAIGN_BUILDER_V1');assert.equal(c.KMPACK.VERSION,'MIXED_CARTONS_V1');
+fs.mkdirSync(dir,{recursive:true});const files=sources.map(f=>{fs.writeFileSync(path.join(dir,f.name),f.text);return {file:f.name,sha256:sha(f.text)};});
+fs.copyFileSync(path.join(root,'docs/handoffs/CAMPAIGN_BUILDER_20261125.md'),path.join(out,'README-ACCEPTANCE.md'));
+fs.writeFileSync(path.join(out,'manifest.json'),JSON.stringify({release:'CAMPAIGN-BUILDER-20261125-V1',base_commit:'b36bdaa69075b68c00beb8a7dfc4389e82f9a941',policy_sha256:hash,bundle_source_hash:c.KM_BUNDLE_CONTENT_HASH_,files},null,2)+'\n');
+console.log('CAMPAIGN_BUILDER_PACKAGE_PASS files='+files.length+' path='+out);

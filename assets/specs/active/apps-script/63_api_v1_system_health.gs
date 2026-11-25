@@ -809,7 +809,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "78_api_v1_import_batch.gs",
     "symbol": "IMB_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-PFI2-WDL1-SBX-SO5-CB1",
     "owns": "shared import journal including Draft line removal undo and unknown-outcome marker"
   },
   {
@@ -995,13 +995,13 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "14_fc_write_handlers.gs",
     "symbol": "FCW_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R64",
+    "expected": "FCW-CAMPAIGN-NORMAL-20261125-V1",
     "owns": "the FC Summary write path: fc_special_events upsert/delete with its expected_row_version gate, its one-event-per-SKU-flag-year uniqueness refusal and unchanged short-circuit + the fc_target_rules upsert on the canonical business key, its script lock, its duplicate and identity-mismatch refusals, the single-range row write, and the saved-row receipt"
   },
   {
     "file": "20_campaign_write_handlers.gs",
     "symbol": "CAMPAIGN_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R32",
+    "expected": "CAMPAIGN-BUILDER-20261125-V1",
     "owns": "the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit"
   },
   {
@@ -1025,7 +1025,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "90_generated_supply_planning_bundle.gs",
     "symbol": "KM_BUNDLE_CONTENT_HASH_",
-    "expected": "5aa21ae41f9878279c88173052db4ec6cec5fc360da3a6665120a2d1f9d2dada",
+    "expected": "a2899f18b09e16b24292dc49718b1b2003e726fbe85fa88741eb73e8efc81518",
     "owns": "the generated shared-core bundle (63 UMD modules), including mixed-carton packing, Site Inventory daily warehouse allocation and calendar-30 sales policy; identified by content hash"
   },
   {
