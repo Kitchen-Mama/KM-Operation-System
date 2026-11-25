@@ -115,6 +115,7 @@
     'assets/img/products/MO5600-R.jpg',
     'assets/img/products/MO5600-T.jpg',
     'assets/img/products/MO5600-W.jpg',
+    'assets/img/products/SJ1210-R.jpg',
     'assets/img/products/SM1251-KM.jpg',
     'assets/img/products/SP0120-B.jpg',
     'assets/img/products/SP0120-M.jpg',
@@ -176,7 +177,7 @@
     'assets/img/products/SP5120-R.jpg'
   ];
 
-  M.count = 148;
+  M.count = 149;
 
   /* Lookup sets, built on first use. `LOWER` answers "does a file with this name in some other CASE
      exist" — the difference between a row pointing at nothing and a row pointing at the right file with

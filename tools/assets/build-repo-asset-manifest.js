@@ -133,6 +133,15 @@ function render(files) {
 }
 
 var files = build();
-fs.writeFileSync(OUT, render(files), 'utf8');
-process.stdout.write('wrote ' + path.relative(REPO, OUT).replace(/\\/g, '/')
-  + ' — ' + files.length + ' files under ' + ROOTS.join(', ') + '\n');
+var generated = render(files);
+if (process.argv.indexOf('--check') !== -1) {
+  var current = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8').replace(/\r\n/g, '\n') : '';
+  if (current !== generated) {
+    process.stderr.write('Asset manifest is stale. Run node tools/assets/build-repo-asset-manifest.js and commit it with the images.\n');
+    process.exitCode = 1;
+  } else process.stdout.write('Asset manifest matches ' + files.length + ' files.\n');
+} else {
+  fs.writeFileSync(OUT, generated, 'utf8');
+  process.stdout.write('wrote ' + path.relative(REPO, OUT).replace(/\\/g, '/')
+    + ' — ' + files.length + ' files under ' + ROOTS.join(', ') + '\n');
+}
