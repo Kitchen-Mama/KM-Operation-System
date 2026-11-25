@@ -19,7 +19,7 @@ function has(o, k) { return Object.prototype.hasOwnProperty.call(o, k); }
 function jsonSafe(o) { try { return JSON.parse(JSON.stringify(o)) && true; } catch (e) { return false; } }
 
 // ---- fixtures ---------------------------------------------------------------------------------------------
-// §22 sales basis: 10 confirmed normal days @ 10 units → avgSalesPerDay = 10.
+// Calendar-30 policy: ten sparse sale days at 10 units = 100 / 30, not 100 / 10.
 function salesBasis(sku, mkt) {
   var rows = [];
   for (var d = 10; d < 20; d++) rows.push({ date: '2026-07-' + d, units: 10, sku: sku, country: 'US', marketplace: mkt, channel: 'amazon', company: 'KM' });
@@ -61,7 +61,7 @@ section('B. Weekly single receiver — derives facts by invoking frozen owners')
   var out = KMAF.projectAllocationFacts(baseWeeklyInput([weeklyReceiver()]));
   ok(out.ready === true && out.issues.length === 0, 'B1 ready with a complete canonical receiver');
   var rf = out.receiverFacts[0];
-  ok(rf && rf.dailyDemand === 10, 'B2 dailyDemand = §22 normalizedAvgSalesPerDay (10) — invoked, not reimplemented');
+  ok(rf && Math.abs(rf.dailyDemand - 100 / 30) < 1e-9, 'B2 dailyDemand uses the shared calendar-30 owner (100 / 30)');
   ok(rf.demandWeight === 1, 'B3 single-receiver demandWeight share = 1 (basis_i ÷ Σ)');
   ok(rf.eligiblePoolTypes.join(',') === 'THREE_PL', 'B4 eligiblePoolTypes derived from warehouses + fulfillment');
   ok(rf.destinationWarehouseId === 'WH_3PL_US', 'B5 destination resolved from the fact seam');

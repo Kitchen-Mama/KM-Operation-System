@@ -397,6 +397,15 @@ return ' [daily ' + (recoWsIsObj_(snaps.amazonDailySalesSnapshot) ? 'PRESENT' : 
 + '; weekly ' + (recoWsIsObj_(snaps.amazonWeeklySalesSnapshot) ? 'PRESENT' : 'ABSENT') + ', ' + wAll.length + ' rows, ' + forSku(wAll) + ' for this SKU]';
 }
 var calcYmd = toYmd(calcDate);
+var dailyKeySet = {}, dailyIssue = null;
+daily.forEach(function (r) {
+var day = toYmd(r.snapshot_date), units = recoWsNum_(r.sales_units);
+if (!recoWsValidYmd_(day) || units === null || units < 0) { dailyIssue = 'DAILY_SALES_ROW_INVALID'; return; }
+var key = [recoWsCanonC(r.country), recoWsStr_(r.marketplace), recoWsStr_(r.channel), sku, day].join('||');
+if (dailyKeySet[key]) dailyIssue = 'DAILY_SALES_DUPLICATE_KEY';
+dailyKeySet[key] = true;
+});
+if (dailyIssue) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: dailyIssue, blankDateRows: blankDates };
 
 
 
@@ -468,6 +477,7 @@ recoWsRows_(read, 'marketplaces').forEach(function (m) { if (scopeMktId) return;
 var contam = recoWsBuildContaminationFacts_(read, scope, sku, mSkuId);
 function compute(campaigns, events) {
 return KMCALC.normalizedAvgSalesPerDay({
+windowPolicy: 'calendar_30',
 calcDate: calcYmd,
 scope: { sku: sku, country: scope.country, marketplace: scope.marketplace, channel: kmcalcChannel, company: scope.company, marketplaceId: scopeMktId, marketplaceSkuId: mSkuId },
 weekly7d: weekly7d, dailySales: dailySales, campaigns: campaigns, events: events
@@ -501,6 +511,7 @@ detail: 'normal days=' + res.normalDayCount + ' (below the 3-day rung), no reada
 var v = (res && typeof res.avgSalesPerDay === 'number' && isFinite(res.avgSalesPerDay) && res.avgSalesPerDay >= 0) ? res.avgSalesPerDay : null;
 if (v === null) return { ok: false, reason: 'SALES_BASIS_UNAVAILABLE', detail: 'non-finite avg (' + daily.length + ' daily rows)', blankDateRows: blankDates };
 return { ok: true, avgSalesPerDay: v, source: res.source, warning: res.warning, normalDayCount: res.normalDayCount, excludedDates: res.excludedDates,
+windowPolicy: res.windowPolicy, windowStart: res.windowStart, windowEnd: res.windowEnd, normalSalesUnits: res.normalSalesUnits,
 contaminationSource: contam.sourceStatus, blankDateRows: blankDates };
 }
 
@@ -541,12 +552,15 @@ if (typeof KMPD !== 'undefined' && KMPD && typeof KMPD.adjustedRegularFc === 'fu
 
 
 if (mode === 'forecast_driven') winMonths.forEach(function (ym) { var a = KMPD.adjustedRegularFc(fcRows, tgtRows, skuMeta, scope, sku, ym); if (a) hFc[ym] = a.adjusted; });
-try { specialEventDemands = KMPD.scopedSpecialEventPreps(evtRows, scope, sku, calc.calculationDate); } catch (eSev) { return null; }
+try { specialEventDemands = calc.siteInventoryDaily
+? KMPD.scopedSpecialEventSellingDays(evtRows, scope, sku, calc.calculationDate)
+: KMPD.scopedSpecialEventPreps(evtRows, scope, sku, calc.calculationDate); } catch (eSev) { return null; }
 } else if (mode === 'forecast_driven') {
 hFc = recoWsRegularForecastByMonth_(fcRows, scope, sku, winMonths);
 }
 var hr = KMHP.projectHorizons({ destination: destination || null, calculationDate: calc.calculationDate,
 openingSupplyQty: openingSupplyQty, regularFcByMonth: hFc, specialEventDemands: specialEventDemands,
+specialEventTiming: calc.siteInventoryDaily ? 'selling_days' : 'prep_date',
 incomingEvents: incomingEvents || [], unitsPerCarton: unitsPerCarton,
 demandMode: mode, avgSalesPerDay: (mode === 'sales_driven' ? avgSalesPerDay : null) });
 return (hr && hr.ready) ? hr.horizons : null;
@@ -744,6 +758,7 @@ function recoWsShipmentLineCandidates_(read) {
 if (read.__slCandidates) return read.__slCandidates;
 var snaps = read.snapshots || {};
 read.__slCandidates = KMSLS.buildShipmentLineCandidates({
+includeDisplayOnlyOpening: read.__siteInventoryDaily === true,
 shipmentLines: recoWsToRowObjects_(snaps.shipmentLines),
 shipments: recoWsToRowObjects_(snaps.shipments),
 shippingPlanLines: recoWsToRowObjects_(snaps.shippingPlanLines),
@@ -1551,6 +1566,7 @@ function recoWsBasisOf_(sr, planModel, openingQty, incomingCount) {
 return { demandMode: planModel, avgSalesPerDay: (sr.ok ? sr.avgSalesPerDay : null),
 source: (sr.ok ? sr.source : null), warning: (sr.ok ? sr.warning : null),
 normalDayCount: (sr.ok ? sr.normalDayCount : null), excludedDates: (sr.ok ? sr.excludedDates : null),
+windowPolicy: (sr.ok ? sr.windowPolicy : null), windowStart: (sr.ok ? sr.windowStart : null), windowEnd: (sr.ok ? sr.windowEnd : null), normalSalesUnits: (sr.ok ? sr.normalSalesUnits : null),
 horizonOpeningQty: (openingQty === undefined ? null : openingQty),
 qualifiedIncomingCount: (incomingCount === undefined ? null : incomingCount),
 blankDateRows: (sr.blankDateRows == null ? null : sr.blankDateRows),
@@ -2143,9 +2159,15 @@ var context = gapCalcResolveContext_('INVENTORY', Date.now());
 if (!context || !context.ok) throw new Error('RECOMMENDATION_DAILY_CONTEXT_INVALID');
 return context;
 }
+function recoWsSiteInventoryContext_(context, scope) {
+if (!context || typeof context.instantMs !== 'number' || typeof KMSC === 'undefined') throw new Error('SITE_CALENDAR_CONTEXT_UNAVAILABLE');
+var date = KMSC.localDate(context.instantMs, scope.country, function (d, tz) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); });
+return { calculationDate: date, calculationMonth: date.slice(0, 7), planningCycle: 'RECO-' + date.slice(0, 7), timezone: KMSC.timeZone(scope.country) };
+}
 function recommendationWorkspaceDefaultIo_() {
 var dailyContext = recoWsDailyInventoryContext_();
 return {
+inventoryContextForScope: dailyContext ? function (scope) { return recoWsSiteInventoryContext_(dailyContext, scope); } : null,
 now: function () { return Date.now(); },
 nextSeq: function () { RECO_WS_SEQ_++; return RECO_WS_SEQ_; },
 
@@ -2182,6 +2204,14 @@ var calc = recoWsResolveCalcContext_(io);
 if (!calc.ok) return recoWsEnvelope_(false, null, [calc.error], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: 0, sourceReadCount: 0, calculationMonth: null, planningCycle: null });
 var cdRes = recoWsResolveCalcDate_(io);
 calc.calculationDate = cdRes.ok ? cdRes.calculationDate : null;
+if (io.inventoryContextForScope) {
+var siteContext = io.inventoryContextForScope(v.scope);
+calc.calculationDate = siteContext.calculationDate;
+calc.calculationMonth = siteContext.calculationMonth;
+calc.planningCycle = siteContext.planningCycle;
+calc.siteInventoryDaily = true;
+calc.siteTimeZone = siteContext.timezone;
+}
 
 var ss = io.openTarget();
 
@@ -2190,6 +2220,7 @@ var ss = io.openTarget();
 
 
 var read = io.readCanonicalSnapshots ? io.readCanonicalSnapshots(ss) : KMPS.readCanonicalSnapshots(ss, null);
+if (read) read.__siteInventoryDaily = calc.siteInventoryDaily === true;
 if (read && !read.__poHeaderSs) read.__poHeaderSs = ss;
 var tablesRead = read && read.snapshots ? Object.keys(read.snapshots).length : 0;
 
@@ -2257,7 +2288,7 @@ seen[ln.recommendationLineId] = 1; lines.push(ln);
 if (!lines.length && issues.length) return recoWsEnvelope_(false, null, issues, { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
 
 var vm = recommendationWorkspaceBuild_(v, calc, lines);
-return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
+return recoWsEnvelope_(true, vm, [], { requestId: reqId, serverDurationMs: (io.now() - t0), tablesRead: tablesRead, sourceReadCount: 1, calculationMonth: calc.calculationMonth, planningCycle: calc.planningCycle, calculationDate: calc.calculationDate, siteTimeZone: calc.siteTimeZone || null, horizonFormula: calc.siteInventoryDaily ? 'SITE_DAILY_V2' : null, conflicts: issues.length, canonicalRead: recoWsCanonMeta_(readProfile, io.now() - t0) });
 } catch (e) {
 var code = (e && (e.safetyToken || e.apiCode || e.validationCode)) || 'INTERNAL_ERROR';
 return recoWsEnvelope_(false, null, [recoWsErr_(code, String(e && e.message || e), (e && e.schemaDetail) || null)], { requestId: reqId, serverDurationMs: (io.now() - t0) });

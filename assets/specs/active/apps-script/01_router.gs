@@ -1712,7 +1712,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "KM_BUNDLE_CONTENT_HASH_",
-      "expected": "9c604f38df99c3a3c399a3a49dd77ad40cdbc8242c9fac67bd281840ee1a2242",
+      "expected": "d7077fac95f8d30a9c9917d2f787d1e1231cde61abbdcac48be9db134437db57",
       "optional": false
     },
     {

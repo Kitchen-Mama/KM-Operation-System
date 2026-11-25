@@ -378,7 +378,12 @@ return { ok: true, jobType: String(jobType), calculationDate: calcDate, calculat
 }
 function gapCalcNowMs_() { return new Date().getTime(); }
 
-function gapCalcResolveContext_(jobType, nowMs) { return gapCalcContextForJob_(jobType, gapCalcTaipeiYmd_(nowMs != null ? nowMs : gapCalcNowMs_())); }
+function gapCalcResolveContext_(jobType, nowMs) {
+var instant = nowMs != null ? nowMs : gapCalcNowMs_();
+var ctx = gapCalcContextForJob_(jobType, gapCalcTaipeiYmd_(instant));
+ctx.instantMs = instant;
+return ctx;
+}
 
 
 
@@ -418,6 +423,9 @@ _ss = ss; return ss;
 workspaceGet: function (body, sharedSs) {
 var recoIo = recommendationWorkspaceDefaultIo_();
 recoIo.openTarget = function () { return sharedSs; };
+// Order Planning must not inherit the interactive Inventory daily policy.
+if (ctx) recoIo.inventoryContextForScope = ctx.jobType === 'INVENTORY'
+? function (scope) { return recoWsSiteInventoryContext_(ctx, scope); } : null;
 
 
 
@@ -494,7 +502,10 @@ if (!Object.prototype.hasOwnProperty.call(bySku, sku)) continue;
 var row = cfg.map(bySku[sku], scope, sku, calcAuthority);
 row.calculated_at = ts;
 row.updated_at = ts;
-row.note = gapNoteFinalize_(row.note, gapNoteIdentity_(meta.calculationDate || (cfg.product === 'INVENTORY' ? calcAuthority : ''), ts, runId, gapNoteTz_(io)), row.calculation_status !== 'READY');   // D5-V3-R5G/R5H
+var identity = gapNoteIdentity_(meta.calculationDate || (cfg.product === 'INVENTORY' ? calcAuthority : ''), ts, runId, gapNoteTz_(io));
+// Keep the formula marker in the non-truncatable identity. AT/TZ still describe the stored run timestamp.
+if (cfg.product === 'INVENTORY' && meta.horizonFormula === 'SITE_DAILY_V2') identity += ' FORMULA=SITE_DAILY_V2 SITE_TZ=' + (meta.siteTimeZone || '-');
+row.note = gapNoteFinalize_(row.note, identity, row.calculation_status !== 'READY');
 gapUpsertByKey_(sheet, row);
 acc.written++;
 if (row.calculation_status === 'READY') acc.ready++;

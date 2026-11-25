@@ -233,8 +233,11 @@
       var shipmentId = str(g(ln, 'shipment_id', 'shipmentId'));
       var shipment = shipmentById[shipmentId];
       if (!shipment) { issues.push({ i: i, reason: 'SHIPMENT_NOT_FOUND:' + shipmentId }); continue; }
-      if (isDisplayOnlyOpening(shipment)) { displayOnlyExcluded.push({ i: i, shipmentId: shipmentId, shipmentLineId: str(g(ln, 'shipment_line_id', 'shipmentLineId')) }); continue; }   // SHIP-OPEN R4
-      if (isUncountedOpening(shipment)) { unfinishedOpeningExcluded.push({ i: i, shipmentId: shipmentId, mode: str(g(shipment, 'opening_supply_mode', 'openingSupplyMode')) }); continue; }   // SHIP-OPEN R5
+      // Site Inventory now consumes these dated remaining quantities for GAP only. No receipt/stock write,
+      // no additional Amazon inbound aggregate, and no change to the default procurement/pool policy.
+      var siteDisplaySupply = input.includeDisplayOnlyOpening === true && isDisplayOnlyOpening(shipment);
+      if (isDisplayOnlyOpening(shipment) && !siteDisplaySupply) { displayOnlyExcluded.push({ i: i, shipmentId: shipmentId, shipmentLineId: str(g(ln, 'shipment_line_id', 'shipmentLineId')) }); continue; }
+      if (isUncountedOpening(shipment) && !siteDisplaySupply) { unfinishedOpeningExcluded.push({ i: i, shipmentId: shipmentId, mode: str(g(shipment, 'opening_supply_mode', 'openingSupplyMode')) }); continue; }
       var lrm_ = lineRemoved(ln); if (lrm_) { issues.push({ i: i, reason: lrm_ === 'INVALID' ? 'LINE_STATUS_INVALID' : 'LINE_REMOVED' }); continue; }   // XCO-R15G E1D   // XCO-R15G E1B (H2)
 
       var mergedShip = (!!linkCountById && Number(linkCountById[shipmentId]) >= 2) || !!dMerged[shipmentId];   // XCO-R15G E1 + option D

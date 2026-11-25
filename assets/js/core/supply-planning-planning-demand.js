@@ -406,6 +406,27 @@
     return out;
   }
 
+  // Actual selling-day demand for Site Inventory only. Monthly procurement keeps its prep-date policy.
+  function eventSellingWindow(startDate, endDate, qty, calculationDate) {
+    var st = realYmd(startDate), en = realYmd(endDate || startDate), cd = realYmd(calculationDate);
+    if (!st || !en || !cd || ymdOrd(en) < ymdOrd(st) || typeof qty !== 'number' || !isFinite(qty) || qty < 0) {
+      throw eventError('EVENT_SELLING_WINDOW_INVALID');
+    }
+    var startMs = Date.UTC(st.y, st.mo - 1, st.d), endMs = Date.UTC(en.y, en.mo - 1, en.d);
+    var tomorrow = Date.UTC(cd.y, cd.mo - 1, cd.d) + 86400000;
+    var totalDays = (endMs - startMs) / 86400000 + 1;
+    var remainingDays = Math.max(0, (endMs - Math.max(startMs, tomorrow)) / 86400000 + 1);
+    return { startDate: ymdIso(st), endDate: ymdIso(en), qty: qty, totalDays: totalDays,
+      dailyQty: qty / totalDays, remainingDays: remainingDays, remainingQty: qty * remainingDays / totalDays };
+  }
+  function scopedSpecialEventSellingDays(eventRows, scope, sku, calculationDate) {
+    var check = validateScopedEvents(eventRows, scope, sku, calculationDate);
+    if (!check.ok) throw eventError(check.issues[0].code);
+    return (eventRows || []).filter(function (r) { return eventScopeMatch(r, scope, sku); }).map(function (r) {
+      return eventSellingWindow(eventStartRaw(r), eventEndRaw(r), eventQtyOf(r).qty, calculationDate);
+    }).filter(function (e) { return e.remainingDays > 0 && e.qty > 0; });
+  }
+
   return {
     VERSION: 'kmpd-v3-1',
     SPECIAL_EVENT_PREP_OFFSET_DAYS: SPECIAL_EVENT_PREP_OFFSET_DAYS,
@@ -416,6 +437,8 @@
     TR_SCOPE_TYPES: TR_SCOPE_TYPES_,
     TR_PRECEDENCE: TR_PRECEDENCE_,
     scopedSpecialEventPreps: scopedSpecialEventPreps,
+    eventSellingWindow: eventSellingWindow,
+    scopedSpecialEventSellingDays: scopedSpecialEventSellingDays,
     validateScopedEvents: validateScopedEvents,
     eventDates: eventDates,
     eventQtyOf: eventQtyOf,

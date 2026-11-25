@@ -118,7 +118,7 @@ function _irBuildShipmentRemainingByReceiver(shipments, shipmentLines, todayMs, 
 // whose mode is exactly DISPLAY_ONLY or COUNTED. A PENDING (unfinished batch) or unknown mode is excluded from both. Same receiver rule
 // (frozen plan-line lineage; blank lineage -> header scope; present but unresolved -> fail closed), same remaining quantity (shipment_qty -
 // received, never below 0), same exclusive ETA buckets (missing ETA -> unknown), each line once, joined by exact shipment_id. Pure.
-function _irShipLineFacts_(s, ln, todayMs, lineRecv) {
+function _irShipLineFacts_(s, ln, todayMs, lineRecv, calculationInstantMs) {
   var origin = String(s.recordOrigin || '').trim(), modeRaw = String(s.openingSupplyMode || '').trim(), mode = modeRaw.toUpperCase();
   var imported = origin === 'IMPORT_HISTORICAL' && modeRaw !== '';
   var f = { external_no: String(s.externalShipmentId || s.shipmentNo || ''), shipment_id: String(s.shipmentId || ''), sku: String(ln.sku || ''), line_id: String(ln.shipmentLineId || ''),
@@ -132,16 +132,23 @@ function _irShipLineFacts_(s, ln, todayMs, lineRecv) {
   if (ln.shippingPlanLineId) { var lr = (lineRecv || {})[ln.shippingPlanLineId]; if (!lr || !_irIsSpecificReceiver(lr.company, lr.country, lr.marketplace)) rcvWhy = 'LINEAGE_UNRESOLVED'; else rcv = lr; }
   else rcv = s;
   if (rcv) f.receiver = _irReceiverKey(rcv.company, rcv.country, rcv.marketplace, ln.sku);
+  if (rcv && calculationInstantMs != null) {
+    try {
+      var siteDay = window.KM.siteCalendar.localDate(calculationInstantMs, rcv.country);
+      var localAnchor = Date.parse(siteDay + 'T00:00:00Z');
+      f.eta_bucket = etaMs === null ? 'unknown' : _irShipmentEtaBucket(Math.floor((etaMs - localAnchor) / 86400000));
+    } catch (eDay) { f.eta_bucket = 'unknown'; }
+  }
   var common = _IR_TERMINAL_SHIPMENT_STATUS[String(s.status || '').trim().toLowerCase()] ? 'TERMINAL_STATUS' : (f.remaining <= 0 ? 'NOTHING_REMAINING' : rcvWhy);
   var supplyOut = imported && mode !== 'COUNTED', displayOut = imported && !(mode === 'DISPLAY_ONLY' || mode === 'COUNTED');
   f.supply_included = !common && !supplyOut; f.supply_reason = common || (supplyOut ? (mode === 'DISPLAY_ONLY' ? 'DISPLAY_ONLY_NOT_SUPPLY' : 'IMPORT_NOT_COMMITTED_OR_UNKNOWN_MODE') : 'INCLUDED');
   f.display_included = !common && !displayOut; f.display_reason = common || (displayOut ? 'IMPORT_NOT_COMMITTED_OR_UNKNOWN_MODE' : 'INCLUDED');
   return f;
 }
-function _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById) {
+function _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById, calculationInstantMs) {
   var byId = {}; (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId[s.shipmentId] = s; });
   var out = [];
-  (shipmentLines || []).forEach(function (ln) { if (!ln) return; var s = byId[ln.shipmentId]; if (!s) return; out.push(_irShipLineFacts_(s, ln, todayMs, lineReceiverById || {})); });
+  (shipmentLines || []).forEach(function (ln) { if (!ln) return; var s = byId[ln.shipmentId]; if (!s) return; out.push(_irShipLineFacts_(s, ln, todayMs, lineReceiverById || {}, calculationInstantMs)); });
   return out;
 }
 // A-DELTA1 c2 item 3: the PHYSICAL destination (exact warehouse id) is a 3PL -> 'TO' (送往 3PL); proven arrived at that 3PL only by a persisted
@@ -152,10 +159,10 @@ function _irShip3plState_(s, whTypeById) {
   var st = String(s.status || '').trim().toLowerCase();
   return (st === 'arrived' || st === 'partially_received' || st === 'partial_received') ? 'AT' : 'TO';
 }
-function _irBuildShipmentDisplayByReceiver(shipments, shipmentLines, todayMs, lineReceiverById, whTypeById) {
+function _irBuildShipmentDisplayByReceiver(shipments, shipmentLines, todayMs, lineReceiverById, whTypeById, calculationInstantMs) {
   var map = {}, byId3 = {};
   if (whTypeById) (shipments || []).forEach(function (s) { if (s && s.shipmentId) byId3[s.shipmentId] = s; });   // A-DELTA1 c2 item 3
-  _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById).forEach(function (f) {
+  _irShipmentDisplayReconcile(shipments, shipmentLines, todayMs, lineReceiverById, calculationInstantMs).forEach(function (f) {
     if (!f.display_included) return;
     var rec = map[f.receiver] || (map[f.receiver] = { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0, display_only: 0, to_3pl: 0, at_3pl: 0,
       plat: { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 }, ovs: { overdue: 0, d0_18: 0, d19_30: 0, d31_45: 0, d45_plus: 0, unknown: 0 }, untyped: 0 });   // AD3 D r5
@@ -179,7 +186,7 @@ function _irShipDisplayCsv_(ev) {
   var e = (typeof _irExposureActiveEntry_ === 'function') ? _irExposureActiveEntry_() : null;
   if (!e || !e.model) { alert('The shipment detail of this site is not loaded yet. Nothing was exported.'); return null; }
   var idx = e.indexes || _irBuildExposureIndexes_(e.model), d = new Date(), today = Date.UTC(d.getFullYear(), d.getMonth(), d.getDate());
-  var rows = _irShipmentDisplayReconcile(e.model.getShipments || [], e.model.getShipmentLines || [], today, idx.lineReceiverById);
+  var rows = _irShipmentDisplayReconcile(e.model.getShipments || [], e.model.getShipmentLines || [], today, idx.lineReceiverById, idx.builtAtInstantMs || d.getTime());
   var cols = ['external_no', 'shipment_id', 'sku', 'receiver', 'mode', 'commit_state', 'remaining', 'eta_bucket', 'display_included', 'display_reason', 'supply_included', 'supply_reason'];
   var q = function (v) { var s = String(v == null ? '' : v); return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
   var text = '﻿' + [cols.join(',')].concat(rows.map(function (r) { return cols.map(function (c) { return q(r[c]); }).join(','); })).join('\n') + '\n';
@@ -673,6 +680,8 @@ window.IRMap = (function () {
     return !(st === 'inactive' || st === 'cancelled' || st === 'canceled' || st === 'archived' || st === 'closed' || st === 'draft');
   }
   function _irEventScopeMatch(ev, scope) {
+    if (ev.company && scope.company && !eq(ev.company, scope.company)) return false;
+    if (ev.marketplaceId && scope.marketplaceId && !eq(ev.marketplaceId, scope.marketplaceId)) return false;
     if (ev.country && scope.country && !eq(ev.country, scope.country)) return false;
     if (ev.marketplace && scope.marketplace && !eq(ev.marketplace, scope.marketplace)) return false;
     return (ev.sku && eq(ev.sku, scope.sku)) ||
@@ -682,32 +691,36 @@ window.IRMap = (function () {
       (!ev.sku && !ev.scopeId);
   }
 
-  // Dynamic Upcoming Events (scope-matched, active) from today through the next three calendar months.
+    // Upcoming Event FC is prorated from tomorrow in the site's planning timezone; source rows stay intact.
   // Eligibility: event_end_date >= today AND event_start_date < first_day_of_month(today + 4 months).
   // Legacy rows without parseable start/end dates fall back to a month-window check (never dropped).
   // Returns the matched events (NOT merged) sorted nearest-first — the caller may total them, but the
   // underlying records stay separate.
-  function upcomingEvents(events, scope) {
+  function upcomingEvents(events, scope, epochMs) {
     if (!events || !events.length) return [];
-    var today = new Date(); today.setHours(0, 0, 0, 0);
-    var windowEnd = _irFirstOfMonthPlus(today, 4);   // exclusive upper bound (start < windowEnd)
+    var calendar = window.KM && window.KM.siteCalendar;
+    var demand = window.KM && window.KM.core && window.KM.core.planningDemand;
+    var day;
+    try {
+      if (!calendar || !demand || !demand.eventSellingWindow) throw new Error('SITE_CALENDAR_UNAVAILABLE');
+      day = calendar.localDate(epochMs == null ? Date.now() : epochMs, scope.country);
+    } catch (eDay) {
+      return events.filter(function (ev) { return _irEventActive(ev) && _irEventScopeMatch(ev, scope); })
+        .map(function (ev) { return Object.assign({}, ev, { fcQty: null, remainingDays: null }); });
+    }
+    var windowEnd = new Date(Date.UTC(+day.slice(0, 4), +day.slice(5, 7) + 3, 1)).toISOString().slice(0, 10);
     var out = [];
     events.forEach(function (ev) {
       if (!_irEventActive(ev)) return;
       if (!_irEventScopeMatch(ev, scope)) return;
-      var start = _irParseDate(ev.eventStartDate);
-      var end = _irParseDate(ev.eventEndDate);
-      if (start && end) {
-        if (!(end >= today && start < windowEnd)) return;
-      } else {
-        // Legacy fallback: month-based window (current month + next 3). Unparseable month → included.
-        var mo = parseEventMonth(ev);
-        if (mo !== null) {
-          var allowed = [today.getMonth() + 1, ((today.getMonth() + 1) % 12) + 1, ((today.getMonth() + 2) % 12) + 1, ((today.getMonth() + 3) % 12) + 1];
-          if (allowed.indexOf(mo) === -1) return;
-        }
-      }
-      out.push(ev);
+      try {
+        var q = demand.eventQtyOf(ev.raw || { fc_qty: ev.fcQty });
+        if (!q.ok) throw new Error('EVENT_QTY_INVALID');
+        var remaining = demand.eventSellingWindow(ev.eventStartDate, ev.eventEndDate, q.qty, day);
+        if (!remaining.remainingDays || remaining.startDate >= windowEnd) return;
+        out.push(Object.assign({}, ev, { fcQty: remaining.remainingQty, originalFcQty: q.qty,
+          remainingDays: remaining.remainingDays, calculationDate: day }));
+      } catch (e) { out.push(Object.assign({}, ev, { fcQty: null, remainingDays: null, calculationDate: day })); }
     });
     out.sort(function (a, b) {
       var sa = _irParseDate(a.eventStartDate), sb = _irParseDate(b.eventStartDate);
@@ -717,8 +730,9 @@ window.IRMap = (function () {
   }
 
   // Upcoming Event total = sum of fc_qty across the matched events (count-once; records stay separate).
-  function upcomingEventQty(events, scope) {
-    var list = upcomingEvents(events, scope);
+  function upcomingEventQty(events, scope, epochMs) {
+    var list = upcomingEvents(events, scope, epochMs);
+    if (list.some(function (ev) { return ev.fcQty === null; })) return null;
     return list.reduce(function (s, ev) { return s + num(ev.fcQty); }, 0);
   }
 
@@ -1106,7 +1120,7 @@ function _irRenderUpcoming(list) {
     var titleAttr = fullR ? (' title="' + esc(fullR) + '"') : '';
     return '<div class="replen-card__row"><span class="replen-card__label">' + esc(ev.event || ev.scopeId || 'Event') +
       (dates ? (' <span class="replen-evt-dates"' + titleAttr + '>(' + esc(dates) + ')</span>') : '') +
-      '</span><span class="replen-card__value">' + qty(ev.fcQty) + '</span></div>';
+      '</span><span class="replen-card__value">' + (ev.fcQty == null ? '--' : Math.round(qty(ev.fcQty)).toLocaleString()) + '</span></div>';
   }
   var html = line(list[0]);
   if (list.length > 1) {
@@ -11097,8 +11111,8 @@ function _irBuildExposureIndexes_(model) {
     return {
         planById: planById, lineReceiverById: lineReceiverById,
         shipRemainByReceiver: _irBuildShipmentRemainingByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById),
-        shipDisplayByReceiver: _irBuildShipmentDisplayByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById, _irWhTypeById_()),   // A final3 (B): display only
-        builtForDayMs: todayMs
+        shipDisplayByReceiver: _irBuildShipmentDisplayByReceiver(model.getShipments || [], model.getShipmentLines || [], todayMs, lineReceiverById, _irWhTypeById_(), d.getTime()),
+        builtForDayMs: todayMs, builtAtInstantMs: d.getTime()
     };
 }
 // LAZY ONCE PER ACTIVE SITE SCOPE, REUSE MANY.
@@ -11392,9 +11406,9 @@ function _irOnTheWayCellInner_(key, legacyItem) {
         var pT = sum5(d.plat), oT = sum5(d.ovs);
         return { html: '<span class="ir-ow-lines" style="display:inline-flex;flex-direction:column;align-items:flex-start;"><span class="ir-ow-line" data-ow-part="platform" style="display:block;white-space:nowrap;font-size:11px;line-height:1.25;">平台 ' + Math.round(pT).toLocaleString() + '</span>' +
             '<span class="ir-ow-line" data-ow-part="overseas" style="display:block;white-space:nowrap;font-size:11px;line-height:1.25;">海外 ' + Math.round(oT).toLocaleString() + '</span></span>',
-            title: '在途：平台倉（FBA / WFS）' + Math.round(pT).toLocaleString() + '；海外 3PL ' + Math.round(oT).toLocaleString() + '；合計 ' + Math.round(t).toLocaleString() + (d.untyped > 0 ? '（含目的倉類型未知 ' + Math.round(d.untyped).toLocaleString() + '）' : '') + (d.display_only > 0 ? '；其中僅顯示（不計入供給）' + Math.round(d.display_only).toLocaleString() : '') };
+            title: '在途：平台倉（FBA / WFS）' + Math.round(pT).toLocaleString() + '；海外 3PL ' + Math.round(oT).toLocaleString() + '；合計 ' + Math.round(t).toLocaleString() + (d.untyped > 0 ? '（含目的倉類型未知 ' + Math.round(d.untyped).toLocaleString() + '）' : '') + (d.display_only > 0 ? '；歷史匯入 ' + Math.round(d.display_only).toLocaleString() + '（缺口按 ETA 與未收貨量計入，不寫入庫存）' : '') };
     }
-    return { html: String(Math.round(t).toLocaleString()), title: 'Shipping Shipment 在途合計（與展開卡片、對帳明細同一份資料）' + (d.display_only > 0 ? '；其中僅顯示（不計入供給）' + Math.round(d.display_only).toLocaleString() : '') + (d.unknown > 0 ? '；ETA 未提供 ' + Math.round(d.unknown).toLocaleString() : '') };
+    return { html: String(Math.round(t).toLocaleString()), title: 'Shipping Shipment 在途合計（與展開卡片、對帳明細同一份資料）' + (d.display_only > 0 ? '；歷史匯入 ' + Math.round(d.display_only).toLocaleString() + '（缺口按 ETA 與未收貨量計入，不寫入庫存）' : '') + (d.unknown > 0 ? '；ETA 未提供 ' + Math.round(d.unknown).toLocaleString() : '') };
 }
 function _irOnTheWayCellHtml_(item) {
     var k = _irOnTheWayKey_(item), c = _irOnTheWayCellInner_(k, item);
@@ -15020,6 +15034,7 @@ function _getCloudReplenishmentData() {
     var MK = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
     var cm = new Date().getMonth();
 
+    var upcomingInstant = Date.now();
     var rows = filtered.map(function (mp) {
         var det = skuDetails.find(function (d) { return eqv(d.sku, mp.sku); }) || {};
         // The marketplaces master (scopeMkt) is authoritative for this marketplace_id. If a
@@ -15057,7 +15072,7 @@ function _getCloudReplenishmentData() {
         var trend = IR.salesTrend7d(_irNoBlankMk16_(dailyRows), scope);
         var avg = IR.avgSalesPerDay(_irNoBlankMk16_(weeklyRows), scope);
         var fc60 = IR.forecast60d(fcRows, targetRules, scope, events);   // R7 §F: 3-month Base FC + scoped Special Events (once)
-        var eventQty = IR.upcomingEventQty(events, scope);
+        var eventQty = IR.upcomingEventQty(events, scope, upcomingInstant);
         // 3rd Party Stock = Site Planning Available (18-day virtual planning allocation of the shared
         // 3PL pool; §20/§23/§24). Display-only — no movement, no reserve, no snapshot write.
         var thirdPartyPlan = IR.sitePlanningAllocation({
@@ -15182,7 +15197,7 @@ function _getCloudReplenishmentData() {
         // Upcoming event display: dynamic, date-eligible (today .. first day of month(today+4mo)),
         // scope-matched, active. Shows the nearest event (name + start/end + fc_qty), then "+N more"
         // in an expandable list. Multiple events are NOT merged — each record stays separate.
-        var evRows = IR.upcomingEvents(events, scope);
+        var evRows = IR.upcomingEvents(events, scope, upcomingInstant);
         var upcomingEventsText = _irRenderUpcoming(evRows);
 
         return {
@@ -16509,7 +16524,7 @@ function _irAggregateActionableRecommendedQty(lines) {
 // read policy. The storage key moves with the shape so that records written by the previous build are not
 // merely ignored but unreachable, and the superseded key is dropped rather than left to sit in the
 // operator's session for the rest of the day.
-var _IR_RECO_CACHE_SHAPE = 'horizonBasis.v2';              // the RESPONSE SHAPE this build knows how to read
+var _IR_RECO_CACHE_SHAPE = 'horizonBasis.siteDaily.v2';    // daily event policy and site-local date authority
 var _IR_RECO_CACHE_KEY = 'km_ir_reco_cache_' + _IR_RECO_CACHE_SHAPE;
 var _IR_RECO_CACHE_SUPERSEDED_KEYS = ['km_ir_reco_cache_v1'];
 // S8-B3-R3-CP2T-R1 — THE SHAPE IS NOT THE COMPUTATION, AND A MATCHING SHAPE IS NOT A COMPATIBLE ANSWER.
@@ -16753,6 +16768,9 @@ function _irRecoCacheKey(scopeReq) {
   if (!scopeReq) return null;
   return [scopeReq.company || '', scopeReq.country || '', scopeReq.marketplace || ''].join('||');
 }
+function _irSiteCalculationDateCurrent_(date, scope) {
+  try { return !!date && window.KM.siteCalendar.localDate(Date.now(), scope.country) === date; } catch (e) { return false; }
+}
 function _irRecoCacheGet(scopeReq) {
   var k = _irRecoCacheKey(scopeReq); if (!k) { _irRecoCacheDecision_('MISS', 'NO_SCOPE_KEY'); return null; }
   var c = _irRecoCacheLoad();
@@ -16761,6 +16779,7 @@ function _irRecoCacheGet(scopeReq) {
   // A record written for a different response shape is not an old answer to be shown with a caveat; it is
   // an answer this build cannot read. It is dropped on the way past so the next lookup is a clean miss.
   if (e.shape !== _IR_RECO_CACHE_SHAPE) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'SHAPE_SUPERSEDED'); return null; }
+  if (!_irSiteCalculationDateCurrent_(e.meta && e.meta.calculationDate, scopeReq)) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'SITE_DAY_CHANGED'); return null; }
   // CP2T-R1 — and a record this build CAN read but whose values were computed by a handler it no longer
   // accepts is dropped for the same reason: it would render, and what it renders is the pre-repair answer.
   if (!_irRecoHandlerOk_(e.handlerVersion)) { delete c[k]; _irRecoCacheMem = c; _irRecoCachePersist(); _irRecoCacheDecision_('MISS', 'HANDLER_NOT_ACCEPTED'); return null; }
@@ -16791,6 +16810,7 @@ function _irRecoCacheGet(scopeReq) {
 function _irRecoCacheSet(scopeReq, env, issueStamp) {
   var k = _irRecoCacheKey(scopeReq);
   if (!k || !env || env.success !== true) { _irRecoCacheDecision_('NOT_STORED', 'NOT_A_SUCCESS'); return; }   // successes only
+  if (!env.meta || env.meta.horizonFormula !== 'SITE_DAILY_V2') { _irRecoCacheDecision_('NOT_STORED', 'SITE_FORMULA_NOT_ACCEPTED'); return; }
   // CP2T-R1 — an answer from a handler whose computation this build does not accept is SHOWN (it is what the
   // server said) and never STORED, so it cannot be replayed after the deployment that produced it is gone.
   var hv = _irRecoEnvHandler_(env);
@@ -16812,6 +16832,8 @@ function _irRecoCacheSet(scopeReq, env, issueStamp) {
       // never stored, so a restored answer reported `calculationDate: null` - the one field that says
       // which 90-day window the numbers describe, missing precisely when nobody re-read the server.
       calculationDate: (env.meta && env.meta.calculationDate) || null,
+      horizonFormula: env.meta.horizonFormula,
+      siteTimeZone: env.meta.siteTimeZone || null,
       dataVersion: (env.data && env.data.dataVersion) || null
     },
     revision: _irRecoRevisionFromEnv_(env),
@@ -16940,6 +16962,10 @@ function _irRecoMapLine(L) {
       source: (L.horizonBasis.source == null ? null : String(L.horizonBasis.source)),
       warning: (L.horizonBasis.warning == null ? null : String(L.horizonBasis.warning)),
       normalDayCount: _irNumOrNull(L.horizonBasis.normalDayCount),
+      windowPolicy: L.horizonBasis.windowPolicy || null,
+      windowStart: L.horizonBasis.windowStart || null,
+      windowEnd: L.horizonBasis.windowEnd || null,
+      normalSalesUnits: _irNumOrNull(L.horizonBasis.normalSalesUnits),
       excludedDates: Array.isArray(L.horizonBasis.excludedDates)
         ? L.horizonBasis.excludedDates.map(function (d) { return String(d); }) : null,
       horizonOpeningQty: _irNumOrNull(L.horizonBasis.horizonOpeningQty),
@@ -16990,6 +17016,9 @@ function _irRecoMapHorizon(h) {
 // Apply a canonical envelope → state. Failure stays visible (never masked); success indexes lines by SKU
 // (each SKU may carry MULTIPLE destination lines — MARKETPLACE and/or one per WAREHOUSE — kept distinct).
 function _irRecoApplyEnvelope(env, ctxKey, reqScope) {
+  if (env && env.success === true && (!env.meta || env.meta.horizonFormula !== 'SITE_DAILY_V2')) {
+    env = { success: false, meta: env.meta, errors: [{ code: 'SITE_FORMULA_UPDATE_REQUIRED', message: 'Update the Site Inventory backend before recalculating.', details: null }] };
+  }
   if (!env || env.success !== true) {
     var _errs = (env && Array.isArray(env.errors) && env.errors.length) ? env.errors
       : [{ code: 'WORKSPACE_ERROR', message: 'Recommendation workspace request failed.', details: null }];
@@ -17254,7 +17283,7 @@ function loadRecommendationWorkspace_() {
   // dedupe: identical scope already loading or loaded → no duplicate request from repeated calls / renders.
   // DC1-R1 - but only while no source has been written since that read was issued: an in-flight or settled
   // answer that predates a write is not a duplicate of the question being asked now.
-  if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || _irRecoState.loadedOk)
+  if (_irRecoState.contextKey === ctxKey && (_irRecoState.status === 'LOADING' || (_irRecoState.loadedOk && _irSiteCalculationDateCurrent_(_irRecoState.calculationDate, scopeReq)))
     && _irSourceVerdict_(_irRecoState.source, 'planning', _irRecoState.status === 'LOADING').verdict === 'SAME') return null;
   // F1-4B-FM3a SESSION CACHE HIT: a previously-successful canonical result for this exact scope → restore it
   // with ZERO HTTP (survives navigate-away/back + re-expand within the browser session). Abort any in-flight
@@ -17975,7 +18004,14 @@ function _irMatNum(v) { if (v === '' || v === null || v === undefined) return nu
 // STALE: only when the client is told the currently-expected calculation date and the stored row is older. No
 // silent recalculation on expansion — a stale row is shown with a subtle indicator, never recomputed.
 function _irMatExpectedCalcDate() { return (typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.EXPECTED_CALCULATION_DATE) ? String(window.KM_FLAGS.EXPECTED_CALCULATION_DATE) : null; }
-function _irMatIsStale(row) { var exp = _irMatExpectedCalcDate(); var cd = row && row.calculation_date ? String(row.calculation_date) : ''; return !!(exp && cd && cd < exp); }
+function _irMatIsStale(row) {
+  if (!row) return false;
+  if (String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1) return true;
+  var exp = _irMatExpectedCalcDate();
+  try { if (!exp && window.KM && window.KM.siteCalendar) exp = window.KM.siteCalendar.localDate(Date.now(), row.country); } catch (e) {}
+  var cd = row.calculation_date ? String(row.calculation_date) : '';
+  return !!(exp && cd && cd < exp);
+}
 // Map ONE stored gap row → the frozen horizons-shaped line the FROZEN outlook renderer consumes (no new render).
 // Map ONE stored gap row → the frozen horizons-shaped line the outlook renderer consumes (no new render, NO math).
 // F1-4B-FM5-R4UI: a non-READY (BLOCKED/ERROR) row has blank gap cells → every window renders "—" plus the truthful
@@ -17983,11 +18019,12 @@ function _irMatIsStale(row) { var exp = _irMatExpectedCalcDate(); var cd = row &
 // per-window business Note is derived (No shortage / Replenishment required) from the stored gap. Stored values only.
 function _irMatToLine(row) {
   var st = row.calculation_status ? String(row.calculation_status) : '';
+  var oldFormula = String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1;
   // F1-4B-FM5-R4UI-R5A §3 — the normal Recommendation Summary must NOT surface raw internal codes
   // (SALES_BASIS_* / HORIZONS_NOT_AVAILABLE / …). Show a short user-safe note; the technical row.note stays in the
   // DB and is still visible under Diagnostics (IR_DEBUG_DIAGNOSTICS). READY rows keep the derived business note.
-  var reason = (st && st !== 'READY') ? 'Calculation unavailable' : null;
-  function hz(code, g, s) { var h = { windowCode: code, gapQty: _irMatNum(g), suggestedOrderQty: _irMatNum(s) }; if (reason) h.note = reason; return h; }
+  var reason = oldFormula ? 'Recalculate required' : ((st && st !== 'READY') ? 'Calculation unavailable' : null);
+  function hz(code, g, s) { var h = { windowCode: code, gapQty: oldFormula ? null : _irMatNum(g), suggestedOrderQty: oldFormula ? null : _irMatNum(s) }; if (reason) h.note = reason; return h; }
   return {
     destinationType: 'MARKETPLACE', destinationLabel: null, calculationStatus: st,
     horizons: [

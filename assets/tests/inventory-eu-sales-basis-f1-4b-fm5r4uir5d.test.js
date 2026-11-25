@@ -18,6 +18,8 @@ var fail = 0, pass = 0;
 function ok(c, l) { if (!c) { fail++; console.error('FAIL ' + l); } else { pass++; } }
 function section(n) { console.log('\n== ' + n + ' =='); }
 function near(a, b) { return Math.abs(a - b) < 1e-6; }
+// Seven sparse selling days in the fixed 30-calendar-day window; remaining normal days are zero-sale days.
+function calendarRate(units) { return units * DATES.length / 30; }
 
 var H = (new Function(BUNDLE + '\n' + F42 + '\n return { resolveRate: recoWsResolveSalesRate_, KMCID: KMCID };'))();
 function snap(h, r) { return { headers: h, rows: r }; }
@@ -55,31 +57,31 @@ ok(H.KMCID.sourceCountriesForScope('UK', 'Amazon').members.join(',') === 'GB', '
 
 section('§5 A/B — EU scope matches member-country daily rows');
 var A = H.resolveRate(facts(dailyFor('DE', 100), [], EU), EU, 'CO1100-R', CALC);
-ok(A.ok === true && A.source === 'normalized_30d' && near(A.avgSalesPerDay, 100), 'A EU scope + DE daily → READY normalized_30d avg 100 (matched)');
+ok(A.ok === true && A.source === 'normalized_30d' && near(A.avgSalesPerDay, calendarRate(100)), 'A EU source uses fixed calendar-30 denominator');
 var B = H.resolveRate(facts(dailyFor('FR', 50), [], EU), EU, 'CO1100-R', CALC);
-ok(B.ok === true && near(B.avgSalesPerDay, 50), 'B EU scope + FR daily → READY avg 50 (matched)');
+ok(B.ok === true && near(B.avgSalesPerDay, calendarRate(50)), 'B FR source uses fixed calendar-30 denominator');
 
 section('§5 C — EU multi-country same-day daily summed ONCE (never averaged, never double-counted)');
 var C = H.resolveRate(facts(dailyFor('DE', 100).concat(dailyFor('FR', 40)), [], EU), EU, 'CO1100-R', CALC);
-ok(C.ok === true && near(C.avgSalesPerDay, 140), 'C DE(100)+FR(40) same 7 dates → per-day 140 → avg 140 (summed once, not 70-avg, not 100)');
+ok(C.ok === true && near(C.avgSalesPerDay, calendarRate(140)), 'C member sales summed once then divided by 30');
 
-section('§5 D — EU weekly-only across DE + ES → weekly fallback resolves (summed once ÷ 7)');
+section('EU weekly-only: unavailable under the calendar-30 policy');
 var wk = [['2026-W31', '2026-08-02', 'DE', 'Amazon', 'amazon.de', 'CO1100-R', 700], ['2026-W31', '2026-08-02', 'ES', 'Amazon', 'amazon.es', 'CO1100-R', 549]];
 var D = H.resolveRate(facts([], wk, EU), EU, 'CO1100-R', CALC);
-ok(D.ok === true && D.source === 'weekly_7d' && near(D.avgSalesPerDay, 1249 / 7), 'D no daily + DE(700)+ES(549) weekly → weekly_7d (700+549)/7 ≈ 178.43');
+ok(D.ok === false && D.reason === 'SALES_BASIS_UNAVAILABLE', 'D weekly-only is unavailable: cannot exclude campaign days from a weekly aggregate');
 
 section('§5 E — EU source EXCLUDES non-member / unrelated countries');
 var E = H.resolveRate(facts(dailyFor('DE', 100).concat(dailyFor('JP', 9999)).concat(dailyFor('PL', 9999)), [], EU), EU, 'CO1100-R', CALC);
-ok(E.ok === true && near(E.avgSalesPerDay, 100), 'E JP + PL rows (non-members) excluded → avg stays 100 (DE only)');
+ok(E.ok === true && near(E.avgSalesPerDay, calendarRate(100)), 'E non-members excluded before calendar-30 normalization');
 
 section('§5 F — company isolation (structural: the daily snapshot has no company column; scope.company is stamped, never used to pool)');
 ok(!/amazonDailySalesSnapshot[\s\S]{0,200}r\.company/.test(F42) && /company: scope\.company/.test(F42), 'F the daily/weekly filter never reads r.company (one scope = one company); scope.company is stamped onto the series for downstream identity');
 
 section('§5 G/H — marketplace + SKU isolation preserved under EU aggregation');
 var G = H.resolveRate(facts(dailyFor('DE', 100).concat(DATES.map(function (d) { return [d, 'DE', 'Walmart', 'walmart.de', 'CO1100-R', 9999]; })), [], EU), EU, 'CO1100-R', CALC);
-ok(G.ok === true && near(G.avgSalesPerDay, 100), 'G a DE/Walmart row is excluded from an EU/Amazon scope (marketplace isolation)');
+ok(G.ok === true && near(G.avgSalesPerDay, calendarRate(100)), 'G other marketplace excluded');
 var Hh = H.resolveRate(facts(dailyFor('DE', 100).concat(dailyFor('DE', 9999, 'amazon.de', 'OTHER-SKU')), [], EU), EU, 'CO1100-R', CALC);
-ok(Hh.ok === true && near(Hh.avgSalesPerDay, 100), 'H a different-SKU DE row is excluded (SKU isolation)');
+ok(Hh.ok === true && near(Hh.avgSalesPerDay, calendarRate(100)), 'H other SKU excluded');
 
 section('§5 I — channel isolation preserved for SINGLE markets (unchanged; EU intentionally rolls up member sites)');
 var DEscope = { company: 'ResEU', country: 'DE', marketplace: 'Amazon' };
@@ -90,13 +92,13 @@ ok(I.ok === false && I.reason === 'SALES_BASIS_AMBIGUOUS', 'I a single-market DE
 section('§5 J/K/L — non-EU scopes UNCHANGED');
 var US = { company: 'ResUS', country: 'US', marketplace: 'Amazon' };
 var J = H.resolveRate(facts(dailyFor('US', 100, 'amazon.com'), [], US), US, 'CO1100-R', CALC);
-ok(J.ok === true && J.source === 'normalized_30d' && near(J.avgSalesPerDay, 100), 'J US scope + US daily → READY avg 100 (unchanged)');
+ok(J.ok === true && J.source === 'normalized_30d' && near(J.avgSalesPerDay, calendarRate(100)), 'J US uses the same calendar-30 normalization');
 var CA = { company: 'ResCA', country: 'CA', marketplace: 'Amazon' };
 var K = H.resolveRate(facts(dailyFor('CA', 80, 'amazon.ca'), [], CA), CA, 'CO1100-R', CALC);
-ok(K.ok === true && near(K.avgSalesPerDay, 80), 'K CA scope + CA daily → READY avg 80 (unchanged)');
+ok(K.ok === true && near(K.avgSalesPerDay, calendarRate(80)), 'K CA uses the same calendar-30 normalization');
 var UK = { company: 'ResUK', country: 'UK', marketplace: 'Amazon' };
 var L = H.resolveRate(facts(dailyFor('GB', 60, 'amazon.co.uk'), [], UK), UK, 'CO1100-R', CALC);
-ok(L.ok === true && near(L.avgSalesPerDay, 60), 'L UK scope + GB daily → READY avg 60 (UK≡GB alias unchanged)');
+ok(L.ok === true && near(L.avgSalesPerDay, calendarRate(60)), 'L UK/GB identity preserved under calendar-30 normalization');
 
 section('§5 M — Forecast-Driven never reaches the sales resolver  [RESTATED S8-R5-B / R46]');
 // S8-R5-B — THIS ASSERTED THE DEFECT AS IF IT WERE THE CONTRACT, AND R46 IS THE ROUND THAT SAYS SO.
@@ -140,7 +142,7 @@ section('§4 — missing ≠ zero; genuinely no EU source stays BLOCKED');
 var none = H.resolveRate(facts([], [], EU), EU, 'CO1100-R', CALC);
 ok(none.ok === false && none.reason === 'SALES_BASIS_UNAVAILABLE' && /EU source set \[IT,DE,ES,FR\]/.test(none.detail || ''), 'Z no eligible daily AND no eligible weekly → truthful SALES_BASIS_UNAVAILABLE (never a fabricated 0)');
 var zero = H.resolveRate(facts([], [['2026-W31', '2026-08-02', 'DE', 'Amazon', 'amazon.de', 'CO1100-R', 0]], EU), EU, 'CO1100-R', CALC);
-ok(zero.ok === true && zero.avgSalesPerDay === 0, 'Z2 a real zero-sales EU weekly row → 0/day (valid zero, not a block)');
+ok(zero.ok === false && zero.reason === 'SALES_BASIS_UNAVAILABLE', 'Z2 a weekly zero cannot prove a calendar-30 daily zero');
 
 console.log('\n----------------------------------------');
 console.log('R5D EU SALES BASIS (F1-4B-FM5-R4UI-R5D): ' + pass + ' passed, ' + fail + ' failed');

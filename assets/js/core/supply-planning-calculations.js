@@ -290,6 +290,8 @@
   }
   function normalizedAvgSalesPerDay(input) {
     var i = input || {};
+    var calendar30 = i.windowPolicy === 'calendar_30';
+    if (i.windowPolicy != null && i.windowPolicy !== 'calendar_30' && i.windowPolicy !== 'normal_30_in_90') throw new Error('supplyPlanningCalculations: WINDOW_POLICY_INVALID');
     var calcMs = _parseIso(i.calcDate, 'calcDate');
     var scope = i.scope;
     if (scope == null || typeof scope !== 'object') throw new Error('supplyPlanningCalculations: scope must be an object carrying the canonical marketplace identity {marketplaceSkuId, marketplaceId, sku, company, country, marketplace, channel}');
@@ -313,7 +315,7 @@
 
     // 90 COMPLETED days, calc date excluded: window = [calc − 90d, calc − 1d].
     var winEndMs = calcMs - MS_PER_DAY;
-    var winStartMs = calcMs - 90 * MS_PER_DAY;
+    var winStartMs = calcMs - (calendar30 ? 30 : 90) * MS_PER_DAY;
 
     // Contaminated selling-date set (dedup ⇒ Campaign∩Event overlap counted once). Cancelled/invalid
     // never remove days. Campaign match = a campaign_sku_line whose marketplace_sku_id === scope
@@ -384,6 +386,7 @@
       row = row || {};
       // 1) Match the PERSISTED source dimensions first (any other marketplace scope → skip; no company needed).
       if (row.sku !== sku || row.country !== country || row.marketplace !== marketplace || row.channel !== channel) return;
+      if (calendar30 && (row.date == null || String(row.date).trim() === '')) return;
       // 2) A source-dimension match REQUIRES a resolved company (Analysis-Layer). No channel/country guessing.
       if (row.company == null || row.company === '') throw new Error('supplyPlanningCalculations: unresolved daily-sales company scope — dailySales[' + idx + '] matches the source natural key (' + country + '/' + marketplace + '/' + channel + '/' + sku + ') but has no resolved company (Analysis-Layer identity must be resolved upstream; never inferred)');
       if (typeof row.company !== 'string') throw new Error('supplyPlanningCalculations: dailySales[' + idx + '].company must be a string (got ' + describe(row.company) + ')');
@@ -406,19 +409,33 @@
     var eligible = Object.keys(byDate).filter(function (d) { return !contaminated[d]; })
       .sort(function (a, b) { return a < b ? 1 : (a > b ? -1 : 0); });   // DESC (newest first)
     var selected = eligible.slice(0, 30);
+    if (calendar30) {
+      // Sparse sales reports omit zero-sale SKU days. Never divide by positive-sale row count.
+      // At least one dated row in the fixed window is required; absent history is not confirmed zero.
+      if (!Object.keys(byDate).length) throw new Error('supplyPlanningCalculations: DAILY_SALES_WINDOW_UNAVAILABLE');
+      selected = [];
+      for (var dayMs = winEndMs; dayMs >= winStartMs; dayMs -= MS_PER_DAY) {
+        var dayKey = _isoOf(dayMs); if (!contaminated[dayKey]) selected.push(dayKey);
+      }
+      if (!selected.length) throw new Error('supplyPlanningCalculations: NO_NORMAL_DAYS_IN_WINDOW');
+    }
     var normalDayCount = selected.length;
     var sum = 0;
-    selected.forEach(function (d) { sum += byDate[d]; });
+    selected.forEach(function (d) { sum += Object.prototype.hasOwnProperty.call(byDate, d) ? byDate[d] : 0; });
 
     var excludedDates = Object.keys(byDate).filter(function (d) { return contaminated[d]; })
       .sort(function (a, b) { return a < b ? -1 : (a > b ? 1 : 0); });
 
     var source, warning, avg;
-    if (normalDayCount >= 7) { source = 'normalized_30d'; warning = ''; avg = sum / normalDayCount; }
+    if (calendar30) {
+      source = 'normalized_30d'; warning = normalDayCount < 7 ? 'low_sample_warning' : ''; avg = sum / normalDayCount;
+      excludedDates = Object.keys(contaminated).sort();
+    }
+    else if (normalDayCount >= 7) { source = 'normalized_30d'; warning = ''; avg = sum / normalDayCount; }
     else if (normalDayCount >= 3) { source = 'normalized_30d'; warning = 'low_sample_warning'; avg = sum / normalDayCount; }
     else { source = 'weekly_7d'; warning = 'insufficient_normal_days'; avg = weekly7d / 7; }
 
-    return {
+    var normalized = {
       source: source,
       warning: warning,
       normalDayCount: normalDayCount,
@@ -428,6 +445,8 @@
       selectedDates: selected,          // newest → oldest, ≤30
       excludedDates: excludedDates      // contaminated dates that had a row for this sku (evidence)
     };
+    if (calendar30) { normalized.windowPolicy = 'calendar_30'; normalized.normalSalesUnits = sum; }
+    return normalized;
   }
 
   // §12 / §32 — Net Order Need = Σ (Remaining Shortage after legal reallocation). Sums a list of

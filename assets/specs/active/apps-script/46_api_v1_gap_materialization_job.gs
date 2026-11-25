@@ -120,6 +120,7 @@ function gapJobNewState_(product, runId, ctx, scopesTotal, nowStr, nowMs, reques
     scopeCursor: 0, scopesTotal: scopesTotal, scopesProcessed: 0,
     rowsProcessed: 0, readyCount: 0, blockedCount: 0, errorCount: 0,
     calculationDate: ctx.calculationDate || '', calculationMonth: ctx.calculationMonth || '', planningCycle: ctx.planningCycle || '',
+    calculationInstantMs: typeof ctx.instantMs === 'number' ? ctx.instantMs : nowMs,
     startedAt: nowStr, updatedAt: nowStr, startedAtMs: (nowMs || 0), updatedAtMs: (nowMs || 0), finishedAt: null, cancelledAt: null, lastError: null, sliceAttempts: 0,
     lockWaits: 0, lastContinuationScheduledAt: null, lastWorkerStartedAt: null, lastWorkerFinishedAt: null, lastProcessedScope: null,
     // R4J-LIVE10 — self-heal + no-progress bookkeeping + the resolved manual execution scope (§13). recoveryCount =
@@ -450,7 +451,7 @@ function gapJobContinue_(product, env) {
     var state = gapJobReadState_(env, product);
     if (!state) { try { env.clearContinuationTriggers(product); } catch (_c0) {} return { status: 'NO_STATE', product: product }; }
     if (gapJobIsTerminal_(state.status)) { try { env.clearContinuationTriggers(product); } catch (_c1) {} return state; }   // terminal → sweep triggers, no-op
-    var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle };
+    var ctx = { ok: true, calculationDate: state.calculationDate, calculationMonth: state.calculationMonth, planningCycle: state.planningCycle, instantMs: state.calculationInstantMs != null ? state.calculationInstantMs : state.startedAtMs };
     var ss = env.openTarget();
     var sheet = env.requireResultSheet(ss, product);
     // R2G-B — FACTORY-CONTENTION PRE-PASS PHASE (Order Planning only). Runs ONCE, in its OWN worker, BEFORE the
@@ -646,7 +647,7 @@ function gapJobStatus_(product, runId, env) {
 // Builds a materialization io whose calculation DATE/MONTH come from the FROZEN job context (never a Script
 // Property, never the wall clock), then delegates to the SAME scope-slice processor the monolithic batch uses.
 function gapJobProcessSlice_(product, sliceScopes, ss, sheet, ctx) {
-  var calcContext = { ok: true, jobType: product, calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: GAP_JOB_TZ_ };
+  var calcContext = { ok: true, jobType: product, calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: GAP_JOB_TZ_, instantMs: ctx.instantMs };
   var io = gapMaterializationDefaultIo_(calcContext);
   io.openTarget = function () { return ss; };                                           // share the already-open spreadsheet
   if (product === 'ORDER_PLANNING') {
@@ -664,7 +665,7 @@ function gapJobProcessSlice_(product, sliceScopes, ss, sheet, ctx) {
 // a no-op empty partition. Lives here as a thin lifecycle adapter — the allocation authority stays entirely in 43.
 function gapJobRunFactoryPrepass_(product, ss, ctx) {
   if (product !== 'ORDER_PLANNING') return { contention: { contendedSkus: {}, partition: {} }, candidateSkuCount: 0, candidateScopeCount: 0, contendedSkuCount: 0, contendedReceiverCount: 0 };
-  var calcContext = { ok: true, jobType: product, calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: GAP_JOB_TZ_ };
+  var calcContext = { ok: true, jobType: product, calculationDate: ctx.calculationDate, calculationMonth: ctx.calculationMonth, planningCycle: ctx.planningCycle, timezone: GAP_JOB_TZ_, instantMs: ctx.instantMs };
   var io = gapMaterializationDefaultIo_(calcContext);
   io.openTarget = function () { return ss; };                                           // share the already-open spreadsheet
   var poolFacts = gapOpReadSupplyPoolFacts_(ss);

@@ -96,6 +96,7 @@
       var sb = r.salesBasis;
       if (!isObj(sb)) { recvIssues.push(issue('DAILY_DEMAND_SOURCE_MISSING', key, 'Sales-Driven receiver has no salesBasis for §22 run-rate')); return null; }
       var res = CALC.normalizedAvgSalesPerDay({
+        windowPolicy: 'calendar_30',
         calcDate: nonEmpty(sb.calcDate) ? str(sb.calcDate) : str(calculationDate),
         scope: sb.scope, weekly7d: sb.weekly7d, dailySales: sb.dailySales || [],
         campaigns: sb.campaigns || [], events: sb.events || []

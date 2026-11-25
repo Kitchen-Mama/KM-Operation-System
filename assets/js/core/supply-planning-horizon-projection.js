@@ -39,7 +39,11 @@
   function iso(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
   // THE single documented HORIZON QUANTITY ROUNDING OWNER (D-F1-4B-FM4a): a full-precision cumulative quantity
   // becomes a displayed integer via round-half-up at checkpoint emission ONLY — never per-day, never in a consumer.
-  function hround(x) { return Math.round(x); }
+  function hround(x, tolerance) {
+    var half = Math.floor(x) + 0.5;
+    if (tolerance && Math.abs(x - half) <= tolerance) x = half;
+    return Math.round(x);
+  }
 
   // ---- public: projectHorizons(input) → { ready, horizons, issues, meta } ------------------------------------
   //   input = { destination, calculationDate:'YYYY-MM-DD', openingSupplyQty, regularFcByMonth:{ 'YYYY-MM': qty },
@@ -76,6 +80,14 @@
 
     var y = +calcDate.slice(0, 4), m = +calcDate.slice(5, 7), d = +calcDate.slice(8, 10);
 
+    var sellingDays = input.specialEventTiming === 'selling_days';
+    var sellingEvents = sellingDays && Array.isArray(input.specialEventDemands) ? input.specialEventDemands : [];
+    for (var si = 0; si < sellingEvents.length; si++) {
+      var seCheck = sellingEvents[si];
+      if (!seCheck || !isIso(seCheck.startDate) || !isIso(seCheck.endDate) || seCheck.endDate < seCheck.startDate ||
+          numOrNull(seCheck.dailyQty) === null || seCheck.dailyQty < 0) return fail(null, 'EVENT_SELLING_WINDOW_INVALID');
+    }
+
     // 1. daily base-demand events (calcDate+1 .. calcDate+maxN), FULL PRECISION (never pre-rounded).
     //    forecast_driven: a day whose month has NO canonical FC is OMITTED and its month recorded MISSING (a horizon
     //    whose window includes such a day is surfaced UNAVAILABLE — never a fabricated 0). sales_driven: the flat
@@ -84,6 +96,11 @@
     for (i = 1; i <= maxN; i++) {
       t = nextDay(cy, cm, cd); cy = t[0]; cm = t[1]; cd = t[2];
       var dISO = iso(cy, cm, cd), ym = dISO.slice(0, 7);
+      var eventDaily = 0;
+      sellingEvents.forEach(function (se) {
+        if (dISO >= se.startDate && dISO <= se.endDate) eventDaily += Number(se.dailyQty);
+      });
+      if (eventDaily > 0) demandEvents.push({ demandId: 'SEV-' + dISO, date: dISO, qty: eventDaily, demandType: 'SPECIAL_EVENT_DAILY', month: ym });
       if (demandMode === 'sales_driven') {
         demandEvents.push({ demandId: 'SRD-' + dISO, date: dISO, qty: salesRate, demandType: 'SALES_RUN_RATE_DAILY', month: ym });
         continue;
@@ -95,6 +112,7 @@
     // F1-4B-FM3f-1 (Authority F): special-event demand enters ONCE on its canonical prep date (100%, never daily-
     // distributed, never target-adjusted). Caller supplies [{ prepDate:'YYYY-MM-DD', qty }] from the KMPD owner.
     (Array.isArray(input.specialEventDemands) ? input.specialEventDemands : []).forEach(function (se, k) {
+      if (sellingDays) return;
       se = se || {}; var pd = String(se.prepDate == null ? '' : se.prepDate); var q = numOrNull(se.qty);
       if (!isIso(pd) || q === null || q <= 0) return;
       demandEvents.push({ demandId: 'SEV-' + k + '-' + pd, date: pd, qty: q, demandType: 'SPECIAL_EVENT', month: pd.slice(0, 7) });
@@ -132,11 +150,15 @@
         // truthful UNAVAILABLE (missing FC for a covered month) — opening still known, quantities null (never 0).
         return { windowCode: wc, requiredByDate: reqBy, demandQty: null, openingSupplyQty: opening, incomingAddedQty: null, coveredQty: null, remainingSupplyQty: null, gapQty: null, suggestedOrderQty: null };
       }
-      var demandQty = hround(cp.cumulativeDemandQty);
-      var coveredQty = hround(cp.cumulativeCoveredQty);
-      var remainingSupplyQty = hround(cp.remainingSupplyQty);
-      var incomingAddedQty = hround(cp.cumulativeIncomingQty || 0);
-      var gapQty = Math.max(0, hround(cp.cumulativeDemandQty - cp.cumulativeCoveredQty));   // primary outcome: rounded from FULL precision, once
+      // Snap only an integer-rounding tie within the bounded accumulation error, not daily demand.
+      // Example: fifteen days at 1/30 otherwise sum to 0.49999999999999994 instead of 0.5.
+      var tolerance = sellingDays ? Math.min(1e-7, Number.EPSILON * 4 * (demandEvents.length + incomingEvents.length + 1)
+        * Math.max(1, cp.cumulativeDemandQty, cp.cumulativeCoveredQty, opening + cp.cumulativeIncomingQty)) : 0;
+      var demandQty = hround(cp.cumulativeDemandQty, tolerance);
+      var coveredQty = hround(cp.cumulativeCoveredQty, tolerance);
+      var remainingSupplyQty = hround(cp.remainingSupplyQty, tolerance);
+      var incomingAddedQty = hround(cp.cumulativeIncomingQty || 0, tolerance);
+      var gapQty = Math.max(0, hround(cp.cumulativeDemandQty - cp.cumulativeCoveredQty, tolerance));
       var sug = null;
       if (gapQty <= 0) sug = 0;
       else if (typeof upc === 'number' && isFinite(upc) && upc > 0 && Math.floor(upc) === upc) { try { sug = KMCALC.calculateSuggestedOrderQty({ netOrderNeed: gapQty, unitsPerCarton: upc }); } catch (e) { sug = null; } }

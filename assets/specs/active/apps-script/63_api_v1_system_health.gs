@@ -1018,8 +1018,8 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "90_generated_supply_planning_bundle.gs",
     "symbol": "KM_BUNDLE_CONTENT_HASH_",
-    "expected": "9c604f38df99c3a3c399a3a49dd77ad40cdbc8242c9fac67bd281840ee1a2242",
-    "owns": "the generated shared-core bundle (60 UMD modules) incl. KMPD.resolveTargetRule — the ONE Target Rule authority every server consumer delegates to; identified by content hash, never by a hand-typed stamp"
+    "expected": "d7077fac95f8d30a9c9917d2f787d1e1231cde61abbdcac48be9db134437db57",
+    "owns": "the generated shared-core bundle (61 UMD modules), including the Site Inventory calendar and calendar-30 sales policy; identified by content hash"
   },
   {
     "file": "22_shipment_dispatch_handlers.gs",
