@@ -1131,6 +1131,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var totalCostDisp = (totalCostNum == null) ? (String(plan.carrierId || '').trim() ? 'Cost pending' : '--') :   // AD3 D r2: a carrier without a quote is cost PENDING, never 0
              ((_cur11 ? _spEsc(_cur11) + ' ' : '') + totalCostNum.toFixed(2));
         var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(4));
+        var splitCost = _spSplitCost_(plan);
+        if (splitCost) { totalCostDisp = _spSplitCostText_(splitCost); unitCostDisp = totalPcs > 0 ? _spSplitCostText_(splitCost, totalPcs, 4) : '--'; }
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
@@ -1535,6 +1537,14 @@ function _spPlanNotice_(planId, message, failed) {
     note.setAttribute('role', failed ? 'alert' : 'status');
     note.style.cssText = 'padding:10px;margin:8px;overflow-wrap:anywhere;color:' + (failed ? '#991b1b;background:#fef2f2' : '#166534;background:#f0fdf4');
     note.textContent = message;
+    var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body');
+    if (body) {
+        var inline = body.querySelector('.sp-rc-feedback');
+        if (!inline) { inline = document.createElement('div'); inline.className = 'sp-rc-feedback'; body.appendChild(inline); }
+        inline.setAttribute('role', failed ? 'alert' : 'status');
+        inline.style.cssText = 'margin-top:8px;overflow-wrap:anywhere;color:' + (failed ? '#991b1b' : '#166534');
+        inline.textContent = message;
+    }
 }
 // Exactly ONE readback via the ACTIVE read path (Workspace when enabled, else Legacy loadOperationDb). If the
 // readback fails AFTER a committed write, it is flagged (readbackFailed) — the command itself already succeeded.
@@ -2179,7 +2189,7 @@ function _spRcLoadingHtml_(message) {
 }
 function _spCostBreakdownHtml_(plan, totalPcs) {
     var raw = plan.raw || {}, cur = String(plan.currency || raw.currency || '').trim();
-    if (raw.estimated_duty_currency && raw.estimated_duty_currency !== cur && raw.estimated_freight_cost !== '' && raw.estimated_duty !== '' && raw.estimated_duty != null) return '<div class="sp-section" id="sp-cost-' + _spEsc(plan.shippingPlanId) + '"><h4>Cost Breakdown</h4><div>Freight ' + _spMoney_(raw.estimated_freight_cost, cur) + '</div><div>Customs ' + _spMoney_(raw.estimated_customs_fee, cur) + '</div><div>Duty ' + _spMoney_(raw.estimated_duty, raw.estimated_duty_currency) + '</div><div>No combined total</div></div>';
+    var split = _spSplitCost_(plan);
     var priced = String(plan.carrierId || '').trim() !== '' && !(raw.estimated_total_cost === '' || raw.estimated_total_cost == null);
     var duty = (raw.estimated_duty === '' || raw.estimated_duty == null) ? null : Number(raw.estimated_duty), cfee = (raw.estimated_customs_fee === '' || raw.estimated_customs_fee == null) ? null : Number(raw.estimated_customs_fee);
     var dc = (duty == null && cfee == null) ? '' : ((duty || 0) + (cfee || 0));
@@ -2195,15 +2205,33 @@ function _spCostBreakdownHtml_(plan, totalPcs) {
     return '<div class="sp-section" id="sp-cost-' + _spEsc(plan.shippingPlanId) + '">' +
         '<h4 class="sp-section-title">Cost Breakdown</h4>' +
         row('Carrier', cbCarrier) +
-        row('Freight', priced ? _spMoney_(raw.estimated_freight_cost, cur) : '--') +
-        row('Duty / Custom', priced ? _spMoney_(dc, cur) : '--') +
-        row('Total Cost', priced ? _spMoney_(total, cur) : (String(plan.carrierId || '').trim() ? 'Cost pending' : '--')) +   // AD3 D r2
-        row('Currency', priced ? _spEsc(cur || '--') : '--') +
-        row('Cost per pcs', unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(4))) +
-        '<div class="sp-cost-basis" style="font-size:11px;color:#94A3B8;margin-top:6px;">' + (priced
+        row('Freight', (split || priced) ? _spMoney_(raw.estimated_freight_cost, cur) : '--') +
+        row('Duty / Custom', split ? _spMoney_(split.customs, cur) + ' + ' + _spMoney_(split.duty, split.dutyCurrency) : priced ? _spMoney_(dc, cur) : '--') +
+        row('Total Cost', split ? _spSplitCostText_(split) : priced ? _spMoney_(total, cur) : (String(plan.carrierId || '').trim() ? 'Cost pending' : '--')) +
+        row('Currency', split ? _spEsc(cur) + ' / ' + _spEsc(split.dutyCurrency) : priced ? _spEsc(cur || '--') : '--') +
+        row('Cost per pcs', split && totalPcs > 0 ? _spSplitCostText_(split, totalPcs, 4) : unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(4))) +
+        '<div class="sp-cost-basis" style="font-size:11px;color:#94A3B8;margin-top:6px;">' + (split ? 'Amounts are kept in their original currencies; no exchange rate has been applied.' : priced
             ? ('Plan estimate, server-priced from the chosen rate card for this plan\'s weight / CBM / cartons. The Shipment execution estimate is priced separately.')
             : 'Not priced yet - choose a carrier and method in Plan Rationale.') + '</div>' +
     '</div>';
+}
+function _spSplitCost_(plan) {
+    var r = (plan && plan.raw) || {}, currency = String(plan.currency || r.currency || '').trim(), dutyCurrency = String(r.estimated_duty_currency || '').trim();
+    function known(v) { return v !== '' && v != null && typeof v !== 'boolean' && !(typeof v === 'string' && !v.trim()) && isFinite(Number(v)); }
+    if (!plan.carrierId || !currency || !dutyCurrency || currency === dutyCurrency || !known(r.estimated_freight_cost) || !known(r.estimated_customs_fee) || !known(r.estimated_duty)) return null;
+    return { currency: currency, dutyCurrency: dutyCurrency, freightTotal: Number(r.estimated_freight_cost) + Number(r.estimated_customs_fee), customs: Number(r.estimated_customs_fee), duty: Number(r.estimated_duty) };
+}
+function _spSplitCostText_(cost, divisor, decimals) {
+    divisor = divisor || 1; decimals = decimals == null ? 2 : decimals;
+    return _spEsc(cost.currency) + ' ' + (cost.freightTotal / divisor).toFixed(decimals) + ' + ' + _spEsc(cost.dutyCurrency) + ' ' + (cost.duty / divisor).toFixed(decimals);
+}
+function _spRcSaveOption_(option) {
+    if (!option) return null;
+    if (option.service_only === true || (option.quote && option.quote.priced === true)) return option;
+    // A listed service can be saved without a quote; the existing service writer revalidates the tuple inside its lock.
+    if (option.quote && option.quote.priced === false && option.carrier_id && option.shipping_method && option.last_mile_delivery)
+        return Object.assign({}, option, { service_only: true, rate_card_id: '', rate_card_version: '' });
+    return null;
 }
 // R15C-UI (Owner R15 P1, handoff 5): THE OPTIONS CACHE. Display only - it never authorises anything: the Save re-reads the cards and re-prices
 // inside the server lock and checks the plan's version token, so another user's write is still refused there, not here.
@@ -2370,7 +2398,7 @@ function _spRcRenderBase13_(planId) {
         '<details class="sp-rc-token" style="font-size:11px;color:#64748B;margin-top:2px;"><summary>Details</summary>' + (o ? ('method token: ' + _spEsc(o.shipping_method) + (o.last_mile_delivery ? ' \u00b7 last mile: ' + _spEsc(o.last_mile_delivery) : '') + ' \u00b7 card ' + _spEsc(o.rate_card_id)) : '') + '</details>' +
         '<div class="sp-rc-lt" style="font-size:11px;margin-top:2px;">' + (o ? ((o.lead_time && o.lead_time.state === 'MATCHED') ? '<span style="color:#475569;">Lead time: ' + _spEsc(o.lead_time.days) + ' days \u00b7 ' + _spEsc(o.lead_time.origin_country || '?') + ' \u2192 ' + _spEsc(o.lead_time.destination_country || '?') + '</span>' : '<span style="color:#B45309;">Lead time: UNKNOWN for this carrier / method (' + _spEsc((o.lead_time && o.lead_time.reason) || 'no match') + ')</span>') : '') + '</div>' +
         _spCustomsHtml_(planId, host, r) +
-        '<button type="button" class="sp-btn sp-btn-submit sp-rc-save" onclick="spRcSave(\'' + _spEsc(planId) + '\')"' + ((o && ((o.quote && o.quote.priced) || o.service_only)) || _spWk1CxPicked_(host, r) ? '' : ' disabled') + ' style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save</button>';
+        '<button type="button" class="sp-btn sp-btn-submit sp-rc-save" onclick="spRcSave(\'' + _spEsc(planId) + '\')"' + (_spRcSaveOption_(o) || _spWk1CxPicked_(host, r) ? '' : ' disabled') + ' style="margin-top:6px;font-size:12px;padding:4px 12px;min-width:150px;">Save</button>';
 }
 // WK1 r3 (Owner): the plan stores no rate card id - the saved COST and the saved CARD are reported separately (current.card_check, 11_ r3)
 function _spWk1CardTxt_(r) { return 'Please confirm the freight quote again.'; }
@@ -2537,8 +2565,8 @@ function spRcSave(planId) {
         var sel = h && h.querySelector('.sp-rc-method'); i = sel ? sel.value : '';
         if (i === '' || !r || !r.options[Number(i)]) { var cx0 = _spWk1CustomsOnlyCx_(h, r); if (cx0) return _spWk1SaveCustoms_(planId, h, r, cx0); _spNotify_('Choose a carrier and a shipping method first.'); return; }   // WK1 r3: a customs-only change saves
     }
-    var o = r.options[Number(i)], exp = String((r.current && r.current.carrier_id) || '');
-    if (!(o.quote && o.quote.priced) && !o.service_only) { var cx1 = _spWk1CustomsOnlyCx_(h, r); if (cx1) return _spWk1SaveCustoms_(planId, h, r, cx1); _spNotify_('This method is not priced for the plan. Nothing was sent.'); return; }   // WK1 r3
+    var o = _spRcSaveOption_(r.options[Number(i)]), exp = String((r.current && r.current.carrier_id) || '');
+    if (!o) { _spPlanNotice_(planId, 'This service could not be validated. Reload the options before saving. Nothing was sent.', true); return; }
     if (!_spPlanTok_(planId)) { _spNotify_('This plan has no edit token on screen - it is being re-read. Nothing was sent; choose again after it reloads.'); try { _spReadbackAfterWrite_(); } catch (eT) {} return; }   // R71-FE-12 (review MINOR-2)
     var cSel = h ? h.querySelector('.sp-rc-customs') : null, cx = cSel ? String(cSel.value || '') : '';
     if (!_spCustomsNa_(r) && r.lane && (r.lane.customs || []).length && !cx) { _spNotify_('Choose a customs type first. Nothing was sent.'); return; }   // AD4

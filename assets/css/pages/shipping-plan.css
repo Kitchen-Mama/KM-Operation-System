@@ -234,6 +234,7 @@
 #shippingplan-section .sp-cost-row {
     display: flex;
     justify-content: space-between;
+    gap: 12px;
     padding: 8px 0;
     border-bottom: 1px solid var(--border-light);
     font-size: 13px;
@@ -251,6 +252,9 @@
 #shippingplan-section .sp-cost-value {
     color: var(--text-primary);
     font-weight: 600;
+    min-width: 0;
+    overflow-wrap: anywhere;
+    text-align: right;
 }
 
 /* Keep the five-column, two-row metadata order; narrow screens scroll the summary locally. */

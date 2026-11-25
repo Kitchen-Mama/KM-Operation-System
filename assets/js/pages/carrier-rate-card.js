@@ -81,7 +81,7 @@
             .catch(function (err) { _crcPrimaryError = err || { message: 'refresh failed' }; if (cb) cb(); _crcRenderPrimaryError(); });
     }
 
-    var quick = { dialog: null, groups: [], rows: [], mode: 'update', busy: false, unknown: false, returnFocus: null };
+    var quick = { dialog: null, groups: [], rows: [], mode: 'update', busy: false, ready: false, unknown: false, returnFocus: null };
     function quickId() { return Array.from(crypto.getRandomValues(new Uint8Array(16))).map(function (v) { return v.toString(16).padStart(2, '0'); }).join(''); }
     function quickServiceKey(r) { return JSON.stringify([low(r.carrierId), up(r.originCountry), up(r.destinationCountry), low(r.shippingMethod).replace('sea express', 'sea_express').replace('air freight', 'air'), low(r.lastMileDelivery)]); }
     function quickNotice(text, failed) { var el = quick.dialog.querySelector('[data-quick-notice]'); el.textContent = text; el.style.color = failed ? '#991b1b' : '#166534'; el.setAttribute('role', failed ? 'alert' : 'status'); }
@@ -111,10 +111,9 @@
         if (quick.dialog) return;
         quick.returnFocus = document.activeElement;
         var d = document.createElement('dialog'); d.className = 'crc-quick'; d.setAttribute('aria-label', 'Rate Card Maintenance');
-        d.innerHTML = '<div class="crc-quick__bar"><h3>Prices & Services</h3></div><div class="crc-quick__bar"><select data-quick-service aria-label="Service"></select><button type="button" class="crc-btn" data-quick-new>New Service</button><button type="button" class="crc-btn" data-quick-add>Add Rate</button></div>' +
+        d.innerHTML = '<div class="crc-quick__bar"><h3>Update Price/Service</h3></div><div class="crc-quick__bar"><select data-quick-service aria-label="Service"><option>Loading services...</option></select><button type="button" class="crc-btn" data-quick-new>New Service</button><button type="button" class="crc-btn" data-quick-add>Add Rate</button></div>' +
             '<div data-quick-body></div><div class="crc-quick__notice" data-quick-notice role="status"></div><div class="crc-quick__footer"><button type="button" class="crc-btn" data-quick-refresh>Refresh</button><button type="button" class="crc-btn" data-quick-close>Close</button><button type="button" class="crc-btn crc-btn--primary" data-quick-save disabled>Save Prices</button></div>';
-        document.body.appendChild(d); quick.dialog = d; quick.mode = 'update'; quick.rows = []; quick.unknown = false;
-        quickGroups();
+        document.body.appendChild(d); quick.dialog = d; quick.mode = 'update'; quick.rows = []; quick.ready = false; quick.unknown = false; quick.busy = false; quick.selectedIndex = '';
         d.querySelector('[data-quick-service]').onchange = function () {
             if (quickHasEdits() && !confirm('Discard unsaved edits?')) { this.value = quick.selectedIndex || ''; return; }
             quick.selectedIndex = this.value; quick.mode = 'update';
@@ -127,11 +126,12 @@
         d.querySelector('[data-quick-close]').onclick = quickClose;
         d.addEventListener('cancel', function (e) { e.preventDefault(); quickClose(); });
         d.showModal();
+        return quickRefresh(true);
     };
     function quickClose() {
-        if (quick.busy) return;
+        if (quick.busy && !quick.loading) return;
         if (quickHasEdits() && !confirm('Close without saving these edits?')) return;
-        quick.dialog.close(); quick.dialog.remove(); quick.dialog = null;
+        quick.dialog.close(); quick.dialog.remove(); quick.dialog = null; quick.busy = false;
         if (quick.returnFocus) quick.returnFocus.focus({ preventScroll: true });
     }
     function quickRenderPrices() {
@@ -171,15 +171,26 @@
         if (mode === 'add_rate') ['carrier_id', 'origin_country', 'destination_country', 'shipping_method', 'last_mile_delivery'].forEach(function (k) { quick.dialog.querySelector('[name="' + k + '"]').disabled = true; });
         quick.dialog.querySelector('[data-quick-save]').textContent = mode === 'new_service' ? 'Create Service & Rate' : 'Add Rate'; quick.dialog.querySelector('[data-quick-save]').disabled = false; quickNotice('', false);
     }
-    async function quickRefresh() {
+    async function quickRefresh(initial) {
         if (quick.busy || (quickHasEdits() && !confirm('Refresh and discard unsaved edits?'))) return;
-        quick.busy = true; quickLock(true);
+        var dialog = quick.dialog;
+        quick.busy = true; quick.loading = true; quickLock(true);
+        quickNotice('Loading services from the database...', false);
         try {
+            if (!_crcScopedActive() && initial === true) { quick.ready = true; quickGroups(); quickRenderPrices(); return; }
             if (!_crcScopedActive()) throw Error('Scoped refresh unavailable. Reload the page.');
-            var model = await window.KM.DB.loadScopedTables(_CRC_TABLES, { force: true });
-            _crcReadModel = model; quick.mode = 'update'; quick.rows = []; quick.unknown = false; quickGroups(); quickRenderPrices(); quickNotice('Refreshed. Check current prices before another edit.', false);
-        } catch (e) { quickNotice('Refresh failed: ' + e.message + '. Nothing was resent.', true); }
-        finally { quick.busy = false; quickLock(false); }
+            var model = await window.KM.DB.loadScopedTables(_CRC_TABLES);
+            if (quick.dialog !== dialog) return;
+            if (!model || !Array.isArray(model.carrierRateCards) || !Array.isArray(model.carriers)) throw Error('The database did not return the rate-card tables.');
+            _crcReadModel = model; _crcPrimaryError = null; _crcRenderPrimaryError(); quick.ready = true; quick.mode = 'update'; quick.rows = []; quick.unknown = false; quick.selectedIndex = ''; quickGroups(); quickRenderPrices();
+            quickNotice(quick.groups.length ? (initial === true ? '' : 'Refreshed.') : 'No services found in the database.', false);
+        } catch (e) {
+            if (quick.dialog !== dialog) return;
+            quick.ready = false;
+            dialog.querySelector('[data-quick-service]').innerHTML = '<option value="">Services unavailable</option>';
+            quickNotice('Services could not be loaded: ' + e.message + '. Nothing was written. Use Refresh to retry.', true);
+        }
+        finally { if (quick.dialog === dialog) { quick.busy = false; quick.loading = false; quickLock(false); } }
     }
     function quickLock(held) {
         quick.dialog.querySelectorAll('button,select,input').forEach(function (el) {
@@ -187,6 +198,13 @@
             else if (el.dataset.wasDisabled != null) { el.disabled = el.dataset.wasDisabled === '1'; delete el.dataset.wasDisabled; }
         });
         if (quick.unknown) quick.dialog.querySelector('[data-quick-save]').disabled = true;
+        if (held && quick.loading) quick.dialog.querySelector('[data-quick-close]').disabled = false;
+        if (!held) {
+            quick.dialog.querySelector('[data-quick-service]').disabled = !quick.ready || !quick.groups.length;
+            quick.dialog.querySelector('[data-quick-new]').disabled = !quick.ready || quick.unknown;
+            quick.dialog.querySelector('[data-quick-add]').disabled = !quick.ready || quick.unknown || !quick.groups.length;
+            if (!quick.ready || (quick.mode === 'update' && !quick.rows.length)) quick.dialog.querySelector('[data-quick-save]').disabled = true;
+        }
     }
     async function quickSave() {
         if (quick.busy || quick.unknown) return;
