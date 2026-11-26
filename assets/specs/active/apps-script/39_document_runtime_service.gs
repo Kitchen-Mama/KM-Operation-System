@@ -1572,7 +1572,7 @@ plan.reuse.forEach(function (r) { var ru = reuse(r.entry, r.row); if (ru.status 
 var LEASE = 10 * 60 * 1000, io = dfoDefaultIo_();
 function lease(r) { var m = /DGS_LEASE=(\d+)/.exec(dgsStr_(r.note)); return dgsDecodeNote_(r.note).reason === DGS_PO_RESERVED_ && m ? +m[1] : 0; }
 plan.todo.forEach(function (item) {
-var entry = item.entry, model = docRenderByClass_(entry.render, snap), did = dgsNewDocId_(), tag = ' [' + did + ']', st = '', cur = null, prior = [], found = [], one;
+var entry = item.entry, model, did = dgsNewDocId_(), tag = ' [' + did + ']', st = '', cur = null, prior = [], found = [], one;
 var key = dgsIdentityKey_('shipment', shipmentId, entry.template_id, entry.template_version);
 var base = {
 template_id: entry.template_id, template_key: entry.template_key, template_version: entry.template_version,
@@ -1612,15 +1612,18 @@ if (prior.length) {
 try { found = io.attemptFiles(folder.folder_id, prior); }
 catch (eF) { one = { ok: false, reason: 'DOCUMENT_ATTEMPT_UNVERIFIED', message: String(eF && eF.message || eF) }; }
 }
+// Record the attempt before mapping/rendering; one class failing must not hide the other outputs.
+if (!one) try { model = docRenderByClass_(entry.render, snap); }
+catch (eM) { one = { ok: false, reason: 'DOCUMENT_RENDER_FAILED', message: String(eM && eM.message || eM) }; }
 if (!one && !model.ok) {
 var mreason = model.error || model.reason || 'DOCUMENT_NOT_READY';
 one = { ok: false, configuration_required: mreason === 'UNSUPPORTED_DOCUMENT_TYPE', reason: mreason, model: true };
 }
-if (!one) one = dgsRenderOne_(ss, {
+if (!one) try { one = dgsRenderOne_(ss, {
 entry: entry, model: model, related_entity_type: 'shipment', related_entity_id: shipmentId, attempt: did, tag: tag,
 folder_id: folder.folder_id, destination_bucket: folder.destination_bucket,
 fallback_file_name: 'KitchenMama_' + entry.class_key + '_' + sc.external_shipment_id
-});
+}); } catch (eR) { one = { ok: false, reason: 'DOCUMENT_RENDER_FAILED', message: String(eR && eR.message || eR) }; }
 var f = one.ok ? one.file : { file_id: one.partial_file_id || '' };
 
 var res, fin = dgsLocked_(lock, function () {
@@ -1661,7 +1664,7 @@ done(res);
 });
 
 return {
-ok: failed === 0, shipment_id: dgsStr_(shipmentId), snapshot_id: dgsStr_(snap.header.snapshot_id),
+ok: failed === 0 && configRequired === 0, shipment_id: dgsStr_(shipmentId), snapshot_id: dgsStr_(snap.header.snapshot_id),
 folder_id: folder.folder_id, folder_name: folder.folder_name, folder_url: dgsFolderUrl_(folder.folder_id),
 destination_bucket: folder.destination_bucket, expected: manifest.entries.length,
 generated: generated, reused: plan.reuse.length, failed: failed, configuration_required: configRequired,
@@ -1929,6 +1932,11 @@ var docs = live.map(function (r) { return Object.assign(dgsDocumentDto_(r), { ve
 var folderId = '';
 for (var i = live.length - 1; i >= 0; i--) { if (dgsStr_(live[i].output_folder_id)) { folderId = dgsStr_(live[i].output_folder_id); break; } }
 var state = dgsBatchState_(live, { expected: expected, entity_committed: !!(expected && dgsLc_(entityType) === 'shipment') });
+if (!live.length && dgsLc_(entityType) === 'shipment') {
+  var context = dgsShipmentContext_(ss, entityId);
+  var missing = context.ok ? dgsMissingShipmentDocuments_(context.row) : null;
+  if (missing) return missing;
+}
 var firstErr = null;
 for (var j = 0; j < docs.length; j++) { if (docs[j].reason && docs[j].status !== 'READY') { firstErr = docs[j]; break; } }
 return {
@@ -1938,6 +1946,12 @@ documentGenerationStatus: state,
 documentGenerationError: firstErr ? { reason: firstErr.reason, message: firstErr.message, document_label: firstErr.document_label, template_key: firstErr.template_key, retryable: firstErr.retryable } : null,
 canRetryDocuments: docs.some(function (d) { return d.retryable; })
 };
+}
+// A Confirm-owned digest distinguishes an interrupted modern generation from imported history.
+function dgsMissingShipmentDocuments_(shipment) {
+  if (!shipment || !SFO_DISPATCHED_STATUS_[dgsLc_(shipment.status)] || !dgsStr_(shipment.final_output_validated_digest)) return null;
+  return { documents: [], documentFolderUrl: '', documentGenerationStatus: 'CONFIRMED_RETRY_REQUIRED',
+    documentGenerationError: { reason: 'DOCUMENT_OUTPUTS_MISSING', message: 'Shipment is dispatched, but document generation has no recorded outputs. Generate documents only; do not dispatch again.', retryable: true }, canRetryDocuments: true };
 }
 function handleEntityDocumentList_(body) {
 var entityType = dgsLc_(body && (body.related_entity_type || body.entity_type));
@@ -2452,6 +2466,7 @@ var snap = docReadSnapshot_(ss, shipmentId);
 out.snapshot_eligible = !!SFO_DISPATCHED_STATUS_[sc.status];
 out.snapshot_present = !!snap;
 var byDoc = [], ready = 0, configReq = 0, fieldByClass = {}, ciAuthority = [];
+var selected = dgsShipmentManifest_(dgsTemplates_(ss), sc.ctx);
 readiness.manifest.forEach(function (m) {
 var fields = dgsFieldsFor_(ss, m.template_id);
 var row = { class_key: m.class_key, template_key: m.template_key, requirement: m.requirement };
@@ -2471,12 +2486,17 @@ row.status = 'CONFIGURATION_REQUIRED'; row.reason = model.error || model.reason;
 fieldByClass[m.class_key] = { complete: false, missing: [], unresolved: [] };
 configReq++; byDoc.push(row); return;
 }
-var mapped = dtMapPlaceholders_(model, fields);
-var unresolved = (cls && cls.render === 'CI') ? docCiUnresolvedFields_(fields) : [];
-row.required_missing = mapped.missing;
+// Diagnose the same SKU/Series projection, worksheet scoping and filename mapping as generation.
+var entry = (selected.entries || []).filter(function (e) { return e.class_key === m.class_key && e.template_id === m.template_id; })[0];
+var mapped = entry ? dgsResolvePayload_(ss, { entry: entry, model: model, related_entity_type: 'shipment',
+related_entity_id: shipmentId, folder_id: '(preview)', destination_bucket: readiness.destination_bucket,
+fallback_file_name: 'KitchenMama_' + m.class_key + '_' + sc.external_shipment_id }) : { ok: false, reason: 'DOCUMENT_TEMPLATE_NOT_CONFIGURED' };
+var unresolved = mapped.unresolved_authority || [];
+row.required_missing = mapped.missing || [];
 row.unresolved_authority = unresolved;
-row.status = (mapped.missing.length || unresolved.length) ? 'CONFIGURATION_REQUIRED' : 'READY';
-fieldByClass[m.class_key] = { complete: row.status === 'READY', missing: mapped.missing, unresolved: unresolved };
+row.status = mapped.ok ? 'READY' : 'CONFIGURATION_REQUIRED';
+if (!mapped.ok) row.reason = mapped.reason;
+fieldByClass[m.class_key] = { complete: row.status === 'READY', missing: row.required_missing, unresolved: unresolved };
 if (row.status === 'READY') ready++; else configReq++;
 byDoc.push(row);
 });
@@ -2497,7 +2517,16 @@ out.final_folder_preview = leaf.ok ? ('Shipment/' + readiness.destination_bucket
 var existing = dgsGeneratedFor_(ss, 'shipment', shipmentId);
 out.existing_documents = existing.map(function (r) { return dgsDocumentDto_(r); });
 out.missing_or_failed_outputs = out.existing_documents.filter(function (d) { return d.status !== 'READY'; }).map(function (d) { return { document_label: d.document_label, status: d.status, reason: d.reason }; });
+var absent = readiness.manifest.filter(function (m) {
+return !existing.some(function (r) { return dgsStr_(r.template_id) === dgsStr_(m.template_id) && dgsStr_(r.template_version) === dgsStr_(m.template_version) && dgsRowState_(r) === 'READY'; });
+});
+absent.forEach(function (m) {
+if (!existing.some(function (r) { return dgsStr_(r.template_id) === dgsStr_(m.template_id) && dgsStr_(r.template_version) === dgsStr_(m.template_version); })) {
+out.missing_or_failed_outputs.push({ document_label: m.class_key, template_key: m.template_key, status: 'NOT_GENERATED', reason: 'DOCUMENT_OUTPUTS_MISSING' });
+}
+});
 out.safe_retry_verdict = out.existing_documents.some(function (d) { return d.retryable; }) ? 'RETRY_SAFE' : (out.missing_or_failed_outputs.length ? 'CONFIGURATION_REQUIRED' : 'NOTHING_TO_RETRY');
+if (snap && SFO_DISPATCHED_STATUS_[sc.status] && absent.length && configReq === 0 && readiness.drive_readiness.status === 'READY') out.safe_retry_verdict = 'RETRY_SAFE';
 out.system_readiness_verdict = out.pre_dispatch_system_readiness.status;
 out.drive_readiness_verdict = readiness.drive_readiness.status === 'READY' ? 'READY' : (readiness.drive_readiness.status === 'SKIPPED' ? 'NOT_EVALUATED' : 'BLOCKED');
 out.blocking_reasons = readiness.blockers;
@@ -2570,4 +2599,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1';

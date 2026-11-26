@@ -782,7 +782,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "39_document_runtime_service.gs",
     "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1",
+    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1",
     "owns": "Production profile; Sandbox single-ticket recovery disabled"
   },
   {
@@ -866,7 +866,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "57_api_v1_shipment_workspace.gs",
     "symbol": "SHIP_WS_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1",
     "owns": "the Shipment READ workspace (shipment.workspace.get) incl. the SHIP-OPEN opening-record DTO fields recordOrigin / openingAsOf / openingSupplyMode"
   },
   {

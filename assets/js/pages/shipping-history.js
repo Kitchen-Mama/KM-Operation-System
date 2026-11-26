@@ -1004,7 +1004,7 @@ var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped', 'cancelled'];
 var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1 };   // OVERVIEW-PR (R4 review M4, ships with the patch): 31_ writes partially_received
 // F1-6B Part B — statuses at which the frozen R2B final-output snapshot exists (post confirm-and-dispatch), so
 // Shipping Detail / Packing List documents can be generated. Purely a UX gate — the backend is fail-closed regardless.
-var SH_DOC_READY_STATUSES = { in_transit: 1, arrived: 1, received: 1, closed: 1 };
+var SH_DOC_READY_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1, stuck: 1 };
 // Done marker: hidden from the Draft workspace (still shown in Overview; row never deleted).
 function _shHiddenFromDraft(s) { return !!(s.hiddenFromDraftAt && String(s.hiddenFromDraftAt).trim()); }
 
@@ -1087,7 +1087,7 @@ function _shRefresh_(renderFn) {
     if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { _shRenderError_({ code: 'WORKSPACE_UNAVAILABLE', message: 'Shipment Workspace API unavailable.' }); return; }
     // F1-7N-FB-1B §P — ask for the generated_documents projection. It is a BOUNDED include: without it the
     // workspace does not read the registry at all, so the Document Panel cost is opt-in per page.
-    Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { documents: true, skuLogistics: true } })).then(function (env) {
+    return Promise.resolve(window.KM.api.getWorkspace('shipment', { page: { number: 1, size: 3000 }, include: { documents: true, skuLogistics: true } })).then(function (env) {
         if (mySeq !== _shReadSeq) return;
         _shReadPending_ = 0;   // R15C-UI: this answer settles the pending read (success or failure)
         if (_st15c.env !== _shEnvId15c_() || _st15c.scope !== _shScopeId15c_()) { SH_RETURN_STATS_15C_.envDrop++; _shEnvGate15c_(); var _sec15f = document.getElementById('shipment-draft-section'); if (_sec15f && _sec15f.classList.contains('active')) _shLoadAndRender(); return; }   // [R15F-F19v2] envId via db-api; UNKNOWN is never a cache key: an answer for another environment is never drawn or kept
@@ -1137,8 +1137,8 @@ if (typeof window !== 'undefined') { window.shRetryRead = shRetryRead; }
 function _shLoadAndRender() {
     var draftSec = document.getElementById('shipment-draft-section');
     var active = (draftSec && draftSec.classList.contains('active')) ? renderShipmentDraft : renderShipmentOverview;
-    if (_shEffectiveWorkspace()) { _shRefresh_(active); return; }   // R15C-UI: the model is kept until the new one arrives (no whole-area wipe)
-    active();
+    if (_shEffectiveWorkspace()) return _shRefresh_(active);   // Keep the model until the new one arrives.
+    return active();
 }
 
 // ---- Shipment Draft page --------------------------------------------------
@@ -1366,12 +1366,12 @@ function _shRestoreCards_(listEl, st) {
 var SH_READBACK_STATS_ = { targeted: 0, full: 0 };
 function _shReadbackOne_(shipmentId) {
     var sid = String(shipmentId || '');
-    if (!sid || !_shEffectiveWorkspace() || !_shReadModel || !(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { SH_READBACK_STATS_.full++; _shLoadAndRender(); return Promise.resolve('FULL'); }
+    if (!sid || !_shEffectiveWorkspace() || !_shReadModel || !(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { SH_READBACK_STATS_.full++; return Promise.resolve(_shLoadAndRender()).then(function () { return 'FULL'; }); }
     var draftSec = document.getElementById('shipment-draft-section');
     var active = (draftSec && draftSec.classList.contains('active')) ? renderShipmentDraft : renderShipmentOverview;
     var mySeq = ++_shReadSeq; _shReadPending_ = mySeq;
     var rg = _shRegion_(); if (rg) rg.beginLoad(true);
-    function full() { SH_READBACK_STATS_.full++; _shReadPending_ = 0; _shLoadAndRender(); return 'FULL'; }
+    function full() { SH_READBACK_STATS_.full++; _shReadPending_ = 0; return Promise.resolve(_shLoadAndRender()).then(function () { return 'FULL'; }); }
     return Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: sid }, page: { number: 1, size: 5 }, include: { documents: true, skuLogistics: true } })).then(function (env) {
         if (mySeq !== _shReadSeq) return 'SUPERSEDED';
         var m = (env && env.success) ? window.KM.DB.adaptShipmentWorkspace(env.data) : null;
@@ -2291,7 +2291,12 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
             ? 'Documents: ' + ready.length + ' ready.' : 'Documents are not yet verified complete. Check the shipment document panel; do not dispatch again.';
         if (status) { status.style.color = '#166534'; status.innerHTML = '<strong>Dispatch recorded.</strong> ' + _shEsc(docText); }
         else { _shNote_(shipmentId, 'Dispatch recorded. ' + docText); _shLoadAndRender(); }
-        if (go) { go.disabled = true; go.textContent = 'Dispatched'; }
+        if (go) {
+            // Remove the original addEventListener dispatch handler before enabling navigation.
+            var view = go.cloneNode(false); go.replaceWith(view); go = view;
+            go.disabled = false; go.textContent = 'View Documents';
+            go.onclick = function () { return shViewShipmentDocuments(shipmentId); };
+        }
         if (cancel) { cancel.onclick = function () { _shCloseConfirmModal(); _shLoadAndRender(); }; }
         if (check) { check.remove(); check = null; }
     }).catch(function () {
@@ -3420,9 +3425,9 @@ function _shDocRowHtml(d, canRetry, entityId, entityType) {
             '<button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(retryType) + '\',\'' + _shEsc(retryId) + '\',this)" ' +
             'style="background:none;border:none;padding:0;color:#DC2626;font-size:12px;cursor:pointer;">Retry</button>';
     }
-    return '<div class="sh-doc-row" style="display:flex;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F1F5F9;">' +
+    return '<div class="sh-doc-row" style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:5px 0;border-bottom:1px solid #F1F5F9;">' +
         '<span aria-hidden="true">' + _shDocIcon(d && (d.document_type || d.template_key)) + '</span>' +
-        '<span style="flex:1 1 auto;min-width:0;">' +
+        '<span style="flex:1 1 140px;min-width:0;">' +
             '<span style="display:block;font-size:13px;color:#1E293B;">' + _shEsc((d && d.document_label) || (d && d.document_type) || 'Document') + '</span>' +
             (name ? '<span style="display:block;font-size:11px;color:#94A3B8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="' + _shEsc(name) + '">' + _shEsc(name) + '</span>' : '') +
         '</span>' +
@@ -3438,6 +3443,7 @@ function _shDocRowHtml(d, canRetry, entityId, entityType) {
 // and where they come from, where to fix it, and whether a retry is safe. It NEVER prints a stack trace, a
 // credential or a raw Drive identifier.
 var SH_DOC_REASON_HELP_ = {
+    DOCUMENT_OUTPUTS_MISSING: { say: 'Shipment is dispatched, but no generated files were recorded.', fix: 'Generate documents only; do not dispatch again' },
     SHIPMENT_DOCUMENT_TEMPLATE_UNRESOLVED: { say: 'No active template is configured for a required document.', fix: 'Admin › Document Templates' },
     SHIPMENT_DOCUMENT_TEMPLATE_AMBIGUOUS: { say: 'More than one active template matches this shipment, so the system will not guess.', fix: 'Admin › Document Templates' },
     PO_DOCUMENT_TEMPLATE_UNRESOLVED: { say: 'No active Purchase Order template matches this factory and series.', fix: 'Admin › Document Templates' },
@@ -3489,7 +3495,7 @@ function _shDocErrorHtml(model, state) {
             }).join(' · ') + (missing.length > 6 ? ' … +' + (missing.length - 6) : '') + '</div>';
     }
     var retryHtml = '';
-    if (model.can_retry === true && (err ? err.retryable !== false : false)) {
+    if (model.can_retry === true && (model.entity_type !== 'shipment' || (model.documents || []).length) && (err ? err.retryable !== false : false)) {
         retryHtml = ' <button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'' + _shEsc(model.entity_type || 'shipment') + '\',\'' + _shEsc(model.entity_id) + '\',this)" ' +
             'style="background:none;border:none;padding:0;color:#B91C1C;font-size:11px;text-decoration:underline;cursor:pointer;">Retry</button>';
     }
@@ -3518,6 +3524,9 @@ function shDocumentPanelHtml(model) {
         body = '<div style="font-size:12px;color:#DC2626;">' + _shEsc(SH_DOC_STATE_LABEL_.CONFIG_CONFLICT) + ' — ' + _shEsc(model.folder_error) + '</div>';
     } else if (!docs.length) {
         body = '<div style="font-size:12px;color:#94A3B8;">' + _shEsc(SH_DOC_STATE_LABEL_[state] || SH_DOC_STATE_LABEL_.NONE) + '</div>';
+        if (model.can_retry === true && model.entity_type === 'shipment' && model.entity_id) {
+            body += '<button type="button" class="sh-doc-retry" onclick="shRetryDocument(\'shipment\',\'' + _shEsc(model.entity_id) + '\',this)" style="margin-top:8px;padding:7px 12px;border:0;border-radius:4px;background:#0284C7;color:#fff;cursor:pointer;">Generate Documents</button>';
+        }
     } else {
         var shown = docs.slice(0, SH_DOC_PANEL_VISIBLE_ROWS_);
         body = shown.map(function (d) { return _shDocRowHtml(d, model.can_retry === true, model.entity_id, model.entity_type); }).join('');
@@ -3540,7 +3549,25 @@ function shRegisterDocumentRefresh(entityType, fn) {
     var t = String(entityType || '').trim();
     if (t && typeof fn === 'function') SH_DOC_REFRESH_[t] = fn;
 }
-shRegisterDocumentRefresh('shipment', function () { _shLoadAndRender(); });
+function shViewShipmentDocuments(shipmentId) {
+    _shCloseConfirmModal();
+    var filter = document.getElementById('shd-filter-status');
+    if (filter) filter.value = '';
+    return Promise.resolve(_shReadbackOne_(shipmentId)).then(function () {
+        var list = _shActiveListEl_(), card = null;
+        if (list) Array.prototype.some.call(list.querySelectorAll('.history-card'), function (item) {
+            if (item.id !== 'sh-card-' + shipmentId) return false;
+            card = item; return true;
+        });
+        if (!card) return;
+        var details = card.querySelector('.history-card-details');
+        if (details && details.style.display === 'none') _shToggleCardEl(card);
+        var panel = card.querySelector('.sh-doc-panel');
+        if (panel) panel.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    });
+}
+window.shViewShipmentDocuments = shViewShipmentDocuments;
+shRegisterDocumentRefresh('shipment', function (id) { return shViewShipmentDocuments(id); });
 
 // F1-7N-FB-1B §Q/§O — Retry. It regenerates ONLY the missing/failed documents: the backend reuses every
 // already-generated output, so a retry can never duplicate a folder, a file, a PDF or a registry row, and it
@@ -3554,18 +3581,22 @@ function shRetryDocument(entityType, entityId, btnEl) {
     var type = String(entityType || '').trim();
     var id = String(entityId || '').trim();
     if (!type || !id) return;
-    if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.textContent = 'Retrying…'; }
-    return Promise.resolve(db.retryDocumentGeneration(type, id)).then(function (res) {
+    if (btnEl) { if (btnEl.disabled) return; btnEl.disabled = true; btnEl.textContent = 'Generating...'; }
+    return Promise.resolve().then(function () { return db.retryDocumentGeneration(type, id); }).then(function (res) {
+        if (!res || res.stage === 'network' || res.outcome_unknown === true) throw new Error('DOCUMENT_RETRY_OUTCOME_UNKNOWN');
         if (btnEl) { btnEl.disabled = false; btnEl.textContent = 'Retry'; }
-        if (res && res.success) {
+        var result = res && res.result || {};
+        if (res && res.success && !result.failed && !result.configuration_required) {
             // No registered refresh → say so rather than leave the operator with a silently stale screen.
             var refresh = SH_DOC_REFRESH_[type];
-            if (typeof refresh === 'function') refresh(id);
+            if (typeof refresh === 'function') return refresh(id);
             else if (btnEl) { btnEl.textContent = 'Retried — reload'; btnEl.title = 'The retry succeeded. Reload this page to see the result.'; }
             return;
         }
-        var reason = (res && (res.error || (res.result && res.result.reason))) || 'Retry failed';
+        var failures = (result.results || []).filter(function(r){return r.status!=='READY';});
+        var reason = (res && (res.error || result.reason)) || failures.map(function(r){return r.class_key+': '+r.reason;}).join('; ') || 'Retry failed';
         if (btnEl) { btnEl.style.color = '#B91C1C'; btnEl.textContent = 'Retry failed'; btnEl.title = String(reason); }
+        if (typeof SH_DOC_REFRESH_[type] === 'function') return SH_DOC_REFRESH_[type](id);
     }).catch(function () {
         // OUTCOME UNKNOWN. The request left and the transport threw, so we cannot say whether the retry ran;
         // resetting to a plain 'Retry' would read as 'nothing happened'. Say what we know, and never replay.
@@ -3921,8 +3952,10 @@ function _shRunConfirm(shipmentId, execPayload) {
             docLine;
         if (actions) {
             actions.innerHTML = '<button type="button" id="sh-confirm-close" style="height:36px;min-width:96px;padding:7px 14px;border:1px solid #94A3B8;background:#E2E8F0;color:#1E293B;border-radius:6px;cursor:pointer;">Close</button>' +
+                '<button type="button" id="sh-confirm-documents" style="padding:7px 14px;border:0;background:#0284C7;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">View Documents</button>' +
                 '<button type="button" id="sh-confirm-view" style="padding:7px 14px;border:0;background:#0080bb;color:#fff;border-radius:6px;cursor:pointer;font-weight:600;">View On the Way</button>';
             document.getElementById('sh-confirm-close').addEventListener('click', function () { _shCloseConfirmModal(); _shLoadAndRender(); });
+            document.getElementById('sh-confirm-documents').addEventListener('click', function () { shViewShipmentDocuments(d.shipment_id || shipmentId); });
             document.getElementById('sh-confirm-view').addEventListener('click', function () {
                 _shCloseConfirmModal();
                 window._glmPendingSelect = d.shipment_id || shipmentId;   // runtime page auto-selects it on mount

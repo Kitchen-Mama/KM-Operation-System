@@ -26,7 +26,7 @@
  * `handleShipmentWorkspaceGet_(body, io)` takes an injectable `io` so it runs against fixtures with ZERO SpreadsheetApp.
  */
 
-var SHIP_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7';   // SHIP-OPEN r5.3: module stamp (63_ register + Production 01_ module_stamps) - an old / missing 57_ is caught
+var SHIP_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1';   // Missing confirmed outputs expose the documents-only retry.
 var SHIP_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
 // BASE tables (Draft/Overview) — fail-closed on missing schema. MAP-extra tables (On-the-Way) — include-gated + missing-safe.
@@ -150,10 +150,10 @@ function shipBuildEnvelope_(ok, data, errors, meta) {
 // and projected through the single canonical DTO owner (dgsDocumentDto_ / dgsBatchState_ in 39_) so the API, the
 // diagnostics and the panels can never disagree. It is PURE: the rows were already read by the io layer, and the
 // browser still never touches Drive — it only follows a URL the backend resolved.
-function shipWsDocumentsFor_(rowsByEntity, entityId) {
+function shipWsDocumentsFor_(rowsByEntity, entityId, shipment) {
   var rows = (rowsByEntity && rowsByEntity[entityId]) || [];
   var live = rows.filter(function (r) { return dgsRowState_(r) !== 'SUPERSEDED'; });
-  if (!live.length) return { documents: [], documentFolderUrl: '', documentGenerationStatus: 'NONE', documentGenerationError: null, canRetryDocuments: false };
+  if (!live.length) return (typeof dgsMissingShipmentDocuments_ === 'function' && dgsMissingShipmentDocuments_(shipment)) || { documents: [], documentFolderUrl: '', documentGenerationStatus: 'NONE', documentGenerationError: null, canRetryDocuments: false };
   var docs = live.map(function (r) { return dgsDocumentDto_(r); });
   var folderId = '';
   for (var i = live.length - 1; i >= 0; i--) { if (dgsStr_(live[i].output_folder_id)) { folderId = dgsStr_(live[i].output_folder_id); break; } }
@@ -188,7 +188,7 @@ function shipMapShipment_(r, linesByShipment, docsByShipment) {
     totalQty += shipped; receivedQty += recv;
   }
   var destWh = shipWsStr_((r.destination_warehouse_id === '' || r.destination_warehouse_id == null) ? r.warehouse_id : r.destination_warehouse_id);
-  var docs = shipWsDocumentsFor_(docsByShipment || {}, sid);
+  var docs = shipWsDocumentsFor_(docsByShipment || {}, sid, r);
 var sources13 = shipWsSources13_(lines.filter(function (l) { return !xcoWsRemoved_(l); }), r), xcoLin_ = xcoShipWsLineage_(lines, r, (typeof XCO_WS_LINKS_ !== 'undefined' && XCO_WS_LINKS_) ? XCO_WS_LINKS_[sid] : null);   // XCO-R15G
   return {
     shipmentId: sid, shipmentNo: shipWsStr_(r.shipment_no), shippingPlanId: shipWsStr_(r.shipping_plan_id),

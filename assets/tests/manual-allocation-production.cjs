@@ -257,3 +257,14 @@ test('shipping review requires all shared document owners, including the party r
  for(const symbol of ['PARTY_BUILD_VERSION_','SHIPMENT_BUILD_VERSION_','SFO_BUILD_VERSION_','DOCUMENT_LAYOUT_BUILD_VERSION_','DGS_PRODUCTION_PROFILE_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
  assert.equal(p.module_stamps.find(m=>m.symbol==='PARTY_BUILD_VERSION_').optional,false);
 });
+
+test('pre-document-recovery policy retains all existing operations during the manual GS update',async()=>{
+ const previous={...p,policy_sha256:'0026f8ebcc150b0ed8cfd9e411d1ceefa13053283af228a42025dfd40c55d4f7'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save','cancelShipmentDraft','document.retry'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,9);
+});
+
+test('document recovery pins both workspace projection and runtime in router and health',()=>{
+ const ctx=vm.createContext({});for(const file of ['39_document_runtime_service.gs','57_api_v1_shipment_workspace.gs','63_api_v1_system_health.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
+ for(const symbol of ['DGS_PRODUCTION_PROFILE_BUILD_VERSION_','SHIP_WS_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
+});
