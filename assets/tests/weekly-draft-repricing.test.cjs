@@ -60,3 +60,25 @@ test('a pricing write failure rolls back both SKU edits and previous quote',()=>
  h.tables.shipping_plans.beforeWrite=({col})=>{if(!failed&&h.tables.shipping_plans.grid[0][col-1]==='estimated_freight_cost'){failed=true;throw Error('Injected pricing failure');}};
  const r=h.call(body([update('A',20)]));assert.equal(r.code,'IMPORT_FAILED_ROLLED_BACK',JSON.stringify(r));assert.equal(failed,true);assert.equal(business(h),before);
 });
+
+test('Reject returns an editable Draft; SKU add/remove/quantity Save reprices and resubmits with rejection history',()=>{
+ const h=world(),c=h.c,stock=JSON.stringify(h.rows('factory_stock'));
+ // Isolate the destination/stock admission owners; exercise the actual status and journal writers.
+ c.shipDestinationDraftGate_=()=>null;c.fsgGatePlanTransition_=()=>({proceed:true,audit:null});
+ h.put('shipping_plans','shipping_plan_id','P1','status','pending_approval');
+ h.put('shipping_plans','shipping_plan_id','P1','plan_version',1);
+ const transition=(kind,extra={})=>JSON.parse(c.handleUpdateShippingPlanStatus_({shipping_plan_id:'P1',transition:kind,expected_updated_at:h.rows('shipping_plans')[0].updated_at,actor:'fixture',...extra}).getContent());
+ const rejected=transition('reject',{rejected_reason:'Adjust SKU quantities'});assert.equal(rejected.success,true,JSON.stringify(rejected));
+ assert.equal(h.rows('shipping_plans')[0].status,'draft');assert.equal(h.rows('shipping_plans')[0].rejected_reason,'Adjust SKU quantities');
+ h.sheet('sku_details',h.tables.sku_details.grid[0],h.rows('sku_details').concat({...h.rows('sku_details')[0],sku:'C'}));
+ h.sheet('marketplace_skus',h.tables.marketplace_skus.grid[0],h.rows('marketplace_skus').concat({...h.rows('marketplace_skus')[0],sku:'C'}));
+ const request=body([update('A',80),{op:'remove',shipping_plan_line_id:'B',expected_updated_at:stamp},{op:'add',sku:'C',quantity:40}]);
+ request.expected_plan_updated_at=h.rows('shipping_plans')[0].updated_at;
+ const saved=h.call(request);assert.equal(saved.success,true,JSON.stringify(saved));assert.equal(saved.data.pricing_recalculated,true);
+ assert.equal(h.rows('shipping_plans')[0].rejected_reason,'Adjust SKU quantities');
+ assert.deepEqual(h.rows('shipping_plan_lines').map(r=>[r.sku,r.approved_qty]).sort(),[['A',80],['C',40]]);
+ const submitted=transition('submit');assert.equal(submitted.success,true,JSON.stringify(submitted));
+ const plan=h.rows('shipping_plans')[0];assert.equal(plan.status,'pending_approval');assert.equal(plan.plan_version,2);assert.equal(plan.rejected_reason,'');assert.match(plan.note,/Adjust SKU quantities/);
+ const before=business(h),blocked=h.call({...request,request_id:'WDL-REPRICE-PENDING-LOCK',expected_plan_updated_at:plan.updated_at});
+ assert.equal(blocked.success,false);assert.equal(blocked.issues[0].code,'WEEKLY_DRAFT_REQUIRED');assert.equal(business(h),before);assert.equal(JSON.stringify(h.rows('factory_stock')),stock);
+});

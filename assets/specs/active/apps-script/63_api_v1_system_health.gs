@@ -866,7 +866,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "57_api_v1_shipment_workspace.gs",
     "symbol": "SHIP_WS_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1-TD1",
     "owns": "the Shipment READ workspace (shipment.workspace.get) incl. the SHIP-OPEN opening-record DTO fields recordOrigin / openingAsOf / openingSupplyMode"
   },
   {

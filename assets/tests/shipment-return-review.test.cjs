@@ -31,6 +31,29 @@ test('cancel refuses a changed review plan before releasing any reservation',()=
  const h=world();h.put('shipping_plans','shipping_plan_id','P1','status','draft');const before=business(h),r=h.cancel();
  assert.equal(r.success,false);assert.equal(r.code,'CANCEL_PLAN_REVIEW_UNPROVEN');assert.equal(r.zero_write,true);assert.equal(business(h),before);
 });
+
+test('cancel, reject, resubmit and approve creates fresh identities; approval and old cancel replays are harmless',()=>{
+ const h=world(),c=h.c,old={...h.rows('shipments')[0]};
+ // GAS retains one acquired script lock in an execution; nested tryLock has no effect.
+ let held=false;const lock={tryLock:()=>{held=true;return true;},hasLock:()=>held,releaseLock:()=>{held=false;}};
+ c.LockService={getScriptLock:()=>lock};
+ c.fsgGatePlanTransition_=()=>({proceed:true,audit:null});
+ const transition=(kind,extra={})=>JSON.parse(c.handleUpdateShippingPlanStatus_({shipping_plan_id:'P1',transition:kind,expected_updated_at:h.rows('shipping_plans')[0].updated_at,actor:'fixture',...extra}).getContent());
+ assert.equal(h.cancel().success,true);
+ assert.equal(transition('reject',{rejected_reason:'Revise shipping contents'}).success,true);
+ assert.equal(h.rows('shipping_plans')[0].status,'draft');
+ assert.equal(transition('submit').success,true);
+ const approved=transition('approve');assert.equal(approved.success,true,JSON.stringify(approved));
+ const fresh=h.rows('shipments').find(s=>s.shipment_id!==h.sid);assert(fresh,JSON.stringify(approved));
+ for(const key of ['shipment_id','shipment_no','external_shipment_id'])assert.notEqual(fresh[key],old[key],key);
+ assert.equal(fresh.status,'draft');assert.equal(h.rows('shipments').find(s=>s.shipment_id===h.sid).status,'cancelled');
+ assert.equal(h.rows('shipping_plans')[0].transferred_shipment_id,fresh.shipment_id);
+ const newLines=h.rows('shipment_lines').filter(l=>l.shipment_id===fresh.shipment_id),oldLines=h.rows('shipment_lines').filter(l=>l.shipment_id===h.sid);
+ assert.equal(newLines.length,2);assert(newLines.every(l=>!oldLines.some(o=>o.shipment_line_id===l.shipment_line_id)));
+ assert.deepEqual(h.rows('factory_stock').map(s=>[s.fac_current_stock,s.fac_reserved_stock]),[[100,40],[100,40]]);
+ const before=business(h);assert.equal(transition('approve').success,true);assert.equal(business(h),before);
+ assert.equal(h.cancel().data.outcome,'REUSED');assert.equal(business(h),before);
+});
 test('a plan write failure rolls back shipment status, plan handoff and stock release',()=>{
  const h=world(),before=business(h);let failed=false;
  h.tables.shipping_plans.beforeWrite=({col})=>{if(!failed&&h.tables.shipping_plans.grid[0][col-1]==='status'){failed=true;throw Error('Injected review write failure');}};

@@ -602,6 +602,7 @@ function _spEnsureCountryOptions_() {
         _spCountryRows_=(db.marketplaces||[]).filter(function(r){return !r.status||String(r.status).toLowerCase()==='active';});_spPaintCountryOptions_();
     }).catch(function(){_spCountryRows_=[];_spPaintCountryOptions_();}).finally(function(){_spCountryFlight_=null;});
 }
+// Rejected is a badge on an editable Draft, not a separate persisted lifecycle state.
 function _spIsRejected_(p) { return p.status==='draft'&&!!String(p.rejectedReason||(p.raw||{}).rejected_reason||'').trim(); }
 function _spSkuOrder_(a,b) { return String(a.sku||'').localeCompare(String(b.sku||''),'en',{numeric:true,sensitivity:'base'}); }
 // True only when a raw snapshot cell actually carries a value (distinguishes a stored 0 / blank).
@@ -1349,9 +1350,9 @@ function _spSummary(label, valueHtml) {
         '<span class="sp-summary-value">' + valueHtml + '</span></div>';
 }
 
-function _spEnumLabel_(kind, value) {
+function _spEnumLabel_(kind, value, label) {
     var display = window.KM && window.KM.display;
-    return display && typeof display[kind] === 'function' ? display[kind](value) : String(value || '').trim();
+    return display && typeof display[kind] === 'function' ? display[kind](value, label) : String(label || value || '').trim();
 }
 function _spServiceLabel_(service) {
     var display = window.KM && window.KM.display;
@@ -2422,7 +2423,7 @@ function _spCustomsHtml_(planId, host, r) {
     return '<label style="display:block;font-size:11px;color:#64748B;margin-top:6px;">Customs</label>' +
         '<select class="sp-rc-customs" data-plan="' + _spEsc(planId) + '" onchange="spRcPickCustoms(this.getAttribute(&quot;data-plan&quot;), this.value)" style="width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;">' +
         '<option value=""' + (cs ? '' : ' selected') + '>-- Choose customs --</option>' +
-        cl.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === cs ? ' selected' : '') + '>' + _spEsc(String(c.label || c.id).replace(/_/g, ' ')) + '</option>'; }).join('') + '</select>';
+        cl.map(function (c) { return '<option value="' + _spEsc(c.id) + '"' + (c.id === cs ? ' selected' : '') + '>' + _spEsc(_spEnumLabel_('customsType', c.id, c.customs_type_label || c.label)) + '</option>'; }).join('') + '</select>';
 }
 function _spRcRenderBase13_(planId) {
     var host = document.getElementById('sp-rc-' + planId), body = host && host.querySelector('.sp-rc-body'), r = SP_RC_[planId];

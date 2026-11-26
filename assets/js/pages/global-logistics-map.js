@@ -153,6 +153,29 @@
   function root() { return document.getElementById('global-logistics-map-section'); }
   function body() { var r = root(); return r ? r.querySelector('[data-glm="body"]') : null; }
   function parseDate(s) { s = String(s == null ? '' : s).trim(); if (!s) return null; var m = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})/); if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3]); var t = Date.parse(s); return isNaN(t) ? null : t; }
+  function glmDisplayDate_(value) {
+    var s = String(value == null ? '' : value).trim();
+    if (!s) return '';
+    // Unzoned Sheets values are system wall time, not the browser's local time.
+    var wall = s.match(/^(\d{4})[-/](\d{1,2})[-/](\d{1,2})(?:[ T](\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?)?$/);
+    if (wall) {
+      var day = wall[1] + '-' + ('0' + wall[2]).slice(-2) + '-' + ('0' + wall[3]).slice(-2);
+      var d0 = new Date(day + 'T00:00:00Z');
+      return isFinite(d0.getTime()) && d0.toISOString().slice(0, 10) === day &&
+        (!wall[4] || (+wall[4] < 24 && +wall[5] < 60 && +(wall[6] || 0) < 60)) ? day : '';
+    }
+    if (!/(?:Z|[+-]\d{2}:?\d{2})$/i.test(s) && !/\bGMT/i.test(s)) return '';
+    var isoDay = s.match(/^(\d{4}-\d{2}-\d{2})T/);
+    if (isoDay) {
+      var check = new Date(isoDay[1] + 'T00:00:00Z');
+      if (!isFinite(check.getTime()) || check.toISOString().slice(0, 10) !== isoDay[1]) return '';
+    }
+    var d = new Date(s);
+    if (!isFinite(d.getTime())) return '';
+    var parts = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(d);
+    function part(type) { return parts.filter(function (p) { return p.type === type; })[0].value; }
+    return part('year') + '-' + part('month') + '-' + part('day');
+  }
   function tpeTodayMs() { var d; try { d = new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Taipei', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date()); } catch (e) { d = new Date().toISOString().slice(0, 10); } return Date.UTC(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)); }
   function prefersReducedMotion() { try { return window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch (e) { return false; } }
 
@@ -258,7 +281,7 @@
       if (!force && _glmReadModel) { cb(true); return; }
       if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { state.error = 'Shipment Workspace API unavailable [WORKSPACE_UNAVAILABLE].'; cb(false); return; }
       var mySeq = ++_glmReadSeq;
-      Promise.resolve(window.KM.api.getWorkspace('shipment', { include: { routes: true, events: true, locations: true, templates: true }, page: { number: 1, size: 3000 } })).then(function (env) {
+      Promise.resolve(window.KM.api.getWorkspace('shipment', { include: { routes: true, events: true, locations: true, templates: true, planDates: true }, page: { number: 1, size: 3000 } })).then(function (env) {
         if (mySeq !== _glmReadSeq) return;
         if (env && env.success) { _glmReadModel = window.KM.DB.adaptShipmentWorkspace(env.data); cb(true); }
         else { var e0 = (env && env.errors && env.errors[0]) || {}; state.error = 'Shipment workspace request failed [' + (e0.code || 'WORKSPACE_ERROR') + '].'; cb(false); }   // fail-closed: NO silent legacy broad fallback
@@ -527,7 +550,7 @@
     var rm = m ? {
       shipments: m.shipments, shipmentLines: m.shipmentLines, shipmentRoutes: m.shipmentRoutes,
       shipmentEvents: m.shipmentEvents, warehouses: m.warehouses, locations: m.logisticsLocations,
-      routeTemplates: m.shipmentRouteTemplates, routeTemplateNodes: m.shipmentRouteTemplateNodes
+      routeTemplates: m.shipmentRouteTemplates, routeTemplateNodes: m.shipmentRouteTemplateNodes, shippingPlans: null
     } : {
       shipments: (db.getShipments && db.getShipments()) || [],
       shipmentLines: (db.getShipmentLines && db.getShipmentLines()) || [],
@@ -536,7 +559,8 @@
       warehouses: (db.getWarehouses && db.getWarehouses()) || [],
       locations: (db.getLogisticsLocations && db.getLogisticsLocations()) || [],
       routeTemplates: (db.getShipmentRouteTemplates && db.getShipmentRouteTemplates()) || [],
-      routeTemplateNodes: (db.getShipmentRouteTemplateNodes && db.getShipmentRouteTemplateNodes()) || []
+      routeTemplateNodes: (db.getShipmentRouteTemplateNodes && db.getShipmentRouteTemplateNodes()) || [],
+      shippingPlans: (db.getShippingPlans && db.getShippingPlans()) || []
     };
     var locById = {}, locByWh = {}, locByFactory = {};
     rm.locations.forEach(function (l) {
@@ -592,6 +616,11 @@
       var excHay = low(s.status) + ' ' + (nodes.some(function (n) { return nodeStatusClass(n.status) === 'exception'; }) ? 'exception ' : '') + low((latestEvent && latestEvent.eventType) || '') + ' ' + low((latestEvent && latestEvent.eventStatus) || '') + ' ' + low((latestEvent && latestEvent.rawStatus) || '');
       var deliveredMs = parseDate(s.deliveredDate) || parseDate(s.actualArrivalDate) || (delivered && latestEvent ? parseDate(latestEvent.eventTime) : null);
       var origin = glmOriginOf_(s, nodes, idx.whRowsById), originCountry = origin.country;   // A final3 (Owner item 2): was nodes[0].country only ('?' for every route-less import)
+      var planDates = s.shippingPlanDates;
+      if (!Array.isArray(planDates)) {
+        var planRows = (rm.shippingPlans || []).filter(function (p) { return p.shippingPlanId === s.shippingPlanId; });
+        planDates = s.shippingPlanId ? [{ shippingPlanId: s.shippingPlanId, createdAt: planRows.length === 1 ? planRows[0].createdAt : '' }] : [];
+      }
       var vm = {
         shipmentId: s.shipmentId, shipmentNo: s.shipmentNo || s.shipmentId, company: s.company || '',
         // FE-EXT-1 — what a person reads is the external shipment number; shipmentId stays the key for
@@ -608,6 +637,7 @@
         destWarehouse: (idx.whById[s.warehouseId] && idx.whById[s.warehouseId].warehouseName) || s.warehouseId || (s.destination || ''),
         shipFrom: s.shipFrom || '', destination: s.destination || '', status: s.status || '',
         tracking: s.trackingNumber || '', container: s.containerNo || '', eta: s.eta || '', etaMs: etaMs,
+        etd: s.etd || '', shippingPlanDates: planDates,
         delivered: delivered, events: events, latestEvent: latestEvent,
         latestUpdated: (latestEvent && latestEvent.eventTime) || s.updatedAt || s.createdAt || '',
         rowVersion: String(s.updatedAt == null ? '' : s.updatedAt).trim(),   // N1: the shipments.updated_at this page read - the receipt's version token
@@ -1243,7 +1273,7 @@
       var posBadge = pl.kind === 'pending' ? '<span class="glm-badge glm-badge--pending">Coord Pending</span>' : (pl.kind !== 'current' ? '<span class="glm-badge glm-badge--neutral">' + esc(pl.kind) + '</span>' : '');
       // §12/§13 — restrained per-shipment issue pill (route history incomplete). Coordinate-pending keeps its own
       // Coord Pending badge (above); this pill flags the route-data gap so the user sees WHICH shipment has it.
-      var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind, opening: v.opening, displayOnly: v.openingDisplayOnly, asOf: v.openingAsOf });
+      var issues = glmShipmentIssues({ nodeCount: v.nodes.length, placementKind: pl.kind, opening: v.opening, displayOnly: v.openingDisplayOnly, asOf: glmDisplayDate_(v.openingAsOf) });
       var issueBadge = issues.types.some(function (t) { return t.code === 'NO_ROUTE_NODES'; }) ? '<span class="glm-badge glm-badge--issue" title="Route history incomplete">⚠ Route Issue</span>'
         : (issues.types.some(function (t) { return t.code === 'OPENING_NO_ROUTE_HISTORY'; }) ? '<span class="glm-badge glm-badge--neutral" title="No route data">無路線資料</span>' : '');
       var receiptLines = shipmentLinesFor(v.shipmentId), receiptFacts = glmReceiptFacts_(receiptLines), receiptProgress = '';
@@ -1267,7 +1297,7 @@
         '<div class="glm-ship__route">' + esc(glmOriginText_(v)) + ' → ' + esc(v.destCountry || v.destWarehouse || '?') + '</div>' +
         '<div class="glm-ship__meta">' + esc(v.carrierLabel || '—') + ' · ' + esc(enumDisplay('shippingMethod', shipMode(v))) + '</div>' +
         receiptProgress +
-        '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(v.eta || (v.opening ? '未知 (unknown)' : '—')) + '</div>' +
+        '<div class="glm-ship__meta">Stage: <strong>' + esc(v.stage) + '</strong> · ETA: ' + esc(glmDisplayDate_(v.eta) || (v.opening ? '未知 (unknown)' : '—')) + '</div>' +
         '</div>';
     }).join('');
     return '<div class="glm-panel"><h3 class="glm-panel__title">Shipments (' + vms.length + ')</h3>' + (state.doneNotice ? '<p class="glm-muted" role="status">' + esc(state.doneNotice) + '</p>' : '') + '<div class="glm-shiplist">' + rows + '</div></div>';   // A final3 (TC-C)
@@ -1473,7 +1503,7 @@
     var html = '';
     if (id.indexOf('loc:') === 0) { var l = lookupLoc(id.slice(4)); if (l) html = '<strong>' + esc(l.locationName || l.locationCode) + '</strong><br>' + esc([l.country, l.locationType].filter(Boolean).join(' · ')); }
     else if (id.indexOf('tnode:') === 0) { html = '<strong>Route template node</strong>'; }
-    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' (' + esc(vm.shipmentId) + ')' : '') + '<br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(enumDisplay('status', vm.status)) + ' · ' + esc(enumDisplay('shippingMethod', shipMode(vm))) + '<br>ETA ' + esc(vm.eta || '—'); }
+    else { var sid = id.replace(/^(node:|pos:)/, ''); var vm = state.vms[sid] || (state.selectedShipmentId ? state.vms[state.selectedShipmentId] : null); if (vm) html = '<strong>' + esc(vm.displayNo) + '</strong>' + (vm.displayNoShared ? ' (' + esc(vm.shipmentId) + ')' : '') + '<br>' + esc(vm.company || '') + '<br>' + esc((vm.originCountry || vm.shipFrom || '?') + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) + '<br>' + esc(enumDisplay('status', vm.status)) + ' · ' + esc(enumDisplay('shippingMethod', shipMode(vm))) + '<br>ETA ' + esc(glmDisplayDate_(vm.eta) || '—'); }
     if (!html) { tip.setAttribute('aria-hidden', 'true'); return; }
     tip.innerHTML = html; tip.setAttribute('aria-hidden', 'false');
   }
@@ -1574,7 +1604,7 @@
     if (state.mode !== 'runtime' || !state.selectedShipmentId) return '';
     var vm = state.vms[state.selectedShipmentId]; if (!vm) return '';
     var pos = resolveCurrentPosition(vm), hasRoute = vm.nodes.some(function (n) { return resolveNodeCoord(n).drawable; });
-    var line = pos.drawable ? ('Last reported: ' + (pos.at ? esc(pos.at) + esc(glmReportedAge_(pos.at)) : 'time unknown')) : '尚無位置資訊';
+    var line = pos.drawable ? ('Last reported: ' + (pos.at ? esc(glmDisplayDate_(pos.at) || '--') : 'time unknown')) : '尚無位置資訊';
     var btn = 'style="font-size:11px;padding:3px 8px;"';
     return '<div class="glm-selchip" data-glm="selchip" role="status" aria-live="polite" data-sel="' + esc(vm.shipmentId) + '" data-pos="' + (pos.drawable ? '1' : '0') + '" ' +
       'style="position:absolute;left:12px;bottom:12px;z-index:7;max-width:calc(100% - 24px);box-sizing:border-box;background:rgba(10,14,23,0.94);color:#E2E8F0;border:1px solid rgba(148,163,184,0.35);border-radius:8px;padding:8px 10px;font-size:12px;line-height:1.5;">' +
@@ -1644,7 +1674,7 @@
   function _glmBoundedReadback_(shipmentId, rebuild) {
     if (!(window.KM.api && typeof window.KM.api.getWorkspace === 'function')) { ensureDb(true, function (ok) { if (ok) rebuild(); else glmReadFailed_(shipmentId); }); return; }
     var mySeq = ++_glmReadSeq;
-    Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: shipmentId }, include: { routes: true, events: true } })).then(function (env) {
+    Promise.resolve(window.KM.api.getWorkspace('shipment', { filters: { shipmentId: shipmentId }, include: { routes: true, events: true, planDates: true } })).then(function (env) {
       if (mySeq !== _glmReadSeq) return;   // superseded by a newer read
       if (env && env.success && _glmReadModel && _glmMergeShipment_(shipmentId, window.KM.DB.adaptShipmentWorkspace(env.data))) { rebuild(); }
       else { ensureDb(true, function (ok) { if (ok) rebuild(); else glmReadFailed_(shipmentId); }); }   // not-found / miss → fresh full refresh
@@ -1826,7 +1856,7 @@
     // whose node lives in the RECEIVING section further down the drawer, so an ETA failure was announced somewhere
     // the operator was not looking. A write must state its outcome where the operator clicked.
     var etaSection = '<label class="glm-field"><span>ETA</span><input type="date" data-eta-input value="' + esc(etaVal) + '"></label>' +
-      (!etaVal && vm.eta ? '<p class="glm-muted">Current ETA: ' + esc(vm.eta) + ' (non-standard format — pick a date to normalize).</p>' : '') +
+      (!etaVal && vm.eta ? '<p class="glm-muted">Current ETA: ' + esc(glmDisplayDate_(vm.eta) || '--') + ' (non-standard format — pick a date to normalize).</p>' : '') +
       '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="eta-update">Update ETA</button></div>' +
       '<p class="glm-eta-msg" data-glm="eta-msg" role="status" aria-live="polite"></p>';
 
@@ -1862,7 +1892,7 @@
     // Default COLLAPSED; auto-expand when partially received or at/after the receiving-capable node.
     var autoExpand = (derived === 'partially_received') || (recvCapSeq >= 0 && curSeq >= 0 && curSeq >= recvCapSeq);
     if (vm.openingDisplayOnly) {
-      recvSection = '<p class="glm-muted" data-glm="opening-receipt-tracking">Amazon 收貨紀錄 · 不增加 Current Stock · 資料時間 ' + esc(vm.openingAsOf || '未提供') + '</p>' + recvSection;
+      recvSection = '<p class="glm-muted" data-glm="opening-receipt-tracking">Amazon 收貨紀錄 · 不增加 Current Stock · 資料時間 ' + esc(glmDisplayDate_(vm.openingAsOf) || '未提供') + '</p>' + recvSection;
     }
     var summaryText = lines.length ? ('Receiving — ' + lines.length + ' SKU' + (lines.length !== 1 ? 's' : '') + ' · ' + num(totalRemaining) + ' units remaining') : 'Receiving';
 
@@ -2008,7 +2038,7 @@
         if (resp && resp.success) {
           // The server returns the PERSISTED, re-read value. Show that, never the value that was typed.
           var d = resp.data || {};
-          var shown = String(d.eta || v);
+          var shown = glmDisplayDate_(d.eta || v) || '--';
           glmBusyEnd_(vm.shipmentId);
           etaFlash('已儲存 ETA：' + shown + (d.status_unchanged === false ? '（警告：狀態也變了，請回報）' : '') + '。', 'ok');
           afterShipmentWrite(vm.shipmentId);
@@ -2188,7 +2218,7 @@
       st.busy = false;
       if (!v || v.success === false || !v.valid) { out.innerHTML = '<p class="glm-muted">不能建立（未寫入）：</p><ul>' + (glmRtiIssues_(v) || '<li>' + esc((v && (v.code || v.error)) || '驗證失敗') + '</li>') + '</ul>'; return; }
       var w = ((v.preview.rows[0] || {}).warnings || []).map(function (x) { return '<li>' + esc(x.message || x.code) + '</li>'; }).join('');
-      out.innerHTML = '<p>將建立人工物流路線（來源、目的倉 2 個節點）與 1 筆「運送中」人工回報（' + esc(at) + '）。不扣庫存、不收貨、不改狀態。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
+      out.innerHTML = '<p>將建立人工物流路線（來源、目的倉 2 個節點）與 1 筆「運送中」人工回報（' + esc(glmDisplayDate_(at) || '--') + '）。不扣庫存、不收貨、不改狀態。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
         '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-create">確認建立</button></div>';
       var cb = r.querySelector('[data-act="route-init-create"]');
       cb.onclick = function () { glmRtiCreate_(r, vm, body, v.preview_digest, cb); };
@@ -2212,7 +2242,7 @@
       st.busy = false;
       if (!v || v.success === false || !v.valid) { out.innerHTML = '<p class="glm-muted">不能建立（未寫入）：</p><ul>' + (glmRtiIssues_(v) || '<li>' + esc((v && (v.code || v.error)) || '驗證失敗') + '</li>') + '</ul>'; return; }
       var im = (v.preview && v.preview.impacts) || {}, w = ((v.preview.rows[0] || {}).warnings || []).map(function (x) { return '<li>' + esc(x.message || x.code) + '</li>'; }).join('');
-      out.innerHTML = '<p>將建立 ' + esc(im.shipment_routes) + ' 個計畫節點與 1 筆位置回報（' + esc(ch.at) + '）。不扣庫存、不收貨、不改狀態；之前的節點不記錄實際到站時間。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
+      out.innerHTML = '<p>將建立 ' + esc(im.shipment_routes) + ' 個計畫節點與 1 筆位置回報（' + esc(glmDisplayDate_(ch.at) || '--') + '）。不扣庫存、不收貨、不改狀態；之前的節點不記錄實際到站時間。</p>' + (w ? '<ul>' + w + '</ul>' : '') +
         '<div class="glm-filter-actions"><button type="button" class="glm-btn glm-btn--small" data-act="route-init-create">確認建立</button></div>';
       var cb = r.querySelector('[data-act="route-init-create"]');
       cb.onclick = function () { glmRtiCreate_(r, vm, body, v.preview_digest, cb); };
@@ -2261,10 +2291,10 @@
     var vm = state.vms[id]; var els = drawerEls(); if (!vm || !els) return;
     openDrawerCommon();
     var pos = resolveCurrentPosition(vm), pl = resolveShipmentPlacement(vm);
-    var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source) + ' · last reported ' + (pos.at ? esc(pos.at) + esc(glmReportedAge_(pos.at)) : 'time unknown'))
+    var posLine = pos.drawable ? (pos.lat.toFixed(3) + ', ' + pos.lng.toFixed(3) + ' · ' + esc(pos.source) + ' · last reported ' + (pos.at ? esc(glmDisplayDate_(pos.at) || '--') : 'time unknown'))
       : '尚無位置資訊 · <span class="glm-badge glm-badge--pending">Coordinate Pending</span>' + (pl.kind !== 'pending' ? ' <span class="glm-muted">(shown at ' + esc(pl.kind) + ' endpoint)</span>' : '');
     // §14 — explain the shipment's data/route issues in the drawer (same detector as the card badge; no page banner).
-    var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind, opening: vm.opening, displayOnly: vm.openingDisplayOnly, asOf: vm.openingAsOf });
+    var issues = glmShipmentIssues({ nodeCount: vm.nodes.length, placementKind: pl.kind, opening: vm.opening, displayOnly: vm.openingDisplayOnly, asOf: glmDisplayDate_(vm.openingAsOf) });
     var issueSection = issues.types.length
       ? '<section class="glm-dsec glm-dsec--issue"><h4>⚠ Attention</h4>' + issues.types.map(function (t) { return '<p class="glm-issue__line"><strong>' + esc(t.label) + '</strong><br>' + esc(t.detail) + '</p>'; }).join('') + '</section>'
       : '';
@@ -2275,13 +2305,13 @@
       return '<div class="glm-step glm-step--' + sc + '"><div class="glm-step__seq">#' + n.sequenceNo + ' <span class="glm-tag glm-tag--' + sc + '">' + esc(sc) + '</span></div>' +
         '<div class="glm-step__name">' + esc(n.nodeName || n.locationName || n.nodeCode || ('Node ' + n.sequenceNo)) + '</div>' +
         '<div class="glm-step__meta">' + esc(n.nodeType || '') + (n.country ? ' · ' + esc(n.country) : '') + (n.transportMode ? ' · ' + esc(n.transportMode) : '') +
-        (n.plannedArrivalDate ? ' · plan arr ' + esc(n.plannedArrivalDate) : '') + (n.actualArrivalDate ? ' · act arr ' + esc(n.actualArrivalDate) : '') +
+        (n.plannedArrivalDate ? ' · plan arr ' + esc(glmDisplayDate_(n.plannedArrivalDate) || '--') : '') + (n.actualArrivalDate ? ' · act arr ' + esc(glmDisplayDate_(n.actualArrivalDate) || '--') : '') +
         (c.drawable ? '' : ' · <span class="glm-badge glm-badge--pending">coord pending</span>') + (/^SRI-/.test(String(n.shipmentRouteId || '')) && sc === 'completed' && !n.actualArrivalDate && n.sequenceNo < rtiRepSeq_ ? ' · <span class="glm-badge glm-badge--neutral" data-glm="inferred-passed" title="匯入時回報的位置之前的節點：系統推定已經過，不是逐站確認，沒有實際到站時間">依匯入位置推定已經過</span>' : '') + '</div></div>';   // A2 b3 (Owner D3)
     }).join('') || '<p class="glm-muted">No route nodes for this shipment (shipment_routes empty).</p>';
     var timeline = vm.events.length ? vm.events.map(function (e) {
       return '<div class="glm-step"><div class="glm-step__seq">#' + (e.eventSequence || '') + '</div>' +
         '<div class="glm-step__name">' + esc(e.eventType || e.eventStatus || 'event') + '</div>' +
-        '<div class="glm-step__meta">' + esc(e.eventTime || '') + (e.locationName ? ' · ' + esc(e.locationName) : '') + (e.rawStatus ? ' · raw: ' + esc(e.rawStatus) : '') + (e.source ? ' · ' + esc(e.source) : '') + '</div></div>';
+        '<div class="glm-step__meta">' + esc(glmDisplayDate_(e.eventTime) || '--') + (e.locationName ? ' · ' + esc(e.locationName) : '') + (e.rawStatus ? ' · raw: ' + esc(e.rawStatus) : '') + (e.source ? ' · ' + esc(e.source) : '') + '</div></div>';
     }).join('') : '<p class="glm-muted">No actual events yet. Upcoming nodes are shown in the Route above (never as planned events).</p>';
 
     els.title.textContent = vm.displayNo;
@@ -2294,11 +2324,13 @@
         kv('Shipping Method', enumDisplay('shippingMethod', vm.method)) +
         kv('Origin → Destination', glmOriginText_(vm) + ' → ' + (vm.destCountry || vm.destWarehouse || '?')) +
         kv('Destination Warehouse', vm.destWarehouse) + kv('Tracking / Container', [vm.tracking, vm.container].filter(Boolean).join(' / ')) +
+        kv('ETD', glmDisplayDate_(vm.etd)) +
+        kv('Shipping Plan Created', (vm.shippingPlanDates || []).map(function (p, i, rows) { return (rows.length > 1 ? p.shippingPlanId + ': ' : '') + (glmDisplayDate_(p.createdAt) || '--'); }).join(' · ')) +
         kv('Status', enumDisplay('status', vm.status)) + kv('Route Template', vm.routeTemplateId) + '</section>' +
       '<section class="glm-dsec"><h4>Live Position</h4>' +
         kv('Current Stage', vm.stage) +
         '<div class="glm-kv"><span class="glm-kv__k">Map Position</span><span class="glm-kv__v">' + posLine + '</span></div>' +
-        kv('Latest Event', vm.latestEvent ? (vm.latestEvent.eventType || vm.latestEvent.eventStatus) : '') + kv('Latest Updated', vm.latestUpdated) +
+        kv('Latest Event', vm.latestEvent ? (vm.latestEvent.eventType || vm.latestEvent.eventStatus) : '') + kv('Latest Updated', glmDisplayDate_(vm.latestUpdated)) +
         (vm.flags.exception ? '<div class="glm-warn">Exception / delayed — needs attention.</div>' : (vm.flags.delayed ? '<div class="glm-warn">Past ETA and not yet delivered (still active — remains visible).</div>' : '')) + '</section>' +
       issueSection +
       receiptPanelHtml(vm) +
@@ -2309,6 +2341,7 @@
   }
   function openDrawer() {
     var els = drawerEls(); if (!els || !els.dr) return;
+    syncDrawerHeader_();
     els.dr.classList.add('is-open'); els.dr.setAttribute('aria-hidden', 'false');
     // Wire ALL close buttons in the drawer (header X + the in-body Identity-row X) — the body is populated
     // after render(), so bindRuntime hasn't seen the body one.
@@ -2321,9 +2354,14 @@
     state.lastFocusEl = null;
   }
   function drawerOpen() { var els = drawerEls(); return !!(els && els.dr && els.dr.classList.contains('is-open')); }
+  function syncDrawerHeader_() {
+    var els = drawerEls(), header = document.querySelector('.top-header');
+    if (els && els.dr && header) els.dr.style.setProperty('--glm-header-offset', Math.max(0, header.getBoundingClientRect().bottom) + 'px');
+  }
   function installEsc() {
     if (state.escInstalled) return; state.escInstalled = true;
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && drawerOpen()) { e.preventDefault(); closeDrawer(); } });
+    window.addEventListener('resize', function () { if (drawerOpen()) syncDrawerHeader_(); });
   }
 
   // ---------- Global Reference layer ----------

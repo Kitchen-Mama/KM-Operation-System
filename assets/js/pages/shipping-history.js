@@ -1650,6 +1650,17 @@ function _shRenderDbCard(s, planLines, mode) {
     var _customsOpts = [];
     _rateCards.forEach(function(c) { var v = String(c.customsType || '').trim(); if (v && _customsOpts.indexOf(v) === -1) _customsOpts.push(v); });
     if (_customsVal && _customsOpts.indexOf(_customsVal) === -1) _customsOpts.push(_customsVal);
+    function customsLabel(code) {
+        var matches = _rateCards.filter(function (c) { return String(c.customsType || '').trim() === code; });
+        var selected = matches.filter(function (c) { return String(c.rateCardId || '') === String(s.rateCardId || ''); });
+        var labels = [];
+        (selected.length === 1 ? selected : matches).forEach(function (c) {
+            var label = String(c.customsTypeLabel || c.customs_type_label || '').trim();
+            if (label && label !== code && labels.indexOf(label) < 0) labels.push(label);
+        });
+        var display = window.KM && window.KM.display;
+        return display && typeof display.customsType === 'function' ? display.customsType(code, labels.length === 1 ? labels[0] : '') : (labels.length === 1 ? labels[0] : code);
+    }
     // R71-FE-8 (SH3): the Method, explicit and editable while the shipment is editable. Options = the shipping_method TOKENS of the active rate
     // cards for this destination country (never translated; the label is the card's own), plus the current value. Saved by updateShipment.
     // R71-FE-11: the Method is shown, not typed: it is chosen together with the carrier in the rate-card box below (ONE selection write)
@@ -1665,10 +1676,10 @@ function _shRenderDbCard(s, planLines, mode) {
         if (_shCustomsNa_(s)) return '<div>' + label + '<select disabled aria-label="Customs type"><option>Not required - domestic transport</option></select></div>';
         if (!fieldsEditable) {
             return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
-                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(_customsVal.replace(/_/g, ' ')) || '--') + '</div></div>';
+                '<div style="padding:5px 0;font-size:13px;color:#1E293B;">' + (_shEsc(customsLabel(_customsVal)) || '--') + '</div></div>';
         }
         var opts = '<option value="">-- Select --</option>' + _customsOpts.map(function(v) {
-            return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(v.replace(/_/g, ' ')) + '</option>';
+            return '<option value="' + _shEsc(v) + '"' + (v === _customsVal ? ' selected' : '') + '>' + _shEsc(customsLabel(v)) + '</option>';
         }).join('');
         return '<div style="display:flex;flex-direction:column;gap:2px;">' + label +
             '<select class="sh-exec-input" data-field="shipments_customs_type" onchange="_shLaneEdited_(\'' + _shEsc(sid) + '\')" style="width:100%;padding:5px 8px;border:1px solid #CBD5E1;border-radius:4px;font-size:13px;box-sizing:border-box;">' + opts + '</select></div>';
@@ -1875,7 +1886,7 @@ function _shRenderDbCard(s, planLines, mode) {
                 '<span><strong>Country:</strong> ' + _shEsc(s.country || '--') + '</span>' +
                 '<span><strong>Destination:</strong> ' + _shEsc(s.destination || '--') + '</span>' +
                 '<span><strong>Method:</strong> ' + _shEsc(_shEnumDisplay_('shippingMethod', s.shippingMethod) || '--') + '</span>' +
-                '<span><strong>Customs Type:</strong> ' + _shEsc(_customsVal || '--') + '</span>' +
+                '<span><strong>Customs Type:</strong> ' + _shEsc(customsLabel(_customsVal) || '--') + '</span>' +
                 '<span><strong>Pcs:</strong> ' + _shNum(s.totalQty) + '</span>' +
                 '<span><strong>ETD:</strong> ' + _shEsc(s.etd || '--') + '</span>' +
                 '<span><strong>ETA:</strong> ' + _shEsc(s.eta || '--') + '</span>' +

@@ -274,3 +274,9 @@ test('pre-carton-order policy stays usable while the three changed GS owners are
  for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save','cancelShipmentDraft','document.retry'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,9);
 });
+
+test('pre-presentation policy keeps current shipping reads and commands usable during manual GS rollout',async()=>{
+ const previous={...p,policy_sha256:'354126dc9ac9f5af0b9e36c09619aa2cce443d08cfb932ad4e86ce799adc4e07'},g=guard(previous);
+ for(const action of ['shipment.workspace.get','updateShippingPlanStatus','shippingPlan.mixedCartons.save','cancelShipmentDraft','document.retry'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,6);
+});

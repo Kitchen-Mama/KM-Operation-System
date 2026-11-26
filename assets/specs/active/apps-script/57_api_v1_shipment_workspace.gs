@@ -26,7 +26,7 @@
  * `handleShipmentWorkspaceGet_(body, io)` takes an injectable `io` so it runs against fixtures with ZERO SpreadsheetApp.
  */
 
-var SHIP_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1';   // Missing confirmed outputs expose the documents-only retry.
+var SHIP_WS_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1-TD1';   // Bounded Shipping Plan creation dates for Tracking.
 var SHIP_WS_SEQ_ = 0;   // API diagnostic-layer server correlation counter (not business runtime)
 
 // BASE tables (Draft/Overview) — fail-closed on missing schema. MAP-extra tables (On-the-Way) — include-gated + missing-safe.
@@ -44,6 +44,7 @@ var SHIP_WORKSPACE_TABLES_ = [
   // table with one extra way to forget.
   { name: 'carriers',                      requiredCols: ['carrier_id'] },
   { name: 'shipment_plan_links',           requiredCols: [], optional: true, include: 'links' },   // XCO-R15G: link states (include-gated, missing-safe)
+  { name: 'shipping_plans',                requiredCols: ['shipping_plan_id', 'created_at'], optional: true, include: 'planDates' },
   { name: 'shipment_routes',               requiredCols: [], optional: true, include: 'routes' },
   { name: 'shipment_events',               requiredCols: [], optional: true, include: 'events' },
   { name: 'logistics_locations',           requiredCols: [], optional: true, include: 'locations' },
@@ -312,6 +313,21 @@ function shipWorkspaceBuild_(tables, payload) {
   // shipment_lines for the returned page shipments (flat raw passthrough; the pages group by shipment_id).
   var pageIds = {}; for (var p = 0; p < pageResult.items.length; p++) pageIds[pageResult.items[p].shipmentId] = 1;
   var pageLines = xcoWsMarkLines_(lines.filter(function (l) { return pageIds[shipWsStr_(l.shipment_id)]; }), mappedAll);   // XCO-R15G MAJOR-O1-2: marked server-side
+
+  if (include.planDates) {
+    var plansById = Object.create(null);
+    (tables.shipping_plans || []).forEach(function (r) {
+      var id = shipWsStr_(r.shipping_plan_id);
+      if (id) (plansById[id] = plansById[id] || []).push(r);
+    });
+    pageResult.items.forEach(function (p) {
+      var ids = p.sourcePlanIds && p.sourcePlanIds.length ? p.sourcePlanIds : [p.shippingPlanId];
+      p.shippingPlanDates = ids.filter(function (id, i) { return id && ids.indexOf(id) === i; }).map(function (id) {
+        var matches = plansById[id] || [];
+        return { shippingPlanId: id, createdAt: matches.length === 1 ? shipWsDateTime_(matches[0].created_at) : '' };
+      });
+    });
+  }
 
   var out = {
     filters: { options: (include.filterOptions !== false) ? shipBuildFilterOptions_(mappedAll) : null, applied: f },

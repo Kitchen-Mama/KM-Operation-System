@@ -1175,7 +1175,10 @@ var codeDisplay_ = {
             codeDisplay_.lastMileDelivery(s.last_mile_delivery == null ? s.lastMileDelivery : s.last_mile_delivery)]
             .filter(Boolean).join(' \u00b7 ');
     },
-    customsType: function (code) { return customsTypeLabelFallback_(code) || _codeHumanize_(code); }
+    customsType: function (code, label) {
+        var text = String(label == null ? '' : label).trim();
+        return text && text !== String(code == null ? '' : code).trim() ? text : customsTypeLabelFallback_(code) || _codeHumanize_(code);
+    }
 };
 // Public render-time resolver. carrierName is looked up LIVE from the carriers master (carrier_id →
 // carriers.carrier_name) — carrier_name is NEVER stored on shipping_plans / shipments / carrier_rate_cards.
@@ -3180,7 +3183,13 @@ function _kmAttachDocumentDto(target, wsRow) {
 }
 window.KM.DB.adaptShipmentWorkspace = function(data) {
     data = data || {};
-    var shipments = (data.shipments || []).map(function(s) { return _kmAttachDocumentDto(normalizeShipmentRecord((s && s.raw) || {}), s); }).filter(function(r) { return r.shipmentId; });
+    var shipments = (data.shipments || []).map(function(s) {
+        var row = _kmAttachDocumentDto(normalizeShipmentRecord((s && s.raw) || {}), s);
+        if (s && Array.isArray(s.shippingPlanDates)) row.shippingPlanDates = s.shippingPlanDates.map(function (p) {
+            return { shippingPlanId: String(p.shippingPlanId || '').trim(), createdAt: String(p.createdAt || '').trim() };
+        });
+        return row;
+    }).filter(function(r) { return r.shipmentId; });
     var shipmentLines = (data.shipmentLines || []).map(normalizeShipmentLineRecord).filter(function(r) { return r.shipmentLineId || r.shipmentId; });
     var warehouses = (data.warehouses || []).map(normalizeWarehouseRecord).filter(function(r) { return r.warehouseId || r.warehouseName; });
     var carrierRateCards = (data.carrierRateCards || []).map(normalizeCarrierRateCardRecord).filter(function(r) { return r.rateCardId || r.carrierId; });

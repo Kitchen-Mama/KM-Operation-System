@@ -1518,7 +1518,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHIP_WS_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1-TD1",
       "optional": false
     },
     {
@@ -1818,7 +1818,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "354126dc9ac9f5af0b9e36c09619aa2cce443d08cfb932ad4e86ce799adc4e07"
+  "policy_sha256": "b7f1312171e1c458337dd16653f649d231418d0bddc7c8b61e6319ead8f62ed8"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

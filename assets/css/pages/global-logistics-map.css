@@ -360,7 +360,7 @@
 .glm-ship__meta { font-size: 11.5px; color: var(--glm-ink-3); margin-top: 3px; }
 
 /* ---- shipment detail drawer (Apple-card overlay) ---- */
-.glm-drawer { position: fixed; top: 0; right: 0; width: 420px; max-width: 92vw; height: 100vh; background: var(--glm-surface); border-left: 1px solid var(--glm-line); box-shadow: var(--glm-shadow-lg); z-index: 1200; transform: translateX(100%); transition: transform var(--glm-mid) var(--glm-ease); overflow-y: auto; overflow-x: hidden; }
+.glm-drawer { position: fixed; top: var(--glm-header-offset, var(--header-height, 0px)); right: 0; width: 420px; max-width: 92vw; height: calc(100vh - var(--glm-header-offset, var(--header-height, 0px))); background: var(--glm-surface); border-left: 1px solid var(--glm-line); box-shadow: var(--glm-shadow-lg); z-index: 1200; transform: translateX(100%); transition: transform var(--glm-mid) var(--glm-ease); overflow-y: auto; overflow-x: hidden; }
 .glm-drawer.is-open { transform: translateX(0); }
 .glm-drawer__head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 14px 14px 14px 20px; border-bottom: 1px solid var(--glm-line-soft); position: sticky; top: 0; background: var(--glm-glass); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); z-index: 1; }
 .glm-drawer__title { font-size: 16px; font-weight: 750; letter-spacing: -0.01em; color: var(--glm-ink); margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
