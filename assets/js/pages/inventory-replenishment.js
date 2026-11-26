@@ -13453,7 +13453,7 @@ var _irRecalcAllBusy = false;
 var _irActiveRunId = null;         // LIVE4 — the backend runId of the in-flight job (for a targeted Cancel)
 var _irCancelRequested = false;    // LIVE4 — set once by the Cancel button so the poller stops cooperatively
 var _irManualGap = null;
-var _irStatusReadDiag_ = { build: 'forecast-year-reset-20261125-v3', phase: 'IDLE', requestCount: 0 };
+var _irStatusReadDiag_ = { build: 'gap-investigation-20261126-v1', phase: 'IDLE', requestCount: 0 };
 function _irJobStatusDiagnostic_() {
   return Object.assign({}, _irStatusReadDiag_, { productionGuard: window.KM_PRODUCTION_GUARD_ ? window.KM_PRODUCTION_GUARD_.verdict : null });
 }
@@ -13484,20 +13484,32 @@ function _irManualGapReadStatus_(runId) {
 function _irManualGapKey_() { return 'km.ir.manualGap.' + ((window.KM.DB.envId && window.KM.DB.envId()) || 'default'); }
 function _irManualGapStore_(state) {
   try { if (state) sessionStorage.setItem(_irManualGapKey_(), JSON.stringify({ scope: state.scope, runId: state.runId || null, dispatched: true,
-    baselineKnown: state.baselineKnown === true, baselineRunId: state.baselineRunId || null })); else sessionStorage.removeItem(_irManualGapKey_()); } catch (e) {}
+    baselineKnown: state.baselineKnown === true, baselineRunId: state.baselineRunId || null, noticeDismissed: state.noticeDismissed === true })); else sessionStorage.removeItem(_irManualGapKey_()); } catch (e) {}
 }
 function _irManualGapHeld_() {
   if (_irManualGap) return _irManualGap;
   try { var saved = JSON.parse(sessionStorage.getItem(_irManualGapKey_()) || 'null'); if (saved) { saved.unknown = true; _irManualGap = saved; } } catch (e) {}
   return _irManualGap;
 }
-function _irManualGapUnknown_(message) {
+function _irManualGapUnknown_(message, quiet) {
   if (_irManualGap) { _irManualGap.unknown = true; _irManualGap.active = false; }
   _irRecalcAllBusy = true; _irShowCancel_(false);
   var btn = _irRecalcBtn_(); if (btn) { btn.disabled = true; btn.textContent = 'Status unconfirmed'; }
   _irAiSupportTriggerBusy_('recalc', 'Status unconfirmed');
   var trigger = _irAiSupportTriggerEl_(); if (trigger) trigger.removeAttribute('aria-busy');
-  _irAiSupportNotice_('warn', 'Recalculate', message || 'Completion is not confirmed. No second start was sent. Check status before starting another calculation.');
+  var list = document.getElementById('replenAiSupportList');
+  if (list && !list.querySelector('[data-ir-job-status]')) {
+    var statusItem = document.createElement('button'); statusItem.type = 'button'; statusItem.className = 'km-action-menu__item';
+    statusItem.setAttribute('role', 'menuitem'); statusItem.setAttribute('data-ir-job-status', ''); statusItem.textContent = 'Check calculation status';
+    statusItem.onclick = function () { _replenAiClose(false); return _irManualGapCheck_(); }; list.appendChild(statusItem);
+  }
+  if (quiet) {
+    var oldNotice = document.getElementById('replen-ai-support-notice');
+    var oldTitle = oldNotice && oldNotice.querySelector('.replen-ai-plan-result__head span');
+    if (oldTitle && /^Recalculate/.test(oldTitle.textContent)) _irClearAiSupportNotice_();
+    return;
+  }
+  if (!_irAiSupportNotice_('warn', 'Recalculate', message || 'Completion is not confirmed. No second start was sent. Check status before starting another calculation.')) return;
   var notice = _irAiSupportNoticeEl_();
   if (notice) {
     var check = document.createElement('button'); check.type = 'button'; check.textContent = 'Check status'; check.onclick = _irManualGapCheck_; notice.appendChild(check);
@@ -13508,6 +13520,7 @@ function _irManualGapRelease_() {
   _irManualGapStore_(null); _irManualGap = null; _irRecalcAllBusy = false; _irActiveRunId = null; _irShowCancel_(false);
   var btn = _irRecalcBtn_(); if (btn) { btn.disabled = false; btn.textContent = (btn.dataset && btn.dataset.idleLabel) || 'Recalculate All Sites'; }
   _irAiSupportTriggerIdle_('recalc');
+  var statusItem = document.querySelector('[data-ir-job-status]'); if (statusItem) statusItem.remove();
 }
 function _irManualGapAccept_(state, scope) {
   var actual = state && state.requestedScope;
@@ -13565,7 +13578,7 @@ function _irManualGapClearWait_(held, observed, waitingRunId) {
       _irManualGapUnlinkedStatus_(held, st); return;
     }
     _irManualGapRelease_();
-    _irAiSupportNotice_('warn', 'Recalculate', 'Local wait cleared. The original request outcome is still unknown. No server job was cancelled or started. Check the latest results before manually starting another calculation.');
+    if (!held.noticeDismissed) _irAiSupportNotice_('warn', 'Recalculate', 'Local wait cleared. The original request outcome is still unknown. No server job was cancelled or started. Check the latest results before manually starting another calculation.');
   }).catch(function (err) {
     if (_irManualGap === held) _irManualGapUnknown_('Server status could not be confirmed (' + String(err && err.message || err) + '). The local wait was not cleared. No second start was sent.');
   }).then(function () { held.checking = false; });
@@ -13573,6 +13586,7 @@ function _irManualGapClearWait_(held, observed, waitingRunId) {
 function _irManualGapReset_() {
   var held = _irManualGapHeld_(), gr = window.KM && window.KM.gapRecalc;
   if (!held || held.checking) return Promise.resolve();
+  held.noticeDismissed = false; _irManualGapStore_(held);
   if (!gr || !gr.boundedCall || !window.KM.DB || typeof window.KM.DB.getGapJobStatus !== 'function') {
     _irManualGapUnknown_('Reset unavailable: the status service is not loaded. Nothing was cancelled or restarted.'); return Promise.resolve();
   }
@@ -13601,7 +13615,7 @@ function _irManualGapReset_() {
       if (!res || res.success !== true || !result || result.runId !== st.runId ||
           !/^(CANCELLED|DONE|FAILED|ERROR|BLOCKED|STALLED)$/.test(result.status || '')) throw new Error('RESET_NOT_CONFIRMED');
       _irManualGapRelease_();
-      _irAiSupportNotice_('ok', 'Recalculate', 'Run ' + st.runId + ': ' + result.status + ' confirmed. Waiting state cleared; completed results were kept. Press Search to read results before starting a new calculation.');
+      if (!held.noticeDismissed) _irAiSupportNotice_('ok', 'Recalculate', 'Run ' + st.runId + ': ' + result.status + ' confirmed. Waiting state cleared; completed results were kept. Press Search to read results before starting a new calculation.');
     });
   }).catch(function (err) {
     if (_irManualGap === held) _irManualGapUnknown_('Reset was not confirmed (' + String(err && err.message || err) + '). The wait was kept; no automatic retry or new calculation was sent.');
@@ -13612,7 +13626,8 @@ function _irManualGapCheck_() {
   if (!held) {
     _irAiSupportNotice_('info', 'Recalculate', 'No local calculation is awaiting confirmation. Press Search to read the latest results.'); return Promise.resolve();
   }
-  if (held.checking) return Promise.resolve();
+  held.noticeDismissed = false; _irManualGapStore_(held);
+  if (held.checking) { _irAiSupportNotice_('info', 'Recalculate', 'A status check is already in progress. No additional request was sent.'); return Promise.resolve(); }
   if (!gr || !gr.boundedCall || !window.KM.DB || typeof window.KM.DB.getGapJobStatus !== 'function') {
     _irManualGapUnknown_('The server status service is unavailable. Reload the updated application; nothing was restarted.'); return Promise.resolve();
   }
@@ -13643,16 +13658,17 @@ function _irManualGapCheck_() {
     if (st.status === 'DONE' || st.status === 'CANCELLED') {
       if (!_irRecoScopeRequest() || !_irAppliedScopeKey_()) {
         _irManualGapRelease_();
-        _irAiSupportNotice_('ok', 'Recalculate', 'Run ' + st.runId + ': ' + st.status + ' confirmed. Select a site and press Search to load its results.'); return;
+        if (!held.noticeDismissed) _irAiSupportNotice_('ok', 'Recalculate', 'Run ' + st.runId + ': ' + st.status + ' confirmed. Select a site and press Search to load its results.'); return;
       }
       return gr.boundedCall(function () { return _irManualGapRefresh_(held.scope); }, 30000).then(function (result) {
+        if (_irManualGap !== held) return;
         if (result && result.success === false) throw new Error('Readback failed');
         _irAiSupportNotice_('ok', 'Recalculate', st.status === 'DONE' ? 'Recalculation completed; materialized results refreshed.' : 'Cancellation confirmed; completed results refreshed.');
         _irManualGapRelease_();
       }).catch(function () {
         if (_irManualGap !== held) return;
         _irManualGapRelease_();
-        _irAiSupportNotice_('warn', 'Recalculate', 'Run ' + st.runId + ': ' + st.status + ' confirmed, but results could not be refreshed. Press Search to reload results. No job was restarted.');
+        if (!held.noticeDismissed) _irAiSupportNotice_('warn', 'Recalculate', 'Run ' + st.runId + ': ' + st.status + ' confirmed, but results could not be refreshed. Press Search to reload results. No job was restarted.');
       });
     }
     _irAiSupportNotice_('bad', 'Recalculate', _irGapJobFailMsg_('Inventory', st)); _irManualGapRelease_();
@@ -13740,7 +13756,7 @@ function handleRecalcAllInventoryGap(scopeSpec) {
         _irAiSupportNotice_('bad', _recalcTitle, 'Start was refused: ' + res.error.code); restore();
       }
     },
-    onRunId: function (rid) { attempt.runId = _irActiveRunId = rid; _irManualGapStore_(attempt); },
+    onRunId: function (rid) { if (_irManualGap !== attempt) return; attempt.runId = _irActiveRunId = rid; _irManualGapStore_(attempt); },
     isCancelled: function () { return _irCancelRequested; },
     ui: {
       checking: function () { setBtn('Checking status...', true); },
@@ -13754,6 +13770,7 @@ function handleRecalcAllInventoryGap(scopeSpec) {
       done: function (finalState) { _irShowCancel_(false); setBtn('Completed', true); try { if (gr && typeof gr.announceManualDone === 'function') gr.announceManualDone(_irActiveRunId, gr.formatDoneMessage('Inventory', scopeSpec, finalState)); } catch (e) {} var _oc = (gr && typeof gr.doneOutcome === 'function') ? gr.doneOutcome('Inventory', scopeSpec, finalState) : { tone: 'ok' }; _irAiSupportNotice_(_oc.tone, _recalcTitle, _oc.tone === 'ok' ? 'Recalculation completed and the materialized replenishment gap was refreshed.' : _oc.text + ' The gap was refreshed.'); /* R66 AI notice: the actual outcome */ if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       cancelled: function () { _irShowCancel_(false); setBtn('Cancelled — results preserved', true); try { console.info('[GapJob] Calculation cancelled. Latest completed results are preserved.'); } catch (e) {} _irAiSupportNotice_('warn', _recalcTitle, 'Recalculation was cancelled. The latest completed results are preserved.'); if (typeof setTimeout === 'function') setTimeout(restore, 1500); else restore(); },
       failed: function (st) {
+        if (_irManualGap !== attempt) return;
         if (!attempt.dispatched) { _irAiSupportNotice_('bad', _recalcTitle, 'The status observer could not start. Nothing was sent.'); restore(); return; }
         if (gr.isUnconfirmedJob((st && st.status) || '')) { _irManualGapUnknown_(); return; }
         if (st && st.status === 'READBACK_FAILED') { _irAiSupportNotice_('warn', _recalcTitle, 'The job finished, but refreshed results could not be read. Refresh the data; no job was restarted.'); restore(); return; }
@@ -13828,7 +13845,9 @@ function _irResumeGapJobOnMount_() {
 }
 var _irGapResumeDeferred_ = false;
 function _irResumeGapJobNow_() {
-  if (_irManualGapHeld_()) { if (_irManualGap.active) return Promise.resolve(); _irManualGapUnknown_(); return _irManualGapCheck_(); }
+  // An unresolved browser command is not evidence that a worker is still running.
+  // Keep the duplicate-start guard, but require an explicit status action after navigation/reload.
+  if (_irManualGapHeld_()) { if (_irManualGap.active) return Promise.resolve(); _irManualGapUnknown_(null, true); return Promise.resolve(); }
   var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
   if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
   var btn = _irRecalcBtn_();
@@ -18893,10 +18912,16 @@ function _irAiSupportNoticeEl_() {
     }
     return el || null;
 }
-function _irClearAiSupportNotice_() { var el = _irAiSupportNoticeEl_(); if (el) { el.hidden = true; el.innerHTML = ''; } }
+function _irClearAiSupportNotice_() {
+    var el = _irAiSupportNoticeEl_();
+    var title = el && el.querySelector('.replen-ai-plan-result__head span');
+    if (_irManualGap && title && /^Recalculate/.test(title.textContent)) { _irManualGap.noticeDismissed = true; _irManualGapStore_(_irManualGap); }
+    if (el) { el.hidden = true; el.innerHTML = ''; }
+}
 // tone: 'ok' | 'info' | 'warn' | 'bad'. Returns TRUE when something visible was actually painted — the callers
 // use the return value, so a missing DOM degrades to alert()/console rather than to silence.
 function _irAiSupportNotice_(tone, title, message) {
+    if (/^Recalculate/.test(title) && _irManualGap && _irManualGap.noticeDismissed) return false;
     var el = _irAiSupportNoticeEl_();
     var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (ch) { return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]; }); };
     if (el) {

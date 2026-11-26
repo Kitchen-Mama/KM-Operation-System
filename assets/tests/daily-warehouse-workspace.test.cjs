@@ -130,4 +130,19 @@ eq(incomingTarget.horizons.map(h => h.incomingAddedQty), [0, 80, 80, 80]);
 eq(incomingTarget.currentStockQty, 0);
 eq(incomingTarget.horizons.map(h => h.gapQty), [180, 220, 370, 820]);
 eq(writes, 0);
+// Production incident shapes: missing data stays blocked, and self fulfillment uses 3PL rather than FBA.
+const nextYearMissing = world();
+nextYearMissing.snapshots.fcRegularForecast = table(objects(nextYearMissing.snapshots.fcRegularForecast).filter(r => !(r.marketplace === 'Target' && r.year === 2027)));
+assert.equal(nextYearMissing.handle('Target').blockedReason, 'DAILY_ALLOCATION_DEMAND_UNKNOWN: km||us||target'); checks++;
+assert.equal(nextYearMissing.handle('Shopify').blockedReason, 'DAILY_ALLOCATION_DEMAND_UNKNOWN: km||us||target'); checks++;
+const unconfigured = world();
+unconfigured.snapshots.replenishmentDemandAllocationRules = table(objects(unconfigured.snapshots.replenishmentDemandAllocationRules).filter(r => r.marketplace !== 'Target'));
+assert.match(unconfigured.handle('Target').blockedReason, /DAILY_ALLOCATION_RECEIVER_UNRESOLVED/); checks++;
+const inheritedSelf = world();
+inheritedSelf.snapshots.marketplaceSkus = table(objects(inheritedSelf.snapshots.marketplaceSkus).map(r => ({ ...r, fulfillment_model: '' })));
+eq(inheritedSelf.handle('Target').currentStockQty, 5); // homogeneous site-level self_fulfilled is authoritative
+const hybridPlatform = world();
+hybridPlatform.snapshots.marketplaces = table(objects(hybridPlatform.snapshots.marketplaces).map(r => ({ ...r, fulfillment_model: r.marketplace === 'Target' ? 'hybrid' : r.fulfillment_model })));
+hybridPlatform.snapshots.marketplaceSkus = table(objects(hybridPlatform.snapshots.marketplaceSkus).map(r => ({ ...r, fulfillment_model: r.marketplace === 'Target' ? 'platform_fulfilled' : r.fulfillment_model })));
+assert.equal(hybridPlatform.handle('Target').blockedReason, 'MARKETPLACE_STOCK_MISSING'); checks++;
 console.log('DAILY_WAREHOUSE_WORKSPACE_PASS ' + checks + ' live_business_writes=0');
