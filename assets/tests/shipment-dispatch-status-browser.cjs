@@ -9,7 +9,7 @@ const runtime='C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1123-
 const {chromium}=require(require.resolve('playwright',{paths:[runtime]})),out=path.resolve('output/shipment-dispatch-status-20261126/browser');
 let pass=0;function check(name,value){assert(value,name);pass++;console.log('PASS '+name);}
 (async()=>{fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'chrome',headless:true});try{
- for(const width of [1440,390])for(const mode of ['clean','pending','drift','network','wrong-id']){
+ for(const width of [1440,390])for(const mode of ['clean','pending','drift','network','wrong-id','unrelated']){
   const h=world(),c=h.c,calls=[],errors=[],requests=[];let rpc=0;
   const read=()=>({shipments:h.rows('shipments').map(raw=>({raw,...c.shipWsDocumentsFor_({},raw.shipment_id,raw,h.rows('warehouses'))})),shipmentLines:h.rows('shipment_lines'),warehouses:h.rows('warehouses').map(w=>({...w,marketplace:w.warehouse_type==='FBA'?'Amazon':''})),carriers:h.rows('carriers'),carrierRateCards:[],skuLogistics:[]});
   const page=await browser.newPage({viewport:{width,height:950}});page.on('pageerror',e=>errors.push(e.message));
@@ -28,11 +28,12 @@ let pass=0;function check(name,value){assert(value,name);pass++;console.log('PAS
   });
   await page.locator('.history-expand-btn').click();await page.evaluate(()=>shConfirmShipment('S'));await page.waitForSelector('#sh-confirm-modal',{timeout:3000}).catch(async e=>{throw Error(e.message+' / '+JSON.stringify(await page.evaluate(()=>({alerts,body:document.body.innerText}))))});
   if(mode==='pending')h.properties.KM_SRC_PEND_TEST=String(Date.now());
+  if(mode==='unrelated'){h.properties.KM_SRC_PEND_OTHER=String(Date.now());h.properties.KM_SRC_CTX_KM_SRC_PEND_OTHER=JSON.stringify(h.c.kmSrcWriterContext_('confirmShipmentAndDispatch',{shipment_id:'OTHER'}));}
   if(mode==='network'||mode==='wrong-id')await page.evaluate(()=>{KM.api.getWorkspace=async()=>({success:true,data:{shipments:[{raw:{shipment_id:'S',status:'shipped'}}]}});});
   if(mode==='drift')h.put('overseas_inventory_snapshot','overseas_inventory_id','OVS','wh_available_stock',20);
   const before=h.writes(),label=width+' '+mode;
   await page.evaluate(async()=>{localStorage.setItem('km-dispatch-pending14:S','1');delete SH_DISPATCH_HOLD14_.S;await _shDispatchUnknown_('S',null,document.getElementById('sh-confirm-go'),document.getElementById('sh-confirm-cancel'),document.getElementById('sh-confirm-status'));});
-  if(mode==='clean')check(label+' reconciled proof releases the persisted hold and closes the modal',await page.evaluate(()=>!_shDispatchHeld14_('S')&&!document.getElementById('sh-confirm-modal')));
+  if(mode==='clean'||mode==='unrelated')check(label+' reconciled proof releases the persisted hold and closes the modal',await page.evaluate(()=>!_shDispatchHeld14_('S')&&!document.getElementById('sh-confirm-modal')));
   else {
    check(label+' retains persisted hold and blocks dispatch',await page.evaluate(()=>_shDispatchHeld14_('S')&&document.getElementById('sh-confirm-go').disabled));
    if(mode==='pending')check(label+' names pending writer',await page.locator('#sh-confirm-status').innerText().then(t=>t.includes('SOURCE_WRITE_IN_PROGRESS')));

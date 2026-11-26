@@ -46,6 +46,15 @@ test('real POST dispatch-status routing never marks itself as a source writer',(
   assert.equal(x.rtrIsRead_(b.action),true);
   const r=x.doPost({parameter:{action:b.action},postData:{contents:JSON.stringify(b)}});
   assert.equal(r.success,true,JSON.stringify(r));assert.equal(r.shipment_id,'S');assert.equal(r.read_only,true);assert.equal(writes,0);
+  let scope;x.kmSrcRevMark_=(action,body)=>{scope={action,shipment_id:body.shipment_id,access_session:body.access_session};return 'M';};x.kmSrcRevBump_=()=>{};x.handleUpdateShipment_=()=>({success:true});
+  const wb={action:'updateShipment',shipment_id:'S',access_session:'SECRET'},wr=x.doPost({parameter:{action:wb.action},postData:{contents:JSON.stringify(wb)}});
+  assert.equal(wr.success,true,JSON.stringify(wr));assert.deepEqual(scope,{action:'updateShipment',shipment_id:'S',access_session:undefined});
+});
+
+test('previous dispatch-status policy retains read checks during scoped-writer rollout',async()=>{
+ const g=guard({...p,policy_sha256:'b3399adbda1363a7c9fda69a65c584c10bfb4c767419a96a62e9b5b71a2ac136'});
+ await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'shipment.dispatch.status',shipment_id:'S'})});
+ assert.equal(g.sent.length,2);assert.equal(g.writes.length,0);
 });
 test('pre-EU-document-customs policy retains shipping operations during manual GS rollout', async () => {
   const previous={...p,policy_sha256:'ee2356e6e9b7bbf581b274d9e85ad62b0fde94cee8e11ebef607dd14ab228a0c'},g=guard(previous);
@@ -72,7 +81,7 @@ test('policy hash, public config and health module stamps agree', () => {
   const hc = vm.createContext({}); vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/63_api_v1_system_health.gs', 'utf8'), hc);
   for (const symbol of ['SYS_BUILD_VERSION_', 'RTR_BUILD_VERSION_']) {
     const expected = p.module_stamps.find(r => r.symbol === symbol).expected;
-    assert(expected.endsWith('-MA1-DSR1'));
+    assert(expected.endsWith('-MA1-DSR1-DSR2'));
     assert.equal(hc.SYS_MODULE_BUILD_STAMPS_.find(r => r.symbol === symbol).expected, expected);
   }
 });

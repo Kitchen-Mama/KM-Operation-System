@@ -1317,6 +1317,8 @@ function normalizeShipmentRecord(raw) {
         // Ship / Done (Shipment Draft workspace) lifecycle metadata.
         shippedAt: String(r.shipped_at || '').trim(),
         shippedBy: String(r.shipped_by || '').trim(),
+        cancelledAt: String(r.cancelled_at || '').trim(),
+        cancelReason: String(r.cancel_reason || '').trim(),
         hiddenFromDraftAt: String(r.hidden_from_draft_at || '').trim(),
         hiddenFromDraftBy: String(r.hidden_from_draft_by || '').trim(),
         recordOrigin: String(r.record_origin || '').trim(),   // SHIP-OPEN: IMPORT_HISTORICAL = opening record

@@ -9,7 +9,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[runtime]})),out=pa
 let pass=0;function check(name,value){assert(value,name);console.log('PASS '+name);pass++;}
 (async()=>{fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'chrome',headless:true});
 try{for(const width of [1440,390])for(const lost of [false,true]){
- const h=world(),c=h.c,calls=[],errors=[],requests=[],page=await browser.newPage({viewport:{width,height:950}});c.kmSrcRevGet_=()=> 'FIXTURE-REV';
+ const h=world(),c=h.c,calls=[],errors=[],requests=[],page=await browser.newPage({viewport:{width,height:950}});c.kmSrcDispatchFence_=()=>({ok:true,fingerprint:'FIXTURE-REV',source_revision:'FIXTURE-REV',blocking:[],ignored:[]});
  h.sheet('shipment_route_templates',h.tables.shipment_route_templates.grid[0],[{route_template_id:'DOMESTIC',route_template_name:'Domestic',destination_country:'US',origin_country:'US',carrier_id:'CAR',transit_type:'truck',last_mile_delivery:'parcel',is_active:true}]);
  const nodes=[{route_template_id:'DOMESTIC',route_template_node_id:'N1',node_sequence:1,node_type:'factory_pickup',node_code:'SOURCE',country:'US'},
  {route_template_id:'DOMESTIC',route_template_node_id:'N2',node_sequence:2,node_type:'warehouse',node_code:'DEST',country:'US',is_destination_placeholder:true}];

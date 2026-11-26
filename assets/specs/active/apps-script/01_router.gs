@@ -49,7 +49,7 @@
 
 
 
-var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1";
+var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1-DSR2";
 
 
 
@@ -160,17 +160,43 @@ for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0) { if (!isFinite(Number(p[k])
 return (p[KM_SRC_REV_KEY_] || 'R0') + (old.length ? '+' + old.sort().join('+') : '');
 } catch (e) { return null; }
 }
-function kmSrcRevMark_() {
+function kmSrcWriterContext_(action, body) {
+var b=body||{},sid=typeof b.shipment_id==='string'?b.shipment_id.trim():'',draft=typeof b.draft_id==='string'?b.draft_id.trim():'';
+return {version:1,action:String(action||''),shipment_id:sid&&draft&&sid!==draft?'':sid||draft};
+}
+function kmSrcDispatchFence_(shipmentId) {
+try {
+var p=PropertiesService.getScriptProperties().getProperties(),keys=Object.keys(p).filter(function(k){return k.indexOf(KM_SRC_PEND_)===0;}).sort(),now=Date.now(),blocking=[],ignored=[],invalid=false;
+var singleShipment=' confirmShipmentAndDispatch updateShipment cancelShipmentDraft shipment.selectRateCard shipment.assignCarrier shipment.receipt.update shipment.route.advance shipment.eta.update ';
+// These handlers write calculated planning data, never shipment execution or physical stock.
+var planningOnly=' inventoryReplenishmentGap.recalculate.all orderPlanningGap.recalculate.all inventoryReplenishmentGap.job.start orderPlanningGap.job.start inventoryReplenishmentGap.job.cancel orderPlanningGap.job.cancel appendShippingPlanNote ';
+var parts=keys.map(function(k){
+ var started=Number(p[k]),raw=p['KM_SRC_CTX_'+k]||'',ctx=null;
+ if(!isFinite(started)||started<=0){invalid=true;return k+'=INVALID';}
+ if(now-started<KM_SRC_PEND_MS_){
+  try{ctx=JSON.parse(raw);}catch(e){}
+  var valid=ctx&&ctx.version===1&&typeof ctx.action==='string',action=valid?ctx.action:'',sid=valid&&typeof ctx.shipment_id==='string'?ctx.shipment_id:'';
+  var unrelated=valid&&(planningOnly.indexOf(' '+action+' ')>=0||singleShipment.indexOf(' '+action+' ')>=0&&!!sid&&sid!==shipmentId);
+  var item={action:action||'LEGACY_OR_UNKNOWN_WRITE',age_ms:Math.max(0,now-started),remaining_ms:Math.max(0,KM_SRC_PEND_MS_-(now-started)),same_shipment:!!sid&&sid===shipmentId};
+  (unrelated?ignored:blocking).push(item);
+ }
+ return k+'='+p[k]+':'+raw;
+});
+var rev=p[KM_SRC_REV_KEY_]||'R0';
+return {ok:!invalid,fingerprint:rev+'|'+parts.join('|'),source_revision:rev+(keys.length?'+'+keys.join('+'):''),blocking:blocking,ignored:ignored};
+}catch(e){return {ok:false,blocking:[],ignored:[]};}
+}
+function kmSrcRevMark_(action, body) {
 var id = KM_SRC_PEND_ + Utilities.getUuid().slice(0, 8);
-try { PropertiesService.getScriptProperties().setProperty(id, String(Date.now())); } catch (e) { throw new Error('SOURCE_REVISION_UNAVAILABLE: the write was not started.'); }
+try { var values={};values[id]=String(Date.now());values['KM_SRC_CTX_'+id]=JSON.stringify(kmSrcWriterContext_(action,body));PropertiesService.getScriptProperties().setProperties(values,false); } catch (e) { throw new Error('SOURCE_REVISION_UNAVAILABLE: the write was not started.'); }
 return id;
 }
 function kmSrcRevBump_(id) {
 try {
 var P = PropertiesService.getScriptProperties(), p;
 P.setProperty(KM_SRC_REV_KEY_, Date.now().toString(36) + '-' + Utilities.getUuid().slice(0, 8));
-P.deleteProperty(id); p = P.getProperties();
-for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0 && Date.now() - Number(p[k]) >= KM_SRC_PEND_MS_) P.deleteProperty(k);
+P.deleteProperty(id); P.deleteProperty('KM_SRC_CTX_'+id); p = P.getProperties();
+for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0 && Date.now() - Number(p[k]) >= KM_SRC_PEND_MS_) { P.deleteProperty(k); P.deleteProperty('KM_SRC_CTX_'+k); }
 } catch (e) {}
 }
 
@@ -336,7 +362,7 @@ if (action === 'getOperationDb') return handleGetOperationDb_();
 if (action === 'getTable') return handleGetTable_(String(body.table || '').trim());
 var _paReads = rtrGetReadHandlers_();
 if (Object.prototype.hasOwnProperty.call(_paReads, action)) { body.__km_handler = 'doPost'; return rtrEmitHandlerResult_(_paReads[action](body)); }
-if (!rtrIsRead_(action)) { try { _rtrMark = kmSrcRevMark_(); } catch (eM) { return jsonResponse_({ success: false, code: 'SOURCE_REVISION_UNAVAILABLE', error: eM.message, zero_write: true }); } }
+if (!rtrIsRead_(action)) { try { _rtrMark = kmSrcRevMark_(action,body); } catch (eM) { return jsonResponse_({ success: false, code: 'SOURCE_REVISION_UNAVAILABLE', error: eM.message, zero_write: true }); } }
 if (action === 'siteSku.planning.list') return jsonResponse_(handleSiteSkuPlanningList_(body));
 if (action === 'siteSku.planning.update') return jsonResponse_(handleSiteSkuPlanningUpdate_(body));
 
@@ -1613,7 +1639,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SYS_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1-DSR2",
       "optional": false
     },
     {
@@ -1758,12 +1784,12 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "CSD_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1-DSR2",
       "optional": false
     },
     {
       "symbol": "RTR_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1-DSR2",
       "optional": false
     },
     {
@@ -1823,7 +1849,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "b3399adbda1363a7c9fda69a65c584c10bfb4c767419a96a62e9b5b71a2ac136"
+  "policy_sha256": "c90ab7ff3b0ab63f8e0630a529275fab4a7661cd120a2b564ea88b4a7313dfb5"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

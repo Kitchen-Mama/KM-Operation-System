@@ -56,7 +56,7 @@
 
 
 
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1';
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1-DSR2';
 var CSD_MOV_TYPE_ = 'shipment_out';
 
 
@@ -210,10 +210,10 @@ function handleShipmentDispatchStatus_(body) {
   var sid=String(body&&body.shipment_id||'').trim(),base={success:true,shipment_id:sid,proof_version:'DISPATCH-STATUS-V1',read_only:true,writes_performed:0,safe_to_retry:false};
   function result(state,reason,extra){return jsonResponse_(Object.assign({},base,{state:state,reason:reason},extra||{}));}
   if(!sid)return result('UNKNOWN','SHIPMENT_ID_REQUIRED');
-  if(typeof kmSrcRevGet_!=='function')return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
-  var before=kmSrcRevGet_();
-  if(before===false)return result('IN_PROGRESS','SOURCE_WRITE_IN_PROGRESS');
-  if(typeof before!=='string'||!before)return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
+  if(typeof kmSrcDispatchFence_!=='function')return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
+  var before=kmSrcDispatchFence_(sid);
+  if(!before.ok)return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
+  if(before.blocking.length)return result('IN_PROGRESS','SOURCE_WRITE_IN_PROGRESS',{pending_writes:before.blocking,unrelated_writes:before.ignored.length});
   var lock=LockService.getScriptLock(),acquired=false;
   try {
     acquired=lock.tryLock(1000);if(!acquired)return result('IN_PROGRESS','DISPATCH_LOCK_BUSY');
@@ -254,8 +254,8 @@ function handleShipmentDispatchStatus_(body) {
         }
       }
     }
-    var after=kmSrcRevGet_();if(after!==before)return result('IN_PROGRESS','SOURCE_CHANGED_DURING_CHECK');
-    return result(verdict,reason,{status:status,safe_to_retry:safe,source_revision:after,current_updated_at:editTok_(ship.updated_at),route_nodes:routes,events_present:!!events,movement_present:!!movement});
+    var after=kmSrcDispatchFence_(sid);if(!after.ok||after.blocking.length||after.fingerprint!==before.fingerprint)return result('IN_PROGRESS','SOURCE_CHANGED_DURING_CHECK',{pending_writes:after.blocking||[]});
+    return result(verdict,reason,{status:status,safe_to_retry:safe,source_revision:after.source_revision,unrelated_writes:after.ignored.length,current_updated_at:editTok_(ship.updated_at),route_nodes:routes,events_present:!!events,movement_present:!!movement});
   } catch(e) {return result('UNKNOWN','DISPATCH_STATUS_UNREADABLE',{error:String(e&&e.message||e)});}
   finally {if(acquired)lock.releaseLock();}
 }

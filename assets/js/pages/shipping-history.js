@@ -991,17 +991,9 @@ function _shNextStatus(status) {
     return (i >= 0 && i < SH_STATUS_FLOW.length - 1) ? SH_STATUS_FLOW[i + 1] : null;
 }
 
-// Shipment Draft workspace = draft / ready_to_ship / shipped (until Done hides it).
-// F1-7N-FC-1A-R1 §F — `cancelled` JOINS THIS SET, and it has to.
-//
-// Cancellation moves a draft to `cancelled`, and the Overview page shows `shipped` onward. Without this the
-// card would simply VANISH from both pages the instant it was cancelled: the operator would see the row
-// disappear and have no way to confirm whether the cancellation and its reservation release actually happened,
-// or whether the request failed and the row is still live somewhere. A cancelled shipment is preserved in the
-// database as audit evidence, and it stays on screen for the same reason.
-var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship', 'shipped', 'cancelled'];
-// Shipment Overview = official records only (shipped onward).
-var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1 };   // OVERVIEW-PR (R4 review M4, ships with the patch): 31_ writes partially_received
+// Workspace owns pending execution; Overview preserves dispatched and cancelled records.
+var SH_DRAFT_STATUSES = ['draft', 'ready_to_ship'];
+var SH_OVERVIEW_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1, cancelled: 1 };
 // F1-6B Part B — statuses at which the frozen R2B final-output snapshot exists (post confirm-and-dispatch), so
 // Shipping Detail / Packing List documents can be generated. Purely a UX gate — the backend is fail-closed regardless.
 var SH_DOC_READY_STATUSES = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1, stuck: 1 };
@@ -1017,8 +1009,8 @@ function _shDistinct(arr) {
 // Page separation: Shipment Draft and Shipment Overview are TWO independent pages.
 // They SHARE the shipments / shipment_lines DB and the card render helper (_shRenderDbCard),
 // but each owns its section, filter UI, init, and render — no shared filter DOM state.
-//   Shipment Draft    → #shipment-draft-section   (compact Country + Status filter; draft/ready_to_ship/shipped)
-//   Shipment Overview → #shippinghistory-section   (full filter bar; shipped onward)
+//   Shipment Draft    → #shipment-draft-section   (compact Country + Status filter; draft/ready_to_ship)
+//   Shipment Overview → #shippinghistory-section   (full filter bar; dispatched/cancelled)
 // ============================================================
 
 // ---- F1-7F · scoped Shipment workspace read cutover (mirrors the F1-7B/7C/7D pattern) ----
@@ -1158,6 +1150,8 @@ function _shdEnsureFilter() {
     if (document.getElementById('shd-simple-filter')) return;
     header.style.display = 'flex';
     header.style.alignItems = 'center';
+    header.style.flexWrap = 'wrap';
+    header.style.gap = '12px';
     var wrap = document.createElement('div');
     wrap.id = 'shd-simple-filter';
     wrap.style.cssText = 'display:flex;gap:12px;align-items:center;margin-left:auto;';
@@ -1169,8 +1163,6 @@ function _shdEnsureFilter() {
                 '<option value="">All</option>' +
                 '<option value="draft">Draft</option>' +
                 '<option value="ready_to_ship">Ready to Ship</option>' +
-                '<option value="cancelled">Cancelled</option>' +
-                '<option value="shipped">Shipped</option>' +
             '</select></label>';
     header.appendChild(wrap);
 }
@@ -1216,8 +1208,11 @@ function renderShipmentDraft() {
     _shdPopulateCountry(shipments);
     var fCountry = (document.getElementById('shd-filter-country') || {}).value || '';
     var fStatus = (document.getElementById('shd-filter-status') || {}).value || '';
+    if (fStatus && SH_DRAFT_STATUSES.indexOf(fStatus) === -1) {
+        fStatus = ''; document.getElementById('shd-filter-status').value = '';
+    }
 
-    // Draft work area: draft / ready_to_ship / shipped (not yet hidden via Done).
+    // The read model stays complete for Overview and post-dispatch document navigation.
     var pool = shipments.filter(function(s) {
         return SH_DRAFT_STATUSES.indexOf(s.status) !== -1 && !_shHiddenFromDraft(s)
             && (!fCountry || s.country === fCountry)
@@ -1229,8 +1224,7 @@ function renderShipmentDraft() {
         return;
     }
     emptyStateEl.hidden = true; listEl.hidden = false;
-    var groups = [['draft', 'Draft'], ['ready_to_ship', 'Ready to Ship'], ['shipped', 'Shipped'],
-        ['cancelled', 'Cancelled']];
+    var groups = [['draft', 'Draft'], ['ready_to_ship', 'Ready to Ship']];
     var _keep15c = _shCaptureCards_(listEl);   // R15C-UI
     listEl.innerHTML = groups.filter(function(g) { return !fStatus || g[0] === fStatus; }).map(function(g) {
         var items = pool.filter(function(s) { return s.status === g[0]; });
@@ -1247,7 +1241,7 @@ function renderShipmentDraft() {
 
 // ---- Shipment Overview page -----------------------------------------------
 // Full filter bar (Date / Country / SKU / Shipping Method / Search) in #shippinghistory-section.
-// Shows official records only (shipped onward). Read-only fields.
+// Shows dispatched and cancelled records. Read-only fields.
 function renderShipmentOverview() {
     var sec = document.getElementById('shippinghistory-section');
     if (!sec) return;
@@ -1304,7 +1298,7 @@ function renderShipmentOverview() {
         return true;
     });
     if (!list.length) {
-        emptyStateEl.textContent = 'No shipped shipments yet. Ship a Shipment Draft to see it here.';
+        emptyStateEl.textContent = 'No shipment records match the current filters.';
         emptyStateEl.hidden = false; listEl.hidden = true; listEl.innerHTML = '';
         return;
     }
@@ -1400,6 +1394,7 @@ function _shReadbackOne_(shipmentId) {
 // falls inside the default "Last 30 days" window — ETD/ETA are frequently FUTURE dates and, if used
 // first, would push a freshly-shipped shipment outside the window and hide it from Overview.
 function _shShipmentDate(s) {
+    if (s.status === 'cancelled') return String(s.cancelledAt || s.createdAt || s.etd || s.eta || '').slice(0, 10);
     var raw = s.shippedAt || s.etd || s.eta || s.createdAt || '';
     return String(raw).slice(0, 10);
 }
@@ -1812,8 +1807,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // receiving/inventory workflow. Every manual lifecycle-mutating control is therefore REMOVED here:
     //   · Shipment Draft   'Done'                (it mutated shipped -> hidden/next lifecycle)
     //   · Shipment Overview 'Advance -> <next>'  (it manually walked the post-ship lifecycle)
-    // Expand/Collapse and the document actions remain. Once shipped, Shipment Draft is a read-only
-    // shipment-and-document view: no further shipment-progress button is offered.
+    // Expand/Collapse and document actions remain in Overview after dispatch.
     if (mode === 'draft') {
         // F1-7N-FC-1A-R1 §F — Cancel is offered ONLY pre-dispatch. It is deliberately absent for
         // shipped / in_transit / arrived / received / closed / cancelled: once units have physically left,
@@ -1851,6 +1845,7 @@ function _shRenderDbCard(s, planLines, mode) {
         // F1-6B Part B — Shipping Detail / Packing List documents for a dispatched shipment (the frozen R2B snapshot
         // exists). Thin: the frontend only sends { shipment_id, document_type, generate_file } and opens the returned
         // download_url via the existing R3C adapters — NO placeholder mapping / totals / template / master / file build.
+        if (status === 'cancelled' && s.cancelReason) actionsHtml += '<p style="margin:8px 0;color:#991B1B;font-size:12px;overflow-wrap:anywhere;">Cancellation reason: ' + _shEsc(s.cancelReason) + '</p>';
         if (SH_DOC_READY_STATUSES[status] && s.documentGenerationStatus !== 'NOT_REQUIRED') actionsHtml += _shDocActionsHtml(sid);
         actionsHtml += _shManualPosHtml_(s);   // AD3 D: manual position report (manual-logistics shipments only; '' otherwise)
     }
@@ -1860,7 +1855,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // truthfully renders "No documents generated yet" rather than a fabricated folder or file.
     // Shown once documents can exist: post-dispatch, or as soon as the registry has any row for this shipment.
     // A pre-dispatch draft stays clean rather than showing an empty panel it can do nothing about.
-    if (s.documentGenerationStatus !== 'NOT_REQUIRED' && ((status !== 'draft' && status !== 'ready_to_ship') || (s.documents && s.documents.length))) {
+    if (s.documentGenerationStatus !== 'NOT_REQUIRED' && (SH_DOC_READY_STATUSES[status] || (s.documents && s.documents.length))) {
         actionsHtml += shDocumentPanelHtml({
             title: 'Shipment Documents', entity_type: 'shipment', entity_id: sid,
             folder_url: s.documentFolderUrl || '', folder_name: s.documentFolderName || '',
@@ -2295,7 +2290,8 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
             }
             if(proof.state!=='DISPATCHED'){
                 proofHandled=true;
-                explain((proof.state==='IN_PROGRESS'?'A recent write is still pending verification. Check status again shortly. ':'Confirmation needs review. ')+(proof.reason||proof.state)+'. Nothing was resent.');
+                var pending=(proof.pending_writes||[]).map(function(w){return String(w.action||'Unknown write')+' ('+Math.ceil(Number(w.age_ms||0)/1000)+'s elapsed, lease up to '+Math.ceil(Number(w.remaining_ms||0)/1000)+'s remaining)';}).join('; ');
+                explain((proof.state==='IN_PROGRESS'?'A relevant or unclassified write is pending verification. ':'Confirmation needs review. ')+(proof.reason||proof.state)+(pending?': '+pending:'')+'. Nothing was resent.');
                 return null;
             }
         }
@@ -3597,9 +3593,21 @@ function shRegisterDocumentRefresh(entityType, fn) {
 }
 function shViewShipmentDocuments(shipmentId) {
     _shCloseConfirmModal();
-    var filter = document.getElementById('shd-filter-status');
-    if (filter) filter.value = '';
-    return Promise.resolve(_shReadbackOne_(shipmentId)).then(function () {
+    return _ensureShipmentOverviewMarkup().then(function (ready) {
+        if (!ready) throw new Error('Shipment Overview could not be loaded.');
+        if (typeof showSection === 'function') showSection('shipment-overview');
+        // Explicit document navigation must reveal its record even under unrelated Overview filters.
+        ['country', 'method'].forEach(function (key) {
+            shOverviewFilterState[key] = [];
+            var mount = document.getElementById('sh-f-' + key + '-mount');
+            if (mount && mount.__kmfCtl) mount.__kmfCtl.setSelected([]);
+        });
+        historyState.dateRange = { start: null, end: null };
+        updateHistoryDateTriggerText();
+        var sku = document.querySelector('#shippinghistory-section .filter-group--sku input');
+        if (sku) sku.value = '';
+        return _shReadbackOne_(shipmentId);
+    }).then(function () {
         var list = _shActiveListEl_(), card = null;
         if (list) Array.prototype.some.call(list.querySelectorAll('.history-card'), function (item) {
             if (item.id !== 'sh-card-' + shipmentId) return false;
