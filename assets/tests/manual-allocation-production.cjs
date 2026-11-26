@@ -268,3 +268,9 @@ test('document recovery pins both workspace projection and runtime in router and
  const ctx=vm.createContext({});for(const file of ['39_document_runtime_service.gs','57_api_v1_shipment_workspace.gs','63_api_v1_system_health.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
  for(const symbol of ['DGS_PRODUCTION_PROFILE_BUILD_VERSION_','SHIP_WS_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
 });
+
+test('pre-carton-order policy stays usable while the three changed GS owners are updated',async()=>{
+ const previous={...p,policy_sha256:'bc5fbba6d72658b1dd4aa5095b75b5b53017f383671236715115069ac5c6b15c'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save','cancelShipmentDraft','document.retry'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,9);
+});

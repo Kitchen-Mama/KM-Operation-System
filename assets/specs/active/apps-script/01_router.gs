@@ -1558,7 +1558,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
-      "expected": "SC2-DTF-20261111-WH1",
+      "expected": "SC2-DTF-20261111-WH1-CS1",
       "optional": false
     },
     {
@@ -1818,7 +1818,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "bc5fbba6d72658b1dd4aa5095b75b5b53017f383671236715115069ac5c6b15c"
+  "policy_sha256": "354126dc9ac9f5af0b9e36c09619aa2cce443d08cfb932ad4e86ce799adc4e07"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

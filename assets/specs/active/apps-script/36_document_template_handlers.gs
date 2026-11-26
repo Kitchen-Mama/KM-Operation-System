@@ -280,14 +280,22 @@ return { value: raw, present: has || blankOk || (lit && dtStr_(field.default_val
 
 
 
+function dtCartonOrder_(lines) {
+return (lines || []).map(function (row, index) {
+var text = dtStr_(row.carton_no_start), start = /^\d+$/.test(text) ? Number(text) : NaN;
+return { row: row, index: index, start: start > 0 && start <= 9007199254740991 ? start : Infinity };
+}).sort(function (a, b) { return a.start === b.start ? a.index - b.index : a.start - b.start; })
+.map(function (item) { return item.row; });
+}
+
 function dtMapPlaceholders_(model, fieldRows, num) {
 var fields = (fieldRows || []).filter(function (f) { return dtBool_(f.is_active) || dtStr_(f.is_active) === ''; })
 .slice().sort(function (a, b) { return dtNum_(a.sort_order) - dtNum_(b.sort_order); });
-var values = {}, missing = [], warnings = [];
+var values = {}, missing = [], warnings = [], orderedLines = dtCartonOrder_(model.lines);
 function collectionRows(scope) {
-if (dtLc_(scope) === 'line') return (model.lines || []).slice();
+if (dtLc_(scope) === 'line') return orderedLines.slice();
 if (dtLc_(scope) === 'allocation') {
-var out = []; (model.lines || []).forEach(function (l) { (l.po_allocations || []).forEach(function (a) { out.push({ sku: l.sku, po_no: a.po_no, allocated_qty: a.allocated_qty, purchase_order_line_id: a.purchase_order_line_id }); }); }); return out;
+var out = []; orderedLines.forEach(function (l) { (l.po_allocations || []).forEach(function (a) { out.push({ sku: l.sku, po_no: a.po_no, allocated_qty: a.allocated_qty, purchase_order_line_id: a.purchase_order_line_id }); }); }); return out;
 }
 return [];
 }
@@ -298,7 +306,7 @@ fields.forEach(function (f) {
 var ftype = dtLc_(f.field_type);
 if (line(f)) { if (!keys[dtStr_(f.collection_key)]) missing.push({ placeholder: dtStr_(f.placeholder), problems: ['DOCUMENT_COLLECTION_UNDEFINED:' + dtStr_(f.collection_key)] }); return; }
 if (ftype === 'collection') {
-var rows = /expand_allocations/.test(dtLc_(f.transform_rule)) ? dtExpandAllocations_(model.lines || [], missing, dtStr_(f.placeholder)) : collectionRows(f.data_scope);
+var rows = /expand_allocations/.test(dtLc_(f.transform_rule)) ? dtExpandAllocations_(orderedLines, missing, dtStr_(f.placeholder)) : collectionRows(f.data_scope);
 var children = fields.filter(function (c) { return line(c) && dtStr_(c.collection_key) === dtStr_(f.collection_key); });
 values[dtStr_(f.placeholder)] = rows.map(function (item, i) {
 var row = {}; item = Object.assign({}, item, { __row: i + 1 });
@@ -569,4 +577,4 @@ function dtRequireKnownLayoutSc2_(ss, name, required) {
   return sheet;
 }
 
-var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111-WH1';
+var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111-WH1-CS1';

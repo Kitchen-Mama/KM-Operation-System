@@ -794,7 +794,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "36_document_template_handlers.gs",
     "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
-    "expected": "SC2-DTF-20261111-WH1",
+    "expected": "SC2-DTF-20261111-WH1-CS1",
     "owns": "exact known document template field physical layout compatibility"
   },
   {

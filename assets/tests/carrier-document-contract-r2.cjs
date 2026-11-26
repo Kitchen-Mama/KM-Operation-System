@@ -99,6 +99,14 @@ for (const key of templates.map(t => t.template_key)) {
     const r = resolve(key); assert(r.ok,JSON.stringify(r)); assert.equal(r.payload.file_name,'File_120_3');
     assert.equal(io.planWorkbook(key,r.payload.sheets,null,{check_values:true}),'');
   });
+  test(key + ' real worksheet collections follow numeric carton order, not source row order', () => {
+    const reversed=clone(snapshot);reversed.lines.reverse();const before=JSON.stringify(reversed),r=resolve(key,reversed);
+    assert(r.ok,JSON.stringify(r));
+    const collections=r.payload.sheets.flatMap(s=>Object.values(s.collections)).filter(rows=>rows.length===2);
+    assert(collections.length>0,key);
+    for(const rows of collections){assert(JSON.stringify(rows[0]).includes('Product 0'));assert(JSON.stringify(rows[1]).includes('Product 1'));}
+    assert.equal(JSON.stringify(reversed),before);
+  });
   test(key + ' fills a copy, preserves the template and expands collections', () => {
     const r = resolve(key); assert(r.ok,JSON.stringify(r)); const before = JSON.stringify(books[key].getSheets().map(s=>s.values));
     const generated = c.dfoRenderPayload_(renderIo,r.payload); assert(generated.ok,JSON.stringify(generated)); assert(generated.pdf_file_id);
