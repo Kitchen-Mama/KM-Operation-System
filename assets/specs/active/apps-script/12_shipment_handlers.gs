@@ -371,7 +371,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1';
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1';
 
 
 
@@ -2033,6 +2033,11 @@ getRange: function (row, col, nr, nc) { if (!(row > 0 && col > 0 && nr > 0 && nc
 });
 }, getId: function () { return ss.getId(); }, getSpreadsheetTimeZone: function () { return ss.getSpreadsheetTimeZone(); } };
 }
+function shipDestinationCountryOk_(warehouseCountry, shipmentCountry) {
+if (typeof csdShipmentDestinationCountryOk_ === 'function') return csdShipmentDestinationCountryOk_(warehouseCountry, shipmentCountry);
+var wc = String(warehouseCountry || '').trim().toUpperCase(), rc = String(shipmentCountry || '').trim().toUpperCase();
+return !!(wc && rc && (wc === rc || shipSetMember15e_(rc, wc)));
+}
 function shipRateDestination_(ss, v) {
 var S = function (x) { return String(x == null ? '' : x).trim(); }, wid = S(v.destination_warehouse_id || v.warehouse_id), code = S(v.warehouse_code);
 var key = [wid, code, S(v.country)].join('|');
@@ -2043,14 +2048,14 @@ var sh = ss.getSheetByName('warehouses'); if (!sh) throw new Error('RATE_DESTINA
 var s = shipmentReadSheet_(sh), rows = s.rows.slice(1).filter(function (r) { return wid ? S(r[s.col('warehouse_id')]) === wid : S(r[s.col('warehouse_code')]).toLowerCase() === code.toLowerCase(); });
 if (rows.length !== 1) throw new Error('RATE_DESTINATION_NOT_UNIQUE');
 var r = rows[0], country = S(r[s.col('country')]);
-if (country && S(v.country) && country.toLowerCase() !== S(v.country).toLowerCase() && !shipSetMember15e_(S(v.country), country)) throw new Error('RATE_DESTINATION_COUNTRY_MISMATCH');   // R15C-EU: a planning set admits its member warehouses only
+if (country && S(v.country) && !shipDestinationCountryOk_(country, v.country)) throw new Error('RATE_DESTINATION_COUNTRY_MISMATCH');
 result.country = country || S(v.country);   // R15C-EU: the warehouse's authoritative country prices, cards and times the shipment
 result.code = S(r[s.col('warehouse_code')]) || code;
 result.city = S(r[s.col('city')]); result.postal = S(r[s.col('postal_code')]);
 if ((!result.city || !result.postal) && typeof partyResolveConsignee_ === 'function' && typeof partyReadLogisticsLocations_ === 'function') {
 var p = partyResolveConsignee_(partyReadLogisticsLocations_(ss), v, null);
 if (p && p.ok) {
-if (S(p.consignee.country) && S(v.country) && S(p.consignee.country).toLowerCase() !== S(v.country).toLowerCase() && !shipSetMember15e_(S(v.country), S(p.consignee.country))) throw new Error('RATE_DESTINATION_COUNTRY_MISMATCH');   // R15C-EU
+if (S(p.consignee.country) && S(v.country) && !shipDestinationCountryOk_(p.consignee.country, v.country)) throw new Error('RATE_DESTINATION_COUNTRY_MISMATCH');
 result.city = result.city || S(p.consignee.city); result.postal = result.postal || S(p.consignee.postal_code);
 }
 }
@@ -2399,7 +2404,7 @@ function shipDestAliasN01_(ss, s, rowVals, body) {
   var tk12_ = h.indexOf('warehouse_type'); if (tk12_ === -1) return no('SHIPMENT_DESTINATION_UNVERIFIABLE', 'The warehouses table has no warehouse_type column, so the destination type cannot be checked.', { requested: out.target });   // A-DELTA1 c2 item 4
   var dt12_ = shipDestinationTypeRule_(g(r, 'warehouse_type'), false); if (!dt12_.ok) return no('SHIPMENT_' + dt12_.code, 'Warehouse ' + out.target + ' (type ' + (dt12_.type || 'blank') + ') is not a legal shipment destination: all sites may ship to a 3PL; FBA keeps its own paths; FACTORY, RETURN and unknown types are refused.', { requested: out.target, warehouse_type: dt12_.type });   // A-DELTA1 c2 item 4
   var co = col('company'), wc = g(r, 'company'); if (co && wc && co.toLowerCase() !== wc.toLowerCase()) return no('SHIPMENT_DESTINATION_COMPANY_MISMATCH', 'Warehouse ' + out.target + ' belongs to ' + wc + ', the shipment to ' + co + '.', { requested: out.target });
-  var cn = col('country'), wn = g(r, 'country'); if (cn && wn && cn.toLowerCase() !== wn.toLowerCase() && !shipSetMember15e_(cn, wn)) return no('SHIPMENT_DESTINATION_COUNTRY_MISMATCH', 'Warehouse ' + out.target + ' is in ' + wn + ', the shipment is for ' + cn + '.', { requested: out.target });
+  var cn = col('country'), wn = g(r, 'country'); if (cn && wn && !shipDestinationCountryOk_(wn, cn)) return no('SHIPMENT_DESTINATION_COUNTRY_MISMATCH', 'Warehouse ' + out.target + ' is in ' + wn + ', the shipment is for ' + cn + '.', { requested: out.target });
   return out;
 }
 function shipUpdateShipmentCore_(body) {   // INT-CAND8 r8 (CH7-4): only ever called by handleUpdateShipment_, which holds the script lock

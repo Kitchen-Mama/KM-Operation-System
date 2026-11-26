@@ -225,5 +225,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "b7f1312171e1c458337dd16653f649d231418d0bddc7c8b61e6319ead8f62ed8"
+  "policy_sha256": "21998a70bf573bb35f588b295dd0421eafb5336e12190542bc27ef954b7e0547"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

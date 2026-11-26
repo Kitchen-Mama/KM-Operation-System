@@ -782,7 +782,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "39_document_runtime_service.gs",
     "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1",
+    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1",
     "owns": "Production profile; Sandbox single-ticket recovery disabled"
   },
   {
@@ -980,7 +980,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "12_shipment_handlers.gs",
     "symbol": "SHIPMENT_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1",
     "owns": "Shipment Draft creation + reservation acquire, pre-dispatch cancellation + reservation release, and the updateShipment status allowlist. R33 adds SOURCE DOMAIN ROUTING: the sufficiency precheck, the acquire, the cancellation release and the source-warehouse change each ask whether the source warehouse is FACTORY or OVERSEAS and forward to that domain lifecycle — composed, never merged, because factory availability is derived (current - reserved) and overseas availability is stored. A cross-domain source change is REFUSED rather than guessed"
   },
   {

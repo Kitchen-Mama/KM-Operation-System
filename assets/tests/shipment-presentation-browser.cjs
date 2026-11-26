@@ -72,6 +72,18 @@ fixture.shipmentRoutes[0].planned_arrival_date='2026-11-03T16:00:00.000Z';fixtur
   await ui.evaluate(()=>{cardFixtures[0].customsTypeLabel='<img src=x onerror=alert(1)>';document.querySelector('main').innerHTML=_shRenderDbCard(shipFixture,[],'draft');});
   check(width+' DB labels are escaped as text',await ui.locator('main img[src="x"]').count()===0);
   await ui.evaluate(()=>{
+   const w={warehouseId:'WH-RESTW-PL-FBA-WRO5',warehouseCode:'WRO5',warehouseName:'Amazon FBA WRO5',warehouseType:'FBA',company:'ResTW',country:'PL',marketplace:'Amazon',isActive:true,isFactoryWarehouse:false,logisticsRegion:'EU_PL'};
+   _shReadModel.warehouses=[w,{...w,warehouseId:'WRONG-OWNER',company:'KM'},{...w,warehouseId:'INACTIVE',isActive:false},{...w,warehouseId:'FACTORY',isFactoryWarehouse:true},{...w,warehouseId:'UK-WH',country:'UK'}];
+   shipFixture={...shipFixture,company:'ResTW',country:'EU',shipmentsCustomsType:'',rateCardId:''};_shReadModel.shipments=[shipFixture];
+   document.querySelector('main').innerHTML=_shRenderDbCard(shipFixture,[],'draft');
+  });
+  await ui.locator('.history-expand-btn').click();
+  const warehouse=ui.locator('select[data-field="warehouse_id"]');
+  check(width+' EU Draft offers WRO5, excluding wrong company, inactive, factory and UK warehouses',JSON.stringify(await warehouse.locator('option').evaluateAll(ns=>ns.map(n=>n.value)))===JSON.stringify(['','WH-RESTW-PL-FBA-WRO5']));
+  await warehouse.selectOption('WH-RESTW-PL-FBA-WRO5');
+  check(width+' choosing WRO5 saves exact warehouse identity and code without changing EU scope',await ui.evaluate(()=>{const p=_shCollectExec('S');return p.warehouse_id==='WH-RESTW-PL-FBA-WRO5'&&p.warehouse_code==='WRO5'&&shipFixture.country==='EU';}));
+  await ui.screenshot({path:path.join(out,'eu-warehouse-'+width+'.png'),fullPage:true});
+  await ui.evaluate(()=>{
    document.body.insertAdjacentHTML('beforeend','<select id="spStatusFilter"><option value="all">All</option><option value="rejected">Rejected</option></select><div id="shippingPlanCards"></div>');
    window.rejectedPlan={shippingPlanId:'P-REJECT',status:'draft',planVersion:2,company:'KM',country:'US',marketplace:'Shopify',rejectedReason:'Revise quantities',updatedAt:'2026-11-26 12:13:14',raw:{updated_at:'2026-11-26 12:13:14',rejected_reason:'Revise quantities',note:'[REJECTED v2] Revise quantities'}};
    window.rejectedLines=[{shippingPlanId:'P-REJECT',shippingPlanLineId:'PR-L1',sku:'SKU1',approvedQty:40,cartonQty:1,unitsPerCarton:40,raw:{updated_at:'2026-11-26 12:13:14'}}];

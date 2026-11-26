@@ -2546,7 +2546,8 @@ try { m = (typeof KMCID !== 'undefined' && KMCID && typeof KMCID.planningSetMemb
 if (!m) return { country: site, set: false, unresolved: '' };
 var wid = dgsStr_(row.destination_warehouse_id), w = wid ? sfoReadTable_(ss, 'warehouses', []).filter(function (r) { return dgsLc_(r.warehouse_id) === dgsLc_(wid); }) : [];
 var c = w.length === 1 ? dgsUc_(w[0].country) : '';
-if (c && c !== site && m.indexOf(c) !== -1) return { country: c, set: true, unresolved: '' };
+var destinationOk = typeof csdShipmentDestinationCountryOk_ === 'function' ? csdShipmentDestinationCountryOk_(c, site) : m.indexOf(c) !== -1;
+if (c && c !== site && destinationOk) return { country: c, set: true, unresolved: '' };
 return { country: site, set: true, unresolved: !wid ? 'DESTINATION_WAREHOUSE_BLANK' : w.length !== 1 ? (w.length ? 'DESTINATION_WAREHOUSE_DUPLICATED' : 'DESTINATION_WAREHOUSE_NOT_FOUND') : !c ? 'DESTINATION_WAREHOUSE_COUNTRY_BLANK' : 'DESTINATION_COUNTRY_NOT_A_SET_MEMBER:' + c };
 }
 // R15G-EU-DOCS-39 (sbx-r15g-eu): patched
@@ -2599,4 +2600,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1';

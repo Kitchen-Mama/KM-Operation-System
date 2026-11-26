@@ -280,3 +280,9 @@ test('pre-presentation policy keeps current shipping reads and commands usable d
  for(const action of ['shipment.workspace.get','updateShippingPlanStatus','shippingPlan.mixedCartons.save','cancelShipmentDraft','document.retry'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,6);
 });
+
+test('pre-EU-destination policy retains current operations until destination GS owners are updated',async()=>{
+ const previous={...p,policy_sha256:'b7f1312171e1c458337dd16653f649d231418d0bddc7c8b61e6319ead8f62ed8'},g=guard(previous);
+ for(const action of ['shipment.workspace.get','updateShipment','shipment.selectRateCard','document.retry','cancelShipmentDraft','gapJob.status.get'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,7);
+});

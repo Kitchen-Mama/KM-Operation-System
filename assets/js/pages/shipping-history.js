@@ -1718,7 +1718,7 @@ function _shRenderDbCard(s, planLines, mode) {
         // column never silently drops every candidate. Never widen scope to another company/country (§22.0K).
         function scoped(w) {
             if (company && w.company && !eq(w.company, company)) return false;
-            if (country && w.country && !eq(w.country, country) && !_shSetMember15e_(country, w.country)) return false;   // R15C-EU: a planning set offers its members
+            if (country && w.country && !_shDestinationCountryOk_(w.country, country)) return false;
             return true;
         }
         // §22.0(F) FBA: warehouse_type=FBA AND warehouse marketplace='Amazon' (the operator marketplace,
@@ -1760,7 +1760,7 @@ function _shRenderDbCard(s, planLines, mode) {
         if (held) {
             var cw = all.filter(function(w) { return eq(w.warehouseId, curId); })[0];
             var why = !cw ? '倉庫主檔找不到這個倉庫' : _shLogicalPlatformWh_(cw.warehouseId) ? 'WFS 邏輯總倉不是實際收貨地址，請選這一票實際的 WFS 倉' : cw.isActive === false ? '倉庫未啟用' : cw.isFactoryWarehouse === true ? '工廠倉不能當目的地'
-                : (company && cw.company && !eq(cw.company, company)) ? '倉庫屬於其他公司' : (country && cw.country && !eq(cw.country, country) && !_shSetMember15e_(country, cw.country)) ? '倉庫國家與 Shipment 不同'
+                : (company && cw.company && !eq(cw.company, company)) ? '倉庫屬於其他公司' : (country && cw.country && !_shDestinationCountryOk_(cw.country, country)) ? '倉庫國家與 Shipment 不同'
                 : '此類型的倉庫不能在這裡選';
             note = '原本儲存的目的倉 ' + (curCode || curId) + ' 目前不能選：' + why + '。儲存不會改動它；要 Confirm 前請選一個可選的倉庫。';
         } else if (!curId && curCode) {
@@ -4493,6 +4493,14 @@ function _shHoldDropOwn18_(store, sid) { var env = _shHoldEnv18_(), n = 0; if (!
 // R15F2-P1-CONFIRM-SH (sbx-r15f2 step 28): patched
 
 // R15C-EU-SH (sbx-r15c-eu): patched
+// Shipping coverage mirrors 22_ csdShipmentDestinationCountryOk_, not the sales/inventory planning set.
+function _shDestinationCountryOk_(warehouseCountry, shipmentCountry) {
+    var wc = String(warehouseCountry || '').trim().toUpperCase(), rc = String(shipmentCountry || '').trim().toUpperCase();
+    if (!wc || !rc) return false;
+    if (wc === rc) return true;
+    if (rc === 'EU') return 'AT BE BG HR CY CZ DK EE FI FR DE GR HU IE IT LV LT LU MT NL PL PT RO SK SI ES SE'.split(' ').indexOf(wc) !== -1;
+    return _shSetMember15e_(rc, wc);
+}
 function _shSetMember15e_(setCode, c) {
     try {
         var cc = String(c == null ? '' : c).trim().toUpperCase(), K = window.KM && window.KM.countryIdentity;
