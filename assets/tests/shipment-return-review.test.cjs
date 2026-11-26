@@ -32,6 +32,39 @@ test('cancel refuses a changed review plan before releasing any reservation',()=
  assert.equal(r.success,false);assert.equal(r.code,'CANCEL_PLAN_REVIEW_UNPROVEN');assert.equal(r.zero_write,true);assert.equal(business(h),before);
 });
 
+test('cancelled shipment history does not prevent Reject -> add/remove/quantity Save -> resubmit -> fresh shipment',()=>{
+ const h=world(),c=h.c;
+ // Restore the real ownership gate: the older packing fixture replaces it with an admission stub.
+ vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/11_shipping_plan_handlers.gs','utf8'),c);
+ vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/22_shipment_dispatch_handlers.gs','utf8'),c);
+ vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/32_shipment_line_allocation_handlers.gs','utf8'),c);
+ h.sheet('shipment_line_allocations',c.SHIPMENT_LINE_ALLOCATIONS_HEADERS_,[]);
+ c.fsgGatePlanTransition_=()=>({proceed:true,audit:null});
+ let held=false;const lock={tryLock:()=>{held=true;return true;},hasLock:()=>held,releaseLock:()=>{held=false;}};c.LockService={getScriptLock:()=>lock};
+ assert.equal(h.cancel().success,true);
+ const transition=(kind,extra={})=>JSON.parse(c.handleUpdateShippingPlanStatus_({shipping_plan_id:'P1',transition:kind,expected_updated_at:h.rows('shipping_plans')[0].updated_at,actor:'fixture',...extra}).getContent());
+ assert.equal(transition('reject',{rejected_reason:'Add another SKU'}).success,true);
+ h.sheet('sku_details',h.tables.sku_details.grid[0],h.rows('sku_details').concat({...h.rows('sku_details')[0],sku:'C'}));
+ h.sheet('marketplace_skus',h.tables.marketplace_skus.grid[0],h.rows('marketplace_skus').concat({...h.rows('marketplace_skus')[0],sku:'C'}));
+ const stock=h.rows('factory_stock');h.sheet('factory_stock',h.tables.factory_stock.grid[0],stock.concat({...stock[0],factory_stock_id:'F-C',sku:'C',fac_reserved_stock:0}));
+ c.KMFSG=require('../js/core/supply-planning-factory-stock-guard');
+ vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/71_api_v1_factory_stock_guard.gs','utf8'),c);
+ c.gapReadObjects_=(_ss,n)=>h.rows(n);
+ h.sheet('warehouses',['warehouse_id','company','is_factory_warehouse','warehouse_type','is_active'],[{warehouse_id:'FACTORY-A',company:'KM',is_factory_warehouse:true,warehouse_type:'factory',is_active:true}]);
+ h.sheet('shipping_allocation_drafts',['allocation_draft_id']);h.sheet('shipping_allocation_draft_lines',['allocation_draft_line_id']);h.sheet('marketplaces',['marketplace_id']);
+ const lines=h.rows('shipping_plan_lines'),request={shipping_plan_id:'P1',expected_plan_updated_at:h.rows('shipping_plans')[0].updated_at,request_id:'WDL-CANCEL-REJECT-ADD-0001',line_edits:[
+  {op:'update',shipping_plan_line_id:'A',quantity:60,expected_updated_at:lines.find(l=>l.sku==='A').updated_at},
+  {op:'remove',shipping_plan_line_id:'B',expected_updated_at:lines.find(l=>l.sku==='B').updated_at},{op:'add',sku:'C',quantity:30}]};
+ const saved=h.call(request);assert.equal(saved.success,true,JSON.stringify(saved));
+ assert.deepEqual(h.rows('shipping_plan_lines').map(l=>[l.sku,l.approved_qty]),[['A',60],['C',30]]);
+ const before=business(h);assert.equal(h.call(request).replayed,true);assert.equal(business(h),before);
+ assert.equal(transition('submit').success,true);assert.equal(transition('approve').success,true);
+ const fresh=h.rows('shipments').find(s=>s.shipment_id!==h.sid);assert(fresh);assert.equal(fresh.status,'draft');
+ assert.deepEqual(h.rows('shipment_lines').filter(l=>l.shipment_id===fresh.shipment_id).map(l=>[l.sku,l.shipment_qty]),[['A',60],['C',30]]);
+ assert.deepEqual(h.rows('factory_stock').map(s=>[s.sku,s.fac_reserved_stock]),[['A',60],['B',0],['C',30]]);
+ assert.equal(h.rows('shipments').find(s=>s.shipment_id===h.sid).status,'cancelled');
+});
+
 test('cancel, reject, resubmit and approve creates fresh identities; approval and old cancel replays are harmless',()=>{
  const h=world(),c=h.c,old={...h.rows('shipments')[0]};
  // GAS retains one acquired script lock in an execution; nested tryLock has no effect.

@@ -1583,7 +1583,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "WDL_BUILD_VERSION_",
-      "expected": "WDL1-AUTO-REPRICE-20261126-V2",
+      "expected": "WDL1-AUTO-REPRICE-20261126-V2-CANCEL1",
       "optional": false
     },
     {
@@ -1818,7 +1818,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "f1e0bdd348032e242d335b2e4496e573734672849237069cb23fff0f256b8762"
+  "policy_sha256": "8cbae3c11b6e6444e65c90cfc1f14097a222969e71e0151f9e5d953c9b566f08"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

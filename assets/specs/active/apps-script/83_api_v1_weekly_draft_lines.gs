@@ -1,5 +1,5 @@
 // Draft-only SKU edits. The existing ScriptLock/import journal owns the command.
-var WDL_BUILD_VERSION_ = 'WDL1-AUTO-REPRICE-20261126-V2';
+var WDL_BUILD_VERSION_ = 'WDL1-AUTO-REPRICE-20261126-V2-CANCEL1';
 var WDL_SCHEMA_ = 'WEEKLY-DRAFT-LINES-1';
 function wdlNo_(code, text) { return jsonResponse_({ success: false, code: code, zero_write: true, error: text || code }); }
 function wdlVersion_(cell, token) { var g=editP1Gate15f2_(cell,token);if(g)pfiFail_(g.code);if(editTokSame_(cell,token)!=='SAME')pfiFail_('EDIT_CONFLICT'); }
@@ -40,7 +40,8 @@ function handleWeeklyDraftLines_(body) {
   if (!imbSheets_(imbDb_())) return wdlNo_('IMPORT_SCHEMA_NOT_PROVISIONED');
   var validation = JSON.parse(handleImportValidate_(req).getContent());
   req.preview_digest = validation.preview_digest;
-  if (validation.success === false) return wdlNo_('WEEKLY_LINES_VALIDATION_FAILED', JSON.stringify(validation));
+  if (validation.success === false || (validation.valid === false && !validation.receipt)) return jsonResponse_({success:false,code:'WEEKLY_LINES_VALIDATION_FAILED',zero_write:true,writes_performed:0,
+    error:'Draft SKU changes were not saved. Review the validation issues.',issues:validation.issues||[]});
   var result = JSON.parse(handleImportCommit_(req).getContent());
   if (result.success) { result.data = result.result; result.data.request_id = req.import_batch_id; }
   if (result.code === 'IMPORT_OUTCOME_UNKNOWN' || result.code === 'IMPORT_BATCH_OUTCOME_UNKNOWN') result.code = 'WEEKLY_LINES_OUTCOME_UNKNOWN';
@@ -84,6 +85,33 @@ function wdlAttachNewSiteSnapshots_(ss,p,edits) {
     sadAttachSiteSnapshot_(ss,[{header:p}],added,'');
   }catch(e){added.forEach(function(l){['snapshot_current_stock','snapshot_avg_sales_per_day','snapshot_days_of_supply'].forEach(function(k){l[k]='';});l.snapshot_avg_sales_warning='SITE_SNAPSHOT_UNAVAILABLE';});}
 }
+function wdlCheckPlanOwnership_(ss, p) {
+  var eligibility=spApprovedCancelEligibility_(ss,p.shipping_plan_id,p.transferred_shipment_id,p.transferred_to_shipment_at);
+  if(eligibility.ok)return;
+  if(eligibility.code!=='SHIPMENT_EXISTS_FOR_PLAN')pfiFail_(eligibility.code,eligibility.message);
+  // Cancellation history is retained, but must no longer own a reservation or an executable allocation.
+  var ships=pmiTable_(ss,'shipments'),pid=pmiS_(p.shipping_plan_id),refs=['shipping_plan_id','source_shipping_plan_id','plan_id'];
+  if(!ships||['shipment_id','status','source_warehouse_id','cancelled_at','cancelled_by'].some(function(k){return ships.col(k)<0;}))pfiFail_('WEEKLY_CANCEL_STATE_UNPROVEN');
+  var matches=ships.rows.filter(function(s){return refs.some(function(k){return pmiS_(s[k])===pid;});});
+  if(!matches.length)pfiFail_('WEEKLY_CANCEL_STATE_UNPROVEN');
+  matches.forEach(function(s){
+    var sid=pmiS_(s.shipment_id),source=pmiS_(s.source_warehouse_id);
+    if(pmiS_(s.status).toLowerCase()!=='cancelled')pfiFail_('SHIPMENT_EXISTS_FOR_PLAN','A live Shipment still owns this Plan. Cancel it before editing SKUs.');
+    if(!sid||!source||!pmiS_(s.cancelled_at)||!pmiS_(s.cancelled_by)||ships.rows.filter(function(x){return pmiS_(x.shipment_id)===sid;}).length!==1)pfiFail_('WEEKLY_CANCEL_STATE_UNPROVEN');
+    if(csdMovementExists_(ss,sid)||csdEventExists_(ss,sid)||csdCountRowsFor_(ss,'shipment_routes','shipment_id',sid)>0)pfiFail_('WEEKLY_CANCEL_DISPATCH_EVIDENCE');
+    var books=shipmentCancelBooks_(ss,sid,source);if(books.verdict!=='RECONCILED')pfiFail_('WEEKLY_CANCEL_RESERVATION_UNPROVEN','Cancelled shipment reservation books require review.');
+    var domain=shipmentSourceDomain_(ss,source);
+    [[SHIPMENT_DOMAIN_FACTORY_,'factory_stock_movements'],[SHIPMENT_DOMAIN_OVERSEAS_,'overseas_inventory_movements']].forEach(function(d){
+      var mov=ss.getSheetByName(d[1]);if(!mov){if(d[0]===domain)pfiFail_('WEEKLY_CANCEL_RESERVATION_UNPROVEN');return;}
+      var held=shipmentDomainHeld_(d[0],{movSheet:mov},sid);
+      if(Object.keys(held).some(function(k){return !isFinite(Number(held[k]))||Number(held[k])!==0;}))pfiFail_('WEEKLY_CANCEL_RESERVATION_UNRELEASED');
+    });
+    if(!ss.getSheetByName('shipment_line_allocations'))pfiFail_('WEEKLY_CANCEL_ALLOCATION_UNPROVEN');
+    var allocations=shipCancelAllocPrepare_(ss,sid);
+    if(allocations.refuse)pfiFail_('WEEKLY_CANCEL_ALLOCATION_UNPROVEN','Cancelled shipment allocations require review ('+allocations.refuse.code+').');
+    if(allocations.rows.length)pfiFail_('WEEKLY_CANCEL_ALLOCATION_UNRELEASED');
+  });
+}
 function wdlValidate_(ss, req) {
   var issues=[];
   try {
@@ -94,7 +122,7 @@ function wdlValidate_(ss, req) {
     if(!pmiS_(req.scope.expected_plan_updated_at))pfiFail_('EDIT_TOKEN_REQUIRED');
     wdlVersion_(p.updated_at,req.scope.expected_plan_updated_at);
     var held=wdlGuard_(ss,pid,p.note);if(held)pfiFail_(held);
-    var eligibility=spApprovedCancelEligibility_(ss,pid,p.transferred_shipment_id,p.transferred_to_shipment_at);if(!eligibility.ok)pfiFail_(eligibility.code);
+    wdlCheckPlanOwnership_(ss,p);
     var lines=t.l.rows.filter(function(l){return pmiS_(l.shipping_plan_id)===pid;}), edits=[], seen={}, remaining={}, selectable=wdlEligibleSkus_(ss,p), logi=shippingPlanSkuLogisticsMap_(ss);
     lines.forEach(function(l){if(remaining[pmiS_(l.sku)])pfiFail_('WEEKLY_EXISTING_SKU_DUPLICATE');remaining[pmiS_(l.sku)]=l;});
     (req.sheets.Lines||[]).forEach(function(r){

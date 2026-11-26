@@ -292,3 +292,9 @@ test('pre-no-rate policy remains usable during manual GS rollout without widenin
  for(const action of ['shipment.workspace.get','updateShipment','shipment.rateCardOptions','shipment.selectRateCard','document.retry','cancelShipmentDraft','gapJob.status.get'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,8);
 });
+
+test('pre-cancelled-plan-edit policy remains usable while the WDL owner is deployed manually',async()=>{
+ const previous={...p,policy_sha256:'f1e0bdd348032e242d335b2e4496e573734672849237069cb23fff0f256b8762'},g=guard(previous);
+ for(const action of ['shipment.workspace.get','updateShippingPlanLineQty','shippingPlan.mixedCartons.save','updateShipment','shipment.rateCardOptions','document.retry','gapJob.status.get'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,8);
+});

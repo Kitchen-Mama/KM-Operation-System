@@ -1744,7 +1744,7 @@ function spDbEditSkus(planId) {
     var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); }).sort(_spSkuOrder_);
     var values = {}, card = document.getElementById('sp-card-' + planId);
     if (card) card.querySelectorAll('input[data-line-id]').forEach(function (i) { values[i.getAttribute('data-line-id')] = i.value; });
-    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=promo-ratio-20261126-v1').then(function (loaded) {
+    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=cancelled-plan-sku-edit-20261126-v1').then(function (loaded) {
         if (!loaded || !window.KM.weeklyDraftEditor) throw Error('SKU editor could not be loaded.');
         return window.KM.weeklyDraftEditor.open({ plan: plan, token: token, lines: lines, values: values,
             save: function (body) {

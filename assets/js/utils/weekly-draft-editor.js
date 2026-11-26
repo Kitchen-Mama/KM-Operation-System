@@ -47,7 +47,11 @@
         rows.forEach(function(r){r.quantity=Number(r.quantity)+(totals[r.sku]||0)-((previous||{})[r.sku]||0);if(r.autoAdded&&r.quantity===0)r.removed=true;});return totals;
     }
     function packingPayload(groups){return groups.map(function(g){return {id:g.id,representative_sku:g.representative_sku,members:g.members.map(function(m){return {sku:m.sku,quantity:m.quantity};})};});}
-    function error(r) { var e = r && r.error, issues=(r&&r.issues)||(e&&e.details&&e.details.issues)||[], specific=issues.find(function(i){return /^(WEEKLY_STOCK_|MIXED_)/.test(s(i.code));}); return { code:s((e && e.code) || (r && r.code) || 'NO_RESULT'), message:s(specific&&(specific.message+' ['+specific.code+']') || (e && e.message) || (typeof e === 'string' ? e : '') || 'No confirmed result.') }; }
+    function error(r) {
+        var e=r&&r.error,issues=(r&&r.issues)||(e&&e.details&&e.details.issues)||[];
+        var detail=issues.slice(0,5).map(function(i){return (i.sku?s(i.sku)+': ':'')+s(i.message||i.code)+(i.code?' ['+s(i.code)+']':'');}).join('\n');
+        return {code:s((e&&e.code)||(r&&r.code)||'NO_RESULT'),message:detail||s((e&&e.message)||(typeof e==='string'?e:'')||'No confirmed result.')};
+    }
     function freezeOnError(code) { return !/^(IMPORT_VALIDATION_FAILED|WEEKLY_LINES_VALIDATION_FAILED|IMPORT_REQUEST_INVALID|IMPORT_PREVIEW_STALE|IMPORT_FAILED_ROLLED_BACK|LOCK_UNAVAILABLE|IN_FLIGHT)$/.test(code); }
     function close() {
         if (!active || active.busy) return;
