@@ -823,7 +823,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "83_api_v1_weekly_draft_lines.gs",
     "symbol": "WDL_BUILD_VERSION_",
-    "expected": "WDL1-MIXED-CARTONS-20261125-V1",
+    "expected": "WDL1-AUTO-REPRICE-20261126-V2",
     "owns": "Draft-only quantity/add/remove SKU transaction; Pending Approval read-only"
   },
   {

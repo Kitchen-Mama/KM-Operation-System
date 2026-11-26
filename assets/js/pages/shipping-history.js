@@ -1528,14 +1528,17 @@ function _shOverviewLogistics_(s, lines, details) {
     });
 }
 
+function _shSkuOrder_(a,b) { return String(a.sku||'').localeCompare(String(b.sku||''),'en',{numeric:true,sensitivity:'base'}); }
 function _shPackingRows_(lines) {
     var core=window.KM.mixedCartons,records=core.uiRecords(lines,'shipment'),p=core.layout(records),number=0;
     function n(v,d){return v==null||v===''?'--':Number(v).toFixed(d);}
-    return p.blocks.map(function(b){if(b.mixed)number++;
-        var portions=core.portions(records,'SHIPDETAIL').filter(function(r){return r.groupId===b.id;});
+    var blocks=p.blocks.slice().sort(function(a,b){return _shSkuOrder_(a.rows.slice().sort(_shSkuOrder_)[0],b.rows.slice().sort(_shSkuOrder_)[0]);});
+    return blocks.map(function(b){if(b.mixed)number++;
+        var portions=core.portions(records,'SHIPDETAIL').filter(function(r){return r.groupId===b.id;}).sort(_shSkuOrder_);
+        var cartonOwner=portions.find(function(r){return r.cartons>0;})||portions[0];
         return portions.map(function(r,i){var span=' rowspan="'+portions.length+'" style="text-align:right;vertical-align:middle;"';
             return '<tr'+(b.mixed?' class="sp-mixed-row"':'')+'><td>'+(i===0?'<small class="sp-packing-label">'+(b.mixed?'Mixed '+number:'Standard')+'</small>':'')+_shEsc(r.sku)+'</td><td style="text-align:right">'+r.quantity+'</td>'+
-                (i===0?'<td'+span+'>'+b.cartons+'</td><td'+span+'>'+n(portions[0].cbm,3)+'</td><td'+span+'>'+n(portions[0].grossKg,2)+'</td>':'')+
+                (i===0?'<td'+span+'>'+b.cartons+'</td><td'+span+'>'+n(cartonOwner.cbm,3)+'</td><td'+span+'>'+n(cartonOwner.grossKg,2)+'</td>':'')+
                 '<td style="text-align:right">'+n(r.netKg,2)+'</td>'+(i===0?'<td'+span+'>'+b.start+'</td><td'+span+'>'+b.end+'</td>':'')+'</tr>';
         }).join('');
     }).join('');
@@ -1553,7 +1556,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // Columns: SKU / Qty / Cartons / CBM (line total) / Gross Wt / Net Wt / Carton No. Start / End.
     var hasPacking=planLines.some(function(l){return String((l.raw||l).note).indexOf('[KMPACK1:')>=0;});
     var metricLines = mode === 'overview' && !hasPacking ? _shOverviewLogistics_(s, planLines, _shReadModel && _shReadModel.skuLogistics) : planLines;
-    var displayLinesCp2 = _shSkuGroupsCp2_(metricLines, fieldsEditable);
+    var displayLinesCp2 = _shSkuGroupsCp2_(metricLines, fieldsEditable).slice().sort(_shSkuOrder_);
     var rows = displayLinesCp2.map(function(l) {
         function n(v, digits) { return (v === '' || v == null) ? '--' : digits != null && mode === 'overview' ? Number(v).toFixed(digits) : v; }
         function cartonCell(which, val) {

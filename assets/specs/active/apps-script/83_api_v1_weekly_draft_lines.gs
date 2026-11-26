@@ -1,5 +1,5 @@
 // Draft-only SKU edits. The existing ScriptLock/import journal owns the command.
-var WDL_BUILD_VERSION_ = 'WDL1-MIXED-CARTONS-20261125-V1';
+var WDL_BUILD_VERSION_ = 'WDL1-AUTO-REPRICE-20261126-V2';
 var WDL_SCHEMA_ = 'WEEKLY-DRAFT-LINES-1';
 function wdlNo_(code, text) { return jsonResponse_({ success: false, code: code, zero_write: true, error: text || code }); }
 function wdlVersion_(cell, token) { var g=editP1Gate15f2_(cell,token);if(g)pfiFail_(g.code);if(editTokSame_(cell,token)!=='SAME')pfiFail_('EDIT_CONFLICT'); }
@@ -134,6 +134,15 @@ function wdlValidate_(ss, req) {
 function wdlSnapshot_(ss){return ['shipping_plans','shipping_plan_lines'].map(function(n){return[n,ss.getSheetByName(n).getDataRange().getValues()];});}
 function wdlApply_(ss,plan,ctx){
   var t=wdlTables_(ss),J=ctx.journal,now=plan.stamp,ph=t.p.headers,lh=t.l.headers;
+  if (typeof spRcPricingSnapshot_ !== 'function') pfiFail_('DEPLOYMENT_HALF_SYNCED');
+  if (String(plan.old.carrier_rate_type || '').indexOf(SP_RC_PENDING_1G_) === 0) pfiFail_('RATE_CARD_SELECTION_PENDING');
+  var proposed = {};
+  t.l.rows.filter(function(l){return pmiS_(l.shipping_plan_id)===plan.pid;}).forEach(function(l){proposed[l.shipping_plan_line_id]=l;});
+  plan.edits.forEach(function(e){var id=e.line?e.line.shipping_plan_line_id:e.obj.shipping_plan_line_id;
+    if(e.op==='remove')delete proposed[id];else proposed[id]=e.obj||Object.assign({},e.line,e.values);});
+  // Price the final packing inside the import lock, before the first journalled mutation.
+  var pricing=spRcPricingSnapshot_(ss,plan.old,Object.keys(proposed).map(function(id){return proposed[id];}),shippingPlanToday_());
+  Object.keys(pricing.fields).forEach(function(k){if(ph.indexOf(k)<0)pfiFail_('SHIPPING_PLAN_COLUMNS_MISSING',k);});
   wdlAttachNewSiteSnapshots_(ss,plan.old,plan.edits);
   function setP(k,v){var c=ph.indexOf(k);if(c>=0)J.setCell(t.p.sheet,plan.plan_row,c,v);}
   setP('note','[WDL1-PENDING:'+ctx.batch_id+']\n'+pmiS_(plan.old.note));setP('updated_at',now);
@@ -147,14 +156,19 @@ function wdlApply_(ss,plan,ctx){
     J.deleteRow(t.l.sheet,e.line.__r);J.change({entity_table:'shipping_plan_lines',entity_id:plan.pid,line_id:e.line.shipping_plan_line_id,field:'removed_line',before:JSON.stringify(e.line),after:'REMOVED'});
   });
   plan.edits.filter(function(e){return e.op==='add';}).forEach(function(e){var o=Object.assign({},e.obj);o.created_at=now;o.updated_at=now;J.appendRow(t.l.sheet,lh,o);J.change({entity_table:'shipping_plan_lines',entity_id:plan.pid,line_id:o.shipping_plan_line_id,field:'added_line',before:'',after:JSON.stringify(o)});});
-  ['carrier_unit_rate','carrier_rate_type','import_duty_treatment','estimated_freight_cost','estimated_duty','estimated_duty_currency','estimated_customs_fee','estimated_total_cost'].forEach(function(k){setP(k,'');});
+  Object.keys(pricing.fields).forEach(function(k){setP(k,pricing.fields[k]);
+    J.change({entity_table:'shipping_plans',entity_id:plan.pid,field:k,before:plan.old[k],after:pricing.fields[k]});});
   setP('updated_by',ctx.actor);SpreadsheetApp.flush();
   var fresh=wdlTables_(ss),rows=fresh.l.rows.filter(function(l){return pmiS_(l.shipping_plan_id)===plan.pid;});
   plan.edits.forEach(function(e){var id=e.line?e.line.shipping_plan_line_id:e.obj.shipping_plan_line_id,h=rows.filter(function(l){return l.shipping_plan_line_id===id;});
     if(e.op==='remove'){if(h.length)pfiFail_('WEEKLY_EDIT_READBACK_FAILED');}else{var q=e.op==='add'?e.obj.approved_qty:e.values.approved_qty;if(h.length!==1||Number(h[0].approved_qty)!==q)pfiFail_('WEEKLY_EDIT_READBACK_FAILED');
       var expected=e.obj||e.values;Object.keys(expected).forEach(function(k){if(['note','plan_carton_qty','cbm','gross_weight','net_weight'].indexOf(k)>=0&&String(h[0][k])!==String(expected[k]))pfiFail_('WEEKLY_EDIT_READBACK_FAILED',k);});}});
+  var saved=fresh.p.rows.filter(function(p){return pmiS_(p.shipping_plan_id)===plan.pid;});
+  if(saved.length!==1||Object.keys(pricing.fields).some(function(k){return String(saved[0][k])!==String(pricing.fields[k]);}))pfiFail_('WEEKLY_PRICING_READBACK_FAILED');
   setP('note',plan.note);SpreadsheetApp.flush();
-  return {result:{shipping_plan_id:plan.pid,updated_at:editTokWritten15f2_(now),edit_count:plan.edits.length,repricing_required:true,readback_verified:true}};
+  return {result:{shipping_plan_id:plan.pid,updated_at:editTokWritten15f2_(now),edit_count:plan.edits.length,
+    pricing_recalculated:true,priced:pricing.priced,repricing_required:!pricing.priced,unpriced_reason:pricing.unpriced_reason,
+    rate_card_id:pricing.rate_card_id,readback_verified:true}};
 }
 function wdlVerifyRollback_(ss,plan){return JSON.stringify(wdlSnapshot_(ss))===JSON.stringify(plan.rollback);}
 function wdlMarkUnknown_(ss,plan,req){var t=wdlTables_(ss);t.p.sheet.getRange(plan.plan_row,t.p.col('note')+1).setValue('[WDL1-PENDING:'+req.id+']\n'+pmiS_(plan.old.note));}

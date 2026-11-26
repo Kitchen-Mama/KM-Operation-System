@@ -241,3 +241,9 @@ test('pre-append deployed policy retains reads and existing commands during this
  for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,7);
 });
+
+test('pre-repricing policy keeps existing commands usable until the manual GS update',async()=>{
+ const previous={...p,policy_sha256:'6d4a8af2ba5379008716e21b10acd3e8044c4f3b95120936a25450fb2fcbfa64'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,7);
+});

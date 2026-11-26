@@ -49,12 +49,14 @@ function check(label, value) { assert(value, label); checks++; console.log('PASS
                 KM.DB.selectShippingPlanRateCardWithCustoms = async (...args) => { writes.push(args); return { success: true, ...args[1], priced: false }; };
                 // Exercise the real Save validation and registered writer, isolate unrelated command/readback UI.
                 _spRunCommand_ = (key, invoke) => Promise.resolve().then(invoke);
-                const lines = [30, 20].map((qty, i) => ({ shippingPlanLineId: 'L' + i, shippingPlanId: 'P', sku: 'SKU' + i,
+                const lines = [30, 20].map((qty, i) => ({ shippingPlanLineId: 'L' + i, shippingPlanId: 'P', sku: ['SKU10','SKU2'][i],
                     approvedQty: qty, cartonQty: qty / 10, unitsPerCarton: 10, snapshotCurrentStock: 100, snapshotAvgSalesPerDay: 2 }));
                 _spLastModel = { source: 'workspace', plans: [fixturePlan], lines };
                 _spRenderDbSection('shippingPlanCards', [fixturePlan], 'draft', { P: lines }, '', null);
             });
             const summary = page.locator('#sp-card-P .sp-card-summary');
+            check(width + ' ordinary shipping rows use natural alphanumeric SKU order',
+                (await page.locator('#sp-card-P .sp-sku-table tbody tr td:first-child').allTextContents()).join(',') === 'SKU2,SKU10');
             const notesChecks = await page.evaluate(() => {
                 const receipt = '[WDL1] ' + JSON.stringify({ request: 'WDL-1', edits: [{ op: 'add', sku: 'SKU1', quantity: 10 }] });
                 const packing = '[KMPACK1:' + encodeURIComponent(JSON.stringify({ version: 'MIXED_CARTONS_V1', ref: 'L1', groups: [] })) + ']';

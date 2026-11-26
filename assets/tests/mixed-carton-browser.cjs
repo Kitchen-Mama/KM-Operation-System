@@ -37,7 +37,7 @@ const read=p=>fs.readFileSync(p,'utf8'),out=path.resolve('output/mixed-cartons-2
   const saved=await page.evaluate(()=>({body:saved[0],calls:saved.length,reads}));assert.equal(saved.calls,1);assert.equal(saved.reads,1);assert.equal(saved.body.mixed_cartons.length,2);assert.equal(saved.body.packing_version,'MIXED_CARTONS_V1');assert.equal(saved.body.line_edits.length,2);assertions+=5;
   // Render the real Plan and Shipment row functions using persisted canonical line facts.
   for(const [file,name]of[['shipping-plan.js','_spPackingRows_'],['shipping-history.js','_shPackingRows_']]){
-   await page.addScriptTag({content:extract(read('assets/js/pages/'+file),n=>n===name,()=>false).map(p=>p.text).join('\n')});
+   await page.addScriptTag({content:extract(read('assets/js/pages/'+file),n=>n===name||n===(file==='shipping-plan.js'?'_spSkuOrder_':'_shSkuOrder_'),()=>false).map(p=>p.text).join('\n')});
   }
   await page.evaluate(()=>{
    window._spEsc=window._shEsc=v=>String(v).replace(/[&<>"']/g,'');window._spLineDisplay=()=>({currentStock:100,avgSales:2,daysOfSupply:50});
@@ -50,6 +50,19 @@ const read=p=>fs.readFileSync(p,'utf8'),out=path.resolve('output/mixed-cartons-2
   await page.evaluate(()=>{document.querySelector('#details').innerHTML='<thead><tr><th>SKU</th><th>Qty</th><th>Cartons</th><th>CBM</th><th>Gross</th><th>Net</th><th>Start</th><th>End</th></tr></thead><tbody>'+_shPackingRows_(uiLines)+'</tbody>';});
   assert.equal(await page.locator('#details tbody tr').count(),5);assert.equal(await page.locator('#details input').count(),0);assertions+=2;
   await page.screenshot({path:path.join(out,'shipment-'+viewport.width+'.png'),fullPage:true});
+  const sorting=await page.evaluate(()=>{
+   const core=KM.mixedCartons,packed=core.annotate(['Z1','B1','A10','A2'].map(id=>({id,sku:id,quantity:10,unitsPerCarton:10,itemKg:.2,series:'S1',box:{length:50,width:40,height:30,unit:'cm',grossKg:10}})),
+    [{id:'SORTED-BOX',representativeId:'B1',members:[{lineId:'B1',quantity:10},{lineId:'A10',quantity:10}]}]);
+   const lines=packed.map(l=>({shippingPlanLineId:l.id,shipmentLineId:'SH-'+l.id,sku:l.sku,approvedQty:l.quantity,qty:l.quantity,cartonQty:l.ownedCartons,cbm:l.cbm,shipmentCartonCbm:l.cbm,grossWeight:l.grossKg,netWeight:l.netKg,note:l.note}));
+   const before=JSON.stringify(lines),table=document.querySelector('#details');
+   function skus(){return [...table.querySelectorAll('tbody tr')].map(tr=>[...tr.cells[0].childNodes].filter(n=>n.nodeType===3).map(n=>n.textContent).join(''));}
+   table.innerHTML='<tbody>'+_spPackingRows_(lines,{}, {})+'</tbody>';const plan=skus();
+   table.innerHTML='<tbody>'+_shPackingRows_(lines)+'</tbody>';const shipment=skus(),mixed=table.querySelector('.sp-mixed-row');
+   return {plan,shipment,metrics:[mixed.cells[2].textContent,mixed.cells[3].textContent,mixed.cells[4].textContent],
+    span:mixed.cells[2].rowSpan,unchanged:before===JSON.stringify(lines)};
+  });
+  assert.deepEqual(sorting.plan,['A2','A10','B1','Z1']);assert.deepEqual(sorting.shipment,sorting.plan);assert.deepEqual(sorting.metrics,['1','0.060','10.00']);assert.equal(sorting.span,2);assert.equal(sorting.unchanged,true);assertions+=5;
+  await page.screenshot({path:path.join(out,'sorted-shipment-'+viewport.width+'.png'),fullPage:true});
   await page.evaluate(()=>KM.weeklyDraftEditor.open(testOpts));await page.locator('[data-mixed]').check();await page.locator('[data-add-group]').click();
   f=page.locator('[data-groups] fieldset').first();assert.equal(await f.locator('tbody select').first().locator('option[value="C"]').count(),1);assertions++;
   await f.locator('tbody select').nth(0).selectOption('A');await f.locator('tbody input').nth(0).fill('5');

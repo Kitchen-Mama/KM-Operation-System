@@ -587,6 +587,7 @@ function _spVisibleNotes_(note) {
     }).join('\n').trim();
 }
 function _spNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+function _spSkuOrder_(a,b) { return String(a.sku||'').localeCompare(String(b.sku||''),'en',{numeric:true,sensitivity:'base'}); }
 // True only when a raw snapshot cell actually carries a value (distinguishes a stored 0 / blank).
 function _spHasRaw(line, key) {
     var r = line && line.raw;
@@ -1139,7 +1140,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
     var html = '';
 
     plans.forEach(function(plan) {
-        var planLines = linesByPlan[plan.shippingPlanId] || [];
+        var planLines = (linesByPlan[plan.shippingPlanId] || []).slice().sort(_spSkuOrder_);
         var totalSku = planLines.length;
         var totalPcs = planLines.reduce(function(s, l) { return s + _spNum(l.approvedQty); }, 0);
         var totalCartons = planLines.reduce(function(s, l) { return s + _spNum(l.cartonQty); }, 0);
@@ -1708,7 +1709,9 @@ function spDbSaveQty(planId) {
 
 function _spPackingRows_(lines,plan,live) {
     var core=window.KM.mixedCartons,p=core.layout(core.uiRecords(lines,'plan')),number=0;
-    return p.blocks.map(function(b){if(b.mixed)number++;
+    var blocks=p.blocks.map(function(b){return Object.assign({},b,{rows:b.rows.slice().sort(_spSkuOrder_)});});
+    blocks.sort(function(a,b){return _spSkuOrder_(a.rows[0],b.rows[0]);});
+    return blocks.map(function(b){if(b.mixed)number++;
         return b.rows.map(function(r,i){var l=r.source.source,disp=_spLineDisplay(l,plan,live);
             return '<tr'+(b.mixed?' class="sp-mixed-row"':'')+'><td>'+(i===0?'<small class="sp-packing-label">'+(b.mixed?'Mixed '+number:'Standard')+'</small>':'')+_spEsc(r.sku)+'</td><td>'+disp.currentStock+'</td><td>'+disp.avgSales+'</td><td>'+disp.daysOfSupply+'</td><td style="text-align:right">'+r.quantity+'</td>'+
                 (i===0?'<td rowspan="'+b.rows.length+'">'+b.cartons+'</td>':'')+'</tr>';
@@ -1720,7 +1723,7 @@ function spDbEditSkus(planId) {
     if (_spReadbackBlocked_ || _spPlanBusy_(planId)) { _spNotify_('Reload or finish the current command first.'); return Promise.resolve(); }
     var plan = _spPlanRec_(planId), model = _spWsModel_(), token = _spPlanTok_(planId);
     if (!plan || plan.status !== 'draft' || !token) { _spNotify_('Reload this Draft before editing SKUs.'); return Promise.resolve(); }
-    var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); });
+    var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); }).sort(_spSkuOrder_);
     var values = {}, card = document.getElementById('sp-card-' + planId);
     if (card) card.querySelectorAll('input[data-line-id]').forEach(function (i) { values[i.getAttribute('data-line-id')] = i.value; });
     return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=promo-ratio-20261126-v1').then(function (loaded) {

@@ -32,10 +32,10 @@
         rows.forEach(function(r){
             var owner=s(r.company),sku=s(r.sku);if(owner&&!eq(owner,scope.company))return;
             if(!owner&&!unique){bySku[sku]={error:'SALES_COMPANY_UNRESOLVED'};return;}
-            var d=date(get(r,'snapshot_date','snapshotDate'));if(!d){bySku[sku]={error:'SALES_DATE_INVALID'};return;}
+            var state=bySku[sku]||(bySku[sku]={days:Object.create(null),facts:Object.create(null),errors:Object.create(null),skippedDateRows:0});if(state.error)return;
+            var d=date(get(r,'snapshot_date','snapshotDate'));if(!d){state.skippedDateRows++;return;}
             if(input.today&&d>input.today)return;
             any=true;if(!first||d<first)first=d;if(!last||d>last)last=d;
-            var state=bySku[sku]||(bySku[sku]={days:Object.create(null),facts:Object.create(null),errors:Object.create(null)});if(state.error)return;
             var raw=get(r,'sales_units','salesUnits'),n=typeof raw==='boolean'||raw==null||s(raw)===''?NaN:Number(raw);
             if(!Number.isFinite(n)||n<0){state.errors[d]='SALES_UNITS_INVALID';return;}
             var key=[country.canonicalCountryCode(r.country),s(r.channel),d].join('|');
@@ -61,7 +61,8 @@
         var ratio=days.length?count/days.length:null;
         return {version:VERSION,anchorDate:anchor,windowStart:start,windowEnd:end,salesDays:days.length,promoSalesDays:count,
             ratio:ratio,riskLevel:classification(count,days.length),missing:!days.length,reason:days.length?null:'NO_POSITIVE_SALES_DAYS',
-            partial:!idx.first||idx.first>start||!idx.last||idx.last<end,observedThrough:idx.last,totalPromos:ranges.length};
+            partial:!!state.skippedDateRows||!idx.first||idx.first>start||!idx.last||idx.last<end,
+            skippedDateRows:state.skippedDateRows||0,observedThrough:idx.last,totalPromos:ranges.length};
     }
     function summarize(input){
         var current=evaluate(input),future=[],todayDate=input.anchorDate,seen={};

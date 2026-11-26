@@ -8,6 +8,9 @@ const raw={marketplaces:[{...scope,status:'active'}],marketplace_skus:skus.map(s
  campaign_sku_lines:[{campaign_id:'C1',campaign_sku_line_id:'L1',marketplace_sku_id:'MA',sku:'A'},{campaign_id:'FOREIGN',campaign_sku_line_id:'L2',marketplace_sku_id:'MC',sku:'C'}]};
 const tables={amazon_daily_sales_snapshot:['A','B','C'].flatMap(sku=>Array.from({length:90},(_,i)=>({country:'US',marketplace:'Amazon',channel:'Amazon',sku,snapshot_date:R.shift(anchor,-90+i),sales_units:i>=60?1:0}))),
  fc_special_events:[{...scope,event_fc_id:'E1',sku:'A',scope_type:'SKU',scope_id:'A',event_start_date:R.shift(anchor,-30),event_end_date:R.shift(anchor,-15),fc_qty:100},{...scope,event_fc_id:'E2',sku:'B',event_name:'BFCM',event_start_date:R.shift(anchor,-30),event_end_date:R.shift(anchor,-22),fc_qty:100}]};
+tables.amazon_daily_sales_snapshot.unshift(...['A','B','C'].map(sku=>({country:'US',marketplace:'Amazon',channel:'Amazon',sku,snapshot_date:'',sales_units:2})));
+raw.campaigns.push({...scope,campaign_id:'FUTURE',start_date:'2026-12-01',end_date:'2026-12-05'});
+raw.campaign_sku_lines.push({campaign_id:'FUTURE',campaign_sku_line_id:'FUTURE-A',marketplace_sku_id:'MA',sku:'A'});
 // Build the actual 60_ response, including capped and requestEcho, rather than hand-inventing its contract.
 const c=vm.createContext({});vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/60_api_v1_inventory_replenishment_workspace.gs','utf8'),c);
 const payload={only:['amazon_daily_sales_snapshot','fc_special_events'],recentWindow:false},data=JSON.parse(JSON.stringify(c.sirWorkspaceBuild_(tables,payload)));
@@ -23,6 +26,8 @@ try{for(const width of [1440,390]){const page=await browser.newPage({viewport:{w
  await page.waitForFunction(()=>_crRiskEvidence.state==='READY');
  const results=await page.evaluate(()=>getFilteredRiskResults());ok(results.length===4,'full risk page includes every active SKU');
  for(const [sku,risk,count]of [['A','High Risk',16],['B','Watch',9],['C','Safe',0],['D','Missing Data',null]]){const r=results.find(r=>r.sku===sku);ok(r.riskLevel===risk,sku+' expected '+risk+': '+JSON.stringify(r));ok(r.promoSalesDays===count,sku+' numerator matches actual positive-sales-day intersection');}
+ const future=results.find(r=>r.sku==='A').futureRisks[0];ok(!future.missing&&future.partial&&future.skippedDateRows===1,'undated source rows leave future windows usable and explicitly partial');
+ ok((await page.locator('#cr-table-scroll-body [title*="undated sales record"]').count())>0,'excluded undated observations are disclosed in tooltips');
  ok((await page.locator('.cr-kpi-value').allTextContents()).join(',')==='1,1,1','missing history never inflates Safe KPI');ok((await page.locator('#cr-table-scroll-body').innerText()).includes('53.3%'),'ratio displayed');
  ok(await page.evaluate(()=>requests.length===1&&requests[0].name==='inventoryReplenishment'&&JSON.stringify(requests[0].p)===JSON.stringify(payload)),'only two requested tables and no historical truncation');
  await page.screenshot({path:'output/promo-ratio-20261126/risk-'+width+'.png',fullPage:true});

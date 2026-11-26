@@ -8,7 +8,7 @@ function world(){
  c.SpreadsheetApp.openById=()=>h.ss;c.prodExpectedDbId_=()=> 'FIXTURE';c.jsonResponse_=o=>({getContent:()=>JSON.stringify(o)});
  c.Utilities.parseDate=s=>new Date(String(s).replace(' ','T')+'+08:00');
  c.spApprovedCancelEligibility_=()=>({ok:true});
- h.sheet('shipping_plans',c.SHIPPING_PLANS_HEADERS_,[{shipping_plan_id:'P1',status:'draft',company:'KM',country:'US',marketplace:'Shopify',source_warehouse_id:'FACTORY-A',updated_at:stamp,note:'Planning note',estimated_total_cost:100}]);
+ h.sheet('shipping_plans',Array.from(new Set([...c.SHIPPING_PLANS_HEADERS_,'estimated_duty_currency'])),[{shipping_plan_id:'P1',status:'draft',company:'KM',country:'US',marketplace:'Shopify',source_warehouse_id:'FACTORY-A',updated_at:stamp,note:'Planning note',estimated_total_cost:100}]);
  h.sheet('shipping_plan_lines',c.SHIPPING_PLAN_LINES_HEADERS_,['A','B'].map(s=>({shipping_plan_line_id:s,shipping_plan_id:'P1',sku:s,approved_qty:40,requested_qty:40,units_per_carton:40,plan_carton_qty:1,cbm:.06,gross_weight:12,net_weight:10,note:'Original note',updated_at:stamp})));
  h.sheet('sku_details',['sku','series','units_per_carton','product_status','carton_length','carton_width','carton_height','carton_dimension_unit','carton_weight','item_weight'],['A','B'].map(sku=>({sku,series:'S1',units_per_carton:40,product_status:'active',carton_length:50,carton_width:40,carton_height:30,carton_dimension_unit:'cm',carton_weight:12,item_weight:.25})));
  h.sheet('marketplace_skus',['company','country','marketplace','sku','marketplace_sku_status'],['A','B'].map(sku=>({sku,company:'KM',country:'US',marketplace:'Shopify',marketplace_sku_status:'active'})));

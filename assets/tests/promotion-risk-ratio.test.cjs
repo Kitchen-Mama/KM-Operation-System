@@ -5,6 +5,16 @@ function rows(n=30){return Array.from({length:n},(_,i)=>({...scope,sku:'A',snaps
 function promo(n){return {sku:'A',marketplaceSkuId:'MA',startDate:R.shift(anchor,-30),endDate:R.shift(anchor,-31+n)};}
 function calc(extra={}){return R.evaluate({scope,marketplaces:master,sku:'A',marketplaceSkuId:'MA',rows:rows(),promotions:[promo(16)],anchorDate:anchor,...extra});}
 test('16 of 30 positive-sales days is High Risk',()=>{const r=calc();assert.equal(r.riskLevel,'High Risk');assert.equal(r.salesDays,30);assert.equal(r.promoSalesDays,16);assert.equal(r.ratio,16/30);});
+for(const position of ['before','after'])test('undated rows '+position+' valid history do not discard an entire SKU',()=>{
+ const bad={...rows()[0],snapshot_date:''},data=position==='before'?[bad,...rows()]:[...rows(),bad];
+ const r=calc({rows:data});assert.equal(r.riskLevel,'High Risk');assert.equal(r.salesDays,30);assert.equal(r.promoSalesDays,16);assert.equal(r.partial,true);assert.equal(r.skippedDateRows,1);
+});
+test('undated rows never fabricate a selling date or turn absent history into Safe',()=>assert.equal(calc({rows:rows().map(r=>({...r,snapshot_date:''}))}).riskLevel,'Missing Data'));
+test('future windows also retain valid observations when undated rows are present',()=>{
+ const input={scope,marketplaces:master,sku:'A',marketplaceSkuId:'MA',anchorDate:anchor,promotions:[promo(16),{sku:'A',startDate:'2026-12-01',endDate:'2026-12-05'}]};
+ const a=R.summarize({...input,rows:rows()}),b=R.summarize({...input,rows:[{...rows()[0],snapshot_date:''},...rows()]});
+ assert.equal(b.futureRisks[0].ratio,a.futureRisks[0].ratio);assert.equal(b.futureRisks[0].missing,false);assert.equal(b.futureRisks[0].partial,true);
+});
 for(const [days,risk]of [[0,'Safe'],[8,'Safe'],[9,'Watch'],[15,'Watch'],[16,'High Risk']])test('threshold '+days+'/30 = '+risk,()=>assert.equal(calc({promotions:days?[promo(days)]:[]}).riskLevel,risk));
 test('zero-unit records, duplicate rows and multiple channels do not inflate the denominator',()=>{
  const data=rows().concat(rows(),rows(1).map(r=>({...r,channel:'Other'})),[{...scope,sku:'A',snapshot_date:R.shift(anchor,-31),sales_units:0}]);

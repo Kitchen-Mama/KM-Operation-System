@@ -589,10 +589,10 @@ function renderRiskTable() {
             <div class="scroll-cell cr-cell--img">${img}</div>
             <div class="scroll-cell cr-cell--name">${_crEsc(r.productName || '—')}</div>
             <div class="scroll-cell" title="${_crEsc((r.windowStart||'')+' - '+(r.windowEnd||''))}">${r.missing ? '--' : r.promoSalesDays+' / '+r.salesDays}</div>
-            <div class="scroll-cell" title="${_crEsc((r.futureRisks||[]).map(function(f){return f.anchorDate+': '+f.riskLevel+(f.ratio==null?'':' '+(f.ratio*100).toFixed(1)+'%')+(f.partial?' (partial)':'');}).join('\n'))}">${_crFutureRiskText_(r)}</div>
-            <div class="scroll-cell" title="${_crEsc(r.reason||(r.partial?'Partial data; observed through '+r.observedThrough:'Observed through '+r.observedThrough))}">${r.ratio==null?'--':(r.ratio*100).toFixed(1)+'%'+(r.partial?' *':'')}</div>
+            <div class="scroll-cell" title="${_crEsc((r.futureRisks||[]).map(function(f){return f.anchorDate+': '+f.riskLevel+(f.ratio==null?'':' '+(f.ratio*100).toFixed(1)+'%')+'; '+_crRiskEvidenceText_(f);}).join('\n'))}">${_crFutureRiskText_(r)}</div>
+            <div class="scroll-cell" title="${_crEsc(_crRiskEvidenceText_(r))}">${r.ratio==null?'--':(r.ratio*100).toFixed(1)+'%'+(r.partial?' *':'')}</div>
             <div class="scroll-cell">${r.lps}</div>
-            <div class="scroll-cell ${riskClass}">${r.riskLevel==='Watch'?'Warning':r.riskLevel}</div>
+            <div class="scroll-cell ${riskClass}" title="${_crEsc(_crRiskEvidenceText_(r.worstRisk||r))}">${r.riskLevel==='Watch'?'Warning':r.riskLevel}</div>
             <div class="scroll-cell">${r.totalPromos}</div>
         </div>
         `;
@@ -612,7 +612,12 @@ function renderRiskTable() {
 function _crFutureRiskText_(r) {
     var list=r.futureRisks||[];if(!list.length)return '--';
     var known=list.filter(function(f){return f.ratio!=null;}).sort(function(a,b){return b.ratio-a.ratio;});
-    return known.length?_crEsc((known[0].riskLevel==='Watch'?'Warning':known[0].riskLevel)+' '+(known[0].ratio*100).toFixed(1)+'%'):'Missing Data';
+    return known.length?_crEsc((known[0].riskLevel==='Watch'?'Warning':known[0].riskLevel)+' '+(known[0].ratio*100).toFixed(1)+'%'+(known[0].partial?' *':'')):'Missing Data';
+}
+function _crRiskEvidenceText_(r) {
+    var reasons={NO_POSITIVE_SALES_DAYS:'No dated positive-sales days in this 90-day window.',SKU_SALES_UNAVAILABLE:'No dated sales history for this SKU.',SALES_SOURCE_UNAVAILABLE:'No dated sales history for this site.',SALES_COMPANY_UNRESOLVED:'The sales history cannot be bound to one company.'};
+    return (r.reason?(reasons[r.reason]||r.reason):(r.partial?'Partial data; observed through ':'Observed through ')+(r.observedThrough||'unknown'))+
+        (r.skippedDateRows?' '+r.skippedDateRows+' undated sales record(s) excluded.':'');
 }
 
 // --- Site scope: Country -> Marketplace -> Company cascade (derived from marketplace_skus) ---

@@ -1582,7 +1582,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "WDL_BUILD_VERSION_",
-      "expected": "WDL1-MIXED-CARTONS-20261125-V1",
+      "expected": "WDL1-AUTO-REPRICE-20261126-V2",
       "optional": false
     },
     {
@@ -1817,7 +1817,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "6d4a8af2ba5379008716e21b10acd3e8044c4f3b95120936a25450fb2fcbfa64"
+  "policy_sha256": "e2eafb38f249636bc4657eb8ce00817a267a7547607ee05a1d0017adb3775138"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};
