@@ -41,6 +41,9 @@ node assets/tools/build-shipping-loop-release.cjs
   warehouse name, street, city, state, postal code and country. Missing name,
   street, city or country blocks. No warehouse-code guessing, inactive/duplicate
   bypass, fabricated address or live Sheet mutation is introduced.
+- Final document-family readiness accepts that frozen warehouse identity and
+  complete address without inventing a logistics-location ID. Removing any
+  required destination fact still blocks the warehouse fallback.
 - The consignee name is the warehouse name. `warehouses.contact_name` is now a
   supported alias for that frozen name. Blank phone/email were already allowed
   by the shared field mapper; resolving the correct consignee removes the false

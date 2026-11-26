@@ -418,7 +418,8 @@ try { if (typeof mcpLayout_ === 'function') mcpLayout_(lines, 'snapshot'); }
 catch (e) { var blocked={status:'BLOCKED',reason:e.code || 'MIXED_PACKING_INVALID'};return {shipping_detail:blocked,packing_list:blocked,commercial_invoice:blocked,booking:blocked,customs:blocked}; }
 var hasLines = !!(lines && lines.length);
 var hasShipper = !!(sfoStr_(h.shipper_legal_entity_id) || sfoStr_(h.shipper_legal_name));
-var hasConsignee = !!sfoStr_(h.consignee_location_id);
+var hasConsignee = !!sfoStr_(h.consignee_location_id) ||
+  ['consignee_warehouse_id','consignee_name','consignee_address_line_1','consignee_city','consignee_country'].every(function(k){return !!sfoStr_(h[k]);});
 var allDeclared = hasLines && lines.every(function (l) { return sfoStr_(l.declared_currency) && sfoNum_(l.declared_unit_value) > 0; });
 var hasCarrier = !!(sfoStr_(h.carrier_id) || sfoStr_(h.carrier_name)) && !!sfoStr_(h.shipping_method);
 function fam(ok, reason) { return ok ? { status: 'READY' } : { status: 'BLOCKED', reason: reason }; }

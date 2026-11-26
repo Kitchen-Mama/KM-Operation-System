@@ -18,7 +18,7 @@ test('an existing eligible location keeps authority; rejected/duplicate location
 });
 const fields=['warehouse_name','contact_name','address','city','state','postal_code','country','contact_phone','contact_email'].map(field=>({placeholder:'WAREHOUSE_'+field.toUpperCase(),data_source_table:'warehouses',data_source_field:field,field_type:'scalar',data_scope:'header',required:true,is_active:true}));
 for(const carrier of ['TOP_SEALAND','AGL','OTHER_CARRIER'])test(carrier+' shares frozen destination/contact mapping with blank contact allowances',()=>{
- const dest=resolve(),h=c.sfoBuildHeader_({...shipment,carrier_id:carrier},{},{},dest.consignee,{},{});
+ const dest=resolve(),h=c.sfoBuildHeader_({...shipment,carrier_id:carrier,shipping_method:'sea'},{legal_name:'Fixture exporter'},{},dest.consignee,{},{});
  Object.assign(h,c.sfoWarehouseContact_({h:Object.keys(warehouse),rows:[warehouse]},'W',dest.consignee.warehouse_id));
  const model={header:c.docHeaderBlock_(h,[],[]),lines:[]},mapped=c.dtMapPlaceholders_(model,fields);
  assert.deepEqual(plain(mapped.missing),[]);assert.equal(mapped.values.WAREHOUSE_CONTACT_NAME,'Fixture FC');assert.equal(mapped.values.WAREHOUSE_CONTACT_PHONE,'');assert.equal(mapped.values.WAREHOUSE_CONTACT_EMAIL,'');assert.equal(mapped.values.WAREHOUSE_POSTAL_CODE,'00123');
@@ -27,6 +27,10 @@ for(const carrier of ['TOP_SEALAND','AGL','OTHER_CARRIER'])test(carrier+' shares
  const contract=c.dgsFieldContract_({}, {template_id:'T',template:{file_name_rule:''},render:'CI'},()=>[],{
   snap:()=>Object.keys(h),dest:()=>dest,contact:src=>{const issues=c.dtMasterIssues_([h],src);issues.miss=[];return c.dtMasterBad_(issues,src,false);}
  });assert.deepEqual(plain(contract),[]);
+ const readiness=c.sfoDocumentReadiness_(h,[{declared_currency:'USD',declared_unit_value:2}]);
+ for(const family of ['shipping_detail','packing_list','commercial_invoice','booking'])assert.equal(readiness[family].status,'READY',family+' must accept the canonical warehouse without inventing a location ID');
+ assert.equal(h.consignee_location_id,'');
+ for(const field of ['consignee_warehouse_id','consignee_name','consignee_address_line_1','consignee_city','consignee_country'])assert.equal(c.sfoDocumentReadiness_({...h,[field]:''},[{declared_currency:'USD',declared_unit_value:2}]).packing_list.status,'BLOCKED',field);
 });
 test('a warehouse/consignee identity mismatch still blocks contact resolution',()=>{
  const contact=c.sfoWarehouseContact_({h:Object.keys(warehouse),rows:[warehouse]},'W','OTHER');
