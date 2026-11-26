@@ -22,6 +22,11 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
+test('pre-overseas-document policy remains usable while new document owners are deployed manually', async () => {
+  const previous={...p,policy_sha256:'8cbae3c11b6e6444e65c90cfc1f14097a222969e71e0151f9e5d953c9b566f08'},g=guard(previous);
+  await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'confirmShipmentAndDispatch',shipment_id:'S'})});
+  assert.equal(g.sent.length,2);assert.equal(g.writes.length,1);
+});
 test('baseline keeps explicit additions limited to monthly edit, warehouse/status reads, mixed packing and campaign builder', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
   assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', 'campaign.builder.get','campaign.builder.status','campaign.builder.save', body.action].sort());

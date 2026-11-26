@@ -1837,7 +1837,7 @@ function _shRenderDbCard(s, planLines, mode) {
                           btn("shConfirmShipment('" + sid + "')", 'Confirm Shipment 🚢', '#0EA5E9') +
                           btn("shReturnToDraft('" + sid + "')", '← Return to Draft', '#94A3B8') +
                           btn("shDiagnoseShipment15('" + sid + "')", 'Diagnose (read only)', '#64748B') +
-                          btn("shDiagnoseDocValues16('" + sid + "')", 'Diagnose document values', '#64748B') +
+                          (s.documentGenerationStatus === 'NOT_REQUIRED' ? '' : btn("shDiagnoseDocValues16('" + sid + "')", 'Diagnose document values', '#64748B')) +
                           cancelBtn;
         } else if (status === 'cancelled') {
             // A cancelled draft is a read-only record. It keeps its card so the operator can SEE that the
@@ -1851,7 +1851,7 @@ function _shRenderDbCard(s, planLines, mode) {
         // F1-6B Part B — Shipping Detail / Packing List documents for a dispatched shipment (the frozen R2B snapshot
         // exists). Thin: the frontend only sends { shipment_id, document_type, generate_file } and opens the returned
         // download_url via the existing R3C adapters — NO placeholder mapping / totals / template / master / file build.
-        if (SH_DOC_READY_STATUSES[status]) actionsHtml += _shDocActionsHtml(sid);
+        if (SH_DOC_READY_STATUSES[status] && s.documentGenerationStatus !== 'NOT_REQUIRED') actionsHtml += _shDocActionsHtml(sid);
         actionsHtml += _shManualPosHtml_(s);   // AD3 D: manual position report (manual-logistics shipments only; '' otherwise)
     }
     // F1-7N-FB-1(J) — the shared Document Panel, in the right-side detail column directly below the
@@ -1860,7 +1860,7 @@ function _shRenderDbCard(s, planLines, mode) {
     // truthfully renders "No documents generated yet" rather than a fabricated folder or file.
     // Shown once documents can exist: post-dispatch, or as soon as the registry has any row for this shipment.
     // A pre-dispatch draft stays clean rather than showing an empty panel it can do nothing about.
-    if ((status !== 'draft' && status !== 'ready_to_ship') || (s.documents && s.documents.length)) {
+    if (s.documentGenerationStatus !== 'NOT_REQUIRED' && ((status !== 'draft' && status !== 'ready_to_ship') || (s.documents && s.documents.length))) {
         actionsHtml += shDocumentPanelHtml({
             title: 'Shipment Documents', entity_type: 'shipment', entity_id: sid,
             folder_url: s.documentFolderUrl || '', folder_name: s.documentFolderName || '',
@@ -2296,6 +2296,7 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
             return;
         }
         _shDispatchHold14_(shipmentId, false);
+        if(s.documentGenerationStatus==='NOT_REQUIRED')return _shFinishWithoutDocuments_(shipmentId);
         var docs = s.documents || [];
         var ready = docs.filter(function (d) { return d.status === 'READY'; });
         var docText = ready.length && ready.length === docs.length && s.documentGenerationStatus === 'READY'
@@ -3773,6 +3774,7 @@ function shConfirmShipment(shipmentId) {
         origin: payload.ship_from || s.shipFrom || '—',
         sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
         sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
+        noDocuments: s.documentGenerationStatus === 'NOT_REQUIRED',
         dest: (payload.warehouse_code || s.warehouseCode || s.destination || '—'),
         country: s.country || '',
         // S7-R2A — the same resolver the Draft grid uses. The confirm step is the last screen before stock
@@ -3857,7 +3859,7 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
             '<label style="display:flex;gap:6px;align-items:flex-start;margin-top:6px;"><input type="checkbox" id="sh-confirm-tba-ack"> I confirm shipping with the carrier to be assigned and the cost pending.</label></div>' : '') +
         row('Tracking / Container', sum.tracking + ' / ' + sum.container) + row('ETD / ETA', sum.etd + ' / ' + sum.eta) +
         '<div style="background:#FFFBEB;border:1px solid #FDE68A;color:#92400E;border-radius:6px;padding:8px 10px;margin:12px 0;font-size:12px;line-height:1.5;">' +
-          'Confirming marks this shipment as <strong>Shipped</strong>; ' + _shDispatchStockSentence_(sum.sourceDomain) + '. Shipping documents will be generated in Drive. <strong>This action cannot be undone here.</strong></div>' +
+          'Confirming marks this shipment as <strong>Shipped</strong>; ' + _shDispatchStockSentence_(sum.sourceDomain) + '. ' + (sum.noDocuments ? '' : 'Shipping documents will be generated in Drive. ') + '<strong>This action cannot be undone here.</strong></div>' +
         '<div id="sh-confirm-status" role="status" aria-live="polite" style="min-height:18px;font-size:12.5px;margin:6px 0;"></div>' +
         '<div id="sh-confirm-actions" style="display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end;margin-top:8px;">' +
           '<button type="button" id="sh-confirm-cancel" style="width:96px;height:36px;padding:7px 12px;border:1px solid #94A3B8;background:#E2E8F0;color:#1E293B;border-radius:6px;cursor:pointer;font-weight:600;">Cancel</button>' +
@@ -3868,6 +3870,11 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
     document.getElementById('sh-confirm-go').addEventListener('click', function () { _shRunConfirm(shipmentId, execPayload); });
     var ack6 = document.getElementById('sh-confirm-tba-ack'), go6 = document.getElementById('sh-confirm-go');   // AD3 D r6: Confirm stays off until the acknowledgement is ticked
     if (ack6 && go6) { go6.disabled = true; go6.style.opacity = '0.6'; ack6.addEventListener('change', function () { go6.disabled = !ack6.checked; go6.style.opacity = ack6.checked ? '' : '0.6'; }); }
+}
+function _shFinishWithoutDocuments_(shipmentId) {
+    delete _shConfirmSaved_[shipmentId];
+    _shCloseConfirmModal();
+    return Promise.resolve().then(function(){return _shLoadAndRender();}).catch(function(){_shNote_(shipmentId,'Shipment is Shipped. Refresh the list to see the updated card; do not confirm again.');});
 }
 function _shRunConfirm(shipmentId, execPayload) {
     var go = document.getElementById('sh-confirm-go');
@@ -3913,7 +3920,7 @@ function _shRunConfirm(shipmentId, execPayload) {
             throw { _handled: true };   // stop the chain WITHOUT dispatching
         }
         if (status) status.textContent = 'PO allocation ready — confirming & dispatching…';
-        if (status) status.textContent = 'Confirming and preparing documents...';
+        if (status) status.textContent = (_shFindShipment_(shipmentId)||{}).documentGenerationStatus==='NOT_REQUIRED' ? 'Confirming shipment...' : 'Confirming and preparing documents...';
         _shDispatchHold14_(shipmentId, true);
         return window.KM.DB.confirmShipmentAndDispatch(Object.assign({ shipment_id: shipmentId, actor: 'operation-system', expected_updated_at: (execPayload && execPayload.expected_updated_at) || undefined },
             _shConfirmRouteMode_[shipmentId] === 'MANUAL' ? { route_mode: 'MANUAL' } : {}));   // AD3 D: route_mode only after the operator pressed the manual-logistics button in THIS dialog   // R15F2 P1 (GAP-2): the version this user's Save wrote; the retry reuses it, never a refetch
@@ -3965,6 +3972,7 @@ function _shRunConfirm(shipmentId, execPayload) {
         if (status) status.style.color = '#166534';
         var actions = document.getElementById('sh-confirm-actions');
         var dg = d.document_generation || {};
+        if(dg.status==='NOT_REQUIRED')return _shFinishWithoutDocuments_(shipmentId);
         // D2 — a document failure NEVER un-ships a confirmed shipment. Say exactly that, and offer the retry.
         var docLine = '';
         if (dg.status === 'READY') {

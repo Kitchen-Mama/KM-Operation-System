@@ -404,6 +404,8 @@ catch (e) { return jsonResponse_({ success: false, error: 'Lock error: ' + (e &&
 try {
 var ss = SpreadsheetApp.openById(prodExpectedDbId_());
 
+var sourceContext=dgsShipmentContext_(ss,shipmentId);
+if(sourceContext.ok&&sourceContext.ctx.documents_not_required)return jsonResponse_(Object.assign({success:true},dgsNoShipmentDocuments_(shipmentId)));
 var snap = docReadSnapshot_(ss, shipmentId);
 if (!snap) return jsonResponse_({ success: true, finalized: false, shipment_id: shipmentId, note: 'No finalized snapshot — run finalizeShipmentFinalOutput first.' });
 var model = (docTypeIn === 'SHIPDETAIL') ? docRenderShippingDetail_(snap) : docRenderPackingList_(snap);
@@ -577,4 +579,4 @@ function dtRequireKnownLayoutSc2_(ss, name, required) {
   return sheet;
 }
 
-var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111-WH1-CS1';
+var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111-WH1-CS1-OND1';

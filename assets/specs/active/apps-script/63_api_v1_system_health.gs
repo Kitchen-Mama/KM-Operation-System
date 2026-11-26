@@ -782,7 +782,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "39_document_runtime_service.gs",
     "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1",
+    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1",
     "owns": "Production profile; Sandbox single-ticket recovery disabled"
   },
   {
@@ -794,7 +794,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "36_document_template_handlers.gs",
     "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
-    "expected": "SC2-DTF-20261111-WH1-CS1",
+    "expected": "SC2-DTF-20261111-WH1-CS1-OND1",
     "owns": "exact known document template field physical layout compatibility"
   },
   {
@@ -866,7 +866,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "57_api_v1_shipment_workspace.gs",
     "symbol": "SHIP_WS_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1-TD1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-SO7-DG1-TD1-OND1",
     "owns": "the Shipment READ workspace (shipment.workspace.get) incl. the SHIP-OPEN opening-record DTO fields recordOrigin / openingAsOf / openingSupplyMode"
   },
   {
@@ -1034,7 +1034,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "22_shipment_dispatch_handlers.gs",
     "symbol": "CSD_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1",
     "owns": "Confirm Shipment & Dispatch: deduction + reservation release through the shared authority + the cancelled-shipment dispatch refusal. R33 routes the consume by source domain: a factory line deducts current stock and releases its hold on one row, while an OVERSEAS line moves reserved DOWN and leaves wh_available_stock alone, because those units left available when they were reserved. R37 fixes WHICH warehouse is consumed: the deduct plan is built for the Shipment's DECLARED source_warehouse_id, in the domain that warehouse belongs to, decided before any inventory row is read — it no longer searches factory_stock by SKU and orders the results by warehouse_id, which could deduct a warehouse the Shipment never declared and made an OVERSEAS source unreachable"
   },
   {

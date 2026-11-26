@@ -311,6 +311,7 @@ return dgsScopeMatch_(t, ctx);
 }
 function dgsShipmentManifest_(templates, ctx) {
 ctx = ctx || {};
+if (ctx.documents_not_required === true) return { ok: true, entries: [], errors: [], covered: [], fallback: [] };
 var entries = [], errors = [], covered = [], setBy = {}, fallback = [];
 templates = templates || [];
 var ovsOk = !!(ctx.overseas && ctx.overseas.eligible === true);
@@ -992,11 +993,21 @@ function dgsShipmentSource_(ss, id) {
 id = dgsStr_(id); if (!id) return { state: 'SOURCE_UNKNOWN', reason: 'SOURCE_BLANK' };
 var w = sfoReadTable_(ss, 'warehouses', []).filter(function (r) { return dgsLc_(r.warehouse_id) === dgsLc_(id); }), c = w.length === 1 ? dgsUc_(w[0].country) : '';
 if (w.length !== 1) return { state: 'SOURCE_UNKNOWN', reason: w.length ? 'SOURCE_DUPLICATED_IN_MASTER' : 'SOURCE_NOT_IN_MASTER' };
-if (!dgsBool_(w[0].is_factory_warehouse)) return { state: 'NOT_A_FACTORY' };
+if (!dgsBool_(w[0].is_factory_warehouse) && dgsUc_(w[0].warehouse_type) !== 'FACTORY') return { state: 'NOT_A_FACTORY', documents_not_required: !dgsShipmentDocumentsRequired_(id, w) };
 if (!/^[A-Z]{2}$/.test(c)) return { state: 'SOURCE_UNKNOWN', reason: !('country' in w[0]) ? 'SOURCE_COUNTRY_COLUMN_MISSING' : c ? 'SOURCE_COUNTRY_NOT_ISO2' : 'SOURCE_COUNTRY_BLANK' };
 return { state: c === 'TW' ? 'TW_FACTORY' : 'OTHER_FACTORY', country: c };
 }
-function dgsShipmentContext_(ss, shipmentId) { var o = dgsShipmentContext0_(ss, shipmentId); if (o.ok) { o.ctx.overseas = dgsOverseasDocBasis_(ss, o.row, o.ctx.source); o.overseas = o.ctx.overseas; } return o; }
+function dgsShipmentDocumentsRequired_(sourceId, warehouses) {
+  var id=dgsStr_(sourceId), rows=(warehouses||[]).filter(function(w){return dgsStr_(w.warehouse_id)===id;});
+  if(!id||rows.length!==1)return true;
+  var w=rows[0],type=dgsUc_(w.warehouse_type),flag=dgsLc_(w.is_factory_warehouse);
+  if(dgsBool_(w.is_factory_warehouse)||type==='FACTORY')return true;
+  return !(/^(false|0|no|n)$/.test(flag)||type==='3PL'||type==='FBA');
+}
+function dgsNoShipmentDocuments_(shipmentId) {
+  return {ok:true,status:'NOT_REQUIRED',reason:'OVERSEAS_SOURCE_NO_DOCUMENTS',shipment_id:dgsStr_(shipmentId),expected:0,generated:0,reused:0,failed:0,configuration_required:0,results:[],zero_write:true};
+}
+function dgsShipmentContext_(ss, shipmentId) { var o = dgsShipmentContext0_(ss, shipmentId); if (o.ok) { o.ctx.documents_not_required=o.ctx.source.documents_not_required===true; o.ctx.overseas = o.ctx.documents_not_required ? null : dgsOverseasDocBasis_(ss, o.row, o.ctx.source); o.overseas = o.ctx.overseas; } return o; }
 // AD3-B (Owner rule 九): the documents of a shipment whose source the SERVER proves is a legal overseas 3PL on an APPROVED transfer branch (22_
 // csdOverseasTransferEligibility_ on the saved row - never a client claim). Factory / unknown sources -> null (their rules are unchanged).
 function dgsOverseasDocBasis_(ss, row, src) {
@@ -1060,6 +1071,7 @@ return { ok: true, own_rows: own };
 function dgsShipmentLeafPeek_(ss, shipmentId) {
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return { ok: true, skipped: sc.reason };
+if(sc.ctx.documents_not_required)return dgsNoShipmentDocuments_(shipmentId);
 var manifest = dgsShipmentManifest_(dgsTemplates_(ss), sc.ctx);
 if (!manifest.ok) return { ok: true, skipped: 'MANIFEST' };
 var peek = dofPeekShipmentFolder_(dofFolderIo_(), { templates: manifest.entries.map(function (e) { return e.template; }), destination_country: sc.ctx.country,
@@ -1151,6 +1163,7 @@ function dgsShipmentReadiness_(ss, shipmentId, opts) {
 opts = opts || {};
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return { ok: false, status: 'BLOCKED', reason: sc.reason, shipment_id: dgsStr_(shipmentId) };
+if(sc.ctx.documents_not_required)return Object.assign(dgsNoShipmentDocuments_(shipmentId),{source_warehouse_id:dgsStr_(sc.row.source_warehouse_id),blockers:[],manifest:[],configuration_issues:[],drive_readiness:{status:'NOT_REQUIRED',checks:[]}});
 var blockers = [];
 if (!sc.external_shipment_id) blockers.push({ reason: 'MISSING_EXTERNAL_SHIPMENT_ID', field: 'shipments.external_shipment_id', correction: 'Shipment Draft > Execution Fields > Shipment ID' });
 var bucket = dofDestinationBucket_(sc.ctx.country);
@@ -1492,6 +1505,7 @@ function dgsDocValuesMarker16_(ss, sid) {   // READ ONLY: { rev, digest }; rev =
 function dgsFrozenValueGate_(ss, shipmentId) {
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return { ok: false, built: null, blockers: [{ reason: sc.reason }] };
+if(sc.ctx.documents_not_required)return Object.assign(dgsNoShipmentDocuments_(shipmentId),{built:null,blockers:[],documents:0});
 var entries = dgsShipmentManifest_(dgsTemplates_(ss), sc.ctx).entries || [];
 if (!entries.length) return { ok: true, built: null, blockers: [], documents: 0 };
 var built, snap, out = [];
@@ -1524,6 +1538,7 @@ function dgsGenerateShipmentDocuments_(ss, shipmentId, actor, opts) {
 opts = opts || {};
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return { ok: false, reason: sc.reason, shipment_id: dgsStr_(shipmentId) };
+if(sc.ctx.documents_not_required)return dgsNoShipmentDocuments_(shipmentId);
 if (!SFO_DISPATCHED_STATUS_[sc.status]) {
 return { ok: false, reason: 'SNAPSHOT_PREREQUISITE_INVALID', shipment_id: dgsStr_(shipmentId), status: sc.status,
 message: 'Documents are generated after the dispatch transaction commits.' };
@@ -1926,6 +1941,10 @@ if (dgsRowState_(row) !== 'READY') return '';
 return rows.some(function (r) { return r !== row && dgsRowState_(r) === 'READY' && k(r) === k(row) && dgsNum_(r.template_version) > v; }) ? 'HISTORY' : 'CURRENT';
 }
 function dgsEntityDocumentDtos_(ss, entityType, entityId, expected) {
+if(dgsLc_(entityType)==='shipment'){
+  var policyContext=dgsShipmentContext_(ss,entityId);
+  if(policyContext.ok&&policyContext.ctx&&policyContext.ctx.documents_not_required)return {documents:[],documentFolderUrl:'',documentGenerationStatus:'NOT_REQUIRED',documentGenerationError:null,canRetryDocuments:false};
+}
 var rows = dgsGeneratedFor_(ss, entityType, entityId);
 var live = rows.filter(function (r) { return dgsRowState_(r) !== 'SUPERSEDED'; });
 var docs = live.map(function (r) { return Object.assign(dgsDocumentDto_(r), { version_role: dgsVersionRole_(live, r) }); });
@@ -2271,6 +2290,7 @@ try {
 var ss = dgsDb_();
 var context = dgsShipmentContext_(ss, entityId);
 if (!context.ok || !SFO_DISPATCHED_STATUS_[context.status]) return jsonResponse_({ success: false, code: 'SHIPMENT_NOT_DISPATCHED', zero_write: true });
+if(context.ctx.documents_not_required)return jsonResponse_({success:true,retried:false,result:dgsNoShipmentDocuments_(entityId),zero_write:true});
 var frozen = docReadSnapshot_(ss, entityId);
 if (!frozen || dgsStr_(frozen.header.shipment_id) !== entityId || dgsLc_(frozen.header.status) !== 'final') return jsonResponse_({ success: false, code: 'FROZEN_SNAPSHOT_REQUIRED', zero_write: true });
 // Generation reuses READY documents and the existing snapshot; dispatch is never invoked.
@@ -2448,6 +2468,7 @@ if (!shipmentId) return jsonResponse_({ success: false, error: 'SHIPMENT_ID_REQU
 var ss = dgsDb_();
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return jsonResponse_({ success: false, error: sc.reason, shipment_id: shipmentId });
+if(sc.ctx.documents_not_required)return jsonResponse_(Object.assign(dgsNoShipmentDocuments_(shipmentId),{success:true,db_status:sc.status,documents_required:false,applicable_manifest:[],existing_documents:[],safe_retry_verdict:'NOT_REQUIRED',writes_performed:0,folders_created:0,files_created:0,read_only:true}));
 var readiness = dgsShipmentReadiness_(ss, shipmentId, {});
 var out = {
 success: true, shipment_id: shipmentId, external_shipment_id: sc.external_shipment_id,
@@ -2600,4 +2621,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1';

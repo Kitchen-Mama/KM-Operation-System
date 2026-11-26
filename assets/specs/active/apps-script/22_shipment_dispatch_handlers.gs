@@ -56,7 +56,7 @@
 
 
 
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3';
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1';
 var CSD_MOV_TYPE_ = 'shipment_out';
 
 
@@ -245,7 +245,7 @@ note: 'The shipment remains ready_to_ship and shipped_at is blank. Nothing was w
 }
 // R69+EXTID-CAND3 (local candidate): a FORESEEABLE leaf collision refuses the Confirm here - before the lock and before any write.
 var leafPeek;
-try { leafPeek = dgsShipmentLeafPeek_(ss, shipmentId); }
+try { leafPeek = docGate.status==='NOT_REQUIRED' ? dgsNoShipmentDocuments_(shipmentId) : dgsShipmentLeafPeek_(ss, shipmentId); }
 catch (ep) { leafPeek = { ok: false, reason: 'SHIPMENT_FOLDER_CHECK_FAILED', message: String(ep && ep.message || ep) }; }
 if (!leafPeek.ok) return jsonResponse_({ success: false, stage: 'document_folder', code: leafPeek.reason, shipment_id: shipmentId, document_folder: leafPeek,
 error: 'Cannot Confirm - the document folder this shipment would use is not provably its own.',
@@ -356,7 +356,7 @@ if (!dcs_.ok) { lock.releaseLock(); return jsonResponse_({ success: false, code:
 data: { status: curStatus, route_nodes_existing: existingRoutes, events_existing: !!existingEvents, movement_existing: !!existingMovement, not_complete: dcs_.why.slice(0, 20) },
 error: 'This shipment reads "' + curStatus + '" but its dispatch is not complete in the rows (' + dcs_.why.slice(0, 5).join('; ') + '): it is neither a fresh Confirm nor a finished one. Nothing was written and nothing was deducted. Review its stock, movement, route, event, allocation and PO-line rows before any further action.' }); }
 lock.releaseLock();
-return jsonResponse_({ success: true, already_confirmed: true, data: { shipment_id: shipmentId, status: sc('status') || curStatus, route_nodes_existing: existingRoutes, note: 'Shipment already confirmed/dispatched — no changes made (idempotent).' } });
+return jsonResponse_({ success: true, already_confirmed: true, data: { shipment_id: shipmentId, status: sc('status') || curStatus, route_nodes_existing: existingRoutes, document_generation: docGate.status==='NOT_REQUIRED'?dgsNoShipmentDocuments_(shipmentId):undefined, note: 'Shipment already confirmed/dispatched — no changes made (idempotent).' } });
 }
 
 
@@ -462,6 +462,9 @@ srcRec = (typeof ovsReadWarehouseRecord_ === 'function') ? ovsReadWarehouseRecor
 var srcKnown = !!srcRec;
 var srcDomain = (typeof shipmentSourceDomain_ === 'function')
 ? shipmentSourceDomain_(ss, srcWarehouseId) : 'FACTORY';
+if(docGate.status==='NOT_REQUIRED'&&(srcDomain!=='OVERSEAS'||docGate.source_warehouse_id!==srcWarehouseId)){
+lock.releaseLock();return jsonResponse_({success:false,code:'DOCUMENT_SOURCE_CHANGED',stage:'source',zero_write:true,error:'The source warehouse changed during Confirm. Reload and confirm again. Nothing was written.'});
+}
 var srcSheets = (typeof shipmentDomainSheets_ === 'function') ? shipmentDomainSheets_(ss, srcDomain) : null;
 
 
@@ -522,7 +525,7 @@ var slaPlan = (csdOvs_ && csdOvs_.eligible === true) ? { ok: true, cols: {}, all
 if (!slaPlan.ok) { lock.releaseLock(); return jsonResponse_({ success: false, error: slaPlan.error, stage: 'po_allocation', detail: slaPlan.detail || null, shipment_id: shipmentId, zero_write: true, overseas_transfer_check: csdOvs_ }); }   // C6: names why an overseas source still needs PO allocations
 
 
-var vGate = dgsFrozenValueGate_(ss, shipmentId);
+var vGate = docGate.status==='NOT_REQUIRED' ? Object.assign(dgsNoShipmentDocuments_(shipmentId),{built:null,blockers:[],documents:0}) : dgsFrozenValueGate_(ss, shipmentId);
 if (!vGate.ok) { lock.releaseLock(); return jsonResponse_({ success: false, code: 'DOCUMENT_FROZEN_VALUE_INVALID', stage: 'document_values', shipment_id: shipmentId, error: 'Cannot Confirm \u2014 a document this shipment will produce is missing a required value.', blockers: vGate.blockers, note: 'The shipment remains ready_to_ship and shipped_at is blank. Nothing was written and no Drive folder or file was created.', zero_write: true }); }
 
 
@@ -683,7 +686,7 @@ lock.releaseLock();
 
 var shippedAtFinal = String(prevShippedAt || '').trim() || now;
 var docResult = { ok: false, reason: 'NOT_ATTEMPTED' };
-try { docResult = dgsGenerateShipmentDocuments_(ss, shipmentId, actor, { prebuilt: vGate.built }); }
+try { docResult = vGate.status==='NOT_REQUIRED' ? dgsNoShipmentDocuments_(shipmentId) : dgsGenerateShipmentDocuments_(ss, shipmentId, actor, { prebuilt: vGate.built }); }
 catch (ed) { docResult = { ok: false, reason: 'DOCUMENT_GENERATION_FAILED', message: (ed && ed.message ? String(ed.message) : String(ed)) }; }
 
 return jsonResponse_({
@@ -700,8 +703,8 @@ shipped_at: shippedAtFinal,
 
 
 document_generation: {
-status: docResult.ok && !docResult.failed && !docResult.configuration_required ? 'READY' : 'RETRY_REQUIRED',
-registry: 'generated_documents', retry_safe: true,
+status: docResult.status==='NOT_REQUIRED' ? 'NOT_REQUIRED' : (docResult.ok && !docResult.failed && !docResult.configuration_required ? 'READY' : 'RETRY_REQUIRED'),
+registry: 'generated_documents', retry_safe: docResult.status!=='NOT_REQUIRED',
 expected: docResult.expected || 0, generated: docResult.generated || 0, reused: docResult.reused || 0,
 failed: docResult.failed || 0, configuration_required: docResult.configuration_required || 0,
 folder_url: docResult.folder_url || '', folder_name: docResult.folder_name || '',
