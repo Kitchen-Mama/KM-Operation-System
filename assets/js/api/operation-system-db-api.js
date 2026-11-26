@@ -4223,8 +4223,8 @@ function _kmDocumentAction(action, payload) {
         method: 'POST', cache: 'no-store', headers: { 'Content-Type': 'text/plain;charset=utf-8' },
         body: JSON.stringify(Object.assign({ action: action }, payload || {}))
     };
-    var request = action === 'shipment.consolidationPolicy.get' || action === 'shipment.consolidationPolicy.save'
-        ? _kmFetchBounded_(OP_DB_API_BASE_URL, options, action.endsWith('.get') ? 'read' : 'write', action)
+    var request = action === 'shipment.consolidationPolicy.get' || action === 'shipment.consolidationPolicy.save' || action === 'shipment.dispatch.status'
+        ? _kmFetchBounded_(OP_DB_API_BASE_URL, options, action === 'shipment.consolidationPolicy.save' ? 'write' : 'read', action)
         : fetch(OP_DB_API_BASE_URL, options);
     return request.then(function (resp) {
         if (!resp.ok) return { success: false, error: 'API returned ' + resp.status, stage: 'network' };
@@ -4251,6 +4251,9 @@ window.KM.DB.runPoDocumentDiagnostic = function(purchaseOrderId) {
 };
 window.KM.DB.runShipmentDocumentDiagnostic = function(shipmentId) {
     return _kmDocumentAction('document.diagnostic.shipment', { shipment_id: shipmentId });
+};
+window.KM.DB.getShipmentDispatchStatus = function(shipmentId) {
+    return _kmDocumentAction('shipment.dispatch.status', { shipment_id: String(shipmentId || '').trim() });
 };
 
 // Open/download a generated document result in a new tab (download_url = PDF when present, else the editable file).

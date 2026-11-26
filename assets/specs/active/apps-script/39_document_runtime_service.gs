@@ -2494,6 +2494,8 @@ applicable_manifest: readiness.manifest,
 writes_performed: 0, folders_created: 0, files_created: 0,
 note: 'READ-ONLY diagnostic. No snapshot was finalized, no Drive folder or file was created; folders shown are preview paths.'
 };
+var beforeDispatch=sc.status==='draft'||sc.status==='ready_to_ship',valueCheck=null;
+if(beforeDispatch){var checked=handleShipmentDocumentValuesCheck_({shipment_id:shipmentId});valueCheck=checked&&checked.getContent?JSON.parse(checked.getContent()):checked;out.pre_dispatch_value_check=valueCheck;}
 var snap = docReadSnapshot_(ss, shipmentId);
 out.snapshot_eligible = !!SFO_DISPATCHED_STATUS_[sc.status];
 out.snapshot_present = !!snap;
@@ -2554,17 +2556,24 @@ var absent = readiness.manifest.filter(function (m) {
 return !existing.some(function (r) { return dgsStr_(r.template_id) === dgsStr_(m.template_id) && dgsStr_(r.template_version) === dgsStr_(m.template_version) && dgsRowState_(r) === 'READY'; });
 });
 absent.forEach(function (m) {
+if(beforeDispatch)return;
 if (!existing.some(function (r) { return dgsStr_(r.template_id) === dgsStr_(m.template_id) && dgsStr_(r.template_version) === dgsStr_(m.template_version); })) {
 out.missing_or_failed_outputs.push({ document_label: m.class_key, template_key: m.template_key, status: 'NOT_GENERATED', reason: 'DOCUMENT_OUTPUTS_MISSING' });
 }
 });
 out.safe_retry_verdict = out.existing_documents.some(function (d) { return d.retryable; }) ? 'RETRY_SAFE' : (out.missing_or_failed_outputs.length ? 'CONFIGURATION_REQUIRED' : 'NOTHING_TO_RETRY');
 if (snap && SFO_DISPATCHED_STATUS_[sc.status] && absent.length && configReq === 0 && readiness.drive_readiness.status === 'READY') out.safe_retry_verdict = 'RETRY_SAFE';
+if(beforeDispatch)out.safe_retry_verdict='NOT_DISPATCHED';
 out.system_readiness_verdict = out.pre_dispatch_system_readiness.status;
 out.drive_readiness_verdict = readiness.drive_readiness.status === 'READY' ? 'READY' : (readiness.drive_readiness.status === 'SKIPPED' ? 'NOT_EVALUATED' : 'BLOCKED');
 out.blocking_reasons = readiness.blockers;
 out.configuration_issues = readiness.configuration_issues || [];
 out.confirm_shipment_verdict = (readiness.ok && out.eligible_for_confirm) ? 'READY' : 'BLOCKED';
+if(beforeDispatch&&readiness.ok){
+  if(valueCheck&&valueCheck.code==='DATA_WRITE_IN_PROGRESS')out.confirm_shipment_verdict='WAITING_FOR_WRITE';
+  else if(!valueCheck||valueCheck.definitive!==true)out.confirm_shipment_verdict='VALUES_UNVERIFIED';
+  else if(valueCheck.values_ok!==true){out.confirm_shipment_verdict='BLOCKED';out.blocking_reasons=out.blocking_reasons.concat(valueCheck.blockers||[]);}
+}
 out.verdict = out.confirm_shipment_verdict;
 dgsLog_('[DGS-SHIP-DIAG]', { shipment: shipmentId, verdict: out.verdict, manifest: out.applicable_manifest.length, ready: ready });
 return jsonResponse_(out);
@@ -2633,4 +2642,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1-DSR1';

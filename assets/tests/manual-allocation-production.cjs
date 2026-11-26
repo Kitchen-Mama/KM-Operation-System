@@ -22,6 +22,31 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
+
+test('dispatch status is a read at both production gates and requires its updated backend', async () => {
+  assert.equal(c.rtrActionGate_('shipment.dispatch.status', {}), null);
+  assert(p.reads.includes('shipment.dispatch.status'));
+  const g=guard();await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'shipment.dispatch.status',shipment_id:'S'})});
+  assert.equal(g.sent.length,2);assert.equal(g.writes.length,0);
+  const previous=guard({...p,policy_sha256:'a4acb5a8e7716df04346f11d1f5c170e58aea1fbb5189b49230fa04b7f2132bf'});
+  await assert.rejects(previous.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'shipment.dispatch.status',shipment_id:'S'})}),/DISPATCH_STATUS_BACKEND_UPDATE_REQUIRED/);
+  await previous.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'confirmShipmentAndDispatch',shipment_id:'S'})});
+  assert.equal(previous.sent.length,2);
+});
+
+test('real POST dispatch-status routing never marks itself as a source writer',()=>{
+  const x=vm.createContext({}),source=fs.readFileSync('assets/specs/active/apps-script/01_router.gs','utf8');vm.runInContext(source,x);
+  for(const match of x.rtrGetReadHandlers_.toString().matchAll(/:\s*(handle\w+_)/g))x[match[1]]=()=>{throw Error('unrelated handler');};
+  x.handleShipmentDispatchStatus_=b=>({success:true,shipment_id:b.shipment_id,read_only:true,writes_performed:0});
+  x.jsonResponse_=v=>v;x.paControl_=()=>null;x.paSessionCheck_=()=>null;x.Logger={log(){}};
+  x.SpreadsheetApp={getActiveSpreadsheet:()=>({getId:()=> 'fixture'})};x.prodExpectedDbId_=()=> 'fixture';x.rtrSha256Hex_=()=>p.db_fp;
+  const stamps=Object.fromEntries(p.module_stamps.map(m=>[m.symbol,m.expected]));x.sysGlobalValue_=key=>stamps[key];x.requestOrderDraftV2FlatCutoverEnabled_=()=>true;
+  let writes=0;x.kmSrcRevMark_=x.kmSrcRevBump_=()=>{writes++;throw Error('WRITE FORBIDDEN');};
+  const b={action:'shipment.dispatch.status',shipment_id:'S',access_session:'fixture'};
+  assert.equal(x.rtrIsRead_(b.action),true);
+  const r=x.doPost({parameter:{action:b.action},postData:{contents:JSON.stringify(b)}});
+  assert.equal(r.success,true,JSON.stringify(r));assert.equal(r.shipment_id,'S');assert.equal(r.read_only,true);assert.equal(writes,0);
+});
 test('pre-EU-document-customs policy retains shipping operations during manual GS rollout', async () => {
   const previous={...p,policy_sha256:'ee2356e6e9b7bbf581b274d9e85ad62b0fde94cee8e11ebef607dd14ab228a0c'},g=guard(previous);
   await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'confirmShipmentAndDispatch',shipment_id:'S'})});
@@ -34,9 +59,9 @@ test('pre-overseas-document policy remains usable while new document owners are 
 });
 test('baseline keeps explicit additions limited to monthly edit, warehouse/status reads, mixed packing and campaign builder', () => {
   assert.equal(old.rtrActionGate_(body.action, body).code, 'PRODUCTION_ACTION_NOT_ENABLED');
-  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', 'campaign.builder.get','campaign.builder.status','campaign.builder.save', body.action].sort());
+  assert.deepEqual(p.allowed.filter(a => !oldP.allowed.includes(a)).sort(), ['factoryInventory.workspace.get', 'gapJob.status.get', 'shippingPlan.mixedCartons.save', 'campaign.builder.get','campaign.builder.status','campaign.builder.save', 'shipment.dispatch.status', body.action].sort());
   assert.deepEqual(p.blocked, oldP.blocked.filter(a => a !== body.action && a !== 'gapJob.status.get'));
-  assert.deepEqual(p.reads.filter(a => a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get' && !/^campaign\.builder\./.test(a)), oldP.reads);
+  assert.deepEqual(p.reads.filter(a => a !== 'shipment.dispatch.status' && a !== 'factoryInventory.workspace.get' && a !== 'gapJob.status.get' && !/^campaign\.builder\./.test(a)), oldP.reads);
   assert.equal(p.ai_plan_enabled, false);
 });
 test('policy hash, public config and health module stamps agree', () => {
@@ -47,7 +72,7 @@ test('policy hash, public config and health module stamps agree', () => {
   const hc = vm.createContext({}); vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/63_api_v1_system_health.gs', 'utf8'), hc);
   for (const symbol of ['SYS_BUILD_VERSION_', 'RTR_BUILD_VERSION_']) {
     const expected = p.module_stamps.find(r => r.symbol === symbol).expected;
-    assert(expected.endsWith('-MA1'));
+    assert(expected.endsWith('-MA1-DSR1'));
     assert.equal(hc.SYS_MODULE_BUILD_STAMPS_.find(r => r.symbol === symbol).expected, expected);
   }
 });

@@ -49,7 +49,7 @@
 
 
 
-var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1";
+var RTR_BUILD_VERSION_ = "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1";
 
 
 
@@ -88,6 +88,7 @@ var RTR_GET_BODY_MAX_ = 4000;
 
 function rtrGetReadHandlers_() {
 return {
+'shipment.dispatch.status': handleShipmentDispatchStatus_,
 'campaign.builder.get': handleCampaignBuilderGet_,
 'campaign.builder.status': handleCampaignBuilderStatus_,
 'siteSku.planning.list': handleSiteSkuPlanningList_,
@@ -149,11 +150,13 @@ return {
 
 
 
-var KM_SRC_REV_KEY_ = 'KM_SOURCE_REVISION', KM_SRC_PEND_ = 'KM_SRC_PEND_', KM_SRC_PEND_MS_ = 1800000;
+// Apps Script's published per-execution limit is 6 minutes; retain a 10-minute writer lease.
+// https://developers.google.com/apps-script/guides/services/quotas#current_limitations
+var KM_SRC_REV_KEY_ = 'KM_SOURCE_REVISION', KM_SRC_PEND_ = 'KM_SRC_PEND_', KM_SRC_PEND_MS_ = 600000;
 function kmSrcRevGet_() {
 try {
 var p = PropertiesService.getScriptProperties().getProperties(), old = [];
-for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0) { if (Date.now() - Number(p[k]) < KM_SRC_PEND_MS_) return false; old.push(k); }
+for (var k in p) if (k.indexOf(KM_SRC_PEND_) === 0) { if (!isFinite(Number(p[k])) || Number(p[k])<=0) return null; if (Date.now() - Number(p[k]) < KM_SRC_PEND_MS_) return false; old.push(k); }
 return (p[KM_SRC_REV_KEY_] || 'R0') + (old.length ? '+' + old.sort().join('+') : '');
 } catch (e) { return null; }
 }
@@ -1346,6 +1349,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "shipment.removePlanFromConsolidated",
     "shipment.route.advance",
     "shipment.selectRateCard",
+    "shipment.dispatch.status",
     "shipment.workspace.get",
     "shipmentDocument.generate",
     "shipmentDocument.get",
@@ -1440,6 +1444,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     "shipment.documentValues.check",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
+    "shipment.dispatch.status",
     "shipment.workspace.get",
     "shipmentDocument.get",
     "shippingPlan.rateCardOptions",
@@ -1548,7 +1553,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1",
+      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1-DSR1",
       "optional": false
     },
     {
@@ -1608,7 +1613,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SYS_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-S2-TAX1-DOC1-CP1-CP2-CP2A-CP2B-CP2C-PFI2-WDL1-SBX-PA1-SSK1-R2-AF1-FCA1-SC1R2-SC2-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1",
       "optional": false
     },
     {
@@ -1753,12 +1758,12 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "CSD_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1",
       "optional": false
     },
     {
       "symbol": "RTR_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1F-R15F2-R15G-CP2C-PFI2-PA1-SSK1-R1-PROD1-AV1-IU3-IU4N1-PGSC1N1-A2S-SHTPL1-SHTPL2-AFINAL1-AFINAL2-AFINAL3-AFINAL4-A2ROUTE-AD1-AD1B-AD2-AD3-AD4-DS1-DW1-DW2-DR4-MA1-DSR1",
       "optional": false
     },
     {
@@ -1818,7 +1823,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "a4acb5a8e7716df04346f11d1f5c170e58aea1fbb5189b49230fa04b7f2132bf"
+  "policy_sha256": "b3399adbda1363a7c9fda69a65c584c10bfb4c767419a96a62e9b5b71a2ac136"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

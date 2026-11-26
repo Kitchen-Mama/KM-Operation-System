@@ -9,7 +9,7 @@ const {chromium}=require(require.resolve('playwright',{paths:[runtime]})),out=pa
 let pass=0;function check(name,value){assert(value,name);console.log('PASS '+name);pass++;}
 (async()=>{fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'chrome',headless:true});
 try{for(const width of [1440,390])for(const lost of [false,true]){
- const h=world(),c=h.c,calls=[],errors=[],requests=[],page=await browser.newPage({viewport:{width,height:950}});
+ const h=world(),c=h.c,calls=[],errors=[],requests=[],page=await browser.newPage({viewport:{width,height:950}});c.kmSrcRevGet_=()=> 'FIXTURE-REV';
  h.sheet('shipment_route_templates',h.tables.shipment_route_templates.grid[0],[{route_template_id:'DOMESTIC',route_template_name:'Domestic',destination_country:'US',origin_country:'US',carrier_id:'CAR',transit_type:'truck',last_mile_delivery:'parcel',is_active:true}]);
  const nodes=[{route_template_id:'DOMESTIC',route_template_node_id:'N1',node_sequence:1,node_type:'factory_pickup',node_code:'SOURCE',country:'US'},
  {route_template_id:'DOMESTIC',route_template_node_id:'N2',node_sequence:2,node_type:'warehouse',node_code:'DEST',country:'US',is_destination_placeholder:true}];
@@ -23,10 +23,11 @@ try{for(const width of [1440,390])for(const lost of [false,true]){
  await page.exposeFunction('saveFixture',body=>{calls.push('save');const r=unwrap(c.handleUpdateShipment_(body));assert.equal(r.success,true,JSON.stringify(r));return {...r,...r.data};});
  await page.exposeFunction('allocationFixture',body=>{calls.push('allocation');return unwrap(c.handleGenerateShipmentLineAllocations_(body));});
  await page.exposeFunction('confirmFixture',body=>{calls.push('confirm');const r=unwrap(c.handleConfirmShipmentAndDispatch_(body));assert.equal(r.success,true,JSON.stringify(r));return lost?{success:false,stage:'network'}:r;});
+ await page.exposeFunction('dispatchStatusFixture',()=>unwrap(c.handleShipmentDispatchStatus_({shipment_id:'S'})));
  for(const f of ['assets/js/api/operation-system-db-api.js','assets/js/pages/shipping-history.js'])await page.addScriptTag({content:fs.readFileSync(f,'utf8')});
  await page.evaluate(async()=>{
   window.alerts=[];window.alert=x=>alerts.push(x);KM.api=KM.api||{};KM.api.getWorkspace=async()=>({success:true,data:await readFixture()});
-  KM.DB.getShipmentRateCardOptions=()=>rateFixture();KM.DB.updateShipment=p=>saveFixture(p);KM.DB.generateShipmentLineAllocations=p=>allocationFixture(p);KM.DB.confirmShipmentAndDispatch=p=>confirmFixture(p);
+  KM.DB.getShipmentRateCardOptions=()=>rateFixture();KM.DB.updateShipment=p=>saveFixture(p);KM.DB.generateShipmentLineAllocations=p=>allocationFixture(p);KM.DB.confirmShipmentAndDispatch=p=>confirmFixture(p);KM.DB.getShipmentDispatchStatus=()=>dispatchStatusFixture();
   _shLoadAndRender=async()=>{_shReadModel=KM.DB.adaptShipmentWorkspace(await readFixture());const s=_shGetShipments().find(s=>s.shipmentId==='S');document.getElementById('fixture').innerHTML=_shRenderDbCard(s,_shGetShipmentLines(),'draft');};await _shLoadAndRender();
  });
  await page.locator('.history-expand-btn').click();await page.evaluate(()=>shConfirmShipment('S'));await page.waitForSelector('#sh-confirm-modal');

@@ -33,6 +33,21 @@ const tpl={template_id:'T',template_key:'SHIPDETAIL_STANDARD',template_version:1
 const detail={template:tpl,template_id:'T',template_key:tpl.template_key,template_version:1,render:'SHIPDETAIL',class_key:'SHIPMENT_DETAIL',requirement:'ALWAYS'};
 const fields=[{worksheet_name:'List 1',placeholder:'SHIPMENT_LINES',collection_key:'SHIPMENT_LINES',field_type:'collection',data_scope:'line',transform_rule:'expand_allocations',is_active:true},
  ...[['SKU','shipment_lines','sku'],['QTY','shipment_line_allocations','allocated_qty'],['CARTONS','shipment_lines','carton_qty'],['PO_NO','purchase_orders','po_no']].map(([placeholder,data_source_table,data_source_field])=>({worksheet_name:'List 1',placeholder,collection_key:'SHIPMENT_LINES',field_type:'collection_item',data_scope:'line',data_source_table,data_source_field,required:true,is_active:true,transform_rule:placeholder==='QTY'||placeholder==='PO_NO'?'':'merge_by_shipment_line'}))];
+
+for(const [check,verdict] of [
+ [{success:false,code:'DATA_WRITE_IN_PROGRESS',definitive:false},'WAITING_FOR_WRITE'],
+ [{success:false,definitive:false},'VALUES_UNVERIFIED'],
+ [{success:true,definitive:true,values_ok:false,blockers:[{code:'MISSING_DECLARED_VALUE'}]},'BLOCKED'],
+ [{success:true,definitive:true,values_ok:true},'READY']
+])test('pre-dispatch diagnostic reports '+verdict+' without treating uncreated files as failed outputs',()=>{
+ const c=context();c.dgsDb_=()=>({});c.dgsShipmentContext_=()=>({ok:true,status:'ready_to_ship',ctx:{},row:{shipment_id:'S'},external_shipment_id:'EXT'});
+ c.dgsShipmentReadiness_=()=>({ok:true,blockers:[],manifest:[detail],drive_readiness:{status:'READY'},destination_bucket:'EU'});
+ c.handleShipmentDocumentValuesCheck_=()=>check;c.docReadSnapshot_=()=>null;c.dgsTemplates_=()=>[tpl];c.dgsShipmentManifest_=()=>({entries:[detail]});c.dgsFieldsFor_=()=>fields;c.dgsGeneratedFor_=()=>[];
+ const r=c.handleShipmentDocumentDiagnostic_({shipment_id:'S'});
+ assert.equal(r.confirm_shipment_verdict,verdict);assert.deepEqual(plain(r.pre_dispatch_value_check),check);
+ assert.equal(r.safe_retry_verdict,'NOT_DISPATCHED');assert.equal(r.missing_or_failed_outputs.length,0);assert.equal(r.writes_performed,0);assert.equal(r.files_created,0);
+ if(verdict==='BLOCKED')assert.equal(r.blocking_reasons[0].code,'MISSING_DECLARED_VALUE');
+});
 test('diagnostic uses the real physical-SKU payload, not the obsolete PO-expanded merge path',()=>{
  const c=context(),before=JSON.stringify(snapshot);c.dgsFieldsFor_=()=>fields;c.xcoLinkCount_=()=>0;
  const raw=c.dtMapPlaceholders_(c.docRenderByClass_('SHIPDETAIL',snapshot),fields);

@@ -56,7 +56,7 @@
 
 
 
-var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1';
+var CSD_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-R15F2-R15G-AD1B-AD2-AD3-OND1-DSR1';
 var CSD_MOV_TYPE_ = 'shipment_out';
 
 
@@ -205,6 +205,65 @@ function csdPlatformFamily_(name) {
   if (/(^|\s)amazon$/.test(n)) return 'amazon';
   if (/(^|\s)walmart$/.test(n)) return 'walmart';
   return n;
+}
+function handleShipmentDispatchStatus_(body) {
+  var sid=String(body&&body.shipment_id||'').trim(),base={success:true,shipment_id:sid,proof_version:'DISPATCH-STATUS-V1',read_only:true,writes_performed:0,safe_to_retry:false};
+  function result(state,reason,extra){return jsonResponse_(Object.assign({},base,{state:state,reason:reason},extra||{}));}
+  if(!sid)return result('UNKNOWN','SHIPMENT_ID_REQUIRED');
+  if(typeof kmSrcRevGet_!=='function')return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
+  var before=kmSrcRevGet_();
+  if(before===false)return result('IN_PROGRESS','SOURCE_WRITE_IN_PROGRESS');
+  if(typeof before!=='string'||!before)return result('UNKNOWN','SOURCE_REVISION_UNAVAILABLE');
+  var lock=LockService.getScriptLock(),acquired=false;
+  try {
+    acquired=lock.tryLock(1000);if(!acquired)return result('IN_PROGRESS','DISPATCH_LOCK_BUSY');
+    var ss=SpreadsheetApp.getActiveSpreadsheet(),required=['shipments','shipment_lines','shipment_routes','shipment_events','shipment_line_allocations','warehouses'];
+    if(required.some(function(n){return !ss.getSheetByName(n);}))return result('UNKNOWN','DISPATCH_EVIDENCE_TABLE_MISSING');
+    var columns={shipments:['shipment_id','status','source_warehouse_id','updated_at'],shipment_lines:['shipment_id','shipment_line_id','sku','shipment_qty'],shipment_routes:['shipment_id'],shipment_events:['shipment_id','event_type'],shipment_line_allocations:['shipment_line_id','allocation_status'],warehouses:['warehouse_id','is_factory_warehouse','warehouse_type']};
+    if(required.some(function(n){var t=shipmentReadSheet_(ss.getSheetByName(n));return columns[n].some(function(k){return t.col(k)<0;});}))return result('UNKNOWN','DISPATCH_EVIDENCE_COLUMNS_MISSING');
+    var ships=sfoReadTable_(ss,'shipments',[]).filter(function(r){return String(r.shipment_id||'').trim()===sid;});
+    if(ships.length!==1)return result('UNKNOWN','SHIPMENT_NOT_UNIQUE');
+    var ship=ships[0],status=String(ship.status||'').trim().toLowerCase(),routes=csdCountRowsFor_(ss,'shipment_routes','shipment_id',sid),events=csdEventExists_(ss,sid),movement=csdMovementExists_(ss,sid),verdict,reason,safe=false;
+    if(csdIsDispatchedStatus_(status)){
+      var consistency=csdDispatchConsistency_(ss,sid,routes,events,movement);
+      verdict=consistency.ok?'DISPATCHED':'REVIEW_REQUIRED';reason=consistency.ok?'DISPATCH_VERIFIED':'DISPATCH_STATE_INCONSISTENT';
+    }else if(status!=='ready_to_ship'||String(ship.record_origin||'')==='IMPORT_HISTORICAL') { verdict='REVIEW_REQUIRED';reason='SHIPMENT_NOT_READY_TO_SHIP'; }
+    else if(routes||events||movement||String(ship.shipped_at||'').trim()||String(ship.actual_departure_date||'').trim()) { verdict='REVIEW_REQUIRED';reason='DISPATCH_EVIDENCE_PRESENT'; }
+    else {
+      var lines=sfoReadTable_(ss,'shipment_lines',[]).filter(function(l){return String(l.shipment_id||'').trim()===sid&&!sc13LineRemoved_(l);}),need={},ids={},bad=false;
+      lines.forEach(function(l){var sku=String(l.sku||'').trim(),id=String(l.shipment_line_id||'').trim(),qty=shipmentBooksInt_(l.shipment_qty);if(!sku||!id||ids[id]||qty===null||qty<=0)bad=true;ids[id]=1;need[sku]=(need[sku]||0)+(qty||0);});
+      var allocations=sfoReadTable_(ss,'shipment_line_allocations',[]).filter(function(a){return ids[String(a.shipment_line_id||'').trim()];});
+      if(!lines.length||bad){verdict='REVIEW_REQUIRED';reason='SHIPMENT_LINES_UNPROVEN';}
+      else if(allocations.some(function(a){return ['draft','released','cancelled','void'].indexOf(String(a.allocation_status||'').trim().toLowerCase())<0;})){verdict='REVIEW_REQUIRED';reason='PO_ALLOCATION_EXECUTION_UNPROVEN';}
+      else {
+        var source=String(ship.source_warehouse_id||'').trim(),wh=sfoReadTable_(ss,'warehouses',[]).filter(function(w){return String(w.warehouse_id||'').trim()===source;});
+        if(!source||wh.length!==1){verdict='REVIEW_REQUIRED';reason='SOURCE_WAREHOUSE_UNPROVEN';}
+        else {
+          var domain=shipmentSourceDomain_(ss,source),ovs=domain===SHIPMENT_DOMAIN_OVERSEAS_,sheets={stockSheet:ss.getSheetByName(ovs?'overseas_inventory_snapshot':'factory_stock'),movSheet:ss.getSheetByName(ovs?'overseas_inventory_movements':'factory_stock_movements')};
+          var books=shipmentReservationBooks_(domain,sheets,source,Object.keys(need)),ownerBooks=shipmentCancelBooks_(ss,sid,source);
+          if(books.verdict!=='RECONCILED'||ownerBooks.verdict!=='RECONCILED'){verdict='REVIEW_REQUIRED';reason='RESERVATION_BOOKS_UNPROVEN';}
+          else if(!sheets.movSheet||!csdPendingStockEvidence_(sheets.movSheet,source,Object.keys(need),ovs)){verdict='REVIEW_REQUIRED';reason='STOCK_CELL_EVIDENCE_UNPROVEN';}
+          else {
+            var held=shipmentDomainHeld_(domain,sheets,sid);
+            var expected={};Object.keys(need).forEach(function(k){expected[source+'||'+k]=need[k];});
+            var keys=Object.keys(expected).concat(Object.keys(held));
+            if(keys.some(function(k){var h=shipmentBooksInt_(held[k]===undefined?0:held[k]);return h===null||h!==(expected[k]||0);})){verdict='REVIEW_REQUIRED';reason='SHIPMENT_RESERVATION_UNPROVEN';}
+            else if(!editEpochs_(ship.updated_at).ok){verdict='REVIEW_REQUIRED';reason='SHIPMENT_VERSION_UNPROVEN';}
+            else {verdict='NOT_DISPATCHED';reason='NO_DISPATCH_AND_BOOKS_RECONCILED';safe=true;}
+          }
+        }
+      }
+    }
+    var after=kmSrcRevGet_();if(after!==before)return result('IN_PROGRESS','SOURCE_CHANGED_DURING_CHECK');
+    return result(verdict,reason,{status:status,safe_to_retry:safe,source_revision:after,current_updated_at:editTok_(ship.updated_at),route_nodes:routes,events_present:!!events,movement_present:!!movement});
+  } catch(e) {return result('UNKNOWN','DISPATCH_STATUS_UNREADABLE',{error:String(e&&e.message||e)});}
+  finally {if(acquired)lock.releaseLock();}
+}
+function csdPendingStockEvidence_(movementSheet, warehouseId, skus, overseas) {
+  var t=shipmentReadSheet_(movementSheet),w=t.col('warehouse_id'),s=t.col('sku'),a=t.col(overseas?'wh_after_available_stock':'after_current_stock'),last={};
+  if(w<0||s<0||a<0)return false;
+  t.rows.slice(1).forEach(function(r){var sku=String(r[s]||'').trim();if(String(r[w]||'').trim()===warehouseId&&skus.indexOf(sku)>=0)last[sku]=shipmentBooksInt_(r[a]);});
+  return skus.every(function(sku){return last[sku]!==undefined&&last[sku]!==null&&last[sku]>=0;});
 }
 function handleConfirmShipmentAndDispatch_(body) {
 body = body || {};
@@ -492,7 +551,7 @@ if (dbBooks.verdict === 'RECONCILED') { var dbT_ = shipmentCancelBooks_(ss, ship
 if (dbBooks.verdict !== 'RECONCILED') { lock.releaseLock(); return jsonResponse_({ success: false, code: dbBooks.verdict, stage: 'reservation_books', shipment_id: shipmentId,
 source_warehouse_id: srcWarehouseId, source_domain: srcDomain, data: { keys_checked: dbBooks.keys, keys_mismatched: dbBooks.mismatched, keys_unknown: dbBooks.unknown },
 error: shipmentBooksMessage_(dbBooks, 'Confirm Shipment & Dispatch'),
-note: 'The shipment remains ready_to_ship and shipped_at is blank. Nothing was written and no Drive folder or file was created.' }); }
+note: 'The shipment remains ready_to_ship and shipped_at is blank. Nothing was written and no Drive folder or file was created.', zero_write: true }); }
 var deductPlan = [];
 var stockErrors = [];
 Object.keys(needBySku).forEach(function (sku) {
@@ -723,7 +782,7 @@ var stNow_ = ''; if (!undoR_.complete) { try { stNow_ = (row > 0 && s && s.col('
 try { lock.releaseLock(); } catch (e) {}
 if (!undoR_.complete) return jsonResponse_({ success: false, code: 'CONFIRM_ROLLBACK_UNVERIFIED', stage: 'write_rollback_stopped', shipment_id: shipmentId, data: { stopped_at: undoR_.phase, left: undoR_.left.slice(0, 20), undone: undoR_.done.slice(0, 40) },
 error: 'Confirm Shipment failed (' + (err && err.message ? err.message : err) + ') and its rollback STOPPED (' + undoR_.phase + ': ' + undoR_.left.slice(0, 3).join('; ') + '). ' + undoR_.done.length + ' undo step(s) were verified; everything else is KEPT. The shipment status now reads "' + stNow_ + '". A repeated Confirm re-checks the dispatch from the rows (status, shipment_out movement, routes, events, allocations, PO lines) and refuses while they disagree; it never answers success over a partly kept dispatch. A stock cell listed above as not proven is NOT detected by that check: do not Confirm again until the shipment, its stock, movement, route, event, allocation and PO rows are reviewed.' });
-return jsonResponse_({ success: false, error: 'Confirm Shipment failed and was rolled back: ' + (err && err.message ? err.message : err), stage: 'write_rolled_back', shipment_id: shipmentId });
+return jsonResponse_({ success: false, error: 'Confirm Shipment failed and was rolled back: ' + (err && err.message ? err.message : err), stage: 'write_rolled_back', shipment_id: shipmentId, dispatch_outcome:'ROLLED_BACK_VERIFIED',retry_safe:true });
 }
 }
 

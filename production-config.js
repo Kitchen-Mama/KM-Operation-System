@@ -95,6 +95,7 @@
     "shipment.removePlanFromConsolidated",
     "shipment.route.advance",
     "shipment.selectRateCard",
+    "shipment.dispatch.status",
     "shipment.workspace.get",
     "shipmentDocument.generate",
     "shipmentDocument.get",
@@ -189,6 +190,7 @@
     "shipment.documentValues.check",
     "shipment.rateCardOptions",
     "shipment.receipt.diagnose",
+    "shipment.dispatch.status",
     "shipment.workspace.get",
     "shipmentDocument.get",
     "shippingPlan.rateCardOptions",
@@ -225,5 +227,5 @@
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "a4acb5a8e7716df04346f11d1f5c170e58aea1fbb5189b49230fa04b7f2132bf"
+  "policy_sha256": "b3399adbda1363a7c9fda69a65c584c10bfb4c767419a96a62e9b5b71a2ac136"
 }; Object.freeze(c.allowed); Object.freeze(c.reads); window.KM_PRODUCTION_CONFIG_ = Object.freeze(c); window.KM = window.KM || {}; window.KM.config = window.KM.config || {}; Object.defineProperty(window.KM.config, 'operationDbWebAppUrl', { value: c.endpoint, writable: false, configurable: false }); })();

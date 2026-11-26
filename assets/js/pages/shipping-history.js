@@ -2267,6 +2267,7 @@ function _shDispatchHold14_(sid, hold) {
 }
 var SH_DISPATCHED_STATUSES_R71_ = { shipped: 1, in_transit: 1, arrived: 1, partially_received: 1, received: 1, closed: 1, stuck: 1 };
 function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
+    function explain(text) { if(status) { status.style.color='#B45309';status.textContent=text; } else _shNote_(shipmentId,text); }
     _shDispatchHold14_(shipmentId, true);
     if (SH_DISPATCH_CHECK14_[shipmentId]) return;
     SH_DISPATCH_CHECK14_[shipmentId] = true;
@@ -2280,12 +2281,29 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
         check.addEventListener('click', function () { _shDispatchUnknown_(shipmentId, res, go, cancel, status); }); actions.appendChild(check);
     }
     if (check) check.disabled = true;
-    var api = window.KM && window.KM.api;
-    // A ready status can race an execution that has not committed yet. It is never proof of zero writes.
+    var api = window.KM && window.KM.api, proofHandled=false, hasProofApi=false;
+    // A ready status alone is not proof; only the server's stable ledger check can release the hold.
     return Promise.resolve().then(function () {
+        var db=window.KM&&window.KM.DB;
+        hasProofApi=!!(db&&typeof db.getShipmentDispatchStatus==='function');
+        return hasProofApi?db.getShipmentDispatchStatus(shipmentId):null;
+    }).then(function(proof){
+        if(proof&&proof.success===true&&proof.proof_version==='DISPATCH-STATUS-V1'&&String(proof.shipment_id)===String(shipmentId)&&proof.read_only===true&&proof.writes_performed===0){
+            if(proof.state==='NOT_DISPATCHED'&&proof.safe_to_retry===true&&proof.status==='ready_to_ship'&&proof.source_revision&&proof.current_updated_at){
+                proofHandled=true;_shDispatchHold14_(shipmentId,false);delete _shConfirmSaved_[shipmentId];_shCloseConfirmModal();
+                return Promise.resolve(_shLoadAndRender()).then(function(){_shNote_(shipmentId,'The server verified that this shipment was not dispatched and its stock books agree. Review the card, then press Confirm Shipment when ready. Nothing was resent.');});
+            }
+            if(proof.state!=='DISPATCHED'){
+                proofHandled=true;
+                explain((proof.state==='IN_PROGRESS'?'A recent write is still pending verification. Check status again shortly. ':'Confirmation needs review. ')+(proof.reason||proof.state)+'. Nothing was resent.');
+                return null;
+            }
+        }
+        else if(hasProofApi){proofHandled=true;explain('Dispatch verification could not be completed ('+String(proof&&(proof.code||proof.error)||'NO_RESULT')+'). Keep this shipment unchanged and check status again. Nothing was resent.');return null;}
         if (!api || typeof api.getWorkspace !== 'function') throw new Error('READ_UNAVAILABLE');
         return api.getWorkspace('shipment', { filters: { shipmentId: shipmentId }, page: { number: 1, size: 5 }, include: { documents: true } });
     }).then(function (env) {
+        if(proofHandled)return;
         if (!env || env.success !== true) throw new Error('READ_FAILED');
         var model = window.KM.DB.adaptShipmentWorkspace(env.data);
         var s = ((model && model.shipments) || []).filter(function (x) { return String(x.shipmentId || x.shipment_id) === String(shipmentId); })[0];
@@ -2312,7 +2330,7 @@ function _shDispatchUnknown_(shipmentId, res, go, cancel, status) {
         if (cancel) { cancel.onclick = function () { _shCloseConfirmModal(); _shLoadAndRender(); }; }
         if (check) { check.remove(); check = null; }
     }).catch(function () {
-        if (status) { status.style.color = '#B45309'; status.textContent = 'Status could not be verified. Do not confirm again. Check status later.'; }
+        explain('Status could not be verified. Do not confirm again. Check status later.');
     }).then(function () {
         delete SH_DISPATCH_CHECK14_[shipmentId];
         if (_shDispatchHeld14_(shipmentId) && go) { go.disabled = true; go.textContent = 'Awaiting status'; }
@@ -3928,7 +3946,7 @@ function _shRunConfirm(shipmentId, execPayload) {
         if (!res || res.success === false) {
             // R71-FE-2: the dispatch answer was lost (db-api stage 'network': dropped / HTTP error / non-JSON / timed out) - never re-enable blindly
             if (res && res.stage === 'network') { _shDispatchUnknown_(shipmentId, res, go, cancel, status); return; }
-            if (res && res.zero_write === true) _shDispatchHold14_(shipmentId, false);
+            if (res && (res.zero_write === true || (res.dispatch_outcome==='ROLLED_BACK_VERIFIED'&&res.retry_safe===true))) _shDispatchHold14_(shipmentId, false);
             else { _shDispatchUnknown_(shipmentId, res, go, cancel, status); return; }
             _shAfterStep1Fail_(shipmentId, execPayload);   // R71-FE-2 (m-5)
             var stage = (res && res.stage) ? (' [' + res.stage + ']') : '';
