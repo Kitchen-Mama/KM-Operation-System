@@ -1975,6 +1975,7 @@ function normalizeCarrierRateCardRecord(raw) {
     function n(v) { return (v === '' || v == null || isNaN(parseFloat(v))) ? '' : parseFloat(v); }
     return {
         rateCardId: String(r.rate_card_id || '').trim(),
+        editVersion: String(r.rate_edit_version || '').trim(),
         carrierId: String(r.carrier_id || '').trim(),
         originCountry: String(r.origin_country || '').trim(),
         originCity: String(r.origin_city || '').trim(),

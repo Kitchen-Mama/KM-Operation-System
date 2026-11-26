@@ -224,3 +224,14 @@ test('campaign module pins, core and health manifest agree; canonical client is 
  assert.equal(h.log.fetches.length,1);assert.equal(JSON.parse(h.log.fetches[0].body).action,'campaign.builder.save');assert.equal(h.epoch().planning,1);assert.equal(h.epoch().exposure,1);
  h.release(JSON.stringify({success:true,data:{readback_verified:true}}));await a;assert.equal(h.epoch().planning,2);assert.equal(h.epoch().exposure,2);
 });
+
+test('verified deployed a753 policy retains every action needed during this frontend rollout',async()=>{
+ const previous={...p,policy_sha256:'0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,7);
+});
+
+test('opaque carrier version requires both real row reader and writer, with matching health pins',()=>{
+ const ctx=vm.createContext({});for(const file of ['02_core_sheet_db.gs','17b_carrier_rate_card_maintenance.gs','63_api_v1_system_health.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
+ for(const symbol of ['CORE_DB_BUILD_VERSION_','CRC_QUICK_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
+});

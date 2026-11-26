@@ -621,8 +621,8 @@
 
                 <!-- Special Event Modal — mirrors the Promotion Risk Tracker "Add Promotion" structure:
                      Scope → Target → Event Info → Forecast.
-                     Event Flag = Normal → does NOT create fc_special_events (regular forecast covers it).
-                     Event Flag != Normal → FC Qty required; Save writes fc_special_events (source =
+                     All event flags, including Normal, create linked period forecasts.
+                     FC Qty required; Save writes fc_special_events (source =
                      manual_fc_summary, campaign_id / campaign_sku_line_id blank — direct creation).
                      NO Company (derived from marketplaces / marketplace_skus). NO BQ / growth path here. -->
                 <div class="fc-modal" id="fc-add-event-modal">
@@ -673,6 +673,7 @@
 
                             <!-- 2. Event Info -->
                             <div class="fc-form-section-label">Event Info</div>
+                            <div class="fc-form-row"><div class="fc-form-group"><label for="event-promotion-type">Promotion Type *</label><select id="event-promotion-type"><option value="">Select Promotion Type</option><option value="Best Deal">Best Deal</option><option value="Lightning Deal">Lightning Deal</option><option value="Coupon">Coupon</option><option value="Price Discount">Price Discount</option><option value="Prime Exclusive Discount">Prime Exclusive Discount</option></select></div></div>
                             <div class="fc-form-row">
                                 <div class="fc-form-group">
                                     <label>Event Flag *</label>

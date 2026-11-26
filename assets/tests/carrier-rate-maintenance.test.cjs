@@ -1,5 +1,5 @@
 'use strict';
-const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict');
+const fs = require('node:fs'), vm = require('node:vm'), assert = require('node:assert/strict'),crypto=require('node:crypto');
 const base = 'assets/specs/active/apps-script/';
 let writes = 0, locked = false, book;
 class Sheet {
@@ -9,6 +9,7 @@ class Sheet {
   appendRow(r) { writes++; this.rows.push([...r]); }
 }
 const ctx = { jsonResponse_: x => x, SpreadsheetApp: { getActiveSpreadsheet: () => book, flush() {} },
+  Utilities:{DigestAlgorithm:{SHA_256:'sha256'},Charset:{UTF_8:'utf8'},computeDigest:(_a,s)=>Array.from(crypto.createHash('sha256').update(s).digest())},
   procurementTimestamp_: () => 'v2', editNextStamp_: () => 'v2', editTok_: x => x, editTokSame_: (a, b) => a === b ? 'SAME' : 'DIFF',
   LockService: { getScriptLock: () => ({ tryLock: () => !locked, releaseLock() {} }) } };
 vm.createContext(ctx);
@@ -42,7 +43,7 @@ test('real client adapter sends quick rows separately, preserving token', () => 
   assert.equal(res.action, 'importCarrierRateCards'); assert.equal(res.payload.rows.length, 0); assert.equal(res.payload.quick_rows[0].expected_updated_at, 'v1'); assert.equal(res.payload.maintenance_mode, 'update');
 });
 test('native Sheets Date cells cannot bypass exact-rate duplicate checks', () => {
-  ctx.Utilities = { formatDate: d => d.toISOString().slice(0, 10) }; ctx.Session = { getScriptTimeZone: () => 'Asia/Taipei' };
+  ctx.Utilities.formatDate=d => d.toISOString().slice(0, 10); ctx.Session = { getScriptTimeZone: () => 'Asia/Taipei' };
   setup([card({ effective_from: vm.runInContext("new Date('2026-01-01T00:00:00Z')", ctx) })]);
   const input = card({ rate_card_id: 'CRC-Q-00000002' }); delete input.updated_at;
   assert.equal(save('add_rate', [input]).code, 'RATE_ALREADY_EXISTS'); assert.equal(writes, 0);
@@ -57,5 +58,18 @@ test('actual price update succeeds while a gap worker owns its lease', () => {
   const r = save('update', [{ rate_card_id: card().rate_card_id, expected_updated_at: 'v1', unit_rate: 9 }]);
   assert.equal(r.success, true); assert.equal(r.data.rows[0].unit_rate, 9);
   assert.equal(ctx.gapJobScriptLock_().acquire(1), false); gap.release();
+});
+test('real generic table read truncates display date but preserves opaque version; native Date price update succeeds',()=>{
+ vm.runInContext(fs.readFileSync(base+'02_core_sheet_db.gs','utf8'),ctx);ctx.jsonResponse_=x=>x;
+ setup([card({updated_at:vm.runInContext("new Date('2026-11-25T08:36:42.123Z')",ctx)})]);
+ const row=ctx.readSheetAsObjects_('carrier_rate_cards')[0];assert.equal(row.updated_at,'2026-11-25');assert.match(row.rate_edit_version,/^CRC1-[a-f0-9]{64}$/);
+ const r=save('update',[{rate_card_id:row.rate_card_id,expected_updated_at:row.updated_at,expected_version:row.rate_edit_version,unit_rate:8.5}]);assert.equal(r.success,true,JSON.stringify(r));
+ const fresh=ctx.readSheetAsObjects_('carrier_rate_cards')[0];assert.equal(fresh.rate_edit_version,r.data.rows[0].rate_edit_version);assert.notEqual(fresh.rate_edit_version,row.rate_edit_version);
+ const before=writes,stale=save('update',[{rate_card_id:row.rate_card_id,expected_version:row.rate_edit_version,unit_rate:7}]);assert.equal(stale.code,'EDIT_CONFLICT');assert.equal(writes,before);
+});
+test('legacy date-only text is safely editable by fingerprint; unrelated rate term change is a conflict',()=>{
+ setup([card({updated_at:'2026-11-25'})]);const row=ctx.readSheetAsObjects_('carrier_rate_cards')[0];assert(save('update',[{rate_card_id:row.rate_card_id,expected_version:row.rate_edit_version,unit_rate:8}]).success);
+ const fresh=ctx.readSheetAsObjects_('carrier_rate_cards')[0],sh=book.getSheetByName('carrier_rate_cards');sh.rows[1][sh.headers.indexOf('weight_tier')]=101;const n=writes;
+ assert.equal(save('update',[{rate_card_id:row.rate_card_id,expected_version:fresh.rate_edit_version,unit_rate:7}]).code,'EDIT_CONFLICT');assert.equal(writes,n);
 });
 console.log(`RATE_MAINTENANCE_PASS ${checks} offline`);

@@ -24,6 +24,7 @@ const read=p=>fs.readFileSync(p,'utf8'),out=path.resolve('output/mixed-cartons-2
   await f.locator('tbody select').nth(0).selectOption('A');await f.locator('tbody select').nth(1).selectOption('B');
   await f.locator('tbody input').nth(0).fill('20');await f.locator('tbody input').nth(1).fill('20');await f.locator('[data-rep]').selectOption('A');
   await page.locator('[data-add-group]').click();f=page.locator('[data-groups] fieldset').nth(1);
+  await page.locator('[data-groups] fieldset').nth(0).locator('[data-additional]').uncheck();await f.locator('[data-additional]').uncheck();
   await f.locator('tbody select').nth(0).selectOption('A');await f.locator('tbody select').nth(1).selectOption('B');
   await f.locator('tbody input').nth(0).fill('21');await f.locator('tbody input').nth(1).fill('20');await f.locator('[data-rep]').selectOption('B');
   await page.locator('[data-save]').click();assert.match(await page.locator('[role=status]').innerText(),/exceeds/);assert.equal(await page.evaluate(()=>saved.length),0);assertions+=2;
@@ -49,6 +50,14 @@ const read=p=>fs.readFileSync(p,'utf8'),out=path.resolve('output/mixed-cartons-2
   await page.evaluate(()=>{document.querySelector('#details').innerHTML='<thead><tr><th>SKU</th><th>Qty</th><th>Cartons</th><th>CBM</th><th>Gross</th><th>Net</th><th>Start</th><th>End</th></tr></thead><tbody>'+_shPackingRows_(uiLines)+'</tbody>';});
   assert.equal(await page.locator('#details tbody tr').count(),5);assert.equal(await page.locator('#details input').count(),0);assertions+=2;
   await page.screenshot({path:path.join(out,'shipment-'+viewport.width+'.png'),fullPage:true});
+  await page.evaluate(()=>KM.weeklyDraftEditor.open(testOpts));await page.locator('[data-mixed]').check();await page.locator('[data-add-group]').click();
+  f=page.locator('[data-groups] fieldset').first();assert.equal(await f.locator('tbody select').first().locator('option[value="C"]').count(),1);assertions++;
+  await f.locator('tbody select').nth(0).selectOption('A');await f.locator('tbody input').nth(0).fill('5');
+  await f.locator('tbody select').nth(1).selectOption('C');await f.locator('tbody input').nth(1).fill('3');await f.locator('[data-rep]').selectOption('A');
+  assert.equal(await page.getByLabel('Quantity A',{exact:true}).inputValue(),'45');assert.equal(await page.getByLabel('Quantity B',{exact:true}).inputValue(),'40');assert.equal(await page.getByLabel('Quantity C',{exact:true}).inputValue(),'3');assertions+=3;
+  await page.screenshot({path:path.join(out,'extra-site-sku-'+viewport.width+'.png'),fullPage:true});
+  await page.locator('[data-save]').click();await page.waitForFunction(()=>!document.querySelector('dialog'));const extra=await page.evaluate(()=>saved.at(-1));
+  assert(extra.line_edits.some(l=>l.op==='add'&&l.sku==='C'&&l.quantity===3));assert(extra.line_edits.some(l=>l.shipping_plan_line_id==='A'&&l.quantity===45));assert.equal(extra.mixed_cartons.length,1);assert.equal(extra.mixed_cartons[0].additional,undefined);assertions+=4;
   assert.deepEqual(errors,[]);assertions++;await page.close();
  }
  console.log('MIXED_CARTON_BROWSER '+assertions+' assertions passed; desktop/mobile screenshots in '+out);

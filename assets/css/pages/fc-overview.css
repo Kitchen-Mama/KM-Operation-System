@@ -2148,3 +2148,12 @@
     white-space: nowrap;
     color: var(--text-secondary, #64748b);
 }
+
+#fc-add-event-modal [hidden] { display: none !important; }
+#event-discount-row .fc-btn {
+    box-sizing: border-box;
+    height: 34px;
+    min-height: 34px;
+    margin: 0;
+    line-height: 1;
+}

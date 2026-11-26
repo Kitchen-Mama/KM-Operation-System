@@ -214,7 +214,8 @@
                 rows = Array.from(quick.dialog.querySelectorAll('[data-price-index]')).filter(function (i) { return i.value !== String(quick.rows[Number(i.dataset.priceIndex)].unitRate); }).map(function (i) {
                     var r = quick.rows[Number(i.dataset.priceIndex)];
                     if (i.value.trim() === '' || !Number.isFinite(Number(i.value)) || Number(i.value) < 0) throw Error('Enter a valid non-negative unit rate.');
-                    return { rate_card_id: r.rateCardId, expected_updated_at: r.updatedAt, unit_rate: Number(i.value) };
+                    if (!r.editVersion) throw Error('Rate version unavailable. Update the matching Apps Script release and Refresh before editing. Nothing was sent.');
+                    return { rate_card_id: r.rateCardId, expected_version:r.editVersion, expected_updated_at: r.updatedAt, unit_rate: Number(i.value) };
                 });
                 if (!rows.length) { quickNotice('No prices changed.', false); return; }
             } else {
@@ -237,7 +238,7 @@
             }
             if (!res.data || !res.data.verified) { quick.unknown = true; quickNotice('Receipt unverified. Refresh before another edit.', true); return; }
             // Adopt only acknowledged prices, so unchanged reference fields stay intact.
-            (res.data.rows || []).forEach(function (r) { getCards().forEach(function (c) { if (c.rateCardId === r.rate_card_id) { c.unitRate = r.unit_rate; c.updatedAt = r.updated_at; } }); });
+            (res.data.rows || []).forEach(function (r) { getCards().forEach(function (c) { if (c.rateCardId === r.rate_card_id) { c.unitRate = r.unit_rate; c.updatedAt = r.updated_at; c.editVersion=r.rate_edit_version||''; } }); });
             quick.mode = 'update'; quick.rows = []; quickGroups(); quickRenderPrices(); quickNotice('Saved ' + res.data.rows.length + ' rate(s).', false);
             _crcAfterWrite(function () { if (quick.dialog && !quick.busy && !quickHasEdits()) quickGroups(); if (crcSearched) search(); });
         } catch (e) { quick.unknown = true; quickNotice('Outcome unknown: ' + e.message + '. Refresh to verify; nothing was resent.', true); }

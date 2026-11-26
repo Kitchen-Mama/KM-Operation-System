@@ -1,5 +1,12 @@
 // Quick maintenance uses the existing importCarrierRateCards permission boundary.
 // Add this module without replacing the installed 17_ pricing engine.
+var CRC_QUICK_BUILD_VERSION_ = 'CRC-QUICK-V2-20261126';
+function crcQuickVersion_(r) {
+  var values=Object.keys(r).filter(function(k){return k!=='_row'&&k!=='rate_edit_version';}).sort().map(function(k){var v=r[k];
+    if(Object.prototype.toString.call(v)==='[object Date]')v=isNaN(v.getTime())?'INVALID_DATE':v.toISOString();
+    return [k,v==null?'':v];});
+  return 'CRC1-'+Utilities.computeDigest(Utilities.DigestAlgorithm.SHA_256,JSON.stringify(values),Utilities.Charset.UTF_8).map(function(b){return ('0'+((b+256)%256).toString(16)).slice(-2);}).join('');
+}
 function crcQuickText_(v) { return String(v == null ? '' : v).trim(); }
 function crcQuickMethod_(v) {
   var s = crcQuickText_(v).toLowerCase();
@@ -79,10 +86,11 @@ function handleCarrierRateCardsQuick_(body) {
       var next;
       if (mode === 'update') {
         if (hit.length !== 1) throw Error('RATE_CARD_NOT_FOUND');
-        if (!crcQuickText_(input.expected_updated_at)) throw Error('EXPECTED_UPDATED_AT_REQUIRED');
-        var same = typeof editTokSame_ === 'function' ? editTokSame_(hit[0].updated_at, input.expected_updated_at) === 'SAME' : crcQuickText_(hit[0].updated_at) === crcQuickText_(input.expected_updated_at);
+        if (!crcQuickText_(input.expected_version) && !crcQuickText_(input.expected_updated_at)) throw Error('EXPECTED_UPDATED_AT_REQUIRED');
+        var same = input.expected_version ? /^CRC1-[a-f0-9]{64}$/.test(input.expected_version) && crcQuickVersion_(hit[0])===input.expected_version :
+          typeof editTokSame_ === 'function' ? editTokSame_(hit[0].updated_at, input.expected_updated_at) === 'SAME' : crcQuickText_(hit[0].updated_at) === crcQuickText_(input.expected_updated_at);
         if (!same) throw Error('EDIT_CONFLICT');
-        if (Object.keys(input).some(function (k) { return ['rate_card_id', 'expected_updated_at', 'unit_rate'].indexOf(k) < 0; })) throw Error('FIELD_LOCKED');
+        if (Object.keys(input).some(function (k) { return ['rate_card_id', 'expected_updated_at', 'expected_version', 'unit_rate'].indexOf(k) < 0; })) throw Error('FIELD_LOCKED');
         if (crcQuickText_(input.unit_rate) === '' || !isFinite(Number(input.unit_rate)) || Number(input.unit_rate) < 0) throw Error('NUMBER_INVALID:unit_rate');
         next = Object.assign({}, hit[0], { unit_rate: Number(input.unit_rate) });
       } else {
@@ -126,7 +134,7 @@ function handleCarrierRateCardsQuick_(body) {
     changes.forEach(function (change) {
       var matches = after.filter(function (r) { return r.rate_card_id === change.row.rate_card_id; });
       if (matches.length !== 1 || Number(matches[0].unit_rate) !== Number(change.row.unit_rate) || matches[0].import_batch_id !== body.request_id) throw Error('READBACK_MISMATCH');
-      receipts.push({ rate_card_id: matches[0].rate_card_id, unit_rate: matches[0].unit_rate, updated_at: typeof editTok_ === 'function' ? editTok_(matches[0].updated_at) : crcQuickText_(matches[0].updated_at) });
+      receipts.push({ rate_card_id: matches[0].rate_card_id, unit_rate: matches[0].unit_rate, rate_edit_version:crcQuickVersion_(matches[0]),updated_at: typeof editTok_ === 'function' ? editTok_(matches[0].updated_at) : crcQuickText_(matches[0].updated_at) });
     });
     return jsonResponse_({ success: true, data: { verified: true, rows: receipts, request_id: body.request_id } });
   } catch (e) { return fail(attempted ? 'RATE_MAINTENANCE_OUTCOME_UNKNOWN' : e.message, { zero_write: !attempted }); }

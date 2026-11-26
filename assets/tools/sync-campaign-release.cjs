@@ -20,5 +20,6 @@ fs.writeFileSync(file,source);fs.writeFileSync(path.join(base,'63_api_v1_system_
 const pub={...p};delete pub.blocked;delete pub.module_stamps;
 let config=fs.readFileSync(path.join(root,'production-config.js'),'utf8');const a=config.indexOf('var c = ')+8,b=config.indexOf('\n};',a)+2;assert(a>=8&&b>a);
 config=config.slice(0,a)+JSON.stringify(pub,null,2)+config.slice(b);fs.writeFileSync(path.join(root,'production-config.js'),config);
-let index=fs.readFileSync(path.join(root,'index.html'),'utf8');for(const n of ['production-config.js','production-guard.js','assets/js/api/operation-system-db-api.js'])index=index.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\?v=[^"\\s]+'),n+'?v=campaign-builder-20261125-v1');fs.writeFileSync(path.join(root,'index.html'),index);
+const tag=process.argv[2]||'campaign-builder-20261125-v1';
+let index=fs.readFileSync(path.join(root,'index.html'),'utf8');for(const n of ['production-config.js','production-guard.js','assets/js/api/operation-system-db-api.js'])index=index.replace(new RegExp(n.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\?v=[^"\\s]+'),n+'?v='+tag);fs.writeFileSync(path.join(root,'index.html'),index);
 console.log('CAMPAIGN_RELEASE_SYNC_PASS policy='+p.policy_sha256);

@@ -740,6 +740,8 @@ try { return typeof sysGlobalOwn_(name) === 'function'; } catch (e) { return fal
 
 
 var SYS_MODULE_BUILD_STAMPS_ = [
+  {"file":"02_core_sheet_db.gs","symbol":"CORE_DB_BUILD_VERSION_","expected":"CORE-DB-RATE-VERSION-20261126","owns":"Generic carrier rate read preserves exact opaque optimistic version","optional":false},
+  {"file":"17b_carrier_rate_card_maintenance.gs","symbol":"CRC_QUICK_BUILD_VERSION_","expected":"CRC-QUICK-V2-20261126","owns":"Carrier quick-maintenance fingerprint version check, without date truncation","optional":false},
   {
     "file": "15_request_allocation_handlers.gs",
     "symbol": "RAEE_BUILD_VERSION_",

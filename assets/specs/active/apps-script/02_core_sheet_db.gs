@@ -9,6 +9,7 @@
 // ========================================
 // Core: Read Sheet as Objects
 // ========================================
+var CORE_DB_BUILD_VERSION_ = 'CORE-DB-RATE-VERSION-20261126';
 
 /**
  * Reads a sheet tab and returns array of objects.
@@ -43,11 +44,14 @@ function readSheetAsObjects_(sheetName) {
     if (isEmpty) continue;
 
     var obj = {};
+    var rawRate = {};
     for (var j = 0; j < headers.length; j++) {
       if (headers[j]) {
         obj[headers[j]] = formatValue_(row[j]);
+        if (sheetName === 'carrier_rate_cards') rawRate[headers[j]] = row[j];
       }
     }
+    if (sheetName === 'carrier_rate_cards' && typeof crcQuickVersion_ === 'function') obj.rate_edit_version = crcQuickVersion_(rawRate);
     results.push(obj);
   }
 

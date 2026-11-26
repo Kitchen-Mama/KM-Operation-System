@@ -3833,6 +3833,7 @@ function _evtOnExistingChange() {
 /* Back to composing a NEW event. The window and rows are cleared because they belonged to the event
    that is no longer selected — leaving them would be the blank-form defect in reverse. */
 function _evtClearEditing_() {
+  var promotionEl=document.getElementById('event-promotion-type');if(promotionEl){promotionEl.value='';promotionEl.disabled=false;}
   _evtEditing_ = null;
   var _wcb = _evtWindowConfirmEl_(); if (_wcb) _wcb.checked = false;   // a confirmation belongs to ONE loaded event
   if (typeof _evtClearWindowChangeNotice_ === 'function') _evtClearWindowChangeNotice_();
@@ -3980,6 +3981,8 @@ function _evtHydrateExisting_(campaignId) {
 
   var flagEl = document.getElementById('event-name-input');
   if (flagEl && g.eventName) {
+    var promotionEl=document.getElementById('event-promotion-type');
+    if(promotionEl){var pt=_evtEditing_.promotionType||'';if(pt&&!Array.from(promotionEl.options).some(function(o){return o.value===pt;})){var option=document.createElement('option');option.value=pt;option.textContent=pt;promotionEl.appendChild(option);}promotionEl.value=pt;promotionEl.disabled=true;}
     var has = Array.prototype.slice.call(flagEl.options).some(function (o) { return o.value === g.eventName; });
     if (!has) { var o = document.createElement('option'); o.value = g.eventName; o.textContent = g.eventName; flagEl.appendChild(o); }
     flagEl.value = g.eventName;
@@ -4044,9 +4047,40 @@ var _evtGroups = [];   // batch-mode group cards: { category, series, regularPri
 
 // Open Event Modal (Scope → Event Info → Mode → Single-SKU rows OR Category/Series group cards).
 function openEventModal() {
-  window.KM.campaignBuilder.open({origin:'forecast',onExisting:_evtOpenLegacyModal_,onSaved:function(){
-    return _fcAfterWriteScoped_(FC_SLICE_.EVENTS,function(){if(typeof renderFcEventTable==='function')renderFcEventTable();});
-  }});
+  return _evtOpenLegacyModal_();
+}
+var _evtCanonicalPending_=null;
+async function _evtCanonicalCreate_(campaign,lines) {
+  if(!_fcWriteBegin_('eventBuilder'))return;
+  var DB=window.KM.DB,key='km.fc.event.pending.v1:'+DB.envId(),button=document.getElementById('fc-event-builder-save-btn'),outcome=FC_WRITE_.UNKNOWN;
+  if(button){button.disabled=true;button.textContent='Saving...';}
+  function remember(value){_evtCanonicalPending_=value;try{if(value)sessionStorage.setItem(key,JSON.stringify(value));else sessionStorage.removeItem(key);}catch(e){}}
+  try{
+    if(!_evtCanonicalPending_){try{_evtCanonicalPending_=JSON.parse(sessionStorage.getItem(key)||'null');}catch(e){}}
+    var pending=_evtCanonicalPending_,result;
+    if(pending){
+      var status=await DB.getCampaignBuilderStatus(pending.request_id);
+      if(!status.success)throw Error((status.error||{}).message||'Receipt could not be read. No second save was sent.');
+      var receipt=status.data.receipt;
+      if(receipt.status==='FAILED_ROLLED_BACK'){remember(null);outcome=FC_WRITE_.REFUSAL;alert('The previous save was rolled back. Review this form before saving again.');return;}
+      if(receipt.status!=='COMMITTED')throw Error('Receipt status: '+receipt.status+'. No second save was sent.');
+      result=JSON.parse(receipt.result_json);
+    }else{
+      var scope={};['company','country','marketplace','marketplace_id','promotion_type','event_flag','start_date','end_date','campaign_name'].forEach(function(k){scope[k]=campaign[k];});scope.source='fc_summary_builder:'+_evtAssistMethod();
+      var bytes=new Uint32Array(4);window.crypto.getRandomValues(bytes);
+      pending={request_id:'FC-CB-'+Array.from(bytes).map(function(n){return n.toString(16);}).join('-'),scope:scope,lines:lines.map(function(l){return {marketplace_sku_id:l.marketplaceSkuId,sku:l.sku,regular_price:l.regularPrice,price_units:l.currency,promo_price:l.dealPrice,fc_qty:l.fcQty};})};remember(pending);
+      var answer=await DB.saveCampaignBundle(Object.assign({builder_version:window.KM.campaignBuilderCore.VERSION},pending));
+      if(!answer.success){var error=answer.error||{},details=error.details||{};if(details.zero_write){remember(null);outcome=FC_WRITE_.REFUSAL;}throw Error((details.issues||[]).map(function(i){return i.message||i.code;}).join('; ')||error.message||error.code||'Save not confirmed.');}
+      result=answer.data;
+    }
+    if(!result||result.readback_verified!==true)throw Error('Save receipt is not confirmed.');
+    var read=await DB.getCampaignBuilder(pending.scope);if(!read.success)throw Error('Saved; the campaign readback is unavailable.');
+    var data=read.data,id=result.campaign_id,headers=data.campaigns.filter(function(c){return c.campaign_id===id;}),savedLines=data.campaignSkuLines.filter(function(l){return l.campaign_id===id;}),events=data.fcSpecialEvents.filter(function(e){return e.campaign_id===id;});
+    if(headers.length!==1||savedLines.length!==result.sku_count||events.length!==result.fc_count||!pending.lines.every(function(l){var line=savedLines.filter(function(s){return s.marketplace_sku_id===l.marketplace_sku_id&&s.sku===l.sku;});return line.length===1&&events.some(function(e){return e.campaign_sku_line_id===line[0].campaign_sku_line_id&&Number(e.fc_qty)===Number(l.fc_qty);});}))throw Error('Saved; the campaign graph is not confirmed.');
+    outcome=FC_WRITE_.SUCCESS;remember(null);
+    _fcAfterWriteScoped_(FC_SLICE_.EVENTS,function(){closeFcModal();alert('Saved '+events.length+' period forecasts. Campaign '+id+'.');});
+  }catch(e){alert((_evtCanonicalPending_?'Completion unconfirmed. Press Check Save Status; no second save will be sent.\n':'Nothing was written.\n')+e.message);}
+  finally{_fcWriteEnd_('eventBuilder',outcome);if(button){button.disabled=false;button.textContent=_evtCanonicalPending_?'Check Save Status':'Save';}}
 }
 function _evtOpenLegacyModal_() {
   // SECONDARY surface: the Special Event Builder reads campaigns / marketplace_skus / sku_details / pricing_list from
@@ -4056,6 +4090,7 @@ function _evtOpenLegacyModal_() {
     _fcShowPrereqRefusal_({ code: 'FC_PREREQUISITES_MISSING', message: 'builder data is not loaded' }); return; }
   document.getElementById('event-target-year').value = fcTargetYear;
   var flagEl = document.getElementById('event-name-input'); if (flagEl) flagEl.value = 'Normal';
+  var promoEl = document.getElementById('event-promotion-type'); if(promoEl){promoEl.value='';promoEl.disabled=false;}
   var sdEl = document.getElementById('event-start-date'); if (sdEl) sdEl.value = '';
   var edEl = document.getElementById('event-end-date'); if (edEl) edEl.value = '';
   _evtClearPeriodError();
@@ -5937,11 +5972,8 @@ async function saveEventUpdate() {
 
   if (!country || !site.marketplace) { alert('Country and Marketplace are required.'); return; }
 
-  if (!_evtEditingActive_()) {
-    closeFcModal();
-    openEventModal();
-    return;
-  }
+  var promotionType=((document.getElementById('event-promotion-type')||{}).value||'').trim();
+  if(!_evtEditingActive_()&&(!window.KM.campaignBuilderCore||window.KM.campaignBuilderCore.TYPES.indexOf(promotionType)<0)){alert('Promotion Type is required.');return;}
   var demoOn = window.KM && window.KM.DemoData && window.KM.DemoData.isEnabled && window.KM.DemoData.isEnabled();
   if (!demoOn && !company) { alert('Select a Marketplace (company scope) — company could not be resolved. KM and ResUS are separate scopes.'); return; }
   if (!eventStartDate || !eventEndDate) { alert('Event Start Date and Event End Date are required.'); _evtShowPeriodError('Event Start Date and Event End Date are required.'); return; }
@@ -6023,7 +6055,7 @@ async function saveEventUpdate() {
   // NEW event may only author SKUs that have none. Conflicting rows are never skipped so the rest can
   // save: a partial save of an authored set is a silently different set. One refusal, every conflict
   // named, and not a single stage begun. An EXISTING event is exempt — it addresses the row it loaded.
-  if (!_evtEditingActive_()) {
+  if (!_evtEditingActive_() && eventFlag !== 'Normal') {
     var _dupCtx = { company: company, country: country, marketplace: mkey, eventFlag: eventFlag,
       year: targetYear };
     var _dupHits = _evtDuplicateConflicts_(lines.map(function (l) { return l.sku; }), _dupCtx);
@@ -6078,7 +6110,7 @@ async function saveEventUpdate() {
 
   var campaignPayload = {
     campaign_name: eventFlag + ' ' + targetYear, company: company, marketplace_id: marketplaceId,
-    country: country, marketplace: mkey, promotion_type: _evtEditing_ && _evtEditing_.promotionType || eventFlag, event_flag: eventFlag,
+    country: country, marketplace: mkey, promotion_type: promotionType || _evtEditing_ && _evtEditing_.promotionType || eventFlag, event_flag: eventFlag,
     major_event_flag: eventFlag, year: targetYear, start_date: eventStartDate, end_date: eventEndDate,
     event_period: eventPeriod, status: 'active', source: 'fc_summary_builder'
   };
@@ -6111,6 +6143,7 @@ async function saveEventUpdate() {
   }
 
   // ---- Live → complete idempotent 3-layer write. Any failure stops + reports honestly. ----
+  if(!_evtEditingActive_()){await _evtCanonicalCreate_(campaignPayload,lines);return;}
   var DB = window.KM && window.KM.DB;
   // B1-PERF §15.6 — stage 3 now calls the BATCH writer, so that is the one whose absence must stop
   // the save. Naming a function this path no longer uses would let a build without the batch writer
@@ -9587,7 +9620,7 @@ function _ensureFcSummaryMarkup() {
     }
     if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
         return window.KM.partialLoader
-            .loadPartial('fc-summary', 'assets/html/pages/fc-summary.html', '#fc-summary-mount')
+            .loadPartial('fc-summary', 'assets/html/pages/fc-summary.html?v=ops-repair-20261126-v1', '#fc-summary-mount')
             .then(function() {
                 if (!document.getElementById('fc-summary-section')) {
                     console.warn('[FCSummary] partial loaded but #fc-summary-section not found');

@@ -1130,9 +1130,9 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var _cur11 = String(plan.currency || (plan.raw && plan.raw.currency) || '').trim();   // R71-FE-11: the server's currency
         var totalCostDisp = (totalCostNum == null) ? (String(plan.carrierId || '').trim() ? 'Cost pending' : '--') :   // AD3 D r2: a carrier without a quote is cost PENDING, never 0
              ((_cur11 ? _spEsc(_cur11) + ' ' : '') + totalCostNum.toFixed(2));
-        var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(4));
+        var unitCostDisp = (totalCostNum == null || totalPcs <= 0) ? '--' : ((_cur11 ? _spEsc(_cur11) + ' ' : '') + (totalCostNum / totalPcs).toFixed(1));
         var splitCost = _spSplitCost_(plan);
-        if (splitCost) { totalCostDisp = _spSplitCostText_(splitCost); unitCostDisp = totalPcs > 0 ? _spSplitCostText_(splitCost, totalPcs, 4) : '--'; }
+        if (splitCost) { totalCostDisp = _spSplitCostText_(splitCost); unitCostDisp = totalPcs > 0 ? _spSplitCostText_(splitCost, totalPcs, 1) : '--'; }
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
@@ -1701,7 +1701,7 @@ function spDbEditSkus(planId) {
     var lines = (model.lines || []).filter(function (l) { return String(l.shippingPlanId) === String(planId); });
     var values = {}, card = document.getElementById('sp-card-' + planId);
     if (card) card.querySelectorAll('input[data-line-id]').forEach(function (i) { values[i.getAttribute('data-line-id')] = i.value; });
-    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=mixed-cartons-20261125-v1').then(function (loaded) {
+    return window.KM.scriptLoader.load('assets/js/utils/weekly-draft-editor.js?v=ops-repair-20261126-v1').then(function (loaded) {
         if (!loaded || !window.KM.weeklyDraftEditor) throw Error('SKU editor could not be loaded.');
         return window.KM.weeklyDraftEditor.open({ plan: plan, token: token, lines: lines, values: values,
             save: function (body) {
@@ -2232,7 +2232,7 @@ function _spCostBreakdownHtml_(plan, totalPcs) {
         row('Duty / Custom', split ? _spMoney_(split.customs, cur) + ' + ' + _spMoney_(split.duty, split.dutyCurrency) : priced ? _spMoney_(dc, cur) : '--') +
         row('Total Cost', split ? _spSplitCostText_(split) : priced ? _spMoney_(total, cur) : (String(plan.carrierId || '').trim() ? 'Cost pending' : '--')) +
         row('Currency', split ? _spEsc(cur) + ' / ' + _spEsc(split.dutyCurrency) : priced ? _spEsc(cur || '--') : '--') +
-        row('Cost per pcs', split && totalPcs > 0 ? _spSplitCostText_(split, totalPcs, 4) : unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(4))) +
+        row('Cost per pcs', split && totalPcs > 0 ? _spSplitCostText_(split, totalPcs, 1) : unit == null ? '--' : (_spEsc(cur) + ' ' + unit.toFixed(1))) +
         '<div class="sp-cost-basis" style="font-size:11px;color:#94A3B8;margin-top:6px;">' + (split ? 'Amounts are kept in their original currencies; no exchange rate has been applied.' : priced
             ? ('Plan estimate, server-priced from the chosen rate card for this plan\'s weight / CBM / cartons. The Shipment execution estimate is priced separately.')
             : 'Not priced yet - choose a carrier and method in Plan Rationale.') + '</div>' +

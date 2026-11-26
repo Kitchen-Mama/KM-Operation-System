@@ -8,6 +8,7 @@
     var preStatusPolicy = 'ab29a81c6c86068efdaebd4d2e2ee19846dc953709c14e1373e17cbe8d8842ab';
     var preMixedPolicy = '320bc376386e5da3c6af894746f69e8b2ceb1291992a0ba1aa698703a00c8221';
     var preCampaignPolicy = 'ead55e3515dc2e807724274b5c27c0b519b0c8f969364e314f0737c1e0e3c87c';
+    var preRepairPolicy = '0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161';
     window.KM_PRODUCTION_GUARD_ = G;
     function fail(code) { G.verdict = code; G.identity = null; return new Error(code); }
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
@@ -26,7 +27,7 @@
             var p = r && r.production_gate;
             if (r && r.success === false && /^PRODUCTION_(MODULE_MISMATCH|TARGET_MISMATCH|TARGET_UNAVAILABLE|FLAT_V2_REQUIRED)$/.test(r.code || '')) throw fail(r.code);
             if (!r.success || !p || p.environment !== 'KM_PRODUCTION' || p.profile_id !== C.profile_id ||
-                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy && p.policy_sha256 !== preCampaignPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
+                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy && p.policy_sha256 !== preCampaignPolicy && p.policy_sha256 !== preRepairPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
                 p.administration_enabled !== false || p.ai_plan_enabled !== false) throw fail('PRODUCTION_IDENTITY_MISMATCH');
             G.identity = p; G.verdict = 'VERIFIED'; return true;
         }).catch(function (e) { flight = null; if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
@@ -35,10 +36,10 @@
     G.ready = identity;
     G.environmentKey = function () { return G.verdict === 'VERIFIED' ? 'production:' + C.endpoint_sha256 + ':' + C.db_fp + ':' + C.profile_id : ''; };
     G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0 &&
-        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy))) &&
-        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy))) &&
-        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preCampaignPolicy))) &&
-        !(/^campaign\.builder\./.test(a) && (!G.identity || G.identity.policy_sha256 !== C.policy_sha256)) &&
+        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy))) &&
+        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy))) &&
+        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy))) &&
+        !(/^campaign\.builder\./.test(a) && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preRepairPolicy))) &&
         !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 === priorPolicy)); };
     window.fetch = function (input, init) {
         var u;

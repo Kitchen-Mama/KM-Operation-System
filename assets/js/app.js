@@ -190,7 +190,7 @@ var KM_ROUTE_ASSETS_ = {
     'carrier-rate-card': {
         sectionId: 'carrier-rate-card-section',
         scripts: [
-            'assets/js/pages/carrier-rate-card.js?v=price-service-save-20261125'
+            'assets/js/pages/carrier-rate-card.js?v=ops-repair-20261126-v1'
         ],
         partial: { key: 'carrier-rate-card', url: 'assets/html/pages/carrier-rate-card.html',
             target: '#carrier-rate-card-mount' },

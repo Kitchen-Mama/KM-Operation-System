@@ -1501,6 +1501,16 @@ var RTR_PRODUCTION_PROFILE_ = {
   "ai_plan_enabled": false,
   "module_stamps": [
     {
+      "symbol": "CORE_DB_BUILD_VERSION_",
+      "expected": "CORE-DB-RATE-VERSION-20261126",
+      "optional": false
+    },
+    {
+      "symbol": "CRC_QUICK_BUILD_VERSION_",
+      "expected": "CRC-QUICK-V2-20261126",
+      "optional": false
+    },
+    {
       "symbol": "RAEE_BUILD_VERSION_",
       "expected": "MANUAL-ALLOCATION-20261124",
       "optional": false
@@ -1807,7 +1817,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161"
+  "policy_sha256": "5e7d63c7f31a05dc261748eca7f9ab96e993b13586f21e1645cb246e56af8e47"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};
