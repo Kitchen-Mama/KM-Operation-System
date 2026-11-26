@@ -782,7 +782,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "39_document_runtime_service.gs",
     "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1",
+    "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1",
     "owns": "Production profile; Sandbox single-ticket recovery disabled"
   },
   {
@@ -938,7 +938,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "34_shipment_final_output_handlers.gs",
     "symbol": "SFO_BUILD_VERSION_",
-    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1",
+    "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1-EUT1",
     "owns": "Shipment final output snapshot (frozen document data). SANDBOX-GATE-1l: an unknown measure is UNKNOWN, never 0."
   },
   {

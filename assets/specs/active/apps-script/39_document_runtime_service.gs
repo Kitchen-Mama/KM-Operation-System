@@ -1502,6 +1502,14 @@ function dgsDocValuesMarker16_(ss, sid) {   // READ ONLY: { rev, digest }; rev =
   } catch (e) { dig = ''; }
   return { rev: rev, digest: dig };
 }
+function dgsDeclaredValueProblems_(snap, dutyCountry) {
+  return ((snap || {}).lines || []).map(function (l, i) {
+    var missing=[];
+    if(!dgsStr_(l.declared_currency))missing.push('tax_referral_rates.declared_currency is blank');
+    if(!(Number(l.declared_unit_value)>0)||!isFinite(Number(l.declared_unit_value)))missing.push('tax_referral_rates.declared_value must be greater than 0');
+    return missing.length ? 'line '+(i+1)+' '+dgsStr_(l.sku)+': '+missing.join('; ')+' (duty_country='+dgsStr_(dutyCountry)+', tax_match='+dgsStr_(l.tax_match||'NOT_FROZEN')+', tax_rate_id='+dgsStr_(l.tax_rate_id||'NONE')+')' : '';
+  }).filter(function(p){return !!p;});
+}
 function dgsFrozenValueGate_(ss, shipmentId) {
 var sc = dgsShipmentContext_(ss, shipmentId);
 if (!sc.ok) return { ok: false, built: null, blockers: [{ reason: sc.reason }] };
@@ -1519,7 +1527,10 @@ po_lineage: fr.pos.map(as(hdr('shipment_final_output_line_pos', SFO_LINE_PO_HEAD
 } catch (eB) { return { ok: false, built: null, blockers: [{ reason: 'DOCUMENT_SNAPSHOT_NOT_BUILDABLE', problems: [dgsStr_(eB && eB.message || eB)] }] }; }
 entries.forEach(function (e) {
 var model = docRenderByClass_(e.render, snap), probs = [];
-if (!model.ok) { if ((model.error || model.reason) !== 'UNSUPPORTED_DOCUMENT_TYPE') probs.push('DOCUMENT_MODEL_BLOCKED:' + dgsStr_(model.error || model.reason)); }
+if (!model.ok) {
+  if ((model.error || model.reason) !== 'UNSUPPORTED_DOCUMENT_TYPE') probs.push('DOCUMENT_MODEL_BLOCKED:' + dgsStr_(model.error || model.reason));
+  if ((model.error || model.reason) === 'MISSING_DECLARED_VALUE') probs=probs.concat(dgsDeclaredValueProblems_(snap,sc.ctx.country));
+}
 else {
 var r; try { r = dgsResolvePayload_(ss, { entry: e, model: model, related_entity_type: 'shipment', related_entity_id: dgsStr_(shipmentId), fallback_file_name: 'R66_VALUE_GATE' }); }
 catch (eR) { r = { ok: false, missing: [{ placeholder: '(document)', problems: ['DOCUMENT_VALUE_CHECK_FAILED:' + dgsStr_(eR && eR.message || eR)] }] }; }
@@ -2504,7 +2515,8 @@ if (!snap) { row.field_completeness = 'SNAPSHOT_NOT_AVAILABLE'; byDoc.push(row);
 var model = docRenderByClass_(cls ? cls.render : '', snap);
 if (!model.ok) {
 row.status = 'CONFIGURATION_REQUIRED'; row.reason = model.error || model.reason;
-fieldByClass[m.class_key] = { complete: false, missing: [], unresolved: [] };
+row.required_missing=row.reason==='MISSING_DECLARED_VALUE'?dgsDeclaredValueProblems_(snap,sc.ctx.country).map(function(p){return {placeholder:'DECLARED_VALUE',problems:[p]};}):[];
+fieldByClass[m.class_key] = { complete: false, missing: row.required_missing, unresolved: [] };
 configReq++; byDoc.push(row); return;
 }
 // Diagnose the same SKU/Series projection, worksheet scoping and filename mapping as generation.
@@ -2621,4 +2633,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1-DG1-EUD1-OND1-EUT1';

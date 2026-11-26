@@ -22,6 +22,11 @@ function guard(policy = p, overrides = {}) {
     navigator: {}, location: { href: 'https://example.invalid/' }, URL, Object, Error, MutationObserver: class {} });
   return { w, sent, writes };
 }
+test('pre-EU-document-customs policy retains shipping operations during manual GS rollout', async () => {
+  const previous={...p,policy_sha256:'ee2356e6e9b7bbf581b274d9e85ad62b0fde94cee8e11ebef607dd14ab228a0c'},g=guard(previous);
+  await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'confirmShipmentAndDispatch',shipment_id:'S'})});
+  assert.equal(g.sent.length,2);assert.equal(g.writes.length,1);
+});
 test('pre-overseas-document policy remains usable while new document owners are deployed manually', async () => {
   const previous={...p,policy_sha256:'8cbae3c11b6e6444e65c90cfc1f14097a222969e71e0151f9e5d953c9b566f08'},g=guard(previous);
   await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action:'confirmShipmentAndDispatch',shipment_id:'S'})});

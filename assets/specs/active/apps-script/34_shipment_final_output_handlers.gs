@@ -101,7 +101,7 @@ return sfoStr_(v);
 function sfoLc_(v) { return sfoStr_(v).toLowerCase(); }
 function sfoUc_(v) { return sfoStr_(v).toUpperCase(); }
 // SANDBOX-GATE-1l (K-1): the round this file last changed
-var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1';
+var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1-EUT1';
 // SANDBOX-GATE-1l (K-1): a measure whose source is blank is UNKNOWN (''), never 0; a stored 0 with a known source stays 0
 function sfoHas_(v) { var t = sfoStr_(v); return t !== '' && !isNaN(Number(t.replace(/,/g, ''))); }
 function sfoNumOrBlank_(v) { var t = sfoStr_(v); if (t === '') return ''; var n = Number(t.replace(/,/g, '')); return isNaN(n) ? '' : n; }
@@ -145,6 +145,14 @@ return { ok: true };
 
 // CODEX-DOC-TAX-SOURCE-1: select the actual origin and normalize Sheet dates.
 function sfoResolveCustoms_(taxRows, series, dutyCountry, asOf, origin, ss) {
+var exact=sfoResolveCustomsExact_(taxRows,series,dutyCountry,asOf,origin,ss);
+if(exact.resolved||exact.tax_match!=='NOT_FOUND'||sfoUc_(dutyCountry)!=='PL')return exact;
+// Owner-approved PL -> DE declaration compatibility; tax rates and registrations are not inherited.
+var de=sfoResolveCustomsExact_(taxRows,series,'DE',asOf,origin,ss);
+if(!de.resolved)return Object.assign({},exact,{tax_match:'PL_DE_'+de.tax_match});
+return Object.assign({},de,{vat_no:'',eori_no:'',declaration_compatibility:{policy:'PL_DE_DECLARATION_V1',requested_duty_country:'PL',source_duty_country:'DE',tax_rate_id:de.tax_rate_id,fields:['declared_unit_value','declared_currency','hs_code','country_of_origin']}});
+}
+function sfoResolveCustomsExact_(taxRows, series, dutyCountry, asOf, origin, ss) {
 var s = sfoLc_(series), dc = sfoLc_(dutyCountry), oc = sfoUc_(origin), q = shippingTaxDay_(ss, asOf), invalid = q === null;
 var empty = function (why) { return { resolved: false, country_of_origin: '', hs_code: '', declared_currency: '', declared_unit_value: '', tax_rate_id: '', vat_no: '', eori_no: '', tax_match: why }; };
 var cand = [];
@@ -535,7 +543,7 @@ if (dupSkus.length) return { ok: false, error: 'SKU_DETAILS_DUPLICATED', stage: 
 var taxRows = sfoReadTable_(ss, 'tax_referral_rates', []);
 var dutyCountry = sfoDestCountry15g_(ss, shipment);   // R15G-EU D2: duty by the actual importing country
 
-var outLines = [], outPos = [], px = sfoPriceSource_(ss), mx = sfoMasterSource_(ss);
+var outLines = [], outPos = [], declarationCompatibility = [], px = sfoPriceSource_(ss), mx = sfoMasterSource_(ss);
 lines.forEach(function (l, idx) {
 var sku = sfoStr_(l.sku);
 var source = scMulti ? sc13Source_(ss, l, shipment) : null;
@@ -546,6 +554,7 @@ var series = sfoStr_(m.series);
 var site = ''; try { var rl = skuRegionalLookup_(ss, sku, sfoStr_(lineContext.company), sfoStr_(lineContext.country), sfoStr_(lineContext.marketplace)); if (rl && rl.siteSku) site = rl.siteSku; } catch (e) {}
 if (!site) { var mm = procurementMarketplaceSkuMap_(ss)[sku + '|' + sfoStr_(lineContext.company) + '|' + sfoStr_(lineContext.country) + '|' + sfoStr_(lineContext.marketplace)]; if (mm && mm.site_sku) site = mm.site_sku; }
 var customs = sfoResolveCustoms_(taxRows, series, dutyCountry, shipment.actual_departure_date || shipment.etd || shipment.shipped_at || asOf, sfoCustomsOriginDoc1_(l, m, whNames[sfoUc_(shipment.source_warehouse_id)]), ss);
+if(customs.declaration_compatibility)declarationCompatibility.push(Object.assign({shipment_line_id:sfoStr_(l.shipment_line_id),sku:sku,series:series},customs.declaration_compatibility));
 l = Object.assign({}, l, { __price: !px ? {} : px.err ? { value: '', ref: px.err } : sfoRegularPrice_(px.ms, px.pl, sku, lineContext), __master: sfoMasterFacts_(mx, sku, lineContext) });
 var lineId = 'SFOL-' + Utilities.getUuid().substring(0, 12).toUpperCase();
 outLines.push(sfoBuildLine_(l, m, site, customs, lineId));
@@ -562,6 +571,7 @@ var wt; try { wt = sfoMasterTable_(ss, 'warehouses'); } catch (eW) { wt = { err:
 Object.assign(header, sfoWarehouseContact_(wt, shipment.destination_warehouse_id, header.consignee_warehouse_id));
 }
 var readiness = sfoDocumentReadiness_(header, outLines);
+if(declarationCompatibility.length)readiness.declaration_compatibility=declarationCompatibility;
 return { ok: true, header: header, lines: outLines, line_pos: outPos, readiness: readiness };
 }
 
