@@ -313,20 +313,20 @@ test('issued-status controller leaves a Draft unchanged when document preparatio
 
 test('Gantt reads canonical header schedule dates, not a separate production_schedule table', () => {
   const source = read('assets/js/pages/purchase-order-list.js').replace(/^    /gm, '');
-  const names = ['toMs', 'msToDate', 'syncGanttVisibility', 'renderGantt'];
+  const names = ['toMs', 'msToDate', 'syncGanttVisibility', 'renderGantt', 'quantityColumns'];
   const pieces = extract(source, name => names.includes(name), () => false);
   assert.equal(pieces.length, names.length);
   const body = { innerHTML: '', classList: { toggle() {} } };
-  const c = vm.createContext({ document: { getElementById: () => body }, polGanttOpen: true,
+  const c = vm.createContext({ document: { getElementById: () => body }, polGanttOpen: true, polTab: 'in_production',
     PO_STATUS_LABEL: { issued: 'Issued' }, num: Number, dateOnly: String, esc: String, dash: String });
   vm.runInContext(pieces.map(p => p.text).join('\n'), c);
   c.renderGantt([{ o: { purchaseOrderId: 'PO-FIXTURE', poNo: 'PO-FIXTURE', inspectionDate: '2026-12-01',
     expectedCompletionDate: '2026-12-03', expectedShipDate: '2026-12-05' }, status: 'issued',
-    skuRows: [{ sku: 'SKU-A', completed: 10, shipped: 0, remaining: 10 }] }]);
+    skuRows: [{ sku: 'SKU-A', ordered: 20, completed: 10, shipped: 0, remaining: 10, inProduction: 10 }] }]);
   assert.match(body.innerHTML, /Inspection: 2026-12-01/);
   assert.match(body.innerHTML, /Expected Completion: 2026-12-03/);
   assert.match(body.innerHTML, /Expected Ship: 2026-12-05/);
-  assert.match(body.innerHTML, /C10\/S0\/R10/);
+  assert.match(body.innerHTML, /Ordered 20 \/ Completed 10 \/ In Production 10/);
 });
 
 // Checkpoint B replaces the original known-defect observations with regression assertions.

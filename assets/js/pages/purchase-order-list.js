@@ -53,7 +53,7 @@
         _polRegion = window.KM.loadState.createRegion({ render: function (state) {
             var tb = document.getElementById('pol-tbody'); if (!tb) return;
             if (state === window.KM.loadState.STATES.INITIAL_LOADING) {
-                tb.innerHTML = '<tr><td colspan="9" class="procurement-empty">Loading purchase orders…</td></tr>';
+                tb.innerHTML = '<tr><td colspan="' + tableColumnCount() + '" class="procurement-empty">Loading purchase orders…</td></tr>';
             }   // READY / EMPTY / ERROR / REFRESHING → renderRows / _polRenderError_ paint the real content.
         } });
         return _polRegion;
@@ -93,7 +93,7 @@
         _polReadModel = null;
         var rg = _polRegion_(); if (rg) rg.set(window.KM.loadState.STATES.ERROR);
         var tbody = document.getElementById('pol-tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty" role="alert" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']' +
+        if (tbody) tbody.innerHTML = '<tr><td colspan="' + tableColumnCount() + '" class="procurement-empty" role="alert" style="color:#B91C1C;">Purchase Order read error: ' + esc((err && err.message) || 'failed') + ' [' + esc((err && err.code) || 'READ_FAILED') + ']' +
             ' <button type="button" class="btn btn-secondary" onclick="polRetryRead()" style="margin-left:8px;padding:2px 10px;font-size:12px;cursor:pointer;">Retry</button></td></tr>';
         var meta0 = document.getElementById('pol-result-meta'); if (meta0) meta0.innerHTML = '';
         var pg0 = document.getElementById('pol-pagination'); if (pg0) pg0.style.display = 'none';
@@ -101,7 +101,7 @@
 
     function polRetryRead() {
         var tbody = document.getElementById('pol-tbody');
-        if (tbody) tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">Retrying\u2026</td></tr>';
+        if (tbody) tbody.innerHTML = '<tr><td colspan="' + tableColumnCount() + '" class="procurement-empty">Retrying\u2026</td></tr>';
         loadAndRender();
     }
     if (typeof window !== 'undefined') { window.polRetryRead = polRetryRead; }
@@ -164,6 +164,18 @@
     var polPage = 1;
     // Active tab: 'in_production' (default) | 'ready'.
     var polTab = 'in_production';
+    function quantityColumns() {
+        var columns = [{key:'ordered',label:'Ordered'},{key:'completed',label:'Completed'}];
+        return columns.concat(polTab === 'ready'
+            ? [{key:'shipped',label:'Shipped'},{key:'remaining',label:'Remaining',highlight:true}]
+            : [{key:'inProduction',label:'In Production',highlight:true}]);
+    }
+    function tableColumnCount() { return 6 + quantityColumns().length; }
+    function renderTableHead() {
+        var head = document.getElementById('pol-thead-row');
+        if (head) head.innerHTML = '<th>PO</th><th>Supplier / Factory</th><th>Category</th><th>Series</th><th>SKU</th>' +
+            quantityColumns().map(function(c){return '<th class="pc-num pol-quantity">' + c.label + '</th>';}).join('') + '<th>Note</th>';
+    }
     // Order Gantt panel — default COLLAPSED.
     var polGanttOpen = false;
 
@@ -185,7 +197,8 @@
         if (!tbody) return;
         if (!useDb()) {
             if (note) note.innerHTML = '<span class="procurement-page__note--demo">Demo mode — connect the Operation DB (Google Sheet) to query Purchase Orders. No live data is shown.</span>';
-            tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">Purchase Orders are stored in the Operation DB. Enable the cloud DB to use this page.</td></tr>';
+            renderTableHead();
+            tbody.innerHTML = '<tr><td colspan="' + tableColumnCount() + '" class="procurement-empty">Purchase Orders are stored in the Operation DB. Enable the cloud DB to use this page.</td></tr>';
             var meta0 = document.getElementById('pol-result-meta'); if (meta0) meta0.innerHTML = '';
             var pg0 = document.getElementById('pol-pagination'); if (pg0) pg0.style.display = 'none';
             return;
@@ -248,7 +261,7 @@
         return orders.map(function (o) {
             var poLines = linesByPo[o.purchaseOrderId] || [];
             var distinct = {}, seriesSet = {}, catSet = {};
-            var ordered = 0, completed = 0, shipped = 0, remaining = 0;
+            var ordered = 0, completed = 0, shipped = 0, remaining = 0, inProduction = 0;
             var detail = poLines.map(function (l) {
                 var info = skuInfo[String(l.sku || '').toLowerCase()] || { category: '', series: '' };
                 var category = info.category || '';
@@ -266,7 +279,10 @@
                 completed += num(l.completedQty);
                 shipped += num(l.shippedQty);
                 remaining += num(rem);
-                return { l: l, category: category, series: series, remaining: rem };
+                // Production outstanding is separate from the backend-owned available-to-ship balance.
+                var production = Math.max(0, num(l.orderedQty) - num(l.completedQty));
+                inProduction += production;
+                return { l: l, category: category, series: series, remaining: rem, inProduction: production };
             });
             var skuList = Object.keys(distinct).map(function (k) { return distinct[k]; });
 
@@ -276,11 +292,13 @@
             detail.forEach(function (d) {
                 var sku = String(d.l.sku || '').trim();
                 var key = sku.toLowerCase() || '(blank)';
-                if (!bySku[key]) bySku[key] = { sku: sku, category: d.category, series: d.series, completed: 0, shipped: 0, remaining: 0, note: '' };
+                if (!bySku[key]) bySku[key] = { sku: sku, category: d.category, series: d.series, ordered: 0, completed: 0, shipped: 0, remaining: 0, inProduction: 0, note: '' };
                 var row = bySku[key];
+                row.ordered += num(d.l.orderedQty);
                 row.completed += num(d.l.completedQty);
                 row.shipped += num(d.l.shippedQty);
                 row.remaining += num(d.remaining);
+                row.inProduction += num(d.inProduction);
                 if (!row.category && d.category) row.category = d.category;
                 if (!row.series && d.series) row.series = d.series;
                 if (!row.note && d.l.note) row.note = String(d.l.note).trim();
@@ -303,7 +321,7 @@
                 skuCount: skuList.length,
                 seriesList: Object.keys(seriesSet),
                 categoryList: Object.keys(catSet),
-                ordered: ordered, completed: completed, shipped: shipped, remaining: remaining
+                ordered: ordered, completed: completed, shipped: shipped, remaining: remaining, inProduction: inProduction
             };
         });
     }
@@ -386,6 +404,7 @@
     function renderRows() {
         var tbody = document.getElementById('pol-tbody');
         if (!tbody) return;
+        renderTableHead();
 
         var models = buildModels();
         populateFilterOptions(models);
@@ -404,23 +423,23 @@
         var pg = document.getElementById('pol-pagination');
 
         if (!rows.length) {
-            tbody.innerHTML = '<tr><td colspan="9" class="procurement-empty">No purchase orders match the filters.</td></tr>';
+            tbody.innerHTML = '<tr><td colspan="' + tableColumnCount() + '" class="procurement-empty">No purchase orders match the filters.</td></tr>';
             if (meta) meta.innerHTML = '';
             if (pg) pg.style.display = 'none';
             renderGantt([]);
             return;
         }
 
-        // List meta: PO count + distinct SKU + total remaining (across the active tab).
+        // Match the summary quantity to the active tab's production or shipping balance.
         var distinct = {}, totalRemaining = 0;
         rows.forEach(function (m) {
             m.skuList.forEach(function (s) { distinct[s.toLowerCase()] = 1; });
-            totalRemaining += num(m.remaining);
+            totalRemaining += num(polTab === 'ready' ? m.remaining : m.inProduction);
         });
         if (meta) {
             meta.innerHTML = '<strong>' + rows.length + '</strong> PO' + (rows.length === 1 ? '' : 's') +
                 ' · <strong>' + Object.keys(distinct).length + '</strong> SKU' + (Object.keys(distinct).length === 1 ? '' : 's') + ' (distinct)' +
-                ' · <strong>' + totalRemaining.toLocaleString() + '</strong> remaining';
+                ' · <strong>' + totalRemaining.toLocaleString() + '</strong> ' + (polTab === 'ready' ? 'remaining' : 'in production');
         }
 
         // Gantt renders the SAME filtered + tab set (all groups, not just the current page).
@@ -455,7 +474,7 @@
         var poNo = o.poNo || o.purchaseOrderNo || id;
         var status = m.status;
         var skuRows = m.skuRows.length ? m.skuRows
-            : [{ sku: '', category: '', series: '', completed: 0, shipped: 0, remaining: 0, note: '' }];
+            : [{ sku: '', category: '', series: '', ordered: 0, completed: 0, shipped: 0, remaining: 0, inProduction: 0, note: '' }];
         var span = skuRows.length;
 
         // Category / Series run-lengths (rows are pre-sorted by category → series → sku).
@@ -486,11 +505,11 @@
             if (i === 0) cells += poCell + supCell;
             if (runStart(i, 'category')) cells += '<td class="pol-cell pol-merge" rowspan="' + runLen(i, 'category') + '">' + dash(r.category) + '</td>';
             if (runStart(i, 'series')) cells += '<td class="pol-cell pol-merge" rowspan="' + runLen(i, 'series') + '">' + dash(r.series) + '</td>';
-            var remCls = (num(r.remaining) <= 0) ? 'pol-rem--done' : 'pol-rem--active';
             cells += '<td class="pol-cell">' + dash(r.sku) + '</td>' +
-                '<td class="pol-cell pc-num">' + num(r.completed).toLocaleString() + '</td>' +
-                '<td class="pol-cell pc-num">' + num(r.shipped).toLocaleString() + '</td>' +
-                '<td class="pol-cell pc-num"><span class="pol-rem ' + remCls + '">' + num(r.remaining).toLocaleString() + '</span></td>' +
+                quantityColumns().map(function(c){var value = num(r[c.key]), text = value.toLocaleString();
+                    if(c.highlight) text = '<span class="pol-rem ' + (value <= 0 ? 'pol-rem--done' : 'pol-rem--active') + '">' + text + '</span>';
+                    return '<td class="pol-cell pc-num">' + text + '</td>';
+                }).join('') +
                 '<td class="pol-cell">' + dash(r.note) + '</td>';
             var cls = 'pol-sku-row' + (i === 0 ? ' pol-group-start' : '');
             return '<tr class="' + cls + '">' + cells + '</tr>';
@@ -552,7 +571,7 @@
             var left = pct(ln.lo), width = Math.max(1.5, pct(ln.hi) - pct(ln.lo));
             // Tooltip: PO No · SKU list + per-SKU qty · expected completion · status.
             var skuLines = m.skuRows.map(function (r) {
-                return '  ' + (r.sku || '(blank)') + ': C' + num(r.completed) + '/S' + num(r.shipped) + '/R' + num(r.remaining);
+                return '  ' + (r.sku || '(blank)') + ': ' + quantityColumns().map(function(c){return c.label + ' ' + num(r[c.key]);}).join(' / ');
             }).join('\n');
             var tip = poNo + '\nSKUs:\n' + (skuLines || '  --') +
                 '\nExpected Completion: ' + dateOnly(o.expectedCompletionDate) +
@@ -889,7 +908,7 @@
         if (document.getElementById('purchase-order-list-section')) return Promise.resolve(true);
         if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
             return window.KM.partialLoader
-                .loadPartial('purchase-order-list', 'assets/html/pages/purchase-order-list.html', '#purchase-order-list-mount')
+                .loadPartial('purchase-order-list', 'assets/html/pages/purchase-order-list.html?v=po-quantities-20261126-v1', '#purchase-order-list-mount')
                 .then(function () { return true; })
                 .catch(function (err) { console.warn('[PurchaseOrderList] partial load failed:', err); return false; });
         }

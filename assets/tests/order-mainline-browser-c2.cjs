@@ -91,7 +91,7 @@ async function scenario(browser, width) {
     await page.locator('#pol-tbody tr').filter({ hasText: 'SKU-A' }).waitFor();
     await page.locator('.pol-gantt-toggle').click();
     const lane = page.locator('.pol-gantt-lane'); await lane.waitFor();
-    check(width + ' Overview shows actual schedule and received inventory', /2026-12-04/.test(await lane.getAttribute('title')) && /C15\/S0\/R15/.test(await lane.getAttribute('title')));
+    check(width + ' Overview shows actual schedule and production progress', /2026-12-04/.test(await lane.getAttribute('title')) && /Ordered 40 \/ Completed 15 \/ In Production 25/.test(await lane.getAttribute('title')));
     check(width + ' no runtime exceptions or outgoing network', errors.length === 0 && outbound.length === 0);
     check(width + ' no unexpected failure dialogs', !dialogs.some(d => /failed:|無法|非預期|blocked/i.test(d)));
     check(width + ' Overview fits viewport', await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1));

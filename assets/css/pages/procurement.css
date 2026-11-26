@@ -528,6 +528,7 @@ select.pc-input:disabled {
     border-bottom: 2px solid #CBD5E1; font-size: 12px; text-transform: uppercase; letter-spacing: .02em;
 }
 #purchase-order-list-section .pol-grouped-table thead th.pc-num { text-align: right; }
+#purchase-order-list-section .pol-grouped-table thead th.pol-quantity { min-width: 110px; white-space: nowrap; }
 #purchase-order-list-section .pol-grouped-table tbody tr { border-bottom: 1px solid #E2E8F0; }
 #purchase-order-list-section .pol-grouped-table tbody tr:hover { background: #F8FAFC; }
 /* Each grouped cell stacks its fields vertically. */

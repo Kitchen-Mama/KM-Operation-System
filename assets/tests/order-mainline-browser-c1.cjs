@@ -116,7 +116,7 @@ async function scenario(browser, width) {
     await page.locator('.pol-gantt-toggle').click();
     const lane = page.locator('.pol-gantt-lane');
     await lane.waitFor();
-    check(width + ' In Production Overview/Gantt has correct completed/shipped/remaining', (await lane.getAttribute('title')).includes('C10/S0/R10'));
+    check(width + ' In Production Overview/Gantt has correct ordered/completed/in production', (await lane.getAttribute('title')).includes('Ordered 30 / Completed 10 / In Production 20'));
     check(width + ' Gantt uses edited completion date', (await lane.getAttribute('title')).includes('2026-12-04'));
     check(width + ' Gantt axis dates do not overlap', await page.locator('.pol-gantt-axis span').evaluateAll(labels => {
       const rects = labels.map(el => el.getBoundingClientRect());
@@ -138,14 +138,14 @@ async function scenario(browser, width) {
     await page.locator('#pol-tbody tr').filter({ hasText: 'SKU-A' }).waitFor();
     await lane.waitFor();
     check(width + ' Remounted Gantt synchronizes persisted expanded state', (await page.locator('#pol-gantt').getAttribute('class')).includes('is-open'));
-    check(width + ' Ready Overview/Gantt retains completed inventory', (await lane.getAttribute('title')).includes('C30/S0/R30'));
+    check(width + ' Ready Overview/Gantt retains ordered and completed inventory', (await lane.getAttribute('title')).includes('Ordered 30 / Completed 30 / Shipped 0 / Remaining 30'));
     await page.evaluate(() => {
       window.importLoads = [];
       KM.scriptLoader = { load: async url => { importLoads.push(url); KM.poFactoryImport = { open: async () => true }; return true; } };
     });
     await page.locator('#polActionsTrigger').click();
     await page.getByRole('menuitem', { name: 'Import Purchase Order', exact: true }).click();
-    check(width + ' PO import first-entry loads updated StockPO module', await page.evaluate(() => importLoads[0] === 'assets/js/utils/po-factory-import.js?v=stockpo-unproduced-20261124'));
+    check(width + ' PO import first-entry loads updated StockPO module', await page.evaluate(() => importLoads[0] === 'assets/js/utils/po-factory-import.js?v=operations-repairs-20261125'));
     check(width + ' No broad DB reloads', !h.calls.some(c => c.action === 'getOperationDb'));
     check(width + ' No unexpected browser exceptions', errors.length === 0);
     check(width + ' No outgoing network requests', outbound.length === 0);
