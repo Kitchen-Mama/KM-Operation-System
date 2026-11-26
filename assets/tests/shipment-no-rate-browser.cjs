@@ -1,0 +1,41 @@
+'use strict';
+const fs=require('node:fs'),path=require('node:path'),vm=require('node:vm'),assert=require('node:assert/strict');
+const {parts}=require('./helpers/write-command-flight-world.cjs'),{createEuWorld}=require('./helpers/shipment-import-eu-world.cjs');
+const world=new Function('createEuWorld','vm','fs',parts(fs.readFileSync('assets/tests/shipment-no-rate-policy.cjs','utf8'),['world'])+';return world;')(createEuWorld,vm,fs);
+const runtime=process.env.KM_NODE_MODULES||'C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1123-915-0_26.1123.915.0_x64__3k8sg7r9htsxt/dependencies/node/node_modules';
+const {chromium}=require(require.resolve('playwright',{paths:[runtime]})),out=path.resolve('output/shipment-no-rate-20261126/browser');
+const unwrap=r=>r.getContent?JSON.parse(r.getContent()):r;let pass=0;function check(n,v){assert(v,n);pass++;console.log('PASS '+n);}
+(async()=>{fs.mkdirSync(out,{recursive:true});const browser=await chromium.launch({channel:'chrome',headless:true});
+try{for(const width of [1440,390]){
+ const h=world(),calls=[],page=await browser.newPage({viewport:{width,height:950}}),errors=[],requests=[];
+ const ship=h.rows('shipments')[0];Object.assign(ship,{external_shipment_id:'NO-RATE-FIXTURE',reference_id:'REF',etd:'2026-11-28',eta:'2026-12-30',shipments_customs_type:'formal_customs',shipment_total_qty:40,shipment_total_cartons:1});
+ h.sheet('shipments',[...new Set([...h.tables.shipments.grid[0],...Object.keys(ship)])],[ship]);
+ const line=h.rows('shipment_lines')[0];Object.assign(line,{shipment_carton_qty:1,units_per_carton:40,carton_no_start:1,carton_no_end:1});h.sheet('shipment_lines',[...new Set([...h.tables.shipment_lines.grid[0],...Object.keys(line)])],[line]);
+ const read=()=>({shipments:h.rows('shipments').map(raw=>({raw})),shipmentLines:h.rows('shipment_lines'),warehouses:h.rows('warehouses').map(w=>({...w,marketplace:w.warehouse_type==='FBA'?'Amazon':''})),carriers:h.rows('carriers'),carrierRateCards:[],skuLogistics:[]});
+ page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',r=>{requests.push(r.request().url());return r.abort();});
+ await page.setContent('<!doctype html><html><body><main id="fixture"></main></body></html>');
+ for(const f of ['assets/css/base.css','assets/css/components.css','assets/css/pages/shipping-history.css'])await page.addStyleTag({content:fs.readFileSync(f,'utf8')});
+ await page.addStyleTag({content:'body{margin:0;font:14px Arial}main{padding:12px}*{box-sizing:border-box}'});
+ await page.exposeFunction('readFixture',read);await page.exposeFunction('rateFixture',()=>h.options());
+ await page.exposeFunction('saveFixture',body=>{calls.push(body);const r=unwrap(h.c.handleUpdateShipment_(body));if(!r.success)console.log(JSON.stringify(r));return r.success?{...r,...r.data}:r;});
+ for(const f of ['assets/js/api/operation-system-db-api.js','assets/js/pages/shipping-history.js'])await page.addScriptTag({content:fs.readFileSync(f,'utf8')});
+ await page.evaluate(async()=>{
+  window.alerts=[];window.alert=s=>alerts.push(s);KM.DB.getShipmentRateCardOptions=()=>rateFixture();KM.DB.updateShipment=p=>saveFixture(p);
+  _shLoadAndRender=async()=>{_shReadModel=KM.DB.adaptShipmentWorkspace(await readFixture());const s=_shGetShipments().find(s=>s.shipmentId==='S');document.getElementById('fixture').innerHTML=_shRenderDbCard(s,_shGetShipmentLines(),'draft');};
+  await _shLoadAndRender();
+ });
+ await page.locator('.history-expand-btn').click();await page.locator('button[onclick="shRateCardLoad(this)"]').click();await page.waitForSelector('.sh-svc-save');
+ check(width+' no applicable quote is explicitly nonblocking, not a missing-carrier error',/confirmation can continue/.test(await page.locator('.sh-svc-note').innerText())&&!/saved carrier first/.test(await page.locator('.sh-rc-list').innerText()));
+ await page.locator('.sh-svc-save').click();
+ await page.waitForFunction(()=>!_shInFlight_.S&&_shGetShipments().find(s=>s.shipmentId==='S').updatedAt!=='2026-11-26 15:56:51');
+ check(width+' actual Save service persists exact carrier/method/last-mile tokens once',calls.length===1&&calls[0].carrier_id==='CAR'&&calls[0].shipping_method==='truck'&&calls[0].last_mile_delivery==='parcel');
+ await page.evaluate(()=>shConfirmShipment('S'));await page.waitForSelector('#sh-confirm-modal');
+ check(width+' no-rate lithium shipment opens normal Confirm with Freight Cost pending and carrier reminder',/Cost pending/.test(await page.locator('#sh-confirm-modal').innerText())&&/not carrier clearance/.test(await page.locator('.sh-confirm-cargo').innerText())&&await page.locator('#sh-confirm-go').isEnabled());
+ check(width+' no manual quote exception or dispatch was sent',await page.locator('#sh-unpriced-dialog').count()===0&&calls.length===1&&h.rows('shipments')[0].status==='ready_to_ship'&&h.rows('shipments')[0].estimated_total_cost==='');
+ check(width+' modal fits the viewport',await page.locator('#sh-confirm-modal').evaluate(el=>{const r=el.getBoundingClientRect();return r.left>=0&&r.right<=innerWidth+1;}));
+ await page.screenshot({path:path.join(out,'confirm-'+width+'.png'),fullPage:true});await page.locator('#sh-confirm-cancel').click();
+ await page.evaluate(()=>{KM.DB.getShipmentRateCardOptions=async()=>({success:true,current:{state:'NONE',cost_pending_reason:'SERVICE_NOT_OFFERED_BY_CARRIER'},service:{carrier_id:'CAR',carrier_state:'ASSIGNED'}});shConfirmShipment('S');});
+ await page.waitForFunction(()=>alerts.length>0);
+ check(width+' a real service refusal remains blocked with its actual reason',await page.locator('#sh-confirm-modal').count()===0&&await page.evaluate(()=>alerts.some(s=>s.includes('SERVICE_NOT_OFFERED_BY_CARRIER'))));
+ check(width+' no browser errors or outbound requests',errors.length===0&&requests.length===0);await page.close();
+}}finally{await browser.close();}console.log('SHIPMENT_NO_RATE_BROWSER_PASS '+pass+' live_business_writes=0');})().catch(e=>{console.error(e);process.exitCode=1;});

@@ -2772,6 +2772,23 @@ function _shRcRender_(sid) {
 // The Save sends ONLY these fields (plus the row version) through the existing updateShipment; a refusal is shown beside the box, an answer
 // that did not arrive is held and re-read (never resent). Skip quote opens the existing explicit freight-pending dialog (reason + ack).
 var SH_SVC_TBA_ = '__TO_BE_ASSIGNED__';
+function _shCostPendingMessage_(r) {
+    var current = (r && r.current) || {}, service = (r && r.service) || {}, approval = (r && r.unpriced_approval) || {};
+    if (current.state === 'COMPLETE') return '';
+    if (current.state === 'COST_PENDING_AUTO') return 'No applicable rate card. Freight cost pending; confirmation can continue.' + (current.cargo_notice ? ' ' + current.cargo_notice : '');
+    if (current.quote_state === 'COST_PENDING') return 'Cost pending: no amount is recorded.';
+    if (service.carrier_state === 'TO_BE_ASSIGNED') return 'Freight cost pending; carrier to be assigned.';
+    if (current.state === 'STALE') return 'The selected quote no longer matches the saved shipment. Re-check its rate card.';
+    if (service.carrier_state === 'CARRIER_MISSING' || (!service.carrier_id && !approval.carrier_id && service.carrier_state !== 'TO_BE_ASSIGNED')) return 'Save a carrier before confirming.';
+    var code = current.cost_pending_reason || approval.reason || '';
+    var messages = { COMPLETE_SHIPMENT_FIRST: 'Save the carrier, shipping method and destination warehouse first.', SHIPMENT_LAST_MILE_REQUIRED: 'Save the last-mile delivery service first.',
+        RATE_CARD_BATTERY_UNCLASSIFIED: 'Complete the SKU battery classifications first.', LITHIUM_CARRIER_CLEARANCE_REQUIRED: 'The deployed quote policy still requires lithium cargo review.',
+        CARRIER_INACTIVE: 'The saved carrier is inactive.', CARRIER_NOT_UNIQUE: 'The carrier master does not contain one matching carrier.', CARRIER_SERVICE_CAPABILITY_UNKNOWN: 'The saved carrier has no declared service.',
+        SERVICE_NOT_OFFERED_BY_CARRIER: 'The saved carrier does not offer this service for the route.', SELECTION_OUTCOME_NEEDS_REVIEW: 'A previous quote operation is unresolved; review its outcome first.',
+        RATE_DECISION_RECORDED: 'A previous quote decision is recorded; re-check its current state.', SAVED_COST_REQUIRES_REVIEW: 'Saved cost fields need review before continuing without a quote.',
+        APPLICABLE_RATE_AVAILABLE: 'An applicable rate exists; select it or explicitly continue without applying it.', SHIPMENT_LINES_INVALID: 'Complete the shipment SKU quantities first.' };
+    return messages[code] ? messages[code] + ' (' + code + ')' : (code ? 'Review the saved shipping service (' + code + ').' : '');
+}
 function _shSvcHtml_(sid, r) {
     var v = r && r.service_vocabulary;
     if (!v || !Array.isArray(v.carriers) || !Array.isArray(v.shipping_method) || !Array.isArray(v.last_mile_delivery)) return '';   // a server without the vocabulary: nothing offered
@@ -2784,7 +2801,6 @@ function _shSvcHtml_(sid, r) {
     var curKnown = !curC || cars.some(function (c) { return String(c.carrier_id).trim() === curC; });
     var sel = 'width:100%;max-width:100%;padding:4px 6px;border:1px solid #CBD5E1;border-radius:4px;font-size:12px;box-sizing:border-box;';
     var a = r && r.unpriced_approval, canSkip = !!(a && a.enabled === true && (a.available === true || a.recoverable === true || (a.card_not_applied && a.card_not_applied.available === true)) && a.carrier_id);
-    var qs = r && r.current && r.current.quote_state;
     return '<div class="sh-svc" data-sid="' + e + '" data-vocab="' + _shEsc(v.version || '') + '" style="margin-top:8px;padding-top:6px;border-top:1px dashed #CBD5E1;">' +
         '<div style="font-size:11px;font-weight:600;color:#334155;">' + (r.customs_applicable === false ? 'Domestic Transport' : 'Shipping Service') + '</div>' +
         '<label style="display:block;font-size:11px;color:#64748B;margin-top:4px;">Carrier / booking channel</label>' +
@@ -2801,7 +2817,7 @@ function _shSvcHtml_(sid, r) {
         (canSkip && r.current && r.current.state !== 'COST_PENDING_AUTO' ? '<button type="button" class="sh-svc-skip" onclick="shSvcSkipQuote(\'' + e + '\')" style="background:#FFFBEB;color:#92400E;border:1px solid #B45309;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Continue without quote</button>' : '') +
         '</div>' +
         '<div class="sh-svc-note" role="status" style="font-size:11px;margin-top:3px;overflow-wrap:anywhere;color:#475569;">' +
-            _shEsc(qs === 'COST_PENDING' ? 'Cost pending: the quote was skipped; no amount is recorded.' : (!canSkip && a && a.enabled === true ? 'Skip quote needs a saved carrier first.' : '')) + '</div>' +
+            _shEsc(_shCostPendingMessage_(r)) + '</div>' +
         '</div>';
 }
 // AD3 D r3: the delivery types the vocabulary allows for one carrier. A carrier row that lists delivery_types (master carriers.delivery_types,
@@ -3744,16 +3760,16 @@ function shConfirmShipment(shipmentId) {
         }
         if (_shHoldHas16_(shipmentId)) { if (st8 === 'UNPRICED_APPROVED' && _shVersionMoved18_(_shHoldTok16_(shipmentId), rc8.unpriced_approval && rc8.unpriced_approval.expected_updated_at) === 'MOVED') _shHoldClear16_(shipmentId); else { _shUnpricedHeldOpen16_(shipmentId); return; } }   // R15d r2b: the server read decides
         if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && st8 !== 'COST_PENDING_AUTO' && rc8.unpriced_approval && rc8.unpriced_approval.enabled === true && (rc8.unpriced_approval.available === true || rc8.unpriced_approval.recoverable === true || (rc8.unpriced_approval.card_not_applied && rc8.unpriced_approval.card_not_applied.available === true))) { shUnpricedOpen14(shipmentId, rc8); return; }
-        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && st8 !== 'COST_PENDING_AUTO') { alert('Please review the shipping service before confirming. Nothing was dispatched.'); return; }
-        _shOpenConfirmChecked8_(st8);
+        if (st8 !== 'COMPLETE' && st8 !== 'UNPRICED_APPROVED' && st8 !== 'COST_PENDING_AUTO') { alert((_shCostPendingMessage_(rc8) || 'Please review the saved shipping service (' + st8 + ').') + ' Nothing was dispatched.'); return; }
+        _shOpenConfirmChecked8_(st8, null, (rc8.current && rc8.current.cargo_notice) || '');
     })['catch'](function (e8) { delete _shInFlight_[shipmentId]; _cbRel11(); alert('Cannot Confirm — the rate card could not be re-checked (' + ((e8 && (e8.code || e8.message)) || e8) + '). Nothing was sent.'); });
-    function _shOpenConfirmChecked8_(pricingState, tbaAudit) {
+    function _shOpenConfirmChecked8_(pricingState, tbaAudit, cargoNotice) {
     var s = _shGetShipments().filter(function (x) { return x.shipmentId === shipmentId; })[0] || {};
     var lines = _shGetShipmentLines().filter(function (l) { return l.shipmentId === shipmentId; });
     var units = lines.reduce(function (a, l) { return a + (l.shipmentQty || l.qty || 0); }, 0);
     _shOpenConfirmModal(shipmentId, {
         no: s.externalShipmentId || s.shipmentNo || shipmentId,
-        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED' || pricingState === 'COST_PENDING_AUTO', tba: pricingState === 'TBA_COST_PENDING', tbaAudit: tbaAudit || null,
+        lineCount: lines.length, units: units, unpriced: pricingState === 'UNPRICED_APPROVED' || pricingState === 'COST_PENDING_AUTO', cargoNotice: cargoNotice || '', tba: pricingState === 'TBA_COST_PENDING', tbaAudit: tbaAudit || null,
         origin: payload.ship_from || s.shipFrom || '—',
         sourceWarehouseId: s.sourceWarehouseId || s.shipFrom || '',
         sourceDomain: _shSourceDomain_(s.sourceWarehouseId),
@@ -3834,6 +3850,7 @@ function _shOpenConfirmModal(shipmentId, sum, execPayload) {
         row('From', sum.origin) + row('Destination', (sum.country ? sum.country + ' / ' : '') + sum.dest) +
         row('Carrier', sum.carrier) + row('Shipping Method', sum.method) +
         (sum.unpriced ? row('Freight', 'Cost pending') : '') +
+        (sum.cargoNotice ? '<p class="sh-confirm-cargo" style="color:#92400E;overflow-wrap:anywhere;">' + _shEsc(sum.cargoNotice) + '</p>' : '') +
         (sum.tba ? row('Freight', 'Cost pending (carrier to be assigned) - no amount') : '') +   // AD3 D r6
         (sum.tba ? '<div class="sh-confirm-tba" style="background:#FFF7ED;border:1px solid #FDBA74;color:#9A3412;border-radius:6px;padding:8px 10px;margin:10px 0;font-size:12px;line-height:1.5;">' +
             '<strong>Carrier to be assigned.</strong> This shipment has no carrier yet' + (sum.tbaAudit && sum.tbaAudit.reason ? ' (' + _shEsc(sum.tbaAudit.reason) + ')' : '') + ' and no quote: freight cost stays pending, no amount is recorded. It can only go with manual logistics (no route template); assign the carrier later on the card.' +

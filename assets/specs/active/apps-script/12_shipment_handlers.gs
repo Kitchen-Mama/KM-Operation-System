@@ -371,7 +371,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1';
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1-NR1';
 
 
 
@@ -2102,10 +2102,12 @@ if (labels.indexOf(text) < 0) labels.push(text);
 });
 return labels.length === 1 ? labels[0] : '';
 }
-function shipUnpricedEligibility_(ss, v, lines, day, mode) {   // R15e (4): mode '' | 'card_not_applied'
+function shipUnpricedEligibility_(ss, v, lines, day, mode) {   // mode '' | 'card_not_applied' | 'automatic_no_rate'
 // AD3-B (Owner decisions 4 + 8): the explicit "skip quote, cost pending" decision is no longer Sandbox-only - a missing quote is never the only blocker.
 if (/^pending/.test(String(v.rate_card_version || ''))) return { allowed: false, reason: 'SELECTION_OUTCOME_NEEDS_REVIEW' };
 if (!String(v.carrier_id || '').trim() || !String(v.shipping_method || '').trim() || !String(v.country || '').trim() || !String(v.warehouse_code || '').trim()) return { allowed: false, reason: 'COMPLETE_SHIPMENT_FIRST' };
+var automatic = mode === 'automatic_no_rate';
+if (automatic && !String(v.last_mile_delivery || '').trim()) return { allowed: false, reason: 'SHIPMENT_LAST_MILE_REQUIRED' };
 if (!lines.length || lines.some(function (l) { return !l.sku || !(Number(l.qty) > 0); })) return { allowed: false, reason: 'SHIPMENT_LINES_INVALID' };
 var cs = ss.getSheetByName('carriers'), rateSheet = ss.getSheetByName('carrier_rate_cards'); if (!cs || !rateSheet) throw new Error('RATE_SOURCE_UNAVAILABLE');
 var rateCols = shipmentReadSheet_(rateSheet);
@@ -2115,21 +2117,29 @@ if (carrier.length !== 1) return { allowed: false, reason: 'CARRIER_NOT_UNIQUE' 
 if ((sr.col('status') >= 0 && /^(inactive|disabled)$/i.test(String(carrier[0][sr.col('status')] || '').trim())) || (sr.col('is_active') >= 0 && /^(false|0|no)$/i.test(String(carrier[0][sr.col('is_active')]).trim()))) return { allowed: false, reason: 'CARRIER_INACTIVE' };
 var battery = shipBatteryClass_(ss, lines.map(function (l) { return l.sku; }));
 if (battery.unclassified.length) return { allowed: false, reason: 'RATE_CARD_BATTERY_UNCLASSIFIED' };
-if (battery.cls === 'lithium_battery') return { allowed: false, reason: 'LITHIUM_CARRIER_CLEARANCE_REQUIRED' };
+// Price availability is not evidence of carrier clearance. Keep cargo classification and service checks separate.
+if (battery.cls === 'lithium_battery' && !automatic) return { allowed: false, reason: 'LITHIUM_CARRIER_CLEARANCE_REQUIRED' };
+if (automatic) {
+var capability = shipSvcCapabilityCheck_(ss, v.carrier_id, v.shipping_method, v.last_mile_delivery, shipOriginCountry1g_(ss, v.source_warehouse_id || v.ship_from), shipRateCountry15e_(ss, v));
+if (capability) return { allowed: false, reason: capability.code };
+}
 var laneIds = shipRateCardLane_(ss, v, lines, day).filter(function (rc) { return String(rc.carrier_id || '').trim() === String(v.carrier_id).trim(); }).map(function (rc) { return String(rc.rate_card_id || '').trim(); }).sort();   // R15e (4)
 if (laneIds.some(function (id) { return !id; }) || laneIds.some(function (id, i) { return i > 0 && laneIds[i - 1] === id; })) return { allowed: false, reason: 'APPLICABLE_CARD_IDS_UNREADABLE' };
 if (laneIds.length && mode !== 'card_not_applied') return { allowed: false, reason: 'APPLICABLE_RATE_AVAILABLE', cards: laneIds };
 if (!laneIds.length && mode === 'card_not_applied') return { allowed: false, reason: 'NO_CARD_TO_LEAVE_UNAPPLIED' };
 var label = shipServiceLabel_(ss, v) || ({ sea: 'Sea', sea_express: 'Sea Express', air: 'Air', truck: 'Truck', courier: 'Courier', express: 'Express' })[String(v.shipping_method).trim().toLowerCase()];
 if (!label) return { allowed: false, reason: 'SHIPPING_METHOD_LABEL_UNRESOLVED' };
-return laneIds.length ? { allowed: true, reason: 'CARD_NOT_APPLIED', label: label, cards: laneIds } : { allowed: true, reason: 'NO_APPLICABLE_RATE', label: label };   // R15e (4)
+return laneIds.length ? { allowed: true, reason: 'CARD_NOT_APPLIED', label: label, cards: laneIds } : { allowed: true, reason: 'NO_APPLICABLE_RATE', label: label,
+cargo_notice: automatic && battery.cls === 'lithium_battery' ? 'Lithium battery cargo: confirm carrier acceptance separately. Cost pending is not carrier clearance.' : '' };
 }
 // Temporary operating policy: a proven absence of an applicable quote needs no manual exception.
 function shipNoRatePolicy_(ss, v, lines, day) {
-  if (String(v.rate_card_id || '').trim() || String(v.rate_card_version || '').trim() || SHIP_UNPRICED_COST_FIELDS_.some(function (k) { return String(v[k] == null ? '' : v[k]).trim() !== ''; })) return { allowed: false };
-  if (['draft', 'ready_to_ship'].indexOf(String(v.status || '').trim().toLowerCase()) < 0) return { allowed: false };
-  var e = shipUnpricedEligibility_(ss, v, lines, day);
-  return e.allowed === true && e.reason === 'NO_APPLICABLE_RATE' ? { allowed: true, label: e.label, policy: 'NO_RATE_COST_PENDING_V1' } : { allowed: false };
+  if (String(v.rate_card_id || '').trim()) return { allowed: false, reason: 'RATE_CARD_ALREADY_RECORDED' };
+  if (String(v.rate_card_version || '').trim()) return { allowed: false, reason: 'RATE_DECISION_RECORDED' };
+  if (SHIP_UNPRICED_COST_FIELDS_.some(function (k) { return String(v[k] == null ? '' : v[k]).trim() !== ''; })) return { allowed: false, reason: 'SAVED_COST_REQUIRES_REVIEW' };
+  if (['draft', 'ready_to_ship'].indexOf(String(v.status || '').trim().toLowerCase()) < 0) return { allowed: false, reason: 'SHIPMENT_NOT_EDITABLE' };
+  var e = shipUnpricedEligibility_(ss, v, lines, day, 'automatic_no_rate');
+  return e.allowed === true && e.reason === 'NO_APPLICABLE_RATE' ? { allowed: true, label: e.label, cargo_notice: e.cargo_notice || '', policy: 'NO_RATE_COST_PENDING_V1' } : { allowed: false, reason: e.reason || 'NO_RATE_POLICY_REFUSED' };
 }
 function shipUnpricedValid_(ss, v, lines, day) {
 var audit = shipUnpricedMeta_(v.rate_card_version);
@@ -2257,8 +2267,9 @@ customs_applicable: shipCustomsApplicability_(ss, v, { allow_planned_destination
 unpriced_approval: { enabled: true /* AD3-B: all environments */, available: unpriced.allowed, reason: unpriced.reason, recoverable: curV === 'pending-unpriced', label: unpriced.label || '', card_not_applied: cna4 ? { available: cna4.allowed === true, cards: cna4.cards || e04.cards || [], reason: cna4.reason, label: cna4.label || '' } : null, carrier_id: String(v.carrier_id || ''), carriers: Object.keys(names).map(function (id) { return { id: id, name: names[id] || id }; }), expected_updated_at: editTok_(v.updated_at), expected_rate_card_version: curV, expected_current_rate_card_id: cur },
 current: (function () { var k = shipRcMarker_(curV), ok = k.state === 'COMPLETE' && shipRcReceipt_(v, k.ver) === curV && shipRcStillOnLane16_(ss, v, ln, cur, k.ver, day);   // R15e U23 (+ REVIEW_R15E_FINAL m-5: 34_'s rule)
 var lt1g = shipLt1g_(ss, v.carrier_id, v.shipping_method, v.last_mile_delivery, org1g, shipRateCountry15e_(ss, v));   // R15C-EU
-var st4 = shipUnpricedValid_(ss, v, ln, day) ? 'UNPRICED_APPROVED' : shipNoRatePolicy_(ss, v, ln, day).allowed ? 'COST_PENDING_AUTO' : !cur ? 'NONE' : ok ? 'COMPLETE' : k.state === 'COMPLETE' ? 'STALE' : k.state;
-return { unpriced_basis: meta4 ? (meta4.basis || 'NO_APPLICABLE_RATE') : '', lead_time: lt1g, eta_check: shipEtaCheck1g_(v, lt1g), rate_card_id: cur, rate_card_version: k.ver, chosen: !!(cur && ok), state: st4, quote_state: ({ UNPRICED_APPROVED: 'COST_PENDING', COMPLETE: 'QUOTE_SELECTED', STALE: 'QUOTE_STALE', NONE: 'NO_QUOTE' })[st4] || st4 /* AD3-B */, audit: meta4 ? { actor: meta4.actor, actor_source: meta4.actor_source || 'unattributed', at: meta4.at, reason: meta4.reason } : null }; })(),
+var automatic4 = shipNoRatePolicy_(ss, v, ln, day);
+var st4 = shipUnpricedValid_(ss, v, ln, day) ? 'UNPRICED_APPROVED' : automatic4.allowed ? 'COST_PENDING_AUTO' : !cur ? 'NONE' : ok ? 'COMPLETE' : k.state === 'COMPLETE' ? 'STALE' : k.state;
+return { unpriced_basis: meta4 ? (meta4.basis || 'NO_APPLICABLE_RATE') : '', lead_time: lt1g, eta_check: shipEtaCheck1g_(v, lt1g), rate_card_id: cur, rate_card_version: k.ver, chosen: !!(cur && ok), state: st4, cost_pending_reason: automatic4.reason || '', cargo_notice: automatic4.cargo_notice || '', quote_state: ({ UNPRICED_APPROVED: 'COST_PENDING', COST_PENDING_AUTO: 'COST_PENDING', COMPLETE: 'QUOTE_SELECTED', STALE: 'QUOTE_STALE', NONE: 'NO_QUOTE' })[st4] || st4 /* AD3-B */, audit: meta4 ? { actor: meta4.actor, actor_source: meta4.actor_source || 'unattributed', at: meta4.at, reason: meta4.reason } : null }; })(),
 options: cards.map(function (c) { return { rate_card_id: String(c.rate_card_id || '').trim(), rate_card_version: shipRateCardVersion_(c), carrier_id: String(c.carrier_id || '').trim(), carrier_name: names[String(c.carrier_id || '').trim()] || '',
 shipping_method_label: String(c.shipping_method_label || '').trim(), shipping_method: String(c.shipping_method || '').trim(), last_mile_delivery: String(c.last_mile_delivery || '').trim(),
 customs_type: String(c.customs_type || '').trim(), currency: String(c.currency || '').trim(), charge_type: String(c.charge_type || '').trim(), unit_rate: c.unit_rate, min_charge: c.min_charge, charge_unit: String(c.charge_unit || '').trim(), fuel_surcharge: c.fuel_surcharge, customs_fee: c.customs_fee, quote: shRcOptionQuote15c_(ss, v, c, ln, day),   /* AGL02-12 */
@@ -4114,7 +4125,8 @@ function shipAuditIdentity_(body, action) {
 // origin / destination country when known (blank row country = any; a row naming a planning set covers its members). No row at all = capability
 // unknown (refused for an explicit service). BestWay = LTL only comes from its rows (Codex: 7 owner_estimate lead times + 1 template, truck/truck US).
 function shipCarrierServices_(ss, carrierId, oc, dc, cache) {   // cache (optional): { sheetName: rows } read once by the caller
-  var car = shipSvcStr_(carrierId), O = shipSvcStr_(oc).toUpperCase(), D = shipSvcStr_(dc).toUpperCase(), out = {}, any = false;
+  var country = function (v) { var c = shipSvcStr_(v).toUpperCase(); return typeof KMCID !== 'undefined' && KMCID && typeof KMCID.canonicalCountryCode === 'function' ? KMCID.canonicalCountryCode(c) : c; };
+  var car = shipSvcStr_(carrierId), O = country(oc), D = country(dc), out = {}, any = false;
   var rowsOf = function (n) { return (cache && cache[n]) || (cache ? (cache[n] = shipSvcRows_(ss, n) || []) : (shipSvcRows_(ss, n) || [])); };
   // AD3-B round 3 (coordinator): inactive rows are a DECLARED capability only for a ZERO-card carrier (no active rate card); a carrier with an
   // active card is judged on its ACTIVE rows only (cards: shipSvcActive_; lead times: shipLtActive_; templates / schedules: is_active / status).
@@ -4124,7 +4136,7 @@ function shipCarrierServices_(ss, carrierId, oc, dc, cache) {   // cache (option
   // (origin = destination) needs a row naming exactly that country on BOTH ends (a blank row country never grants a domestic service).
   var isSet = function (c) { try { return typeof csdPlanningSet15e_ === 'function' && !!csdPlanningSet15e_(c); } catch (e) { return false; } };
   var dom = !!O && O === D;
-  var inC = function (rowC, want) { var r = shipSvcStr_(rowC).toUpperCase(); if (r && isSet(r)) return false; if (!r) return !dom; return !want || r === want; };
+  var inC = function (rowC, want) { var r = country(rowC); if (r && isSet(r)) return false; if (!r) return !dom; return !want || r === want; };
   [['carrier_rate_cards', 'shipping_method', 'rate_card_id'], ['carrier_lead_times', 'shipping_method', 'lead_time_id'], ['shipment_route_templates', 'transit_type', 'route_template_id'], ['carrier_service_schedules', 'shipping_method', 'service_schedule_id']].forEach(function (p) {
     rowsOf(p[0]).forEach(function (r) {
       if (shipSvcStr_(r.carrier_id) !== car || (!zeroCard && !live(p[0], r))) return; var m = shipSvcStr_(r[p[1]]), l = shipSvcStr_(r.last_mile_delivery); if (!m || !l) return; any = true;

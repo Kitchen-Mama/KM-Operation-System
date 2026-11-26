@@ -1708,7 +1708,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHIPMENT_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1-EUD1-NR1",
       "optional": false
     },
     {
@@ -1818,7 +1818,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "21998a70bf573bb35f588b295dd0421eafb5336e12190542bc27ef954b7e0547"
+  "policy_sha256": "f1e0bdd348032e242d335b2e4496e573734672849237069cb23fff0f256b8762"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

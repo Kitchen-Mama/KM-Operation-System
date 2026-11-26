@@ -10,7 +10,7 @@ const root = path.join(__dirname, '..', '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 const api = read('assets/js/api/operation-system-db-api.js');
 const helper = api.slice(api.indexOf('var CUSTOMS_TYPE_LABELS_ ='), api.indexOf('// Shipment (Execution Layer) header.'));
-const names = ['_shEsc', '_shEnumDisplay_', '_shSvcHtml_', '_shSvcDeliveryTypes_', '_shSvcCarrierServices_',
+const names = ['_shEsc', '_shEnumDisplay_', '_shSvcHtml_', '_shCostPendingMessage_', '_shSvcDeliveryTypes_', '_shSvcCarrierServices_',
     '_shSvcPairOptions_', '_shSvcServiceLabel_', '_shSvcDeclaredPairs_', '_shSvcFieldsHtml_',
     'shSvcPickService', 'shSvcCarrierChanged', '_shSvcBox_', 'shSvcSave'];
 const editor = extract(read('assets/js/pages/shipping-history.js'), name => names.includes(name), name => name === 'SH_SVC_TBA_').map(p => p.text).join('\n');

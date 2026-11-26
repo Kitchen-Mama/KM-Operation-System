@@ -286,3 +286,9 @@ test('pre-EU-destination policy retains current operations until destination GS 
  for(const action of ['shipment.workspace.get','updateShipment','shipment.selectRateCard','document.retry','cancelShipmentDraft','gapJob.status.get'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,7);
 });
+
+test('pre-no-rate policy remains usable during manual GS rollout without widening permissions',async()=>{
+ const previous={...p,policy_sha256:'21998a70bf573bb35f588b295dd0421eafb5336e12190542bc27ef954b7e0547'},g=guard(previous);
+ for(const action of ['shipment.workspace.get','updateShipment','shipment.rateCardOptions','shipment.selectRateCard','document.retry','cancelShipmentDraft','gapJob.status.get'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,8);
+});

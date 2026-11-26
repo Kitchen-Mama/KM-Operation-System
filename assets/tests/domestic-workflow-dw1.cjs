@@ -64,7 +64,7 @@ test('stable revision retains original path',()=>{rev='v1';assert.equal(c.fsgDis
 const sp=read('assets/js/pages/shipping-plan.js'),sh=read('assets/js/pages/shipping-history.js');
 function context(src,names,vars,seed){const x=vm.createContext(seed);vm.runInContext(extract(src,n=>names.includes(n),n=>vars.includes(n)).map(p=>p.text).join('\n'),x);return x;}
 (async()=>{
- const p=context(sp,['_spRunCommand_','_spPlanBusy_','_spReadbackAfterWrite_'],['_spInFlight','_spReadbackBlocked_'],{Promise,_spHoldButtons_:()=>()=>{},_spNotify_:()=>{},_spHandleCommandResult_:()=>Promise.resolve()});
+ const p=context(sp,['_spRunCommand_','_spPlanBusy_','_spReadbackAfterWrite_'],['_spInFlight','_spReadbackBlocked_'],{Promise,_spHoldButtons_:()=>()=>{},_spNotify_:()=>{},_spPlanNotice_:()=>{},_spHandleCommandResult_:()=>Promise.resolve()});
  let resolveA,resolveB,sends=0;
  const a=p._spRunCommand_('A:submit',()=>{sends++;return new Promise(r=>resolveA=r);},{}),b=p._spRunCommand_('B:approve',()=>{sends++;return new Promise(r=>resolveB=r);},{});
  await Promise.resolve();
