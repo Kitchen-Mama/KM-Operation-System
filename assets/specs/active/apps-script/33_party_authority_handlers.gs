@@ -1,3 +1,4 @@
+var PARTY_BUILD_VERSION_ = 'PARTY-WAREHOUSE-DESTINATION-20261126-V1';
 /**
  * 33_party_authority_handlers.gs
  * Kitchen Mama Operation System — F1-5C-EXPORT-R2A Party / Legal-Entity Authority Closure.
@@ -126,9 +127,23 @@ function partyResolveDestinationLocation_(locationRows, warehouseId, asOfMs) {
 // Phase-1 CONSIGNEE / SHIP-TO = destination logistics-location recipient. Uses destination_warehouse_id (legacy
 // warehouse_id mirror as fallback). NEVER the free-text shipments.destination as legal identity. legal_importer is
 // deliberately null — a separate legal importer is a different party (see partyResolveLegalImporter_).
-function partyResolveConsignee_(locationRows, shipment, asOfMs) {
+function partyResolveConsignee_(locationRows, shipment, asOfMs, warehouseRows) {
   var wid = partyStr_(shipment && (shipment.destination_warehouse_id || shipment.warehouse_id));
   var r = partyResolveDestinationLocation_(locationRows, wid, asOfMs);
+  // A missing map location may use the exact active warehouse master, never a code/name guess.
+  if (!r.ok && r.error === 'DESTINATION_LOCATION_NOT_CONFIGURED' && wid && warehouseRows &&
+      !(locationRows || []).some(function(l){return partyUc_(l.warehouse_id)===partyUc_(wid);})) {
+    var matches=warehouseRows.filter(function(w){return partyUc_(w.warehouse_id)===partyUc_(wid);});
+    if(matches.length>1)return {ok:false,error:'DESTINATION_WAREHOUSE_AMBIGUOUS'};
+    var w=matches[0];
+    if(w && partyBool_(w.is_active)) {
+      if(!partyStr_(w.warehouse_name)||!partyStr_(w.address_line1)||!partyStr_(w.city)||!partyStr_(w.country))return {ok:false,error:'DESTINATION_WAREHOUSE_ADDRESS_INCOMPLETE'};
+      r={ok:true,location:{logistics_location_id:'',warehouse_id:partyUc_(w.warehouse_id),recipient_name:partyStr_(w.warehouse_name),
+        address_line_1:partyStr_(w.address_line1),address_line_2:partyStr_(w.address_line2),city:partyStr_(w.city),
+        state_or_region:partyStr_(w.state)||partyStr_(w.subdivision_code),postal_code:partyStr_(w.postal_code),country:partyUc_(w.country),
+        latitude:'',longitude:'',timezone:partyStr_(w.timezone),source:'WAREHOUSE_MASTER'}};
+    }
+  }
   if (!r.ok) return { ok: false, error: r.error };
   return { ok: true, consignee: r.location, legal_importer: null };
 }
@@ -157,6 +172,9 @@ function partyReadLogisticsLocations_(ss) {
   var sheet = prodRequireSheet_(ss, 'logistics_locations', []); // validate-only existence; columns owned by the Map master
   return partyRowsAsObjects_(sheet);
 }
+function partyReadWarehouses_(ss) {
+  return partyRowsAsObjects_(prodRequireSheet_(ss, 'warehouses', ['warehouse_id']));
+}
 
 // Minimal INTERFACE CONTRACT for the R2B final-output aggregator. Reads canonical masters + runs the pure resolvers.
 // NOT routed and writes NOTHING — no snapshot here. asOfMs = the shipment's effective date (ms); null = active-only.
@@ -166,7 +184,7 @@ function partyResolveShipmentParties_(ss, shipment, asOfMs) {
   return {
     shipper: partyResolveShipmentShipper_(entities, shipment, asOfMs),
     seller_of_record: partyResolveSellerOfRecord_(entities, shipment, asOfMs),
-    consignee: partyResolveConsignee_(locations, shipment, asOfMs)
+    consignee: partyResolveConsignee_(locations, shipment, asOfMs, partyReadWarehouses_(ss))
   };
 }
 

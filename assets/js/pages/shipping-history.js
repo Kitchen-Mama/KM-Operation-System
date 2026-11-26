@@ -3964,8 +3964,8 @@ function shCancelShipmentDraft(shipmentId, expectedStatus) {
         'Current factory stock will NOT be deducted.',
         'The reserved quantity WILL be released, so it becomes available to other plans immediately.',
         '',
-        'The shipment is kept as a cancelled record (nothing is deleted), and the approved plan can create a',
-        'new Shipment Draft with Retry.'
+        'The shipment is kept as a cancelled record (nothing is deleted).',
+        'Linked Shipping Plans return to Pending Approval and must be approved again.'
     ];
     if (!confirm(lines.join('\n'))) return;
     var reason = prompt('Reason for cancelling this Shipment Draft (required):', '');
@@ -3994,7 +3994,9 @@ function shCancelShipmentDraft(shipmentId, expectedStatus) {
                       (d.source_warehouse_id ? (' at ' + d.source_warehouse_id) : '') +
                       '\nPO allocations released: ' + (d.allocations_released || 0) +   // SCF1 (F1)
                       '\nCurrent factory stock: unchanged. PO completed / remaining: unchanged.' +
-                      '\n\nThe approved plan can now create a new Shipment Draft with Retry.');
+                      (d.plan_execution_commit === 'PENDING_APPROVAL'
+                        ? '\n\nLinked Shipping Plans have returned to Pending Approval. Approve them again in Shipping Plan Review.'
+                        : d.plan_handoff_cleared ? '\n\nThis backend still uses the previous approval flow. Update the Shipping Loop GS package before using the new return-to-review flow.' : ''));
             }
             _shReadbackOne_(shipmentId);                        // authoritative readback - R15C-B3: of this shipment (whole-area only if that read fails)
             return;

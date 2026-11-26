@@ -1500,6 +1500,7 @@ var RTR_PRODUCTION_PROFILE_ = {
   "administration_enabled": false,
   "ai_plan_enabled": false,
   "module_stamps": [
+    {"symbol":"PARTY_BUILD_VERSION_","expected":"PARTY-WAREHOUSE-DESTINATION-20261126-V1","optional":false},
     {
       "symbol": "CORE_DB_BUILD_VERSION_",
       "expected": "CORE-DB-RATE-VERSION-20261126",
@@ -1547,7 +1548,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DGS_PRODUCTION_PROFILE_BUILD_VERSION_",
-      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1",
+      "expected": "PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1",
       "optional": false
     },
     {
@@ -1557,7 +1558,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "DOCUMENT_LAYOUT_BUILD_VERSION_",
-      "expected": "SC2-DTF-20261111",
+      "expected": "SC2-DTF-20261111-WH1",
       "optional": false
     },
     {
@@ -1672,7 +1673,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SFO_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1",
       "optional": false
     },
     {
@@ -1707,7 +1708,7 @@ var RTR_PRODUCTION_PROFILE_ = {
     },
     {
       "symbol": "SHIPMENT_BUILD_VERSION_",
-      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1",
+      "expected": "F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1",
       "optional": false
     },
     {
@@ -1817,7 +1818,7 @@ var RTR_PRODUCTION_PROFILE_ = {
       "ROUTE_INIT"
     ]
   },
-  "policy_sha256": "e2eafb38f249636bc4657eb8ce00817a267a7547607ee05a1d0017adb3775138"
+  "policy_sha256": "0026f8ebcc150b0ed8cfd9e411d1ceefa13053283af228a42025dfd40c55d4f7"
 };
 function rtrProductionRequestBody_(e) {
   var p = e && e.parameter || {};

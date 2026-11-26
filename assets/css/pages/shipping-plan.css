@@ -98,6 +98,7 @@
     font-weight: 600;
 }
 
+#shippingplan-section .plan-status-badge--rejected { background: #fee2e2; color: #991b1b; }
 #shippingplan-section .plan-status-badge--draft {
     background: #FEF3C7;
     color: #92400E;

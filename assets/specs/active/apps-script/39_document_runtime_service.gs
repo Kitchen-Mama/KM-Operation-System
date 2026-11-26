@@ -1170,7 +1170,7 @@ var xcoCur_ = (typeof xcoCiCurrencyConflict_ === 'function') ? xcoCiCurrencyConf
 var hdr = null, cols = function () { var sh = hdr || ss.getSheetByName('shipment_final_output_lines'); return (hdr = hdr || (sh ? sh.getRange(1, 1, 1, Math.max(1, sh.getLastColumn())).getValues()[0].map(dgsStr_) : [])); };
 var sh2 = null, rc = null, x = { snap: function () { var s = sh2 || ss.getSheetByName('shipment_final_output_snapshots'); return (sh2 = sh2 || (s ? s.getRange(1, 1, 1, Math.max(1, s.getLastColumn())).getValues()[0].map(dgsStr_) : [])); },
 rc: function () { return (rc = rc || sfoRateCardLabel_(ss, sc.row)); },
-dest: function () { return (dst = dst || partyResolveConsignee_(partyReadLogisticsLocations_(ss), sc.row, null)); },
+dest: function () { return (dst = dst || partyResolveConsignee_(partyReadLogisticsLocations_(ss), sc.row, null, partyReadWarehouses_(ss))); },
 master: function (src, required) {
 if (!mst) { try { var src0 = sfoMasterSource_(ss, { a: true, u: true }), sid = dgsStr_(sc.row.shipment_id), lineContextCp2a = dgsReadinessLineContextCp2a_(ss, sc.row);
 mst = { ls: sfoReadTable_(ss, 'shipment_lines', []).filter(function (l) { return dgsStr_(l.shipment_id) === sid && !(typeof sc13LineRemoved_ === 'function' && sc13LineRemoved_(l)); }).map(function (l) { return sfoMasterFacts_(src0, dgsStr_(l.sku), lineContextCp2a(l)); }) }; } catch (eM) { mst = { err: 'DOCUMENT_MASTER_UNREADABLE' }; } }
@@ -2570,4 +2570,4 @@ function xcoCiCurrencyConflict_(ss, sc, manifest, gating) {
 }
 // XCO-R15G-39C-O5 (xco-r15g-impl): patched
 
-var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1';
+var DGS_PRODUCTION_PROFILE_BUILD_VERSION_ = 'PROD1-DGS-20261112-AD3-DW1-DW2-MC1-WH1';

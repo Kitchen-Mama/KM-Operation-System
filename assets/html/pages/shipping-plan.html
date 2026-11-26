@@ -6,17 +6,12 @@
                         <div class="shipping-plan__filters">
                             <select id="spCountryFilter" class="shipping-plan__filter shipping-plan__filter--country" onchange="renderShippingPlan()">
                                 <option value="">All Countries</option>
-                                <option value="US">US</option>
-                                <option value="UK">UK</option>
-                                <option value="DE">DE</option>
                             </select>
                             <select id="spStatusFilter" class="shipping-plan__filter shipping-plan__filter--status" onchange="filterByStatus()">
                                 <option value="all">All Active</option>
                                 <option value="draft">Draft</option>
+                                <option value="rejected">Rejected</option>
                                 <option value="pendingApproval">Pending Approval</option>
-                                <option value="approved">Approved</option>
-                                <option value="completed">Completed</option>
-                                <option value="cancelled">Cancelled</option>
                             </select>
                         </div>
                     </div>
@@ -25,9 +20,10 @@
 
                     <h3 id="pendingSectionTitle" class="plan-section-title">Pending Approval <span class="plan-section-title__count" id="pendingSectionCount">0</span></h3>
                     <div id="pendingApprovalCards"></div>
+                    <div id="spHandoffRecoveryCards"></div>
 
-                    <h3 id="approvedSectionTitle" class="plan-section-title">Approved <span class="plan-section-title__count" id="approvedSectionCount">0</span></h3>
-                    <div id="approvedCards"></div>
+                    <h3 id="approvedSectionTitle" class="plan-section-title" hidden>Approved <span class="plan-section-title__count" id="approvedSectionCount">0</span></h3>
+                    <div id="approvedCards" hidden></div>
 
                     <h3 id="completedSectionTitle" class="plan-section-title" style="display: none;">Completed (Decision Layer finished — handed off to Shipment) <span class="plan-section-title__count" id="completedSectionCount">0</span></h3>
                     <div id="completedCards" style="display: none;"></div>

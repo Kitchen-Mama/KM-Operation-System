@@ -58,6 +58,8 @@ const action = (page, label) => page.getByRole('button', { name: label, exact: t
         check(width + ' explicit local clear rechecks idle and never claims original completion',
           (await notice(page)).includes('original request outcome is still unknown') &&
           await page.evaluate(() => calls.statuses === 2 && calls.refreshes === 0 && !sessionStorage.getItem(_irManualGapKey_())));
+        await page.evaluate(()=>_irManualGapUnknown_('Late observation failure after clear'));
+        check(width+' a late status callback cannot resurrect a cleared wait or its button label',await page.evaluate(()=>!_irManualGap&&!_irRecalcAllBusy&&!document.getElementById('replenAiSupportTrigger').textContent.includes('unconfirmed')));
       });
       await scenario(browser, width, 'active server job', async page => {
         await page.evaluate(() => { KM.DB.getGapJobStatus = () => { calls.statuses++; return Promise.resolve({ ...job('RUNNING', 'ACTIVE'), data: { ...job('RUNNING', 'ACTIVE').data, scopesProcessed: 3, scopesTotal: 10 } }); }; });

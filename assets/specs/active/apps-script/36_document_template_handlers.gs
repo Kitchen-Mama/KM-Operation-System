@@ -115,7 +115,7 @@ var DT_SRC_ = { 'tax_referral_rates.vat_no': 'l:vat_no', 'tax_referral_rates.eor
 'shipment_lines.carton_no_start,carton_no_end': 'l:carton_no_start', 'shipment_line_allocations.allocated_qty': 'l:allocated_qty', 'purchase_orders.po_no': 'l:po_no',
 'tax_referral_rates.country_of_origin': 'l:country_of_origin', 'logistics_locations.location_name': 'h:consignee.name', 'logistics_locations.address': 'h:consignee_address',
 'logistics_locations.city': 'h:consignee.address.city', 'logistics_locations.state_or_region': 'h:consignee.address.state_or_region', 'logistics_locations.postal_code': 'h:consignee.address.postal_code', 'logistics_locations.country': 'h:consignee.address.country',
-'warehouses.warehouse_name': 'h:consignee.name', 'warehouses.address': 'h:consignee_address',
+'warehouses.warehouse_name': 'h:consignee.name', 'warehouses.contact_name': 'h:consignee.name', 'warehouses.address': 'h:consignee_address',
 'warehouses.city': 'h:consignee.address.city', 'warehouses.state': 'h:consignee.address.state_or_region',
 'warehouses.postal_code': 'h:consignee.address.postal_code', 'warehouses.country': 'h:consignee.address.country',
 'shipments.shipping_method_label': 'h:shipping_method_label',
@@ -569,4 +569,4 @@ function dtRequireKnownLayoutSc2_(ss, name, required) {
   return sheet;
 }
 
-var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111';
+var DOCUMENT_LAYOUT_BUILD_VERSION_ = 'SC2-DTF-20261111-WH1';

@@ -11,6 +11,7 @@
     var preRepairPolicy = '0afcd8ef72dbffe76d670a765d7769ea1fa382691a0dfdf4f8b59d0b1ffb0161';
     var preAppendPolicy = '5e7d63c7f31a05dc261748eca7f9ab96e993b13586f21e1645cb246e56af8e47';
     var preRepricePolicy = '6d4a8af2ba5379008716e21b10acd3e8044c4f3b95120936a25450fb2fcbfa64';
+    var preReviewPolicy = 'e2eafb38f249636bc4657eb8ce00817a267a7547607ee05a1d0017adb3775138';
     window.KM_PRODUCTION_GUARD_ = G;
     function fail(code) { G.verdict = code; G.identity = null; return new Error(code); }
     function endpoint(url) { return url.origin + url.pathname === C.endpoint; }
@@ -29,7 +30,7 @@
             var p = r && r.production_gate;
             if (r && r.success === false && /^PRODUCTION_(MODULE_MISMATCH|TARGET_MISMATCH|TARGET_UNAVAILABLE|FLAT_V2_REQUIRED)$/.test(r.code || '')) throw fail(r.code);
             if (!r.success || !p || p.environment !== 'KM_PRODUCTION' || p.profile_id !== C.profile_id ||
-                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy && p.policy_sha256 !== preCampaignPolicy && p.policy_sha256 !== preRepairPolicy && p.policy_sha256 !== preAppendPolicy && p.policy_sha256 !== preRepricePolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
+                (p.policy_sha256 !== C.policy_sha256 && p.policy_sha256 !== priorPolicy && p.policy_sha256 !== preWarehousePolicy && p.policy_sha256 !== preStatusPolicy && p.policy_sha256 !== preMixedPolicy && p.policy_sha256 !== preCampaignPolicy && p.policy_sha256 !== preRepairPolicy && p.policy_sha256 !== preAppendPolicy && p.policy_sha256 !== preRepricePolicy && p.policy_sha256 !== preReviewPolicy) || p.db_fp !== C.db_fp || p.bound_equals_constant !== true || p.module_stamps_ok !== true || p.flat_v2 !== true ||
                 p.administration_enabled !== false || p.ai_plan_enabled !== false) throw fail('PRODUCTION_IDENTITY_MISMATCH');
             G.identity = p; G.verdict = 'VERIFIED'; return true;
         }).catch(function (e) { flight = null; if (!G.verdict) fail('PRODUCTION_IDENTITY_UNAVAILABLE'); throw e; });
@@ -38,10 +39,10 @@
     G.ready = identity;
     G.environmentKey = function () { return G.verdict === 'VERIFIED' ? 'production:' + C.endpoint_sha256 + ':' + C.db_fp + ':' + C.profile_id : ''; };
     G.isActionAllowed = function (a) { return !!C && C.allowed.indexOf(a) >= 0 &&
-        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy))) &&
-        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy))) &&
-        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy))) &&
-        !(/^campaign\.builder\./.test(a) && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy))) &&
+        !(a === 'factoryInventory.workspace.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preStatusPolicy && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy && G.identity.policy_sha256 !== preReviewPolicy))) &&
+        !(a === 'gapJob.status.get' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preMixedPolicy && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy && G.identity.policy_sha256 !== preReviewPolicy))) &&
+        !(a === 'shippingPlan.mixedCartons.save' && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preCampaignPolicy && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy && G.identity.policy_sha256 !== preReviewPolicy))) &&
+        !(/^campaign\.builder\./.test(a) && (!G.identity || (G.identity.policy_sha256 !== C.policy_sha256 && G.identity.policy_sha256 !== preRepairPolicy && G.identity.policy_sha256 !== preAppendPolicy && G.identity.policy_sha256 !== preRepricePolicy && G.identity.policy_sha256 !== preReviewPolicy))) &&
         !(a === 'updateRecommendationDecisionLocked' && (!G.identity || G.identity.policy_sha256 === priorPolicy)); };
     window.fetch = function (input, init) {
         var u;

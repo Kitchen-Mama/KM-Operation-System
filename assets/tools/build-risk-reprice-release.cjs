@@ -5,6 +5,7 @@ const files=['01_router.gs','20_campaign_write_handlers.gs','63_api_v1_system_he
 const c=vm.createContext({}),sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 for(const name of files)vm.runInContext(fs.readFileSync(path.join(src,name),'utf8'),c,{filename:name});
 const policy=JSON.parse(JSON.stringify(c.RTR_PRODUCTION_PROFILE_)),body={...policy};delete body.policy_sha256;
+assert.equal(policy.policy_sha256,'e2eafb38f249636bc4657eb8ce00817a267a7547607ee05a1d0017adb3775138','Superseded release: use build-shipping-loop-release.cjs for the current source tree');
 assert.equal(sha(JSON.stringify(body)),policy.policy_sha256);
 for(const pins of [policy.module_stamps,c.SYS_MODULE_BUILD_STAMPS_])for(const symbol of ['WDL_BUILD_VERSION_','CAMPAIGN_BUILD_VERSION_'])assert.equal(pins.find(p=>p.symbol===symbol).expected,c[symbol]);
 assert(fs.readFileSync(path.join(root,'production-config.js'),'utf8').includes(policy.policy_sha256));

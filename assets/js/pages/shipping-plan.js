@@ -25,7 +25,7 @@ function _spEffectiveWorkspace() {
 function renderShippingPlan() {
     // Cloud (DB) path: read shipping_plans / shipping_plan_lines (Legacy) OR the Weekly Workspace API when its
     // flag is effective. Falls back to the legacy sessionStorage rendering only when neither is available (Demo).
-    if (_spUseDb() || _spEffectiveWorkspace()) { renderShippingPlanFromDb(); return; }
+    if (_spUseDb() || _spEffectiveWorkspace()) { _spEnsureCountryOptions_(); renderShippingPlanFromDb(); return; }
 
     console.log('=== Render Shipping Plan ===');
     const allPlansStr = sessionStorage.getItem('allShippingPlans');
@@ -514,7 +514,7 @@ function filterByStatus() {
     const sel = document.getElementById('spStatusFilter');
     // Completed planning tasks belong to Shipment views, not this operational workspace.
     if (sel) {
-        if (sel.value === 'completed') sel.value = 'all';
+        if (['completed','approved','cancelled'].indexOf(sel.value)>=0) sel.value = 'all';
         var completedOption = sel.querySelector('option[value="completed"]');
         if (completedOption && completedOption.parentNode) completedOption.parentNode.removeChild(completedOption);
     }
@@ -536,24 +536,25 @@ function filterByStatus() {
     }
 
     // Hidden-by-default statuses (preserved in DB, viewable only via their own filter option).
-    var HIDDEN_DEFAULT = { completed: true, cancelled: true };
+    var HIDDEN_DEFAULT = { completed: true, cancelled: true, approved: true };
     if (statusFilter === 'all') {
-        // "All Active" = draft + pending_approval + approved; EXCLUDES completed and cancelled.
-        showSec('draft', true); showSec('pendingApproval', true); showSec('approved', true);
+        // Active review contains drafts, rejected drafts and pending approvals, including failed handoffs.
+        showSec('draft', true); showSec('pendingApproval', true); showSec('approved', false);
         showSec('completed', false); showSec('cancelled', false);
         allCards.forEach(card => {
             card.style.display = HIDDEN_DEFAULT[card.getAttribute('data-status')] ? 'none' : '';
         });
     } else {
-        showSec('draft', statusFilter === 'draft');
+        showSec('draft', statusFilter === 'draft' || statusFilter === 'rejected');
         showSec('pendingApproval', statusFilter === 'pendingApproval');
-        showSec('approved', statusFilter === 'approved');
+        showSec('approved', false);
         showSec('completed', statusFilter === 'completed');
         showSec('cancelled', statusFilter === 'cancelled');
         allCards.forEach(card => {
             card.style.display = card.getAttribute('data-status') === statusFilter ? '' : 'none';
         });
     }
+    var recoveryHost=document.getElementById('spHandoffRecoveryCards');if(recoveryHost)recoveryHost.style.display=statusFilter==='all'||statusFilter==='pendingApproval'?'':'none';
 }
 
 // ========================================
@@ -587,6 +588,21 @@ function _spVisibleNotes_(note) {
     }).join('\n').trim();
 }
 function _spNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
+var _spCountryRows_=null,_spCountryFlight_=null;
+function _spPaintCountryOptions_() {
+    var el=document.getElementById('spCountryFilter');if(!el)return;
+    var selected=el.value,countries={};
+    (_spCountryRows_||[]).concat((_spLastModel&&_spLastModel.plans)||[]).forEach(function(r){var c=String(r.country||'').trim();if(c)countries[c]=true;});
+    el.innerHTML='<option value="">All Countries</option>'+Object.keys(countries).sort().map(function(c){return '<option value="'+_spEsc(c)+'">'+_spEsc(c)+'</option>';}).join('');
+    el.value=countries[selected]?selected:'';
+}
+function _spEnsureCountryOptions_() {
+    if(_spCountryRows_||_spCountryFlight_||!window.KM||!window.KM.DB||!window.KM.DB.loadScopedTables)return;
+    _spCountryFlight_=Promise.resolve().then(function(){return window.KM.DB.loadScopedTables(['marketplaces']);}).then(function(db){
+        _spCountryRows_=(db.marketplaces||[]).filter(function(r){return !r.status||String(r.status).toLowerCase()==='active';});_spPaintCountryOptions_();
+    }).catch(function(){_spCountryRows_=[];_spPaintCountryOptions_();}).finally(function(){_spCountryFlight_=null;});
+}
+function _spIsRejected_(p) { return p.status==='draft'&&!!String(p.rejectedReason||(p.raw||{}).rejected_reason||'').trim(); }
 function _spSkuOrder_(a,b) { return String(a.sku||'').localeCompare(String(b.sku||''),'en',{numeric:true,sensitivity:'base'}); }
 // True only when a raw snapshot cell actually carries a value (distinguishes a stored 0 / blank).
 function _spHasRaw(line, key) {
@@ -742,6 +758,7 @@ function _spWorkspacePlanRecord(p) {
         estimatedDuty: (raw.estimated_duty == null ? '' : raw.estimated_duty),
         currency: p.currency || '',
         createdAt: String(raw.created_at || ''), note: String(raw.note || ''),
+        rejectedReason: String(raw.rejected_reason || ''),
         submittedAt: p.submittedAt || String(raw.submitted_at || ''),
         completedAt: String(raw.completed_at || ''),
         transferredShipmentId: String(raw.transferred_shipment_id || ''),
@@ -937,6 +954,7 @@ function _spRenderReadModel_(model) {
     if (model.error) { if (_region) _region.set(window.KM.loadState.STATES.ERROR); _spRenderReadError_(model.error); return; }
     if (_region) _region.set(((model.plans || []).length) ? window.KM.loadState.STATES.READY : window.KM.loadState.STATES.EMPTY);
     var plans = model.plans || [];
+    _spPaintCountryOptions_();
     var lines = model.lines || [];
     // Map which plans already have a shipment (robust Done-button detection). Legacy populates this;
     // Workspace mode leaves it empty and relies on the plan's persisted transferred_* fields.
@@ -958,27 +976,25 @@ function _spRenderReadModel_(model) {
 
     // Decision Layer Completion: a plan is "Completed" once Done is pressed (completed_at set).
     // Completed plans leave this workspace entirely (preserved in DB and Shipment views).
-    // An Approved plan that has been transferred to a Shipment Draft STAYS in Approved with
-    // a Done button until the user marks it Completed (supersedes the v1.8 auto-hide-on-transfer rule).
+    // A transferred approval belongs to Shipment Draft. Keep only failed handoffs here for recovery.
     var draft = inScope.filter(function(p) { return p.status === 'draft' && !_spCompleted(p); });
     var pending = inScope.filter(function(p) { return p.status === 'pending_approval' && !_spCompleted(p); });
-    var approved = inScope.filter(function(p) { return p.status === 'approved' && !_spCompleted(p); });
+    var approved = inScope.filter(function(p) { return p.status === 'approved' && !_spCompleted(p) && !_spTransferred(p); });
     var cancelled = inScope.filter(function(p) { return p.status === 'cancelled' && !_spCompleted(p); });
     var completed = inScope.filter(function(p) { return _spCompleted(p); });
 
     // Section count badges (visual — matches Request Order Draft's count display).
     _spSetSectionCount('draftSectionCount', draft.length);
-    _spSetSectionCount('pendingSectionCount', pending.length);
-    _spSetSectionCount('approvedSectionCount', approved.length);
+    _spSetSectionCount('pendingSectionCount', pending.length+approved.length);
+    _spSetSectionCount('approvedSectionCount', 0);
     _spSetSectionCount('completedSectionCount', completed.length);
     _spSetSectionCount('cancelledSectionCount', cancelled.length);
 
     var _keep15c = _spCaptureCardState_();   // R15C-UI: expand / typed qty / note / focus / place on screen, by internal plan id
     _spRenderDbSection('shippingPlanCards', draft, 'draft', linesByPlan, 'No shipping plans available.', live);
     _spRenderDbSection('pendingApprovalCards', pending, 'pending_approval', linesByPlan, 'No pending approvals.', live);
-    _spRenderDbSection('approvedCards', approved, 'approved', linesByPlan, 'No approved plans.', live);
-    _spRenderDbSection('completedCards', completed, 'completed', linesByPlan, 'No completed plans.', live);
-    _spRenderDbSection('cancelledCards', cancelled, 'cancelled', linesByPlan, 'No cancelled plans.', live);
+    _spRenderDbSection('spHandoffRecoveryCards', approved, 'approved', linesByPlan, '', live);
+    ['approvedCards','completedCards','cancelledCards'].forEach(function(id){var el=document.getElementById(id);if(el)el.innerHTML='';});
 
     // Apply the current Status filter so cancelled stays hidden under "All Active".
     if (typeof filterByStatus === 'function') filterByStatus();
@@ -991,7 +1007,7 @@ function _spRenderReadModel_(model) {
 // back after: expanded cards (their options panel is refreshed through the options cache), the open factory summary (_spFgOpen_), the
 // note being written, the focused input and the card's place on screen. A typed qty is kept only while the server still holds the value it
 // was typed over; if the server value moved, or the line / card is gone, it is NOT applied silently - the operator is told which ones.
-var SP_CARD_CONTAINERS_ = ['shippingPlanCards', 'pendingApprovalCards', 'approvedCards', 'completedCards', 'cancelledCards'];
+var SP_CARD_CONTAINERS_ = ['shippingPlanCards', 'pendingApprovalCards', 'spHandoffRecoveryCards', 'approvedCards', 'completedCards', 'cancelledCards'];
 function _spCaptureCardState_() {
     var st = { expanded: {}, qty: {}, notes: {}, focus: null, anchor: null };
     if (typeof document === 'undefined') return st;
@@ -1158,7 +1174,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         var editable = (statusType === 'draft');
         var pid = plan.shippingPlanId;
         // Match the spStatusFilter dropdown tokens (draft / pendingApproval / approved) so filterByStatus works.
-        var dsAttr = (statusType === 'pending_approval') ? 'pendingApproval' : statusType;
+        var rejected=_spIsRejected_(plan),handoffPending=statusType==='approved'&&!_spTransferred(plan);
+        var dsAttr = rejected?'rejected':(statusType === 'pending_approval'||handoffPending) ? 'pendingApproval' : statusType;
 
         // F1-7N-FC-1A §J.2/§J.3 — the gate on the two transitions that commit a decision. Submit and
         // Approve are disabled by a deployment mismatch, and Retry additionally by an in-flight retry, so a
@@ -1259,7 +1276,7 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
         '<div class="sp-card" id="sp-card-' + _spEsc(pid) + '" data-plan-id="' + _spEsc(pid) + '" data-status="' + dsAttr + '">' +
             '<div class="sp-card-header">' +
                 '<div class="sp-card-summary">' +
-                    _spSummary('Status', '<span class="plan-status-badge plan-status-badge--' + (statusType === 'pending_approval' ? 'pendingApproval' : statusType) + '">' + statusLabel + ' (v' + _spNum(plan.planVersion) + ')</span>') +
+                    _spSummary('Status', '<span class="plan-status-badge plan-status-badge--' + (rejected?'rejected':statusType === 'pending_approval' ? 'pendingApproval' : statusType) + '">' + (rejected?'Rejected':handoffPending?'Shipment Draft Pending':statusLabel) + ' (v' + _spNum(plan.planVersion) + ')</span>') +
                     _spSummary('Submitted Date', _spEsc(_spSubmittedDate_(plan))) +
                     _spSummary('Country', _spEsc(plan.country || '')) +
                     _spSummary('Marketplace', _spEsc(plan.marketplace || '')) +
@@ -2691,7 +2708,7 @@ function _ensureShippingPlanMarkup() {
     }
     if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
         return window.KM.partialLoader
-            .loadPartial('shipping-plan', 'assets/html/pages/shipping-plan.html', '#shipping-plan-mount')
+            .loadPartial('shipping-plan', 'assets/html/pages/shipping-plan.html?v=shipping-loop-20261126-v1', '#shipping-plan-mount')
             .then(function() {
                 if (!document.getElementById('shippingplan-section')) {
                     console.warn('[ShippingPlan] partial loaded but #shippingplan-section not found');

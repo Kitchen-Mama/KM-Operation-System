@@ -371,7 +371,7 @@ return out;
 
 
 
-var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1';
+var SHIPMENT_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1G-R15F2-R15G-S2-TAX1-CP1-SC1R2-SCF1-N01-AD1B-AD3-AD4-DW1-DW2-MC1-REVIEW1';
 
 
 
@@ -1667,6 +1667,19 @@ var SHIPMENT_PRE_DISPATCH_STATUSES_ = ['draft', 'ready_to_ship'];
 
 
 
+function shipmentCancelReviewPlans_(ss, ids, shipmentId) {
+  var unique=ids.filter(function(id,i,a){return id&&a.indexOf(id)===i;}),out={rows:[],sheet:null,headers:[]};
+  if(!unique.length)return out;
+  var sheet=ss.getSheetByName('shipping_plans');if(!sheet)throw Error('CANCEL_PLAN_REVIEW_UNREADABLE');
+  var t=shipmentReadSheet_(sheet),ic=t.col('shipping_plan_id'),sc=t.col('status');
+  if(ic<0||sc<0||t.col('updated_at')<0)throw Error('CANCEL_PLAN_REVIEW_SCHEMA_MISSING');
+  unique.forEach(function(id){var matches=[];for(var i=1;i<t.rows.length;i++)if(String(t.rows[i][ic]||'').trim()===id)matches.push({row:i+1,values:t.rows[i],id:id});
+    if(matches.length!==1)throw Error('CANCEL_PLAN_REVIEW_NOT_UNIQUE:'+id);
+    var hit=matches[0],status=String(hit.values[sc]||'').trim(),tc=t.col('transferred_shipment_id'),transfer=tc<0?'':String(hit.values[tc]||'').trim();
+    if(['approved','completed'].indexOf(status)<0||transfer&&transfer!==shipmentId)throw Error('CANCEL_PLAN_REVIEW_STATE_CHANGED:'+id);
+    out.rows.push(hit);
+  });out.sheet=sheet;out.headers=t.headers;return out;
+}
 function handleCancelShipmentDraft_(body) {
 body = body || {};
 var shipmentId = String(body.shipment_id || body.draft_id || '').trim();
@@ -1762,6 +1775,9 @@ var journal = [];
 var released = 0, movementsWritten = 0, releases = [];
 var xcoCx_ = xcoCancelPrepare_(ss, shipmentId, planId);   // XCO-R15G H1: every linked Plan, read and proven BEFORE the first write
 if (xcoCx_.refuse) { unlock_(); return scfCancelOut_(xcoCx_.refuse); }
+var reviewPlans_;
+try { reviewPlans_=shipmentCancelReviewPlans_(ss,[planId].concat(xcoCx_.others||[]),shipmentId); }
+catch(eReview){return scfCancelOut_({success:false,zero_write:true,code:'CANCEL_PLAN_REVIEW_UNPROVEN',error:String(eReview.message||eReview)});}
 var scfAl_ = shipCancelAllocPrepare_(ss, shipmentId);   // SCF1 (F1): this shipment's draft PO allocations, read and proven BEFORE the first write
 if (scfAl_.refuse) { unlock_(); return scfCancelOut_(scfAl_.refuse); }
 cxWriteStage_ = true;
@@ -1826,35 +1842,27 @@ setShip_('updated_at', editNextStamp_(now, [sh.col('updated_at') === -1 ? '' : r
 
 
 
-var planSheet = ss.getSheetByName('shipping_plans');
-var planCleared = false;
-if (planSheet && planId) {
-var p = shipmentReadSheet_(planSheet);
-var pIdCol = p.col('shipping_plan_id');
-if (pIdCol !== -1) {
-for (var q = 1; q < p.rows.length; q++) {
-if (String(p.rows[q][pIdCol]).trim() !== planId) continue;
-['transferred_shipment_id', 'transferred_to_shipment_at'].forEach(function (nm) {
-var pc = p.col(nm);
-if (pc === -1) return;
-journal.push({ kind: 'cell', sheet: planSheet, row: q + 1, col: pc, prev: p.rows[q][pc], wrote: '' });
-planSheet.getRange(q + 1, pc + 1).setValue('');
+var planCleared = reviewPlans_.rows.length>0;
+reviewPlans_.rows.forEach(function(p){
+  var values={status:'pending_approval',transferred_shipment_id:'',transferred_to_shipment_at:'',approved_by:'',approved_at:'',completed_by:'',completed_at:'',updated_by:actor,
+    updated_at:editNextStamp_(now,[p.values[reviewPlans_.headers.indexOf('updated_at')]])};
+  Object.keys(values).forEach(function(name){var c=reviewPlans_.headers.indexOf(name);if(c<0)return;
+    journal.push({kind:'cell',sheet:reviewPlans_.sheet,row:p.row,col:c,prev:p.values[c],wrote:values[name],meta:/_at$/.test(name)});
+    reviewPlans_.sheet.getRange(p.row,c+1).setValue(values[name]);
+  });
 });
-var puc = p.col('updated_at');
-if (puc !== -1) {
-var puNow_ = editNextStamp_(now, [p.rows[q][puc]]);   // R71 small-3 (review m1): journaled and written as the same value
-journal.push({ kind: 'cell', sheet: planSheet, row: q + 1, col: puc, prev: p.rows[q][puc], wrote: puNow_, meta: true });
-planSheet.getRange(q + 1, puc + 1).setValue(puNow_);
-}
-planCleared = true;
-break;
-}
-}
-}
 SpreadsheetApp.flush();
 
-xcoCancelApply_(xcoCx_, journal, now, setShip_, sc('note'));   // XCO-R15G H1: the other linked Plans + the CANCELLED marker, journaled
+xcoCx_.reviewReturned=true;
+xcoCancelApply_(xcoCx_, journal, now, setShip_, sc('note'));   // linked Plan handoffs were returned above; preserve the link cancellation audit
 SpreadsheetApp.flush();
+reviewPlans_.rows.forEach(function(p){
+  var saved=reviewPlans_.sheet.getRange(p.row,1,1,reviewPlans_.headers.length).getValues()[0];
+  ['status','transferred_shipment_id','transferred_to_shipment_at','approved_by','approved_at','completed_by','completed_at'].forEach(function(name){
+    var c=reviewPlans_.headers.indexOf(name);if(c<0)return;
+    if(String(saved[c]||'')!==(name==='status'?'pending_approval':''))throw Error('CANCEL_PLAN_REVIEW_READBACK_FAILED:'+p.id+':'+name);
+  });
+});
 unlock_();
 return jsonResponse_({ success: true, data: {
 outcome: 'CANCELLED', shipment_id: shipmentId, shipping_plan_id: planId,
@@ -1863,10 +1871,9 @@ reservation_released: released, movements_written: movementsWritten, releases: r
 allocations_released: allocReleased_, allocation_ids_released: allocIds_.slice(0, 50), po_counters_changed: false,   // SCF1 (F1)
 current_stock_changed: false,
 plan_handoff_cleared: planCleared, linked_plans_cleared: (xcoCx_ && xcoCx_.others) ? xcoCx_.others.slice() : [],
-plan_execution_commit: planId ? 'APPROVED_SHIPMENT_CREATION_PENDING' : '',
+plan_execution_commit: planCleared ? 'PENDING_APPROVAL' : '', plans_returned_to_pending: reviewPlans_.rows.map(function(p){return p.id;}),
 cancelled_by: actor, cancelled_at: now, cancel_reason: reason,
-note: 'The reservation was released and current stock was NOT deducted. The approved plan keeps its ' +
-'approval and can create a new Shipment Draft with Retry.'
+note: 'The reservation was released and current stock was NOT deducted. Linked Shipping Plans returned to Pending Approval and require approval again.'
 } });
 } catch (e) {
 // INT-CAND7 r3 (F-B7-4): a CHECKED replay - stop and keep on any doubt; never 'unchanged' unless every undo was proven
@@ -3672,7 +3679,7 @@ function xcoCancelPrepare_(ss, sid, headerPlanId) {
 function xcoCancelApply_(cx, journal, now, setShip_, note) {
   if (!cx || !cx.ids.length) return;
   var t = cx.table;
-  cx.rows.forEach(function (r) {
+  (cx.reviewReturned?[]:cx.rows).forEach(function (r) {
     ['transferred_shipment_id', 'transferred_to_shipment_at'].forEach(function (k) {
       var c = t.headers.indexOf(k);
       journal.push({ kind: 'cell', sheet: t.sheet, row: r.__row, col: c, prev: r[k], wrote: '' });

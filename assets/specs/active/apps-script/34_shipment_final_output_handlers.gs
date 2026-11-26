@@ -101,7 +101,7 @@ return sfoStr_(v);
 function sfoLc_(v) { return sfoStr_(v).toLowerCase(); }
 function sfoUc_(v) { return sfoStr_(v).toUpperCase(); }
 // SANDBOX-GATE-1l (K-1): the round this file last changed
-var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1';
+var SFO_BUILD_VERSION_ = 'F1-7N-FC-1B-E3-R4-A2-R1-R6-R7-R71-SBX1L-R15G-TAX1-DOC1-AD3-DW1-MC1-WH1';
 // SANDBOX-GATE-1l (K-1): a measure whose source is blank is UNKNOWN (''), never 0; a stored 0 with a known source stays 0
 function sfoHas_(v) { var t = sfoStr_(v); return t !== '' && !isNaN(Number(t.replace(/,/g, ''))); }
 function sfoNumOrBlank_(v) { var t = sfoStr_(v); if (t === '') return ''; var n = Number(t.replace(/,/g, '')); return isNaN(n) ? '' : n; }
@@ -520,7 +520,7 @@ var locations = partyReadLogisticsLocations_(ss);
 var shipperR = partyResolveShipmentShipper_(entities, shipment, asOfMs);
 if (!shipperR.ok) return { ok: false, error: shipperR.error, stage: 'shipper' };
 var sellerR = partyResolveSellerOfRecord_(entities, shipment, asOfMs);
-var consigneeR = partyResolveConsignee_(locations, shipment, asOfMs);
+var consigneeR = partyResolveConsignee_(locations, shipment, asOfMs, partyReadWarehouses_(ss));
 if (!consigneeR.ok) return { ok: false, error: consigneeR.error, stage: 'consignee' };
 
 var fr = procurementResolveWarehouse_(ss, sfoStr_(shipment.source_warehouse_id), '', 'history'), factoryId = fr.ok ? fr.warehouse_id : '';

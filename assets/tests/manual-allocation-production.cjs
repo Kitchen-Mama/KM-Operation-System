@@ -247,3 +247,13 @@ test('pre-repricing policy keeps existing commands usable until the manual GS up
  for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
  assert.equal(g.sent.length,7);
 });
+test('pre-review policy retains all existing operations during the manual GS update',async()=>{
+ const previous={...p,policy_sha256:'e2eafb38f249636bc4657eb8ce00817a267a7547607ee05a1d0017adb3775138'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save','cancelShipmentDraft'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,8);
+});
+test('shipping review requires all shared document owners, including the party resolver',()=>{
+ const ctx=vm.createContext({});for(const file of ['12_shipment_handlers.gs','33_party_authority_handlers.gs','34_shipment_final_output_handlers.gs','36_document_template_handlers.gs','39_document_runtime_service.gs','63_api_v1_system_health.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
+ for(const symbol of ['PARTY_BUILD_VERSION_','SHIPMENT_BUILD_VERSION_','SFO_BUILD_VERSION_','DOCUMENT_LAYOUT_BUILD_VERSION_','DGS_PRODUCTION_PROFILE_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
+ assert.equal(p.module_stamps.find(m=>m.symbol==='PARTY_BUILD_VERSION_').optional,false);
+});

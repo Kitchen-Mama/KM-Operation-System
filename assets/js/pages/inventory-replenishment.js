@@ -13505,6 +13505,7 @@ function _irManualGapHeld_() {
   return _irManualGap;
 }
 function _irManualGapUnknown_(message, quiet) {
+  if (!_irManualGapHeld_()) { _irManualGapRelease_(); return; }
   if (_irManualGap) { _irManualGap.unknown = true; _irManualGap.active = false; }
   _irRecalcAllBusy = true; _irShowCancel_(false);
   var btn = _irRecalcBtn_(); if (btn) { btn.disabled = true; btn.textContent = 'Status unconfirmed'; }
@@ -13591,6 +13592,7 @@ function _irManualGapClearWait_(held, observed, waitingRunId) {
       _irManualGapUnlinkedStatus_(held, st); return;
     }
     _irManualGapRelease_();
+    if (gr.clearJobLiveness) gr.clearJobLiveness('INVENTORY');
     if (!held.noticeDismissed) _irAiSupportNotice_('warn', 'Recalculate', 'Local wait cleared. The original request outcome is still unknown. No server job was cancelled or started. Check the latest results before manually starting another calculation.');
   }).catch(function (err) {
     if (_irManualGap === held) _irManualGapUnknown_('Server status could not be confirmed (' + String(err && err.message || err) + '). The local wait was not cleared. No second start was sent.');
@@ -13861,6 +13863,7 @@ function _irResumeGapJobNow_() {
   // An unresolved browser command is not evidence that a worker is still running.
   // Keep the duplicate-start guard, but require an explicit status action after navigation/reload.
   if (_irManualGapHeld_()) { if (_irManualGap.active) return Promise.resolve(); _irManualGapUnknown_(null, true); return Promise.resolve(); }
+  if (!_irRecalcAllBusy) _irManualGapRelease_();
   var gr = (window.KM && window.KM.gapRecalc), db = (window.KM && window.KM.DB);
   if (!gr || typeof gr.resumeIfRunning !== 'function' || !db || typeof db.getGapJobStatus !== 'function') return;
   var btn = _irRecalcBtn_();
