@@ -1003,7 +1003,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "20_campaign_write_handlers.gs",
     "symbol": "CAMPAIGN_BUILD_VERSION_",
-    "expected": "CAMPAIGN-BUILDER-20261125-V1",
+    "expected": "CAMPAIGN-BUILDER-APPEND-20261126-V2",
     "owns": "the campaigns + campaign_sku_lines write path: the canonical window-based campaign identity (company|country|marketplace|year|start_date|end_date), the one-time legacy adoption of a window-less row, the script lock held around the WRITE only (resolve and classify run unlocked, and every zero-write outcome answers without taking it), the duplicate-identity and identity-mismatch refusals, the expected_row_version stale-write gate applied ONLY to a real header mutation, the resolve-and-reuse branch for an identical header, and the per-line unchanged short-circuit"
   },
   {

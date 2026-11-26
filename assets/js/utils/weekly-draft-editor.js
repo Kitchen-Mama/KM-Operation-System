@@ -71,13 +71,13 @@
             '<p role="status" aria-live="polite"></p><footer><button type="button" data-close>Cancel</button><button type="button" data-recheck hidden>Re-check</button><button type="button" data-save disabled>Save</button></footer>';
         st.dialog = d; active = st; document.body.appendChild(d); d.showModal();
         var status = d.querySelector('[role="status"]'), save = d.querySelector('[data-save]'), select = d.querySelector('select'), add = d.querySelector('[data-add]');
-        function enabled() { save.disabled = st.busy || st.frozen || !st.loaded; add.disabled = st.busy || st.frozen || !st.loaded; select.disabled = add.disabled; d.querySelectorAll('tbody input,tbody button,.sp-packing-editor input,.sp-packing-editor select,.sp-packing-editor button').forEach(function (e) { e.disabled = st.busy || st.frozen; }); d.querySelector('[data-add-group]').hidden=!d.querySelector('[data-mixed]').checked; d.querySelectorAll('[data-close]').forEach(function (e) { e.disabled = st.busy; }); }
+        function enabled() { save.disabled = st.busy || st.frozen || !st.loaded; add.disabled = st.busy || st.frozen || !st.loaded; select.disabled = add.disabled; d.querySelectorAll('tbody input,tbody button,.sp-packing-editor input,.sp-packing-editor select,.sp-packing-editor button').forEach(function (e) { e.disabled = st.busy || st.frozen || !st.loaded; }); d.querySelector('[data-add-group]').hidden=!d.querySelector('[data-mixed]').checked; d.querySelectorAll('[data-close]').forEach(function (e) { e.disabled = st.busy; }); }
         function paintGroups() {
             var box=d.querySelector('[data-groups]');box.innerHTML='';
             st.groups.forEach(function(g,gi){var f=document.createElement('fieldset');f.innerHTML='<legend>Mixed '+(gi+1)+' / 1 carton</legend><label><input type="checkbox" data-additional> Add extra quantities</label><div class="sp-packing-editor__heading"><label>Representative SKU <select data-rep></select></label><button type="button" data-remove-group title="Remove carton" aria-label="Remove mixed carton '+(gi+1)+'">&#215;</button></div><table><thead><tr><th>SKU</th><th>Pcs in carton</th><th></th></tr></thead><tbody></tbody></table><button type="button" data-member title="Add carton member" aria-label="Add carton member">+</button>';
                 var extra=f.querySelector('[data-additional]');extra.checked=!!g.additional;extra.onchange=function(){g.additional=extra.checked;st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);paint();};
                 var rep=f.querySelector('[data-rep]');rep.innerHTML='<option value="">Select SKU</option>'+g.members.map(function(m){return '<option value="'+esc(m.sku)+'">'+esc(m.sku)+'</option>';}).join('');rep.value=g.representative_sku||'';rep.onchange=function(){g.representative_sku=rep.value;};
-                var choices=st.catalog.slice();st.rows.filter(function(r){return !r.removed;}).forEach(function(r){if(!choices.some(function(c){return c.sku===r.sku;}))choices.push({sku:r.sku});});
+                var choices=st.catalog.slice();if(st.loaded)st.rows.filter(function(r){return !r.removed;}).forEach(function(r){if(!choices.some(function(c){return c.sku===r.sku;}))choices.push({sku:r.sku});});
                 g.members.forEach(function(m,mi){var tr=document.createElement('tr');tr.innerHTML='<td><select aria-label="Mixed '+(gi+1)+' SKU '+(mi+1)+'"><option value="">Select SKU</option>'+choices.map(function(r){return '<option value="'+esc(r.sku)+'">'+esc(r.sku)+'</option>';}).join('')+'</select></td><td><input type="number" min="1" step="1" aria-label="Mixed '+(gi+1)+' quantity '+(mi+1)+'"></td><td><button type="button" title="Remove member" aria-label="Remove carton member">&#215;</button></td>';
                     var sku=tr.querySelector('select'),q=tr.querySelector('input');sku.value=m.sku||'';q.value=m.quantity;sku.onchange=function(){m.sku=sku.value;if(!g.additional&&!st.rows.some(function(r){return r.sku===m.sku&&!r.removed;})){st.rows.push({sku:m.sku,quantity:Number(m.quantity)||1});}st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);paint();};q.oninput=function(){m.quantity=q.value;st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);d.querySelectorAll('.sp-sku-editor__table tbody tr').forEach(function(row,i){row.querySelector('input').value=st.rows[i].quantity;});};tr.querySelector('button').onclick=function(){g.members.splice(mi,1);st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);paint();};f.querySelector('tbody').appendChild(tr);});
                 f.querySelector('[data-remove-group]').onclick=function(){st.groups.splice(gi,1);st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);paint();};f.querySelector('[data-member]').onclick=function(){g.members.push({sku:'',quantity:1});paintGroups();enabled();};box.appendChild(f);
@@ -92,7 +92,7 @@
                 tr.querySelector('button').onclick = function () { if (!st.busy && !st.frozen) { st.rows[i].removed = !st.rows[i].removed; paint(); } }; tb.appendChild(tr);
             });
             var used = {}; st.rows.forEach(function (r) { if (!r.removed) used[r.sku] = true; });
-            select.innerHTML = '<option value="">Select SKU</option>' + st.catalog.filter(function (r) { return !used[r.sku]; }).map(function (r) { return '<option value="' + esc(r.sku) + '">' + esc(r.sku + (r.siteSku ? ' / ' + r.siteSku : '')) + '</option>'; }).join(''); paintGroups();enabled();
+            select.innerHTML = '<option value="">' + (st.loaded ? 'Select SKU' : 'Loading site SKUs...') + '</option>' + st.catalog.filter(function (r) { return !used[r.sku]; }).map(function (r) { return '<option value="' + esc(r.sku) + '">' + esc(r.sku + (r.siteSku ? ' / ' + r.siteSku : '')) + '</option>'; }).join(''); paintGroups();enabled();
         }
         d.querySelector('[data-mixed]').checked=st.hadPacking;
         d.querySelector('[data-mixed]').onchange=function(){if(!this.checked){if(st.groups.length&&!window.confirm('Remove all mixed cartons?')){this.checked=true;return;}st.groups=[];st.extraTotals=syncAdditional(st.rows,st.groups,st.extraTotals);}paint();};
@@ -134,11 +134,11 @@
             }).catch(function () { st.frozen = true; status.textContent = 'Outcome unknown. No request was resent. Re-check the plan.'; d.querySelector('[data-recheck]').hidden = false; })
                 .finally(function () { st.busy = false; if (active === st) enabled(); });
         };
-        paint();
+        paint();status.textContent='Loading site SKUs...';
         return Promise.resolve().then(function () { return window.KM.DB.loadScopedTables(['marketplace_skus']); }).then(function (db) {
             if (active !== st) return;
             if (env() !== st.environment) throw Error('Environment changed. Close and reload.');
-            st.catalog = catalog(db,opts.plan); st.loaded = true; paint(); status.textContent = '';
+            st.catalog = catalog(db,opts.plan);if(!st.catalog.length)throw Error('No active site SKUs were returned for this company / country / marketplace. Close and reload.'); st.loaded = true; paint(); status.textContent = st.catalog.length + ' site SKUs';
         }).catch(function (e) { if (active !== st) return; st.frozen = true; status.textContent = e.message || 'SKU list unavailable.'; enabled(); });
     }
     window.KM.weeklyDraftEditor = { open:open, close:close, _catalog:catalog, _edits:edits, _freezeOnError:freezeOnError, _checkGroups:checkGroups, _syncAdditional:syncAdditional };

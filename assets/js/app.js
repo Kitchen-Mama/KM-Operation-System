@@ -109,6 +109,14 @@ const menuConfig = [
 // costs nothing. The regression suite asserts these triples MATCH the page’s own literals, which
 // is what keeps a repeated literal from becoming a second source of truth.
 var KM_ROUTE_ASSETS_ = {
+    'campaign-overview': {
+        sectionId: 'campaign-overview-section',
+        scripts: [
+            'assets/js/pages/campaign-overview.js?v=promo-ratio-20261126-v1'
+        ],
+        partial: {key:'campaign-overview',url:'assets/html/pages/campaign-overview.html?v=promo-ratio-20261126-v1',target:'#campaign-overview-mount'},
+        label: 'Campaign Overview'
+    },
     /* S4-R5 - THE TWO LARGEST ROUTE PAYLOADS IN THE BUILD.
 
        `ops` is one file of 947 KB. Its only tie to the rest of the app was a 7-row demo fixture that
@@ -892,6 +900,7 @@ function showSection(section) {
             'shipment-draft': 'shipment-draft-section',
             'shipment-overview': 'shippinghistory-section',
             'campaign-risk': 'campaign-risk-section',
+            'campaign-overview': 'campaign-overview-section',
             'request-order-draft': 'request-order-draft-section',
             'purchase-order-overview': 'purchase-order-overview-section',
             'purchase-order-list': 'purchase-order-list-section',
@@ -938,6 +947,7 @@ function showSection(section) {
         'shipment-draft': 'shipment-draft-section',
         'shipment-overview': 'shippinghistory-section',
         'campaign-risk': 'campaign-risk-section',
+        'campaign-overview': 'campaign-overview-section',
         'request-order-draft': 'request-order-draft-section',
         'purchase-order-overview': 'purchase-order-overview-section',
         'purchase-order-list': 'purchase-order-list-section',

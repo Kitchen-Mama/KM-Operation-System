@@ -231,7 +231,7 @@ var GRAPH = scriptGraph(INDEX);
 var ROUTE_GRAPH = (function () {
   try {
     var RO_ = require('./_release-order.js');
-    return Object.keys(RO_.parseRouteAssetTokens(APP)).map(function (rel) {
+    return Object.keys(RO_.parseRouteAssetTokens(APP)).filter(function (rel) { return /\.js$/.test(rel); }).map(function (rel) {
       return { rel: rel, tag: '<script src="' + rel + '">', deferred: false, routeOwned: true };
     });
   } catch (e) { return []; }

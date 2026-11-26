@@ -29,6 +29,38 @@ function _crActive(status) { var s = String(status == null ? '' : status).trim()
 // window.KM_SCOPED_PAGE_READS = false → Legacy broad-cache. The scoped object is _opDbCache-shaped so `_crDB()` returns a
 // thin shim whose getters read the read-model (BEFORE == AFTER: same normalizers + filters as the broad getters).
 var _crReadModel = null;   // scoped read-model (normalizeOperationDb-shaped) or null = Legacy
+var _crRiskEvidence = { state:'IDLE', rows:[], events:[], flight:null, error:null, indexes:Object.create(null) };
+function _crRiskSourceStamp_(){
+    var db=window.KM.DB||{},e=db.sourceWriteEpoch?db.sourceWriteEpoch():{};
+    return JSON.stringify([db.envId?db.envId():'',e.planning,e.exposure,new Date().toISOString().slice(0,10)]);
+}
+function _crLoadRiskEvidence_(retry) {
+    if (_crRiskEvidence.flight) return _crRiskEvidence.flight;
+    if (!retry && /^(READY|ERROR)$/.test(_crRiskEvidence.state)) return Promise.resolve();
+    _crRiskEvidence.state='LOADING'; _crRiskEvidence.error=null;
+    var only=['amazon_daily_sales_snapshot','fc_special_events'],stamp=_crRiskSourceStamp_();
+    _crRiskEvidence.flight=Promise.resolve().then(function(){
+        if (!window.KM.api || !window.KM.api.getWorkspace) throw Error('Promotion risk source API unavailable.');
+        return window.KM.api.getWorkspace('inventoryReplenishment',{only:only,recentWindow:false});
+    }).then(function(r){
+        var d=r&&r.data,echo=d&&d.requestEcho;
+        if(stamp!==_crRiskSourceStamp_()){_crRiskEvidence.state='IDLE';return;}
+        if(!r||r.success!==true||!d)throw Error('Promotion risk sources could not be read.');
+        if(!echo||echo.recentWindow!==false||!echo.only||only.some(function(t){return echo.only.indexOf(t)<0;}))throw Error('Promotion risk source contract was not confirmed.');
+        if(only.some(function(t){return !Array.isArray(d[t])||!d.capped||d.capped[t]!==false;}))throw Error('Promotion risk sources are incomplete or truncated.');
+        _crRiskEvidence.rows=d.amazon_daily_sales_snapshot;
+        _crRiskEvidence.events=d.fc_special_events.map(normalizeFcSpecialEventRecord);
+        _crRiskEvidence.state='READY';_crRiskEvidence.stamp=stamp;_crRiskEvidence.indexes=Object.create(null);
+    }).catch(function(e){_crRiskEvidence.state='ERROR';_crRiskEvidence.error=e.message;})
+      .then(function(){_crRiskEvidence.flight=null;crRenderScoped();});
+    return _crRiskEvidence.flight;
+}
+function crRetryRiskEvidence(){return _crLoadRiskEvidence_(true);}
+function _crRiskIndex_(scope,today) {
+    var key=JSON.stringify([scope.company,scope.country,scope.marketplace,today]);
+    if(!_crRiskEvidence.indexes[key])_crRiskEvidence.indexes[key]=window.KM.promotionRiskRatio.salesIndex({scope:scope,today:today,rows:_crRiskEvidence.rows,marketplaces:(_crDB().getMarketplaces&&_crDB().getMarketplaces())||[]});
+    return _crRiskEvidence.indexes[key];
+}
 
 // S4-R4 §4 — WHY THIS PAGE ASKED FIVE QUESTIONS TO SHOW THREE ZEROS.
 //
@@ -242,7 +274,7 @@ function _crScopedPromotions() {
     lines.forEach(function (l) {
         var c = campById[l.campaignId]; if (!c) return;
         if (!_crEqv(c.country, s.country) || !_crEqv(c.marketplace, s.marketplace) || !_crEqv(c.company, s.company)) return;
-        if (l.lineStatus && String(l.lineStatus).toLowerCase() === 'cancelled') return;
+        if (/^(cancelled|canceled|deleted|inactive|draft|rejected)$/i.test(c.status||'') || /^(cancelled|canceled|deleted|inactive)$/i.test(l.lineStatus||'')) return;
         out.push({ marketplaceSkuId: l.marketplaceSkuId || '', sku: l.sku || '', startDate: c.startDate || '', endDate: c.endDate || '', eventFlag: c.eventFlag || c.majorEventFlag || 'Normal', source: 'campaign' });
     });
     // Overlay (user-added) promotions scoped by company+country+marketplace.
@@ -251,7 +283,17 @@ function _crScopedPromotions() {
         if (p.company && !_crEqv(p.company, s.company)) return;
         out.push({ marketplaceSkuId: p.marketplaceSkuId || '', sku: p.sku || '', startDate: p.startDate || '', endDate: p.endDate || '', eventFlag: p.eventFlag || 'Normal', source: 'overlay' });
     });
-    return out;
+    return out.filter(function(p){return p.source!=='overlay';}).concat(_crEventPromotions_(_crRiskEvidence.events,s));
+}
+function _crEventPromotions_(events,scope) {
+    var out=[],camps=(_crDB().getCampaigns&&_crDB().getCampaigns())||[],lines=(_crDB().getCampaignSkuLines&&_crDB().getCampaignSkuLines())||[];
+    (events||[]).forEach(function(e){
+        if(!_crEqv(e.company,scope.company)||!_crEqv(e.country,scope.country)||!_crEqv(e.marketplace,scope.marketplace)||/^(cancelled|canceled|deleted|inactive|draft|rejected)$/i.test(e.status||''))return;
+        var parent=e.campaignId&&camps.find(function(c){return c.campaignId===e.campaignId;}),line=e.campaignSkuLineId&&lines.find(function(l){return l.campaignSkuLineId===e.campaignSkuLineId;});
+        if(parent&&/^(cancelled|canceled|deleted|inactive|draft|rejected)$/i.test(parent.status||'')||line&&/^(cancelled|canceled|deleted|inactive)$/i.test(line.lineStatus||''))return;
+        var targets=e.sku?[{sku:e.sku}]:getSkuMasterData().filter(function(m){return e.scopeType==='series'?m.series===e.scopeId:e.scopeType==='category'?m.category===e.scopeId:e.scopeType==='sku'&&m.sku===e.scopeId;});
+        targets.forEach(function(m){out.push({sku:m.sku,startDate:e.eventStartDate,endDate:e.eventEndDate,eventFlag:e.event,source:'special_event'});});
+    });return out;
 }
 function _crValidDate(d) { if (!d) return false; var t = new Date(d); return !isNaN(t.getTime()); }
 
@@ -273,61 +315,17 @@ function _crMatchPromos(promos, marketplaceSkuId, sku) {
     });
 }
 
-// Risk formula (UNCHANGED math — trailing-90-day + committed-future promo-days; ≥29 High, ≥15 Watch).
-// Only the INPUT selection changed: real+overlay promos matched by marketplace_sku_id. A promotion that
-// exists but lacks a parseable date range → "Missing Data" (never silently Safe, per G.5).
-function calculateSkuRisk(marketplaceSkuId, sku, promosAll) {
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const windowStart = new Date(today);
-    windowStart.setDate(windowStart.getDate() - 90);
-
-    const promos = _crMatchPromos(promosAll || _crScopedPromotions(), marketplaceSkuId, sku);
-
-    let ninetyDayDays = 0;
-    let futureDays = 0;
-    let annualEventDays = 0;
-    let totalPromos = promos.length;
-
-    if (promos.some(function (p) { return !_crValidDate(p.startDate) || !_crValidDate(p.endDate); })) {
-        return { ninetyDayDays: 0, futureDays: 0, annualEventDays: 0, riskLevel: 'Missing Data', lps: '—', totalPromos: totalPromos, missing: true };
-    }
-
-    promos.forEach(p => {
-        const pStart = new Date(p.startDate);
-        const pEnd = new Date(p.endDate);
-        const isAnnual = ANNUAL_EVENTS.includes(p.eventFlag);
-
-        if (isAnnual) {
-            // Annual events: count days if within future
-            if (pEnd >= today) {
-                const effStart = pStart > today ? pStart : today;
-                annualEventDays += daysBetweenInclusive(effStart, pEnd);
-            }
-        } else {
-            // 90-day window (past)
-            const effStart90 = pStart > windowStart ? pStart : windowStart;
-            const effEnd90 = pEnd < today ? pEnd : new Date(today.getTime() - 86400000);
-            if (effStart90 <= effEnd90) {
-                ninetyDayDays += daysBetweenInclusive(effStart90, effEnd90);
-            }
-            // Future promo days
-            if (pEnd >= today) {
-                const effStartFuture = pStart > today ? pStart : today;
-                futureDays += daysBetweenInclusive(effStartFuture, pEnd);
-            }
-        }
-    });
-
-    const totalCommitted = ninetyDayDays + futureDays;
-    let riskLevel = 'Safe';
-    if (totalCommitted >= 29) riskLevel = 'High Risk';
-    else if (totalCommitted >= 15) riskLevel = 'Watch';
-
-    const lps = totalCommitted >= 29 ? 'Yes' : '\u2014';
-
-    return { ninetyDayDays, futureDays, annualEventDays, riskLevel, lps, totalPromos };
+// Risk is based on distinct positive-sales days inside each anchor's preceding 90 calendar days.
+function calculateSkuRisk(marketplaceSkuId,sku,promosAll,options) {
+    options=options||{};
+    var C=window.KM&&window.KM.promotionRiskRatio,scope=options.scope||CampaignRiskState;
+    if(!C||_crRiskEvidence.state!=='READY')return {missing:true,reason:_crRiskEvidence.error||'RISK_SOURCES_NOT_READY',riskLevel:'Missing Data',ratio:null,futureRisks:[],lps:'--',totalPromos:0};
+    var today=C.today(Date.now(),scope),anchor=options.anchorDate||today;
+    var promos=_crMatchPromos(promosAll||_crScopedPromotions(),marketplaceSkuId,sku);
+    var result=C.summarize({scope:scope,sku:sku,marketplaceSkuId:marketplaceSkuId,index:_crRiskIndex_(scope,today),promotions:promos,anchorDate:anchor});
+    return Object.assign(result,{ninetyDayDays:result.promoSalesDays,futureDays:0,annualEventDays:0,lps:result.riskLevel==='High Risk'?'Yes':'--',totalPromos:result.totalPromos||0});
 }
+window.calculateSkuRisk=calculateSkuRisk;
 
 // --- Filter Helpers ---
 function getCategories() {
@@ -554,6 +552,8 @@ function renderRiskTable() {
     const master = getSkuMasterData();
     // STATE 2 — the site has no active marketplace SKUs.
     if (master.length === 0) { msg('No active marketplace SKUs were found for this site.'); return; }
+    if (_crRiskEvidence.state==='IDLE'||_crRiskEvidence.state==='LOADING') { msg('Loading promotion risk sources...'); return; }
+    if (_crRiskEvidence.state==='ERROR') { msg(_crEsc(_crRiskEvidence.error)+' <button type="button" class="cr-btn cr-btn--small" onclick="crRetryRiskEvidence()">Retry</button>','cr-empty-state--error'); return; }
 
     let results = getFilteredRiskResults();
     if (CampaignRiskState.selectedRisk !== 'all') results = results.filter(r => r.riskLevel === CampaignRiskState.selectedRisk);
@@ -588,11 +588,11 @@ function renderRiskTable() {
             <div class="scroll-cell cr-cell--sitesku">${_crEsc(r.siteSku || '—')}</div>
             <div class="scroll-cell cr-cell--img">${img}</div>
             <div class="scroll-cell cr-cell--name">${_crEsc(r.productName || '—')}</div>
-            <div class="scroll-cell">${r.missing ? '—' : r.ninetyDayDays}</div>
-            <div class="scroll-cell">${r.missing ? '—' : r.futureDays}</div>
-            <div class="scroll-cell">${r.missing ? '—' : (r.annualEventDays || 0)}</div>
+            <div class="scroll-cell" title="${_crEsc((r.windowStart||'')+' - '+(r.windowEnd||''))}">${r.missing ? '--' : r.promoSalesDays+' / '+r.salesDays}</div>
+            <div class="scroll-cell" title="${_crEsc((r.futureRisks||[]).map(function(f){return f.anchorDate+': '+f.riskLevel+(f.ratio==null?'':' '+(f.ratio*100).toFixed(1)+'%')+(f.partial?' (partial)':'');}).join('\n'))}">${_crFutureRiskText_(r)}</div>
+            <div class="scroll-cell" title="${_crEsc(r.reason||(r.partial?'Partial data; observed through '+r.observedThrough:'Observed through '+r.observedThrough))}">${r.ratio==null?'--':(r.ratio*100).toFixed(1)+'%'+(r.partial?' *':'')}</div>
             <div class="scroll-cell">${r.lps}</div>
-            <div class="scroll-cell ${riskClass}">${r.riskLevel}</div>
+            <div class="scroll-cell ${riskClass}">${r.riskLevel==='Watch'?'Warning':r.riskLevel}</div>
             <div class="scroll-cell">${r.totalPromos}</div>
         </div>
         `;
@@ -608,6 +608,11 @@ function renderRiskTable() {
             </div>
         `;
     }
+}
+function _crFutureRiskText_(r) {
+    var list=r.futureRisks||[];if(!list.length)return '--';
+    var known=list.filter(function(f){return f.ratio!=null;}).sort(function(a,b){return b.ratio-a.ratio;});
+    return known.length?_crEsc((known[0].riskLevel==='Watch'?'Warning':known[0].riskLevel)+' '+(known[0].ratio*100).toFixed(1)+'%'):'Missing Data';
 }
 
 // --- Site scope: Country -> Marketplace -> Company cascade (derived from marketplace_skus) ---
@@ -751,6 +756,8 @@ function _crResetScopeFilters() {
 // Render for the current scope. Clears prior rows FIRST (so a country switch never shows stale rows),
 // rebuilds the category/series options for the new scope, updates the Add/Delete gate, then renders.
 function crRenderScoped() {
+    if(_crRiskEvidence.state==='READY'&&_crRiskEvidence.stamp!==_crRiskSourceStamp_())_crRiskEvidence.state='IDLE';
+    if(crScopeReady()&&_crScopeState_()==='READY'&&_crRiskEvidence.state==='IDLE')_crLoadRiskEvidence_();
     if (_crViewState !== 'error') _crViewState = crScopeReady() ? 'ready' : 'no-scope';
     renderRiskKPIs();
     renderRiskFilters();
@@ -901,27 +908,10 @@ function detectOverlappingPromotions(rec) {
 }
 
 function calculateSkuRiskAfterAdd(marketplaceSkuId, sku, newRecords) {
-    const current = calculateSkuRisk(marketplaceSkuId, sku);
-    const today = new Date(); today.setHours(0,0,0,0);
-    let addedFuture = 0;
-    let addedAnnual = 0;
-    newRecords.filter(r => r.sku === sku).forEach(r => {
-        const isAnnual = ANNUAL_EVENTS.includes(r.eventFlag);
-        const dur = calculatePromotionDuration(r.startDate, r.endDate);
-        if (isAnnual) { addedAnnual += dur; }
-        else {
-            const pEnd = new Date(r.endDate);
-            if (pEnd >= today) {
-                const effStart = new Date(r.startDate) > today ? new Date(r.startDate) : today;
-                addedFuture += daysBetweenInclusive(effStart, pEnd);
-            }
-        }
-    });
-    const newTotal = current.ninetyDayDays + current.futureDays + addedFuture;
-    let newRisk = 'Safe';
-    if (newTotal >= 29) newRisk = 'High Risk';
-    else if (newTotal >= 15) newRisk = 'Watch';
-    return { ...current, newFutureDays: current.futureDays + addedFuture, newAnnual: current.annualEventDays + addedAnnual, newTotal, newRisk, lps: newTotal >= 29 };
+    var current=calculateSkuRisk(marketplaceSkuId,sku),all=_crScopedPromotions().concat(newRecords.map(function(r){return Object.assign({},r,{marketplaceSkuId:r.marketplaceSkuId||marketplaceSkuId});}));
+    var date=(newRecords.find(function(r){return r.sku===sku;})||{}).startDate;
+    var next=calculateSkuRisk(marketplaceSkuId,sku,all,{anchorDate:date});
+    return Object.assign({},current,{newRisk:next.riskLevel,newTotal:next.ratio,newFutureDays:0,newAnnual:0,lps:next.lps==='Yes'});
 }
 
 function buildPriceGroupsForBatchSelection(category, series) {
@@ -942,13 +932,14 @@ function openAddPromotionModal() {
     if (!crScopeReady()) { alert('Select Country and Marketplace first.'); return; }
     var scope={marketplace_id:CampaignRiskState.marketplaceId,company:CampaignRiskState.company,country:CampaignRiskState.country,marketplace:CampaignRiskState.marketplace};
     var localCount=promotionMockData.filter(function(p){return _crEqv(p.country,scope.country)&&_crEqv(p.marketplace,scope.marketplace)&&(!p.company||_crEqv(p.company,scope.company));}).length;
-    window.KM.campaignBuilder.open({origin:'promotion',scope:scope,lockScope:true,missingLocalCount:localCount,onSaved:function(data){
+    window.KM.campaignBuilder.open({origin:'promotion',scope:scope,lockScope:true,missingLocalCount:localCount,ensureRisk:function(){return _crLoadRiskEvidence_();},onSaved:function(data){
         if (!crScopeReady() || !_crEqv(CampaignRiskState.marketplaceId,scope.marketplace_id)) return;
         var prior=_crReadModel||{},ids=Object.create(null),core=window.KM.campaignBuilderCore;
         (prior.campaigns||[]).filter(function(c){return core.same(c,scope);}).forEach(function(c){ids[c.campaignId]=true;});
         data.campaigns.forEach(function(c){ids[c.campaign_id]=true;});
         _crReadModel=Object.assign({},prior,{campaigns:(prior.campaigns||[]).filter(function(c){return !core.same(c,scope);}).concat(data.campaigns.map(normalizeCampaignRecord)),
             campaignSkuLines:(prior.campaignSkuLines||[]).filter(function(l){return !ids[l.campaignId];}).concat(data.campaignSkuLines.map(normalizeCampaignSkuLineRecord))});
+        _crRiskEvidence.events=_crRiskEvidence.events.filter(function(e){return !core.same(e,scope);}).concat(data.fcSpecialEvents.map(normalizeFcSpecialEventRecord));
         _CR_SHIM=null;crRenderScoped();
     }});
 }
@@ -1102,7 +1093,7 @@ function crPreviewAdd() {
         const overlaps = detectOverlappingPromotions(rec);
         if(overlaps.length>0) warnings.push(`${r.sku}: overlaps with existing promotion.`);
         const riskAfter = calculateSkuRiskAfterAdd(r.marketplaceSkuId, r.sku,[{...rec,promoPrice:r.promoPrice,regularPrice:r.regularPrice}]);
-        previewRows.push({...r,currentRisk:riskAfter.riskLevel==='Safe'&&riskAfter.ninetyDayDays+riskAfter.futureDays<15?'Safe':riskAfter.ninetyDayDays+riskAfter.futureDays>=29?'High Risk':'Watch', newRisk:riskAfter.newRisk, newTotal:riskAfter.newTotal, lps:riskAfter.lps, current90:riskAfter.ninetyDayDays, currentFuture:riskAfter.futureDays});
+        previewRows.push({...r,currentRisk:riskAfter.riskLevel,newRisk:riskAfter.newRisk,newTotal:riskAfter.newTotal,lps:riskAfter.lps,current90:riskAfter.ninetyDayDays,currentFuture:riskAfter.futureDays});
     });
     if(hasDuplicate){errEl.textContent='Duplicate promotion record already exists.';return;}
 
@@ -1378,7 +1369,7 @@ function _ensureCampaignRiskMarkup() {
     }
     if (window.KM && window.KM.partialLoader && window.KM.partialLoader.loadPartial) {
         return window.KM.partialLoader
-            .loadPartial('campaign-risk', 'assets/html/pages/campaign-risk.html', '#campaign-risk-mount')
+            .loadPartial('campaign-risk', 'assets/html/pages/campaign-risk.html?v=promo-ratio-20261126-v1', '#campaign-risk-mount')
             .then(function() {
                 if (!document.getElementById('campaign-risk-section')) {
                     console.warn('[CampaignRisk] partial loaded but #campaign-risk-section not found');

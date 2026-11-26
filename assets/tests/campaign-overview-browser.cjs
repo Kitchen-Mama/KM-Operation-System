@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('node:fs'),assert=require('node:assert/strict');
+const runtime='C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1123-915-0_26.1123.915.0_x64__3k8sg7r9htsxt/dependencies/node/node_modules';
+const {chromium}=require(require.resolve('playwright',{paths:[runtime]}));let checks=0;function ok(v,label){assert(v,label);checks++;}
+const shared=fs.readFileSync('index.html','utf8').slice(fs.readFileSync('index.html','utf8').indexOf('<div class="fr-date-backdrop"')) .split('</body>')[0];
+const raw={campaigns:[{campaign_id:'C1',company:'KM',country:'US',marketplace:'Amazon',campaign_name:'Winter',promotion_type:'Coupon',major_event_flag:'Normal',start_date:'2026-12-01',end_date:'2026-12-10',status:'active'},{campaign_id:'C2',company:'ResTW',country:'AU',marketplace:'Shopify',campaign_name:'Spring',promotion_type:'Best Deal',major_event_flag:'BFCM',start_date:'2026-11-01',end_date:'2026-11-30'}],campaign_sku_lines:[{campaign_id:'C1',campaign_sku_line_id:'L1',sku:'A'},{campaign_id:'C1',campaign_sku_line_id:'L2',sku:'B'},{campaign_id:'C2',campaign_sku_line_id:'L3',sku:'A'}],sku_details:[{sku:'A',category:'Can Openers',series:'S1'},{sku:'B',category:'Spatulas',series:'S2'}]};
+(async()=>{const browser=await chromium.launch({channel:'chrome',headless:true});fs.mkdirSync('output/promo-ratio-20261126',{recursive:true});
+try{for(const width of [1440,390]){const page=await browser.newPage({viewport:{width,height:950}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
+ await page.clock.install({time:new Date('2026-11-26T12:00:00Z')});
+ await page.setContent('<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><div id="campaign-overview-mount">'+fs.readFileSync('assets/html/pages/campaign-overview.html','utf8')+'</div>'+shared);
+ for(const name of ['assets/css/base.css','assets/css/components.css','assets/css/pages/campaign-overview.css'])if(fs.existsSync(name))await page.addStyleTag({content:fs.readFileSync(name,'utf8')});
+ await page.addStyleTag({content:'body{margin:0;padding:24px;font-family:Arial;color:#17334d}*{box-sizing:border-box}'});
+ await page.evaluate(()=>{window.KM_PRODUCTION_CONFIG_={endpoint:'https://script.google.com/macros/s/FIXTURE/exec'};window.KM={lifecycle:{register:(id,h)=>window.hooks=h},partialLoader:{loadPartial:async()=>{}}};});
+ await page.route('https://script.google.com/**',r=>r.fulfill({contentType:'application/json',body:JSON.stringify({success:true,data:{table:new URL(r.request().url()).searchParams.get('table'),rows:raw[new URL(r.request().url()).searchParams.get('table')]||[]}})}));
+ await page.addScriptTag({content:fs.readFileSync('assets/js/api/operation-system-db-api.js','utf8')});await page.addScriptTag({content:fs.readFileSync('assets/js/pages/campaign-overview.js','utf8')});await page.evaluate(()=>hooks.mount());
+ ok(await page.locator('#co-body tr').count()===3,'all Campaign SKU rows loaded through full normalizer');
+ for(const [field,value,count]of [['company','KM',2],['marketplace','Shopify',1],['country','AU',1],['category','Spatulas',1],['series','S1',2],['promotionType','Coupon',2]]){await page.locator('#co-'+field).selectOption(value);ok(await page.locator('#co-body tr').count()===count,field+' filter');await page.locator('#co-clear').click();}
+ await page.locator('#co-sku').fill('B');ok(await page.locator('#co-body').innerText()==='B\tKM\tAmazon\tUS\tSpatulas\tS2\tCoupon\tNormal\tWinter\t2026-12-01\t2026-12-10\tactive','SKU filter and exact requested columns');await page.locator('#co-clear').click();
+ await page.locator('#co-date').click();ok(await page.locator('#frDateModal').evaluate(e=>e.classList.contains('is-open')),'same Shipment date modal opens');
+ await page.locator('#frCalendarStartBody [data-date="2026-11-01"]').click();await page.locator('#frCalendarEndBody [data-date="2026-11-30"]').click();await page.locator('#frDateApply').click();ok(await page.locator('#co-body tr').count()===1,'inclusive campaign period overlap filter');await page.locator('#co-clear').click();
+ ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no viewport overflow');await page.screenshot({path:'output/promo-ratio-20261126/overview-'+width+'.png',fullPage:true});ok(!errors.length,JSON.stringify(errors));await page.close();}
+}finally{await browser.close();}console.log('CAMPAIGN_OVERVIEW_BROWSER_PASS '+checks);})().catch(e=>{console.error(e);process.exitCode=1;});

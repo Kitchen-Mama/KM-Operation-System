@@ -2,7 +2,7 @@
 const fs=require('node:fs'),path=require('node:path'),http=require('node:http'),assert=require('node:assert/strict');
 const {world,body,scope}=require('./campaign-builder.test.cjs');
 const {parts}=require('./helpers/write-command-flight-world.cjs');
-const riskScript=parts(fs.readFileSync('assets/js/pages/campaign-risk.js','utf8'),['calculateSkuRisk','_crMatchPromos','_crValidDate','daysBetweenInclusive'],['ANNUAL_EVENTS']);
+const riskScript=fs.readFileSync('assets/js/core/supply-planning-country-identity.js','utf8')+'\n'+fs.readFileSync('assets/js/utils/promotion-risk-ratio.js','utf8')+'\nvar _crRiskEvidence={state:"READY",indexes:{},rows:["A","B"].flatMap(sku=>Array.from({length:30},(_,i)=>({sku,country:"US",marketplace:"Amazon",sales_units:1,snapshot_date:KM.promotionRiskRatio.shift("2026-11-26",i-30)})))};function _crDB(){return {getMarketplaces:()=>[{company:"KM",country:"US",marketplace:"Amazon"}]};}\n'+parts(fs.readFileSync('assets/js/pages/campaign-risk.js','utf8'),['calculateSkuRisk','_crMatchPromos','_crRiskIndex_']);
 const runtime='C:/Program Files/WindowsApps/OpenAI.CodexPrimaryRuntime.v26-1123-915-0_26.1123.915.0_x64__3k8sg7r9htsxt/dependencies/node/node_modules';
 const {chromium}=require(require.resolve('playwright',{paths:[runtime]}));
 let checks=0,saves=0,readFails=0,writeUnknown=false;

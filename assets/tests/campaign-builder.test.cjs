@@ -64,8 +64,25 @@ test('real date windows reject impossible/leap dates, preserve cross-year Normal
 test('real Promotion entry uses canonical save UI and merges only the saved site without erasing other sites',()=>{
  const {parts}=require('./helpers/write-command-flight-world.cjs'),source=fs.readFileSync('assets/js/pages/campaign-risk.js','utf8'),api=fs.readFileSync('assets/js/api/operation-system-db-api.js','utf8');let options;
  const c={window:{KM:{campaignBuilderCore:C,campaignBuilder:{open:o=>{options=o;}}}},CampaignRiskState:{...scope,marketplaceId:'SITE1'},promotionMockData:[],crScopeReady:()=>true,crRenderScoped(){},_CR_SHIM:{},
- _crReadModel:{campaigns:[{campaignId:'OTHER',company:'OTHER',country:'US',marketplace:'Amazon'}],campaignSkuLines:[{campaignId:'OTHER',campaignSkuLineId:'OTHER-L'}]}};
- vm.runInNewContext(parts(api,['normalizeCampaignRecord','normalizeCampaignSkuLineRecord'])+'\n'+parts(source,['_crEqv','openAddPromotionModal']),c);c.openAddPromotionModal();assert.equal(options.origin,'promotion');assert.equal(options.scope.marketplace_id,'SITE1');
- options.onSaved({campaigns:[{...scope,campaign_id:'NEW'}],campaignSkuLines:[{campaign_id:'NEW',campaign_sku_line_id:'NEW-L',sku:'A'}]});assert.equal(c._crReadModel.campaigns.length,2);assert.equal(c._crReadModel.campaignSkuLines.length,2);assert.equal(c._crReadModel.campaigns[0].campaignId,'OTHER');assert.equal(c._CR_SHIM,null);
+ _crRiskEvidence:{events:[]},_crReadModel:{campaigns:[{campaignId:'OTHER',company:'OTHER',country:'US',marketplace:'Amazon'}],campaignSkuLines:[{campaignId:'OTHER',campaignSkuLineId:'OTHER-L'}]}};
+ vm.runInNewContext(parts(api,['normalizeCampaignRecord','normalizeCampaignSkuLineRecord','normalizeFcSpecialEventRecord','_fcParseEventPeriodDates'])+'\n'+parts(source,['_crEqv','openAddPromotionModal']),c);c.openAddPromotionModal();assert.equal(options.origin,'promotion');assert.equal(options.scope.marketplace_id,'SITE1');
+ options.onSaved({campaigns:[{...scope,campaign_id:'NEW'}],campaignSkuLines:[{campaign_id:'NEW',campaign_sku_line_id:'NEW-L',sku:'A'}],fcSpecialEvents:[{...scope,event_fc_id:'E',sku:'A'}]});assert.equal(c._crReadModel.campaigns.length,2);assert.equal(c._crReadModel.campaignSkuLines.length,2);assert.equal(c._crReadModel.campaigns[0].campaignId,'OTHER');assert.equal(c._CR_SHIM,null);assert.equal(c._crRiskEvidence.events.length,1);
 });
 module.exports={world,body,fixture,scope,row};
+
+test('same named campaign accepts disjoint SKU additions, preserves header and replays without duplicate FC',()=>{
+ const h=world(),first=body();first.scope.campaign_name='Winter';first.lines=[row('A')];assert(h.call(first).success);
+ const header=JSON.stringify(h.rows('campaigns')),a=JSON.stringify(h.rows('fc_special_events')[0]);
+ const second={...first,request_id:'CAMPAIGN-APPEND-B',lines:[row('B')]},r=h.call(second);
+ assert.equal(r.success,true,JSON.stringify(r));assert.equal(r.data.reused_campaign,true);assert.equal(r.data.added_sku_count,1);assert.equal(r.data.sku_count,2);assert.equal(r.data.fc_count,2);
+ assert.equal(JSON.stringify(h.rows('campaigns')),header);assert.equal(JSON.stringify(h.rows('fc_special_events')[0]),a);
+ const before=business(h);assert(h.call(second).replayed);assert.equal(business(h),before);
+ assert.equal(h.call({...second,request_id:'CAMPAIGN-APPEND-DUP'}).success,false);assert.equal(business(h),before);
+});
+test('append with different name refuses; failed append restores original campaign graph',()=>{
+ const h=world(),first=body();first.scope.campaign_name='Winter';first.lines=[row('A')];assert(h.call(first).success);
+ const before=business(h),second={...first,request_id:'CAMPAIGN-APPEND-FAIL',scope:{...first.scope,campaign_name:'Different'},lines:[row('B')]};
+ assert.match(JSON.stringify(h.call(second)),/CAMPAIGN_HEADER_CONFLICT/);assert.equal(business(h),before);
+ second.request_id+='2';second.scope.campaign_name='Winter';let failed=false;h.tables.fc_special_events.beforeWrite=()=>{if(!failed){failed=true;throw Error('Append failure');}};
+ assert.equal(h.call(second).code,'IMPORT_FAILED_ROLLED_BACK');assert.equal(business(h),before);
+});

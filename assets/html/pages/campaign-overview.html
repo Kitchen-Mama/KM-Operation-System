@@ -1,0 +1,17 @@
+<section id="campaign-overview-section" class="module-section">
+    <div class="co-heading"><h2>Campaign Overview</h2><button id="co-refresh" class="btn-secondary">Refresh</button></div>
+    <div class="co-filters">
+        <label>Date<button type="button" id="co-date" class="history-date-trigger"><span id="co-date-text">All</span></button></label>
+        <label>Company<select id="co-company"><option value="">All</option></select></label>
+        <label>Marketplace<select id="co-marketplace"><option value="">All</option></select></label>
+        <label>Country<select id="co-country"><option value="">All</option></select></label>
+        <label>Category<select id="co-category"><option value="">All</option></select></label>
+        <label>Series<select id="co-series"><option value="">All</option></select></label>
+        <label>Promotion Type<select id="co-promotionType"><option value="">All</option></select></label>
+        <label>SKU<input id="co-sku" type="search" placeholder="Search SKU"></label>
+        <button type="button" id="co-clear" class="btn-secondary">Clear</button>
+    </div>
+    <div id="co-status" role="status" aria-live="polite"></div>
+    <div class="co-table-wrap"><table class="data-table"><thead><tr><th>SKU</th><th>Company</th><th>Marketplace</th><th>Country</th><th>Category</th><th>Series</th><th>Promotion Type</th><th>Event Type</th><th>Campaign</th><th>Start Date</th><th>End Date</th><th>Status</th></tr></thead><tbody id="co-body"></tbody></table></div>
+    <div class="co-footer"><span id="co-count"></span><div><button id="co-prev" type="button" title="Previous page" aria-label="Previous page">&lt;</button><span id="co-page">1 / 1</span><button id="co-next" type="button" title="Next page" aria-label="Next page">&gt;</button></div></div>
+</section>

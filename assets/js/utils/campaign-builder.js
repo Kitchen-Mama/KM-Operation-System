@@ -55,13 +55,14 @@
     function applyDiscount(rows,pct){if(String(pct).trim()==='')throw Error('Discount % is required.');var edits=rows.map(function(r){return r.regularPrice==null?null:C.discount(r.regularPrice,pct,r.currency);});rows.forEach(function(r,i){r.discountPct=pct;r.dealPrice=edits[i]==null?'':edits[i];});dirty();render();}
     function mode(){q('batch').hidden=val('mode')!=='batch';q('single').hidden=val('mode')!=='single';}
     function method(){q('past').hidden=val('method')!=='history';history();}
-    function review(){if(!S.data||!S.scope)throw Error('Select a site and load campaign data first.');var s=scopePayload(),v=C.validate(s,payloadRows(),S.data),today=S.data.today;
+    async function review(){if(opts.ensureRisk)await opts.ensureRisk();if(current!==S)return;if(!S.data||!S.scope)throw Error('Select a site and load campaign data first.');var s=scopePayload(),v=C.validate(s,payloadRows(),S.data),today=S.data.today;
       if(s.end_date<today)throw Error('Campaign end date is in the past.');var warnings=[];
       if(typeof window.calculateSkuRisk==='function'){
         var headers={};S.data.campaigns.forEach(function(c){headers[c.campaign_id]=c;});
-        var promos=S.data.campaignSkuLines.map(function(l){var c=headers[l.campaign_id]||{};return {sku:l.sku,marketplaceSkuId:l.marketplace_sku_id,startDate:c.start_date,endDate:c.end_date,eventFlag:c.event_flag||c.major_event_flag};});
+        var promos=S.data.campaignSkuLines.filter(function(l){var c=headers[l.campaign_id]||{};return C.same(c,S.scope)&&!(/^(cancelled|canceled|deleted|inactive|draft|rejected)$/i.test(c.status||''))&&!(/^(cancelled|canceled|deleted|inactive)$/i.test(l.line_status||''));}).map(function(l){var c=headers[l.campaign_id]||{};return {sku:l.sku,marketplaceSkuId:l.marketplace_sku_id,startDate:c.start_date,endDate:c.end_date,eventFlag:c.event_flag||c.major_event_flag};});
+        if(typeof window._crEventPromotions_==='function')promos=promos.concat(window._crEventPromotions_((S.data.fcSpecialEvents||[]).map(normalizeFcSpecialEventRecord),S.scope));
         var proposed=v.rows.map(function(r){return {sku:r.sku,marketplaceSkuId:r.marketplaceSkuId,startDate:s.start_date,endDate:s.end_date,eventFlag:s.event_flag};});
-        v.rows.forEach(function(r){var risk=window.calculateSkuRisk(r.marketplaceSkuId,r.sku,promos.concat(proposed));if(risk.riskLevel!=='Safe')warnings.push(r.sku+': '+risk.riskLevel);});
+        v.rows.forEach(function(r){var risk=window.calculateSkuRisk(r.marketplaceSkuId,r.sku,promos.concat(proposed),{scope:S.scope,anchorDate:s.start_date});if(risk.riskLevel!=='Safe')warnings.push(r.sku+': '+risk.riskLevel);if(risk.partial)warnings.push(r.sku+': partial sales history');});
       }
       S.preview={scope:s,lines:payloadRows(),warnings:warnings};q('preview').hidden=false;q('preview').textContent=v.rows.length+' SKUs / '+v.rows.reduce(function(sum,r){return sum+r.fcQty;},0)+' FC / '+v.start+' - '+v.end+(v.skipped?' / '+v.skipped+' skipped':'')+'.'+(warnings.length?' Promotion risk: '+warnings.join('; '):'');q('save').hidden=false;q('review').hidden=true;status('');}
     async function refresh(result){
@@ -114,7 +115,7 @@
     d.addEventListener('click',function(e){var el=e.target.closest('button');if(!el||el.disabled)return;
       try{var id=el.dataset.cb;if(id==='close'||id==='cancel'){close();return;}if(id==='existing'){close();opts.onExisting();return;}if(id==='retry'){q('retry').hidden=true;load(S.scope);return;}if(id==='check'){check();return;}if(id==='save'){save();return;}
         if(S.busy||S.saved||S.unknown)return;
-        if(id==='review'){review();return;}
+        if(id==='review'){review().catch(function(err){status(err.message,true);});return;}
         if(!S.data)throw Error('Load a site first.');
         if(id==='add'){if(S.rows.length>=8&&val('mode')==='single')throw Error('Single SKU mode allows up to 8 rows.');var row=S.catalog.find(function(r){return r.marketplaceSkuId===val('sku');});if(!row)throw Error('Select a SKU.');if(S.rows.some(function(r){return r.marketplaceSkuId===row.marketplaceSkuId;}))throw Error('SKU already added.');S.rows.push(fresh(row));dirty();render();}
         if(id==='build'){var old={};S.rows.forEach(function(r){old[r.marketplaceSkuId]=r;});S.rows=S.catalog.filter(function(r){return (!val('category')||r.category===val('category'))&&(!val('series')||r.series===val('series'));}).map(function(r){return old[r.marketplaceSkuId]||fresh(r);});dirty();render();}

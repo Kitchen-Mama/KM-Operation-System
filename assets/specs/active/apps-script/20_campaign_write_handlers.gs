@@ -32,7 +32,7 @@
 // sync of this file was invisible to system.health: an old 20_ still keys campaigns by NAME and
 // ignores expected_row_version, so it answers success to every save the new one refuses, and quietly
 // merges two event windows into one row. That is precisely the failure a manifest row exists to name.
-var CAMPAIGN_BUILD_VERSION_ = 'CAMPAIGN-BUILDER-20261125-V1';
+var CAMPAIGN_BUILD_VERSION_ = 'CAMPAIGN-BUILDER-APPEND-20261126-V2';
 
 // Both authoring screens use one journaled command and one period-demand authority.
 function cbTable_(ss, name, required) {
@@ -109,10 +109,18 @@ function cbValidate_(ss,req) {
     var data=cbData_(ss,scope),validated=KMCB.validate(scope,req.sheets.Lines,data),key=campaignKeyOf_(scope);
     if(scope.source_campaign_id){var today=KMSC.localDate(Date.now(),scope.country,function(d,tz){return Utilities.formatDate(d,tz,'yyyy-MM-dd');});
       if(!KMCB.history(data,scope,scope.promotion_type,validated.start,today).some(function(c){return String(c.campaign_id)===String(scope.source_campaign_id);}))throw new Error('CAMPAIGN_HISTORY_SCOPE_MISMATCH');}
-    if(data.campaigns.some(function(c){return campaignKeyOf_(c)===key;}))throw new Error('CAMPAIGN_ALREADY_EXISTS');
+    var matches=data.campaigns.filter(function(c){return campaignKeyOf_(c)===key;}),existing=matches[0];
+    if(matches.length>1)throw new Error('CAMPAIGN_IDENTITY_AMBIGUOUS');
+    var desiredName=String(scope.campaign_name||scope.event_flag+' '+validated.start).trim();
+    if(existing){
+      if(String(existing.campaign_name||'').trim()!==desiredName || (existing.marketplace_id && String(existing.marketplace_id)!==String(scope.marketplace_id)))throw new Error('CAMPAIGN_HEADER_CONFLICT');
+      if(/^(cancelled|canceled|deleted|inactive|draft|rejected)$/i.test(String(existing.status||'')))throw new Error('CAMPAIGN_NOT_ACTIVE');
+      if(data.campaignSkuLines.some(function(l){return String(l.campaign_id)===String(existing.campaign_id)&&validated.rows.some(function(r){return String(l.marketplace_sku_id)===r.marketplaceSkuId||String(l.sku)===r.sku;});}))throw new Error('CAMPAIGN_SKU_ALREADY_EXISTS');
+    }
     var id='CMP-CB-'+imbSha_(req.id).slice(0,24).toUpperCase(),now=imbNow_(),actor=req.actor;
+    if(existing)id=String(existing.campaign_id);
     var header={campaign_id:id,company:scope.company,country:scope.country,marketplace:scope.marketplace,marketplace_id:scope.marketplace_id,
-      campaign_name:String(scope.campaign_name||scope.event_flag+' '+validated.start),promotion_type:KMCB.type(scope.promotion_type),event_flag:scope.event_flag,major_event_flag:scope.event_flag,
+      campaign_name:desiredName,promotion_type:KMCB.type(scope.promotion_type),event_flag:scope.event_flag,major_event_flag:scope.event_flag,
       start_date:validated.start,end_date:validated.end,year:Number(validated.start.slice(0,4)),duration:Math.round((Date.parse(validated.end+'T00:00:00Z')-Date.parse(validated.start+'T00:00:00Z'))/86400000)+1,
       status:'active',source:'campaign_builder',created_by:actor,updated_by:actor,created_at:now,updated_at:now};
     var lines=[],events=[];
@@ -126,19 +134,24 @@ function cbValidate_(ss,req) {
       lines.push({campaign_sku_line_id:lid,campaign_id:id,marketplace_sku_id:r.marketplaceSkuId,sku:r.sku,promo_price:r.dealPrice,regular_price:r.regularPrice,price_units:r.currency,discount_percent:r.discountPct,
         line_status:'active',source:'campaign_builder',created_by:actor,updated_by:actor,created_at:now,updated_at:now});events.push(event);
     });
-    var objects=[[header],lines,events];
+    var objects=[existing?[]:[header],lines,events];
     objects.forEach(function(list,i){var field=['campaign_id','campaign_sku_line_id','event_fc_id'][i];if(list.some(function(o){return tables[i].rows.some(function(r){return String(r[field])===o[field];});}))throw new Error('CAMPAIGN_ID_COLLISION');});
-    return {issues:[],plan:{objects:objects,rollback:cbSnapshot_(ss)},state:{data:data,headers:tables.map(function(t){return t.headers;})},preview:{counts:{campaigns:1,sku_lines:lines.length,event_forecasts:events.length,skipped:validated.skipped}}};
+    return {issues:[],plan:{objects:objects,campaignId:id,reused:!!existing,existingHeader:existing||null,
+      skuCount:data.campaignSkuLines.filter(function(l){return String(l.campaign_id)===id;}).length+lines.length,
+      fcCount:data.fcSpecialEvents.filter(function(e){return String(e.campaign_id)===id;}).length+events.length,rollback:cbSnapshot_(ss)},
+      state:{data:data,headers:tables.map(function(t){return t.headers;})},preview:{counts:{campaigns:existing?0:1,sku_lines:lines.length,event_forecasts:events.length,skipped:validated.skipped}}};
   }catch(e){return {issues:[{code:e.code||String(e.message||e).split(':')[0],message:String(e.message||e)}],plan:null,state:{},preview:{counts:{reject:1}}};}
 }
 function cbApply_(ss,plan,ctx) {
   var names=['campaigns','campaign_sku_lines','fc_special_events'],fields=['campaign_id','campaign_sku_line_id','event_fc_id'];
-  names.forEach(function(name,i){var t=cbTable_(ss,name);ctx.journal.appendRows(t.sheet,t.headers,plan.objects[i]);ctx.journal.change({entity_table:name,entity_id:plan.objects[0][0].campaign_id,field:'created_rows',before:'',after:plan.objects[i].length});});
+  names.forEach(function(name,i){if(!plan.objects[i].length)return;var t=cbTable_(ss,name);ctx.journal.appendRows(t.sheet,t.headers,plan.objects[i]);ctx.journal.change({entity_table:name,entity_id:plan.campaignId,field:'created_rows',before:'',after:plan.objects[i].length});});
   SpreadsheetApp.flush();
   names.forEach(function(name,i){var rows=cbTable_(ss,name).rows;plan.objects[i].forEach(function(o){var hit=rows.filter(function(r){return String(r[fields[i]])===o[fields[i]];});
     if(hit.length!==1||Object.keys(o).some(function(k){var a=hit[0][k],b=o[k];if(/^(start_date|end_date|event_start_date|event_end_date)$/.test(k))return cbDay_(a)!==b;
       if(/^(created_at|updated_at)$/.test(k)&&Object.prototype.toString.call(a)==='[object Date]')a=Utilities.formatDate(a,Session.getScriptTimeZone(),'yyyy-MM-dd HH:mm:ss');return String(a)!==String(b);}))throw new Error('CAMPAIGN_READBACK_FAILED: '+name);});});
-  return {result:{campaign_id:plan.objects[0][0].campaign_id,sku_count:plan.objects[1].length,fc_count:plan.objects[2].length,readback_verified:true}};
+  if(plan.reused){var header=cbData_(ss,plan.existingHeader).campaigns.filter(function(c){return String(c.campaign_id)===plan.campaignId;});
+    if(header.length!==1||JSON.stringify(header[0])!==JSON.stringify(plan.existingHeader))throw new Error('CAMPAIGN_HEADER_READBACK_FAILED');}
+  return {result:{campaign_id:plan.campaignId,sku_count:plan.skuCount,fc_count:plan.fcCount,added_sku_count:plan.objects[1].length,added_fc_count:plan.objects[2].length,reused_campaign:plan.reused,readback_verified:true}};
 }
 function imbCampaignBuilderDomain_() {
   return {domain:'campaign_builder',schema_version:'CAMPAIGN-BUILDER-1',modes:['CREATE'],sheets:['Lines'],maxRows:500,validate:cbValidate_,apply:cbApply_,verifyRollback:function(ss,p){return JSON.stringify(cbSnapshot_(ss))===JSON.stringify(p.rollback);}};

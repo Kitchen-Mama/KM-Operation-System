@@ -235,3 +235,9 @@ test('opaque carrier version requires both real row reader and writer, with matc
  const ctx=vm.createContext({});for(const file of ['02_core_sheet_db.gs','17b_carrier_rate_card_maintenance.gs','63_api_v1_system_health.gs'])vm.runInContext(fs.readFileSync('assets/specs/active/apps-script/'+file,'utf8'),ctx);
  for(const symbol of ['CORE_DB_BUILD_VERSION_','CRC_QUICK_BUILD_VERSION_']){assert.equal(p.module_stamps.find(m=>m.symbol===symbol).expected,ctx[symbol]);assert.equal(ctx.SYS_MODULE_BUILD_STAMPS_.find(m=>m.symbol===symbol).expected,ctx[symbol]);}
 });
+
+test('pre-append deployed policy retains reads and existing commands during this frontend rollout',async()=>{
+ const previous={...p,policy_sha256:'5e7d63c7f31a05dc261748eca7f9ab96e993b13586f21e1645cb246e56af8e47'},g=guard(previous);
+ for(const action of ['factoryInventory.workspace.get','gapJob.status.get','shippingPlan.mixedCartons.save','campaign.builder.get','campaign.builder.status','campaign.builder.save'])await g.w.fetch(p.endpoint,{method:'POST',body:JSON.stringify({action})});
+ assert.equal(g.sent.length,7);
+});
