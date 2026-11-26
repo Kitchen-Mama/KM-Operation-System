@@ -33,19 +33,20 @@ function check(name, value) { assert(value, name); checks++; console.log('PASS '
   try {
     for (const width of [1440, 390]) {
       const page = await browser.newPage({ viewport: { width, height: 950 } }), errors = [], external = [];
+      await page.clock.install({ time: new Date('2026-11-24T12:00:00Z') });
       page.on('pageerror', e => errors.push(e.message));
       await page.route('**/*', r => { if (!r.request().url().startsWith(base)) { external.push(r.request().url()); return r.abort(); } return r.continue(); });
       await page.goto(base);
       for (const css of ['base.css', 'components.css', 'layout.css', 'responsive-foundation.css', 'pages/inventory-replenishment.css']) await page.addStyleTag({ content: read('assets/css/' + css) });
       await page.addStyleTag({ content: 'body{margin:0}.module-section{display:none}.module-section.active{display:block}#ops-section{padding:12px}' });
-      for (const script of ['assets/js/core/namespace.js', 'assets/js/core/lifecycle.js', 'assets/js/core/partial-loader.js', 'assets/js/utils/inventory-compat.js', 'assets/js/core/supply-planning-active-route-classification.js', 'assets/js/api/operation-system-db-api.js', 'assets/js/pages/inventory-replenishment.js']) await page.addScriptTag({ url: base + '/' + script });
+      for (const script of ['assets/js/core/namespace.js', 'assets/js/core/lifecycle.js', 'assets/js/core/partial-loader.js', 'assets/js/utils/inventory-compat.js', 'assets/js/core/supply-planning-site-calendar.js', 'assets/js/core/supply-planning-active-route-classification.js', 'assets/js/api/operation-system-db-api.js', 'assets/js/pages/inventory-replenishment.js']) await page.addScriptTag({ url: base + '/' + script });
       await page.evaluate(({ raw, lines }) => {
         window.fixtureRaw = raw; window.fixtureLines = lines; window.fixtureRevision = 'r1'; window.fixtureHeld = []; window.fixtureCalls = [];
         KM.lifecycle.register('home-section', {});
         KM.api = { workspaceApiActive: () => true, getWorkspace: (name, payload, opts) => {
           fixtureCalls.push({ name, payload });
           const env = { success: true, data: name === 'recommendation' ? { lines: fixtureLines } : fixtureRaw,
-            meta: { sourceRevision: fixtureRevision, recommendationWorkspaceHandlerVersion: _IR_RECO_CACHE_HANDLERS[0], calculationDate: '2026-11-24', calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } };
+            meta: { sourceRevision: fixtureRevision, horizonFormula: 'SITE_DAILY_V2', recommendationWorkspaceHandlerVersion: _IR_RECO_CACHE_HANDLERS[0], calculationDate: '2026-11-24', calculationMonth: '2026-11', planningCycle: 'RECO-2026-11' } };
           return new Promise((resolve, reject) => { fixtureHeld.push({ name, payload, resolve: () => resolve(env), reject });
             if (opts && opts.signal) opts.signal.addEventListener('abort', () => reject(new Error('fixture abort'))); });
         } };
@@ -55,7 +56,7 @@ function check(name, value) { assert(value, name); checks++; console.log('PASS '
         _irReadModelAt = Date.now(); _irReadModelSource = { ..._irSourceStamp_(), server: fixtureRevision };
         _irSearch.applied = { country: 'US', marketplaceId: 'MP-US' }; _irSearch.status = 'READY'; _irSearch.seq = 1;
         _irSetSelectors_(_irSearch.applied); _irRememberScope_(_irSearch.applied);
-        _irRecoApplyEnvelope({ success: true, data: { lines }, meta: { recommendationWorkspaceHandlerVersion: _IR_RECO_CACHE_HANDLERS[0] } }, JSON.stringify({ company: 'FixtureCo', country: 'US', marketplace: 'Amazon' }), { company: 'FixtureCo', country: 'US', marketplace: 'Amazon' });
+        _irRecoApplyEnvelope({ success: true, data: { lines }, meta: { horizonFormula: 'SITE_DAILY_V2', calculationDate: '2026-11-24', recommendationWorkspaceHandlerVersion: _IR_RECO_CACHE_HANDLERS[0] } }, JSON.stringify({ company: 'FixtureCo', country: 'US', marketplace: 'Amazon' }), { company: 'FixtureCo', country: 'US', marketplace: 'Amazon' });
         _irRecoState.source = { ..._irSourceStamp_(), server: fixtureRevision };
         const key = _irExposureScopeKey_();
         _irExposureByScope[key] = { state: 'READY', model: _irReadModel, source: { ..._irSourceStamp_(), server: fixtureRevision }, indexes: _irBuildExposureIndexes_(_irReadModel) };

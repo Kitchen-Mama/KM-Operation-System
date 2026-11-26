@@ -2630,7 +2630,7 @@ function _irSuggestedQtyState_(item) {
       return { state: 'NONE', value: null, reason: (st === 'EMPTY') ? 'READ_EMPTY' : 'NO_ROW_FOR_SKU' };
     }
     var cs = String(row.calculation_status || '');
-    if (_irMatIsStale(row)) return { state: 'NONE', value: null, reason: 'REFUSED', detail: 'Recalculate required' };
+    if (!_irMatFormulaCurrent_(row)) return { state: 'NONE', value: null, reason: 'REFUSED', detail: 'Recalculate required' };
     if (cs !== 'READY') {
       // The row EXISTS and the calculation declined it. `note` is the stored reason, and it is the only one
       // of these that can speak for itself — so it is carried, and every renderer must escape it.
@@ -2639,7 +2639,8 @@ function _irSuggestedQtyState_(item) {
     }
     var v = _irMatNum(row.d90_suggested_qty);   // furthest cumulative checkpoint = the single actionable total
     if (v === null) return { state: 'NONE', value: null, reason: 'NO_STORED_VALUE' };
-    return { state: 'READY', value: v };
+    var date = _irTpeTs_(row.calculation_date);
+    return { state: 'READY', value: v, stale: _irMatIsStale(row), calculationDate: date && date.day || '' };
   }
   if (!_irRecommendationWorkspaceEnabled()) {
     return { state: 'LEGACY', value: (item && item.suggestedQty != null ? item.suggestedQty : 0) };
@@ -2701,6 +2702,8 @@ function _irSuggestedCellHtml(item) {
     // built through the escaper rather than concatenated. The old literal titles never needed it; these do.
     return '<span class="' + cls + '" title="' + escapeReplenHtml(why) + '">—</span>';
   }
+  if (sug.stale) return '<span class="replen-suggested-cell__value replen-suggested-cell__value--stale" title="' +
+    escapeReplenHtml('Stored calculation: ' + sug.calculationDate + '. Recalculate to update; this is the stored quantity, not a new calculation.') + '">' + sug.value + ' <small>*</small></span>';
   return '<span class="replen-suggested-cell__value">' + sug.value + '</span>';
 }
 
@@ -11708,11 +11711,18 @@ function _irRestorableResult_(scope) {
 }
 // Presentation only: old numbers never feed stock, gap, route validation or Submit.
 var _irWarmCells = null;
+var _irWarmCellsByScope = Object.create(null);
+function _irWarmEnvironment_() { try { return String(window.KM.DB.envId()); } catch (e) { return ''; } }
+function _irActivateWarmCells_() {
+    var snap = _irWarmCellsByScope[_irAppliedScopeKey_()];
+    _irWarmCells = snap && snap.environment === _irWarmEnvironment_() ? snap : null;
+    if (_irWarmCells) _irWarmCells.searchSeq = _irSearch.seq;
+}
 function _irCaptureWarmCells_() {
     var key = _irAppliedScopeKey_();
     if (!key || !_irSearch.applied || _irSearch.status !== 'READY') return;
     var snap = _irWarmCells && _irWarmCells.key === key && _irWarmCells.searchSeq === _irSearch.seq ? _irWarmCells :
-        { key: key, searchSeq: _irSearch.seq, rows: Object.create(null) };
+        { key: key, searchSeq: _irSearch.seq, environment: _irWarmEnvironment_(), rows: Object.create(null) };
     var velocityReady = _irRecoState && _irRecoState.loadedOk && _irResultMatchesAppliedScope_(_irRecoState);
     var onwayReady = _irExposureStateForRender_() === IR_EXPOSURE_STATES_.READY;
     if (velocityReady) snap.hasVelocity = true;
@@ -11726,6 +11736,7 @@ function _irCaptureWarmCells_() {
         snap.rows[k] = cells;
     });
     _irWarmCells = snap;
+    _irWarmCellsByScope[key] = snap;
 }
 function _irWarmCellState_() {
     var rec = _irBootstrap;
@@ -13381,6 +13392,7 @@ function _irApplySearch_(pending, mySeq) {
         }
     } catch (_eGen) {}
     _irSearch.applied = { country: pending.country, marketplaceId: pending.marketplaceId };
+    _irActivateWarmCells_();
     _irSearch.pendingScope = null; _irSearchBlockedNotice_(null);   // FE-SI2
     // F1-7N-FB-4E-R3 §B.4 — remember the scope of a SUCCESSFUL Search, and only here. This is already the one
     // place `applied` is assigned, so it is the only place a scope is known to be valid AND to have produced a
@@ -13405,12 +13417,13 @@ function _irApplySearch_(pending, mySeq) {
     _irSearch.error = null;
     if (window.KM && window.KM.factoryAvailability) { window.KM.factoryAvailability.ensure(false); }
     _irSearch.status = 'READY';                           // renderReplenishment downgrades to EMPTY on 0 rows
+    // Restore scoped answers before the first table paint. Cold reads still run once through the same owners.
+    if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
     renderReplenishment();
     // F1-4B-B / FM5-R1: the SCOPE-dependent reads (materialized gap, at most one live
     // recommendation.workspace.get) belong to Search and to nothing else. They used to also fire on mount and
     // on every selector change — that was root cause 2/3 of the pre-Search auto-load. One request set per
     // confirmed Search; never per SKU; never both engines.
-    if (typeof _irRecoTrigger === 'function') _irRecoTrigger();
     try { if (typeof _irEnsureExposureLoaded_ === 'function') _irEnsureExposureLoaded_(); } catch (eOW) {}   // A final4 Cut B: ONE exposure read per confirmed Search (cached per site) so the first level is not '--' until a row is expanded
     // F1-7N-FB-4F-B6 §C.3 — hydrate the persisted Execution Plan for the station that was just APPLIED. The
     // mount cannot do this (see _irHydrateDraftForAppliedScope_): at mount there is no scope to hydrate for.
@@ -16766,7 +16779,7 @@ function _irRecoEnvHandler_(env) {
 //
 // NOT ADDED: a store, a TTL, a retry, a request, an upload, a sampler, a timer, or any change to what
 // is read, cached, computed or rendered. Three numbers and a reason, overwritten in place.
-var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null },
+var _IR_RECO_DIAG_ = { cache: { outcome: null, reason: null }, cacheHistory: [],
   timing: { searchToDispatchMs: null, responseMs: null, domWorkMs: null, paintOpportunityMs: null, forSeq: null },
   server: { serverDurationMs: null, requestId: null, canonicalRead: null },
   marks: { searchAt: null, dispatchAt: null, responseAt: null } };
@@ -16782,10 +16795,17 @@ function _irRecoMarkSearch_() {
   _IR_RECO_DIAG_.timing = { searchToDispatchMs: null, responseMs: null, domWorkMs: null, paintOpportunityMs: null, forSeq: null };
   _IR_RECO_DIAG_.server = { serverDurationMs: null, requestId: null, canonicalRead: null };
 }
-function _irRecoCacheDecision_(outcome, reason) { _IR_RECO_DIAG_.cache = { outcome: outcome, reason: reason }; }
+function _irRecoCacheDecision_(outcome, reason) {
+  _IR_RECO_DIAG_.cache = { outcome: outcome, reason: reason };
+  var history = _IR_RECO_DIAG_.cacheHistory || (_IR_RECO_DIAG_.cacheHistory = []);
+  history.push({ outcome: outcome, reason: reason,
+    scope: typeof _irAppliedScopeKey_ === 'function' ? _irAppliedScopeKey_() : null, at: Date.now() });
+  if (history.length > 12) history.shift();
+}
 function _irRecoReadDiag_() {
   var t = _IR_RECO_DIAG_.timing;
   return { cache: { outcome: _IR_RECO_DIAG_.cache.outcome, reason: _IR_RECO_DIAG_.cache.reason },
+    cacheHistory: (_IR_RECO_DIAG_.cacheHistory || []).map(function (entry) { return Object.assign({}, entry); }),
     timing: { searchToDispatchMs: t.searchToDispatchMs, responseMs: t.responseMs,
       domWorkMs: t.domWorkMs, paintOpportunityMs: t.paintOpportunityMs, forSeq: t.forSeq },
     // CP2X-R1 §C - THE SERVER'S OWN NUMBERS, CARRIED RATHER THAN RE-DERIVED. The page used to drop all
@@ -18191,13 +18211,16 @@ function _irMatNum(v) { if (v === '' || v === null || v === undefined) return nu
 // STALE: only when the client is told the currently-expected calculation date and the stored row is older. No
 // silent recalculation on expansion — a stale row is shown with a subtle indicator, never recomputed.
 function _irMatExpectedCalcDate() { return (typeof window !== 'undefined' && window.KM_FLAGS && window.KM_FLAGS.EXPECTED_CALCULATION_DATE) ? String(window.KM_FLAGS.EXPECTED_CALCULATION_DATE) : null; }
+function _irMatFormulaCurrent_(row) {
+  return !!row && String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') !== -1 && String(row.note || '').indexOf('ALLOC=DAILY_3PL_V1') !== -1;
+}
 function _irMatIsStale(row) {
   if (!row) return false;
-  if (String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1) return true;
-  if (String(row.note || '').indexOf('ALLOC=DAILY_3PL_V1') === -1) return true;
+  if (!_irMatFormulaCurrent_(row)) return true;
   var exp = _irMatExpectedCalcDate();
   try { if (!exp && window.KM && window.KM.siteCalendar) exp = window.KM.siteCalendar.localDate(Date.now(), row.country); } catch (e) {}
-  var cd = row.calculation_date ? String(row.calculation_date) : '';
+  // Sheets serializes a date-only Taipei cell as the previous UTC evening, not a different planning day.
+  var normalized = _irTpeTs_(row.calculation_date), cd = normalized && normalized.day || '';
   return !!(exp && cd && cd < exp);
 }
 // Map ONE stored gap row → the frozen horizons-shaped line the FROZEN outlook renderer consumes (no new render).
@@ -18207,7 +18230,7 @@ function _irMatIsStale(row) {
 // per-window business Note is derived (No shortage / Replenishment required) from the stored gap. Stored values only.
 function _irMatToLine(row) {
   var st = row.calculation_status ? String(row.calculation_status) : '';
-  var oldFormula = String(row.note || '').indexOf('FORMULA=SITE_DAILY_V2') === -1 || String(row.note || '').indexOf('ALLOC=DAILY_3PL_V1') === -1;
+  var oldFormula = !_irMatFormulaCurrent_(row);
   // F1-4B-FM5-R4UI-R5A §3 — the normal Recommendation Summary must NOT surface raw internal codes
   // (SALES_BASIS_* / HORIZONS_NOT_AVAILABLE / …). Show a short user-safe note; the technical row.note stays in the
   // DB and is still visible under Diagnostics (IR_DEBUG_DIAGNOSTICS). READY rows keep the derived business note.
@@ -18238,7 +18261,8 @@ function _irMatMetaHtml(row) {
   if (!_irRecoDebugDiagnosticsEnabled()) return stale;   // production: no Diagnostics control in the normal card
   var bits = [];
   if (row.calculation_status) bits.push('status: ' + esc(row.calculation_status));
-  if (row.calculation_date) bits.push('calc date: ' + esc(row.calculation_date));
+  var date = _irTpeTs_(row.calculation_date);
+  if (date && date.day) bits.push('calc date: ' + esc(date.day));
   if (row.calculated_at) bits.push('as of ' + esc(row.calculated_at));
   if (row.note != null && String(row.note) !== '') bits.push('note: ' + esc(row.note));
   var diag = bits.length ? ('<details class="replen-recsum-ws__diag replen-recsum-ws__diag--mat"><summary>Diagnostics</summary><div class="replen-recsum-ws__meta">' + bits.join(' · ') + '</div></details>') : '';

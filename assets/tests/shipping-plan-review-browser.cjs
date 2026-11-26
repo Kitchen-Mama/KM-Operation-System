@@ -55,6 +55,27 @@ function check(label, value) { assert(value, label); checks++; console.log('PASS
                 _spRenderDbSection('shippingPlanCards', [fixturePlan], 'draft', { P: lines }, '', null);
             });
             const summary = page.locator('#sp-card-P .sp-card-summary');
+            const notesChecks = await page.evaluate(() => {
+                const receipt = '[WDL1] ' + JSON.stringify({ request: 'WDL-1', edits: [{ op: 'add', sku: 'SKU1', quantity: 10 }] });
+                const packing = '[KMPACK1:' + encodeURIComponent(JSON.stringify({ version: 'MIXED_CARTONS_V1', ref: 'L1', groups: [] })) + ']';
+                const pending = '[WDL1-PENDING:WDL-2]';
+                const human = 'Factory instruction\n[REJECTED v2 @2026-11-26 12:07:28] Adjust shipping\n[NOTE @2026-11-26 12:08:00 by operation-system] Change quantity\nKeep this second line <img src=x onerror=alert(1)>\n[UNKNOWN] Keep this note\nDiscuss [WDL1] with factory';
+                const raw = [receipt, human, packing, pending].join('\r\n');
+                fixturePlan.note = raw;
+                const lines = _spLastModel.lines;
+                _spRenderDbSection('shippingPlanCards', [fixturePlan], 'draft', { P: lines }, '', null);
+                const el = document.querySelector('#sp-card-P .sp-human-notes');
+                const result = { humanPreserved: el.textContent === 'Notes:\n' + human,
+                    noInjectedElements: !el.querySelector('img'), originalUnchanged: fixturePlan.note === raw,
+                    unknownPreserved: _spVisibleNotes_('[WDL1] not JSON\n[WDL1] {"message":"human example"}') === '[WDL1] not JSON\n[WDL1] {"message":"human example"}' };
+                fixturePlan.note = [receipt, packing, pending].join('\n');
+                _spRenderDbSection('shippingPlanCards', [fixturePlan], 'draft', { P: lines }, '', null);
+                result.systemOnlyHidden = !document.querySelector('#sp-card-P .sp-human-notes');
+                fixturePlan.note = human;
+                _spRenderDbSection('shippingPlanCards', [fixturePlan], 'draft', { P: lines }, '', null);
+                return result;
+            });
+            Object.entries(notesChecks).forEach(([name, value]) => check(width + ' notes ' + name, value));
             assert.deepEqual(await summary.locator('.sp-summary-label').allTextContents(), [
                 'Status', 'Submitted Date', 'Country', 'Marketplace', 'Shipping Method', 'Ship From', 'Destination', 'Total Pcs', 'Total Cartons', 'Total Cost']);
             check(width + ' exact metadata order and Company hidden', !(await summary.innerText()).includes('Identity retained'));

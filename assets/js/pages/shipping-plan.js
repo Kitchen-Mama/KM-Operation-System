@@ -565,6 +565,27 @@ function _spEsc(s) {
         .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
         .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+// Display projection only. Keep the original note, including transaction receipts, on the plan.
+function _spVisibleNotes_(note) {
+    return String(note == null ? '' : note).split(/\r?\n/).filter(function (line) {
+        var text = line.trim(), match = /^\[WDL1\]\s*(\{.*\})$/.exec(text);
+        if (match) {
+            try {
+                var receipt = JSON.parse(match[1]);
+                if (typeof receipt.request === 'string' && Array.isArray(receipt.edits)) return false;
+            } catch (e) {}
+        }
+        if (/^\[WDL1-PENDING:[^\]\r\n]+\]$/.test(text)) return false;
+        match = /^\[KMPACK1:([^\]\r\n]+)\]$/.exec(text);
+        if (match) {
+            try {
+                var packing = JSON.parse(decodeURIComponent(match[1]));
+                if (packing.version === 'MIXED_CARTONS_V1' && packing.ref && Array.isArray(packing.groups)) return false;
+            } catch (e) {}
+        }
+        return true;
+    }).join('\n').trim();
+}
 function _spNum(v) { var n = parseFloat(v); return isNaN(n) ? 0 : n; }
 // True only when a raw snapshot cell actually carries a value (distinguishes a stored 0 / blank).
 function _spHasRaw(line, key) {
@@ -1219,7 +1240,8 @@ function _spRenderDbSection(containerId, plans, statusType, linesByPlan, emptyMs
             '<td id="sp-foot-cartons-' + _spEsc(pid) + '">' + totalCartons + '</td>' +
             '</tr></tfoot>';
 
-        var noteHtml = plan.note ? ('<div class="sp-rationale-item" style="white-space:pre-line; background:#FEF2F2; padding:8px; border-radius:4px; border-left:3px solid #EF4444; margin-top:6px;"><strong>Notes:</strong>\n' + _spEsc(plan.note) + '</div>') : '';
+        var visibleNote = _spVisibleNotes_(plan.note);
+        var noteHtml = visibleNote ? ('<div class="sp-rationale-item sp-human-notes" style="white-space:pre-line; overflow-wrap:anywhere; background:#FEF2F2; padding:8px; border-radius:4px; border-left:3px solid #EF4444; margin-top:6px;"><strong>Notes:</strong>\n' + _spEsc(visibleNote) + '</div>') : '';
         // Plan Rationale Add Note (Draft/Pending/Approved all allow appending history; append-only).
         var addNoteBtn = '<button class="sp-btn sp-btn-submit" onclick="spDbShowNote(\'' + pid + '\')" style="font-size:12px; padding:4px 12px;">+ Add Note</button>';
         var noteInput = '<div id="sp-note-input-' + _spEsc(pid) + '" style="display:none; margin-top:8px;">' +

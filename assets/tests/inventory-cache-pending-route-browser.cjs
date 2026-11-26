@@ -133,7 +133,7 @@ function check(name, v) { assert(v, name); console.log('PASS ' + name); checks++
       check(width + ' cached secondary values are visibly attributed, not business-model fallback', await page.locator('[data-cached-result="true"]').count() === 21 && await page.evaluate(() => !_irRecoState.loadedOk && _irExposureStateForRender_() === 'LOADING'));
       await page.evaluate(() => {
         fixtureRate = 4; fixtureDos = 50;
-        fixtureHeld.splice(0).forEach(p => p.resolve({ success: true, meta: { sourceRevision: 'revision-2', handlerVersion: _IR_RECO_CACHE_HANDLERS[0], calculationMonth: '2026-11', planningCycle: 'RECO-2026-11', calculationDate: '2026-11-24' },
+        fixtureHeld.splice(0).forEach(p => p.resolve({ success: true, meta: { sourceRevision: 'revision-2', horizonFormula: 'SITE_DAILY_V2', handlerVersion: _IR_RECO_CACHE_HANDLERS[0], calculationMonth: '2026-11', planningCycle: 'RECO-2026-11', calculationDate: '2026-11-24' },
           data: p.name === 'recommendation' ? { lines: ['MANUAL', 'AI', 'EMPTY', 'LOCAL', 'CANCELLED', 'SUBMITTED', 'FOREIGN'].map(sku => ({ sku, horizonBasis: { avgSalesPerDay: 4 } })) } : {} }));
       });
       await page.waitForFunction(() => _irRecoState.loadedOk && _irBootstrap.revalidated && _irExposureStateForRender_() === 'READY');

@@ -804,6 +804,7 @@
     justify-content: center;
 }
 #ops-section .replen-suggested-cell__value { font-variant-numeric: tabular-nums; }
+#ops-section .replen-suggested-cell__value--stale small { color: #ad6500; font-size: 11px; }
 /* F1-4B-FM2B — when the canonical Runtime is active, the top-table Suggested cell is a breakdown indicator
    (the real per-destination quantities live in the expanded Recommendation Summary), never a legacy 0. */
 #ops-section .replen-suggested-cell__value--breakdown { color: #64748B; }
