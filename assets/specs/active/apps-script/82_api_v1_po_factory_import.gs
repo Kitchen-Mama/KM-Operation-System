@@ -130,7 +130,11 @@ function pfiTemplate_(ss, o) {
     rows.push(pfiExportLine_(x, h[0], l, wh, o.mode === 'UPDATE_REMAINING' ? Number(l.remaining_qty) : ''));
   });
   var blocked = rows.filter(function (r) { return !r.company; }).map(function (r) { return { code:'PFI_PO_COMPANY_UNRESOLVED',purchase_order_line_id:r.purchase_order_line_id,po_no:r.po_no,sku:r.sku }; });
-  return { export_warnings: blocked, sheets: [{ name: 'StockPO', instruction: blocked.length ? blocked.length + ' rows have unknown company and cannot be updated. They are retained with blank company and a blocked note; no company was guessed.' : '', columns: PFI_FIELDS_.filter(function (k) { return k !== 'unproduced_qty' || o.mode === 'NEW_RECEIPT'; }).map(function (k) {
+  // PO200: read-only facts about the code that answered, so a deployment can be checked without a write: the row limit,
+  // this file's build, and the atomic writer's build and byte guard (null when 82a is not installed).
+  var limits = { max_rows: PFI_MAX_INPUT_ROWS_, pfi_build: PFI_BUILD_VERSION_,
+    pfa_build: typeof PFA_BUILD_VERSION_ !== 'undefined' ? PFA_BUILD_VERSION_ : null, pfa_max_bytes: typeof PFA_MAX_BYTES_ !== 'undefined' ? PFA_MAX_BYTES_ : null };
+  return { limits: limits, export_warnings: blocked, sheets: [{ name: 'StockPO', instruction: blocked.length ? blocked.length + ' rows have unknown company and cannot be updated. They are retained with blank company and a blocked note; no company was guessed.' : '', columns: PFI_FIELDS_.filter(function (k) { return k !== 'unproduced_qty' || o.mode === 'NEW_RECEIPT'; }).map(function (k) {
     var lists = { company: 'companies', sku: 'skus', warehouse_id: 'factories', currency: 'currencies' };
     return { key: k, header: k === 'unproduced_qty' ? '\u672a\u751f\u7522\u6578\u91cf unproduced_qty' : k, aliases: k === 'unproduced_qty' ? ['unproduced_qty', '\u672a\u751f\u7522\u6578\u91cf'] : [], type: k === 'order_date' ? 'date' : ['quantity','ordered_qty','unproduced_qty'].indexOf(k) >= 0 ? 'int' : 'text', list: lists[k],
       kind: ['row_type','transaction_id','purchase_order_line_id','row_version'].indexOf(k) >= 0 ? 'locked' : 'editable', hidden: ['row_type','transaction_id','purchase_order_line_id','row_version','currency'].indexOf(k) >= 0, required: ['company','po_no','sku','warehouse_id','quantity','ordered_qty','order_date'].indexOf(k) >= 0 };

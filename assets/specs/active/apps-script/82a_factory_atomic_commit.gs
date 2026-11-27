@@ -126,8 +126,9 @@ function pfaRequests_(stage, timezone) {
     flushBlock();
   });
   // Count UTF-8 bytes conservatively without requiring a separate API or authorization scope.
-  if (unescape(encodeURIComponent(JSON.stringify(requests))).length > PFA_MAX_BYTES_) pfaError_('IMPORT_ATOMIC_PAYLOAD_TOO_LARGE', 'Split this file into smaller batches. Nothing was written.');
-  return { requests: requests, checks: checks };
+  var bytes = unescape(encodeURIComponent(JSON.stringify(requests))).length;
+  if (bytes > PFA_MAX_BYTES_) pfaError_('IMPORT_ATOMIC_PAYLOAD_TOO_LARGE', 'Split this file into smaller batches. Nothing was written.');
+  return { requests: requests, checks: checks, bytes: bytes };
 }
 function pfaCheckBaseline_(stage, receiptOnly) {
   Object.keys(stage.cache).forEach(function (name) {
@@ -157,8 +158,19 @@ function pfaVerify_(ss, batch) {
     if (!pfaSame_(expected, actual)) pfaError_('IMPORT_ATOMIC_READBACK_MISMATCH', c.table);
   });
 }
+// PO200: what this commit cost, for the person reading a test run. Numbers only, read-only, never stored: the size and
+// part count of the one atomic request, the cells it checks on readback, and where the time went (milliseconds).
+function pfaMetrics_(batch, t) {
+  var m = { requests: batch.requests.length, bytes: batch.bytes, cells: batch.checks.length, max_bytes: PFA_MAX_BYTES_ };
+  if (t.staged) m.ms_stage = t.staged - t.start;
+  if (t.sent && t.answered) m.ms_request = t.answered - t.sent;
+  if (t.answered && t.verified) m.ms_readback = t.verified - t.answered;
+  m.ms_total = (t.verified || Date.now()) - t.start;
+  try { console.log('PFA_METRICS ' + JSON.stringify(m)); } catch (e) {}
+  return m;
+}
 function pfaCommit_(ss, dom, req, ev, liveS, row, hash) {
-  var dispatched = false, intent = false, result, batch;
+  var dispatched = false, intent = false, result, batch, T = { start: Date.now() };
   try {
     if (typeof Sheets === 'undefined' || !Sheets.Spreadsheets || typeof Sheets.Spreadsheets.batchUpdate !== 'function' || !Sheets.Spreadsheets.Values || typeof Sheets.Spreadsheets.Values.batchGet !== 'function')
       pfaError_('IMPORT_ATOMIC_SERVICE_UNAVAILABLE', 'Enable the Advanced Google Sheets service before factory imports. Nothing was written.');
@@ -178,7 +190,7 @@ function pfaCommit_(ss, dom, req, ev, liveS, row, hash) {
       actor_source: 'CLIENT_CLAIM_UNVERIFIED', file_name: req.file_name, created_at: now, updated_at: ctx.now, committed_at: ctx.now, error: '' };
     if (receipt.result_json.length > 45000) pfaError_('IMPORT_ATOMIC_RECEIPT_TOO_LARGE');
     var plannedRow = imbSetReceipt_(S, row, receipt);
-    batch = pfaRequests_(stage, ss.getSpreadsheetTimeZone());
+    batch = pfaRequests_(stage, ss.getSpreadsheetTimeZone()); T.staged = Date.now();
     pfaCheckBaseline_(stage, false);
     // An intent can survive interruption, but no PO, balance, movement or audit is written until the single atomic call below.
     intent = true;
@@ -188,10 +200,10 @@ function pfaCommit_(ss, dom, req, ev, liveS, row, hash) {
     if (row !== plannedRow || !pending || pending.__sheetRow !== row || imbStr_(pending.status) !== IMB_STATUS_.COMMITTING || imbStr_(pending.content_hash) !== hash)
       pfaError_('IMPORT_ATOMIC_INTENT_MISMATCH');
     pfaCheckBaseline_(stage, true);
-    dispatched = true;
-    Sheets.Spreadsheets.batchUpdate({ requests: batch.requests }, ss.getId());
-    SpreadsheetApp.flush(); pfaVerify_(ss, batch);
-    return { success: true, import_batch_id: req.id, status: IMB_STATUS_.COMMITTED, result: Object.assign({}, result, { readback_verified: true }), writes_performed: batch.checks.length };
+    dispatched = true; T.sent = Date.now();
+    Sheets.Spreadsheets.batchUpdate({ requests: batch.requests }, ss.getId()); T.answered = Date.now();
+    SpreadsheetApp.flush(); pfaVerify_(ss, batch); T.verified = Date.now();
+    return { success: true, import_batch_id: req.id, status: IMB_STATUS_.COMMITTED, result: Object.assign({}, result, { readback_verified: true }), writes_performed: batch.checks.length, metrics: pfaMetrics_(batch, T) };
   } catch (error) {
     var msg = imbStr_(error && error.message || error);
     if (dispatched) {
@@ -199,7 +211,7 @@ function pfaCommit_(ss, dom, req, ev, liveS, row, hash) {
       try {
         // This verifies the final COMMITTED receipt, content hash and result JSON as well as every business cell.
         pfaVerify_(ss, batch);
-        return { success: true, recovered_response: true, import_batch_id: req.id, status: IMB_STATUS_.COMMITTED, result: Object.assign({}, result, { readback_verified: true }), writes_performed: batch.checks.length };
+        return { success: true, recovered_response: true, import_batch_id: req.id, status: IMB_STATUS_.COMMITTED, result: Object.assign({}, result, { readback_verified: true }), writes_performed: batch.checks.length, metrics: pfaMetrics_(batch, T) };
       } catch (readError) {}
       return imbNo_('IMPORT_OUTCOME_UNKNOWN', 'The atomic request outcome could not be confirmed. Do not start a new batch or resend the import; review its receipt first. ' + msg,
         { import_batch_id: req.id, status: IMB_STATUS_.UNKNOWN_OUTCOME, retry_safe: false });

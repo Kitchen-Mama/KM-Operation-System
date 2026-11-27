@@ -42,7 +42,7 @@ function run(h, body, label) {
   const calls = h.atomic.calls.length; h.reads = 0; h.counting = true;
   const t0 = Date.now(), v = h.c.handleImportValidate_(body), t1 = Date.now(), readsValidate = h.reads; h.reads = 0;
   const r = v.valid ? h.c.handleImportCommit_({ ...body, preview_digest: v.preview_digest }) : null, t2 = Date.now(), readsCommit = h.reads; h.counting = false;
-  const call = h.atomic.calls[calls], m = { label, rows: body.sheets.StockPO.length, valid: v.valid, success: !!(r && r.success), atomic_calls: h.atomic.calls.length - calls,
+  const call = h.atomic.calls[calls], m = { label, rows: Object.values(body.sheets)[0].length, valid: v.valid, success: !!(r && r.success), atomic_calls: h.atomic.calls.length - calls,
     requests: call ? call.requests.length : 0, bytes: call ? bytesOf(call) : 0, whole_tab_reads_validate: readsValidate, whole_tab_reads_commit: readsCommit,
     node_ms_validate: t1 - t0, node_ms_commit: t2 - t1 };
   if (label) evidence.push(m);
@@ -268,6 +268,96 @@ test('the compacted request writes the same cells as the old one, and never an e
   assert.deepEqual(q[6], { updateCells: { start: { sheetId: 7, rowIndex: 6, columnIndex: 0 }, rows: [{ values: [{ userEnteredValue: { stringValue: 'n5' } }] }], fields: 'userEnteredValue' } });   // the empty row 6 breaks the block
   assert.equal(q.length, 7);
   assert.deepEqual(Array.from(out.checks, c => c.row + ':' + c.col), ['2:2', '3:1', '3:3', '3:5', '4:1', '4:2', '5:1', '5:2', '5:3', '7:1']);                          // blanks are not readback checks, as before
+});
+
+// ---- R2 (Codex review 2): the Owner's file shape, internal opening at 200 rows, and the read-only readback of what is installed ----
+// 40 rows over 14 POs and 31 SKUs with the same lines-per-PO spread as the Owner's file (4x1, 3x2, 3x3, 2x4, 1x5, 1x8), every
+// quantity 0. All identities are invented. `pending(i)` gives each row's unproduced_qty out of an ordered_qty of 100.
+function zeroReceiptFile(h, sizes, skuCount, pending, id) {
+  const b = h.body({}, id), first = b.sheets.StockPO[0], rows = []; let n = 0;
+  sizes.forEach((size, p) => { for (let k = 0; k < size; k++, n++) rows.push({ ...first, __row: n + 2, po_no: 'ZZTEST-ZERO-' + String(p).padStart(3, '0'), sku: skuName(n % skuCount), quantity: 0, ordered_qty: 100, unproduced_qty: pending(n) }); });
+  b.sheets.StockPO = rows; return b;
+}
+const OWNER_SIZES = [1, 1, 1, 1, 2, 2, 2, 3, 3, 3, 4, 4, 5, 8];
+
+test('zero-receipt files in the Owner shape (40 rows / 14 POs / 31 SKUs) and at 200 rows: POs are recorded, no stock and no movement', () => {
+  for (const c of [{ label: 'Owner-equivalent 40 rows, quantity 0', sizes: OWNER_SIZES, skus: 31, rows: 40, pos: 14 },
+    { label: '200 rows, quantity 0', sizes: Array.from({ length: 40 }, () => 5), skus: 31, rows: 200, pos: 40 }]) {
+    const h = bigWorld(c.skus);
+    // every fourth row has already shipped part of its order in the past (unproduced 60 of 100); the rest are wholly unproduced
+    const body = zeroReceiptFile(h, c.sizes, c.skus, i => (i % 4 === 3 ? 60 : 100), realId(8));
+    assert.equal(body.sheets.StockPO.length, c.rows); assert.equal(new Set(body.sheets.StockPO.map(r => r.po_no)).size, c.pos);
+    if (c.rows === 40) assert.equal(new Set(body.sheets.StockPO.map(r => r.sku)).size, 31);
+    const stockBefore = JSON.stringify(h.tables.factory_stock.grid), mvBefore = JSON.stringify(h.tables.factory_stock_movements.grid);
+    const x = run(h, body, c.label);
+    assert.equal(x.v.valid, true, JSON.stringify(x.v.issues || x.v).slice(0, 400)); assert.equal(x.r.success, true, JSON.stringify(x.r).slice(0, 400));
+    assert.equal(x.m.atomic_calls, 1); assert.equal(x.v.preview.impacts.stock_delta, 0);
+    assert.equal(JSON.stringify(h.tables.factory_stock.grid), stockBefore, 'factory_stock is untouched'); assert.equal(JSON.stringify(h.tables.factory_stock_movements.grid), mvBefore, 'no movement is written');
+    assert.equal(h.rows('factory_stock').length, 0); assert.equal(h.rows('factory_stock_movements').length, 0);
+    const lines = h.rows('purchase_order_lines'), pos = h.rows('purchase_orders');
+    assert.equal(lines.length, c.rows); assert.equal(pos.length, c.pos);
+    lines.forEach((l, i) => { const shippedBefore = i % 4 === 3 ? 40 : 0;                                     // 100 ordered - 60 unproduced - 0 received
+      assert.equal(l.ordered_qty, 100); assert.equal(l.remaining_qty, 0); assert.equal(l.completed_qty, shippedBefore); assert.equal(l.shipped_qty, shippedBefore); });
+    assert.equal(pos.every(p => ['issued', 'partial_completed'].includes(p.order_status)), true); assert.equal(pos.some(p => p.order_status === 'completed'), false);
+    assert.equal(h.rows('import_batches')[0].status, 'COMMITTED'); assert.equal(x.r.result.stock.movements, 0); assert.equal(x.r.result.stock.total_delta, 0);
+    const w = h.writes(), again = h.c.handleImportCommit_(x.req); assert.equal(again.replayed, true); assert.equal(h.writes(), w); assert.equal(h.rows('purchase_order_lines').length, c.rows);
+  }
+  // a zero row with nothing left to produce is not an import: refused, named by its row
+  const h = bigWorld(31), bad = zeroReceiptFile(h, OWNER_SIZES, 31, i => (i === 17 ? 0 : 100), realId(9)), before = snapshot(h);
+  const v = h.c.handleImportValidate_(bad); assert.notEqual(v.valid, true); assert.equal(v.issues[0].row, 19); assert.equal(snapshot(h), before); assert.equal(h.atomic.calls.length, 0);
+  // quantity + unproduced above ordered is refused
+  const over = zeroReceiptFile(h, OWNER_SIZES, 31, i => (i === 5 ? 101 : 100), realId(10)), v2 = h.c.handleImportValidate_(over);
+  assert.notEqual(v2.valid, true); assert.match(JSON.stringify(v2.issues), /PFI_QUANTITY_PLUS_UNPRODUCED_EXCEEDS_ORDERED/); assert.equal(snapshot(h), before);
+});
+
+test('internal opening at 200 rows: PO coverage is created for stock that already exists; stock and movements do not move', () => {
+  const h = bigWorld(200), stockId = 'IMB-STOCK-ADD-200-0001';
+  // 200 SKUs of physical stock with no PO behind them, through the stock-only import (the same atomic writer)
+  const add = { domain: 'factory_inventory', mode: 'ADD', schema_version: h.c.imbDomain_('factory_inventory').schema_version, import_batch_id: stockId, scope: { warehouse_id: 'FACTORY-A' },
+    sheets: { Stock: Array.from({ length: 200 }, (_, i) => ({ __row: i + 2, warehouse_id: 'FACTORY-A', sku: skuName(i), add_qty: 30 + (i % 5) })) } };
+  const sx = run(h, add, 'stock-only ADD of 200 SKUs'); assert.equal(sx.v.valid, true, JSON.stringify(sx.v.issues || sx.v).slice(0, 400)); assert.equal(sx.r.success, true, JSON.stringify(sx.r).slice(0, 300));
+  assert.equal(h.rows('factory_stock').length, 200); assert.equal(h.rows('factory_stock_movements').length, 200); assert.equal(h.rows('purchase_orders').length, 0);
+  const stockBefore = JSON.stringify(h.tables.factory_stock.grid), mvBefore = JSON.stringify(h.tables.factory_stock_movements.grid), total = h.rows('factory_stock').reduce((a, s) => a + s.fac_current_stock, 0);
+  // the server's own opening export names exactly the unassigned quantities
+  const t = h.c.handleImportTemplateGet_({ domain: 'po_factory_stock', mode: 'OPENING_PO_FOR_EXISTING_STOCK', scope: { warehouse_id: 'FACTORY-A' }, include_data: true });
+  assert.equal(t.success, true); assert.equal(t.sheets[0].rows.length, 200); assert.equal(t.sheets[0].rows.reduce((a, r) => a + r.quantity, 0), total);
+  const id = realId(11), body = { domain: 'po_factory_stock', mode: 'OPENING_PO_FOR_EXISTING_STOCK', schema_version: h.c.PFI_SCHEMA_, import_batch_id: id, scope: { warehouse_id: 'FACTORY-A', as_of_date: '2026-11-23' },
+    sheets: { StockPO: t.sheets[0].rows.map((r, i) => ({ __row: i + 2, transaction_id: id, company: 'KM', po_no: 'ZZTEST-OPEN-' + String(i % 8), sku: r.sku, warehouse_id: 'FACTORY-A', quantity: r.quantity, ordered_qty: r.quantity + 10, currency: 'USD', order_date: '2026-11-20' })) } };
+  const x = run(h, body, 'internal opening, 200 rows over 8 POs');
+  assert.equal(x.v.valid, true, JSON.stringify(x.v.issues || x.v).slice(0, 400)); assert.equal(x.r.success, true, JSON.stringify(x.r).slice(0, 400)); assert.equal(x.m.atomic_calls, 1);
+  assert.equal(JSON.stringify(h.tables.factory_stock.grid), stockBefore, 'physical stock is untouched'); assert.equal(JSON.stringify(h.tables.factory_stock_movements.grid), mvBefore, 'no movement is written');
+  assert.equal(x.v.preview.impacts.stock_delta, 0); assert.equal(x.r.result.stock.movements, 0);
+  const lines = h.rows('purchase_order_lines'); assert.equal(lines.length, 200); assert.equal(h.rows('purchase_orders').length, 8);
+  assert.equal(lines.reduce((a, l) => a + l.remaining_qty, 0), total, 'coverage now equals the stock that existed');
+  for (const l of lines) { const st = h.rows('factory_stock').filter(s => s.sku === l.sku)[0]; assert.equal(l.remaining_qty, st.fac_current_stock); assert.equal(l.completed_qty, l.remaining_qty); assert.equal(l.shipped_qty, 0); assert.equal(l.opening_completed_qty, l.remaining_qty); assert.equal(l.opening_reconcile_status, 'RECONCILED'); }
+  assert.equal(lines.filter(l => l.sku === skuName(199)).length, 1);
+  // nothing is left unassigned, so the same opening cannot be applied twice under a new id
+  const t2 = h.c.handleImportTemplateGet_({ domain: 'po_factory_stock', mode: 'OPENING_PO_FOR_EXISTING_STOCK', scope: { warehouse_id: 'FACTORY-A' }, include_data: true }); assert.equal(t2.sheets[0].rows.length, 0);
+  const again = { ...body, import_batch_id: realId(12), sheets: { StockPO: body.sheets.StockPO.map(r => ({ ...r, transaction_id: realId(12), po_no: r.po_no + '-B' })) } }, before = snapshot(h);
+  const v2 = h.c.handleImportValidate_(again); assert.notEqual(v2.valid, true); assert.match(JSON.stringify(v2.issues), /PFI_OPENING_COVERAGE_MISMATCH/); assert.equal(snapshot(h), before);
+  // 201 opening rows are refused like any other mode; the mode is not offered by the page
+  const h3 = bigWorld(201), b3 = fileOf(h3, 201, 'onepo'); b3.mode = 'OPENING_PO_FOR_EXISTING_STOCK';
+  assert.match(JSON.stringify(h3.c.handleImportValidate_(b3)), /IMPORT_TOO_MANY_ROWS/); assert.equal(h3.atomic.calls.length, 0);
+  assert.doesNotMatch(read('assets/js/utils/po-factory-import.js'), /OPENING_PO_FOR_EXISTING_STOCK/);
+});
+
+test('what is installed can be read without a write: limits on the template answer, cost on the commit answer', () => {
+  const h = bigWorld(25), w = h.writes();
+  const t = h.c.handleImportTemplateGet_({ domain: 'po_factory_stock', mode: 'NEW_RECEIPT', scope: {} });
+  assert.deepEqual(JSON.parse(JSON.stringify(t.limits)), { max_rows: 200, pfi_build: 'PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4-PO200', pfa_build: 'FACTORY-ATOMIC-2-20261127-PO200', pfa_max_bytes: 8000000 });
+  assert.equal(h.writes(), w);
+  // 82_ without 82a: the answer says the atomic writer is absent instead of guessing
+  const saved = [h.c.PFA_BUILD_VERSION_, h.c.PFA_MAX_BYTES_]; h.c.PFA_BUILD_VERSION_ = undefined; h.c.PFA_MAX_BYTES_ = undefined;
+  const t0 = h.c.handleImportTemplateGet_({ domain: 'po_factory_stock', mode: 'NEW_RECEIPT', scope: {} }); assert.equal(t0.limits.pfa_build, null); assert.equal(t0.limits.pfa_max_bytes, null);
+  h.c.PFA_BUILD_VERSION_ = saved[0]; h.c.PFA_MAX_BYTES_ = saved[1];
+  const x = run(h, fileOf(h, 25, 'onepo')), m = JSON.parse(JSON.stringify(x.r.metrics));
+  assert.equal(m.requests, x.m.requests); assert.equal(m.bytes, x.m.bytes); assert.equal(m.cells, x.r.writes_performed); assert.equal(m.max_bytes, 8000000);
+  for (const k of ['ms_stage', 'ms_request', 'ms_readback', 'ms_total']) assert.equal(Number.isInteger(m[k]) && m[k] >= 0, true, k);
+  assert.equal(JSON.parse(h.rows('import_batches')[0].result_json).metrics, undefined, 'the receipt is not changed by the metrics');
+  // a response lost after the write still reports them; a replay and a refusal carry none
+  const h2 = bigWorld(25), b2 = fileOf(h2, 25, 'onepo'), v2 = h2.c.handleImportValidate_(b2); h2.atomic.afterApply = () => { throw Error('SYNTHETIC_RESPONSE_LOST'); };
+  const r2 = h2.c.handleImportCommit_({ ...b2, preview_digest: v2.preview_digest }); assert.equal(r2.recovered_response, true); assert.equal(r2.metrics.requests > 0, true);
+  h2.atomic.afterApply = null; assert.equal(h2.c.handleImportCommit_({ ...b2, preview_digest: v2.preview_digest }).metrics, undefined);
 });
 
 test('evidence', () => {
