@@ -1,7 +1,12 @@
 'use strict';
-// PO200 - a real Chrome uploads a real 200-row XLSX through the shared importer, from both pages that open it
-// (Purchase Order Overview at 1440, Factory Stock at 390), validates, applies, and reads back. The server is the real
-// 78_/79_/81_/82_/82a_ in memory. Synthetic data only; every outbound request is aborted and counted.
+// PO200 - a real Chrome uploads a real 200-row XLSX through the shared importer, validates, applies, and reads back. The server is the
+// real 78_/79_/81_/82_/82a_ in memory. Synthetic data only; every outbound request is aborted and counted.
+//   1440: the REAL Purchase Order Overview page opens the importer from its Actions menu and shows the imported rows afterwards.
+//   390:  ONLY Factory Stock's opener function (_fiiOpenBatchImport) is called; the Factory Stock page is NOT mounted in this suite and its
+//         post-commit step runs against a placeholder model. The real Factory Stock page, its menu, its read model and its table after
+//         Commit are proven in po-factory-200-rows-factory-stock-browser.cjs (1440 and 390) - not here.
+// In both runs here KM.DB.import* are handed straight to the server handlers and KM.DB.refreshPoFactoryTables is a stub that answers success.
+// The commit answer carries no metrics here, so the result line must be exactly the text it was before metrics could be shown.
 // NOT shown here: real Sheets, real Apps Script time, the live router or session.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -39,10 +44,10 @@ function check(label, value, detail) { assert(value, label + (detail === undefin
         await page.getByRole('menuitem', { name: 'Import Purchase Order', exact: true }).click();
       } else {                                                                 // entry 2: Factory Stock's import opener
         await page.addScriptTag({ content: read('assets/js/pages/factory-stock.js') });
-        // HARNESS LIMIT, stated: the Factory Stock page itself is not mounted here (no harness builds its workspace). Its post-commit step
-        // (_fiiAdoptCombinedReadback) is run for real against a placeholder read model, and the page re-render it ends with is replaced by a counter.
-        // So this proves the opener, the module, the upload, Validate, Commit and that the page's adoption step runs once - NOT the Factory Stock
-        // table redrawing with the new rows (FACTORY_STOCK_TABLE_REDRAW = NOT_RUN in a browser).
+        // LIMIT OF THIS BLOCK, stated: the Factory Stock page is not mounted here. Its post-commit step (_fiiAdoptCombinedReadback) runs
+        // against a placeholder read model, and the page re-render it ends with is replaced by a counter. So this block proves the opener
+        // function, the module, the upload, Validate, Commit at 390 and that the adoption step is called once - nothing about the table.
+        // The table redraw on the real page is proven in po-factory-200-rows-factory-stock-browser.cjs.
         await page.evaluate(() => { _fsReadModel = { factoryStock: [], factoryStockMovements: [] }; window.__fsRedraws = 0; window.initFactoryStockPage = function () { window.__fsRedraws++; }; _fiiOpenBatchImport(); });
       }
       await page.locator('#km-imb-scope-warehouse_id').waitFor();
@@ -80,6 +85,14 @@ function check(label, value, detail) { assert(value, label + (detail === undefin
       // ---- 200 rows (4 POs x 50 SKUs), the example row still in the file ----
       const f200 = await build(200); await upload('rows-200.xlsx', f200.buffer);
       await page.waitForFunction(() => !document.querySelector('#km-imb-validate').disabled);
+      // PO200-UI: the generated batch id (PFI-auto- + 64 hex) stays inside its box, and the dialog does not scroll sideways
+      const fit = () => page.evaluate(() => {
+        const box = id => { const e = document.getElementById(id); return { scroll: e.scrollWidth, client: e.clientWidth }; };
+        return { batch: box('km-imb-batch'), status: box('km-imb-status'), modal: box('km-imb-modal') };
+      });
+      const fits = f => f.batch.scroll <= f.batch.client && f.status.scroll <= f.status.client && f.modal.scroll <= f.modal.client;
+      const fitChosen = await fit();
+      check(width + ' 200 rows: the "Batch PFI-auto-... · file name" line does not overflow; the dialog has no horizontal scroll', fits(fitChosen) && (await page.locator('#km-imb-batch').innerText()).startsWith('Batch PFI-auto-'), fitChosen);
       await page.locator('#km-imb-validate').click();
       await page.waitForFunction(() => !document.querySelector('#km-imb-validate').disabled);
       const v = validations[0];
@@ -93,8 +106,13 @@ function check(label, value, detail) { assert(value, label + (detail === undefin
       await page.waitForFunction(() => { const t = document.querySelector('#km-imb-status')?.textContent || ''; return t.includes('Data read back') || /read ?back|Reload|not ready|unavailable/i.test(t) && !t.includes('Reading the data back'); }, null, { timeout: 120000 });
       const statusAfter = await page.evaluate(() => document.querySelector('#km-imb-status')?.textContent || '');
       check(width + ' after Commit the importer says the data was read back', statusAfter.includes('Data read back') && !/readback failed/i.test(statusAfter), statusAfter.slice(0, 200));
-      if (width !== 1440) check(width + ' Factory Stock ran its own post-commit adoption exactly once', await page.evaluate(() => window.__fsRedraws) === 1);
+      if (width !== 1440) check(width + ' Factory Stock opener: the adoption step was called exactly once (placeholder model; the table is not tested here)', await page.evaluate(() => window.__fsRedraws) === 1);
       const c = commits[0];
+      const fitDone = await fit();
+      check(width + ' applied: the status box "Applied. Batch PFI-auto-..." does not overflow; the dialog has no horizontal scroll', fits(fitDone), fitDone);
+      const plainLine = 'Applied. Batch ' + v.body.import_batch_id + ' · ' + c.r.result.audit_rows + ' audit rows. Data read back.';
+      check(width + ' no metrics on the answer: the result line is exactly the text it was before', c.r.metrics === undefined && c.r.result.metrics === undefined && statusAfter === plainLine &&
+        await page.evaluate(() => document.querySelector('#km-imb-status').innerHTML) === plainLine, statusAfter);
       check(width + ' 200 rows: Commit succeeded as ONE atomic request, read back', commits.length === 1 && c.r.success === true && c.r.result.atomic_commit === true && c.r.result.readback_verified === true && h.atomic.calls.length === 1, c && c.r.code);
       check(width + ' 200 rows: 4 POs, 200 lines, 200 stock rows of 200, 200 movements, one committed receipt', h.rows('purchase_orders').length === 4 && h.rows('purchase_order_lines').length === 200 &&
         h.rows('factory_stock').length === 200 && h.rows('factory_stock').every(s => s.fac_current_stock === 200) && h.rows('factory_stock_movements').length === 200 &&

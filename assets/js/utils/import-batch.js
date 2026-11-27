@@ -67,6 +67,7 @@
             '.km-imb-status--warn{background:#FFFBEB;border:1px solid #FDE68A;color:#92400E}',
             '.km-imb-status--bad{background:#FEF2F2;border:1px solid #FECACA;color:#991B1B}',
             '.km-imb-status--info{background:#F8FAFC;border:1px solid #E2E8F0;color:#334155}',
+            '#km-imb-batch,.km-imb-status{overflow-wrap:anywhere}',   // PO200-UI: a generated batch id (PFI-auto- + 64 hex) wraps inside its box on a phone
             '.km-imb-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:14px;flex-wrap:wrap}',
             '.km-imb-modal button[disabled]{opacity:.5;cursor:not-allowed}',
             '@media (max-width:420px){.km-imb-modal{padding:14px 12px}.km-imb-actions .btn{flex:1 1 auto}}'
@@ -540,12 +541,30 @@
     }
     // SHIP-OPEN 2a: the server's read-only reconcile of a batch that is not COMMITTED (what its id left in the rows) - shown, never acted on
     function reconcileText(x) { if (!x) return ''; return ' Read-only reconcile: ' + esc(x.verdict || '') + (x.shipment_rows != null ? ' (' + esc(x.shipment_rows) + ' shipment rows, ' + esc(x.line_rows) + ' line rows; expected ' + esc(x.expected_shipments == null ? '?' : x.expected_shipments) + ' / ' + esc(x.expected_lines == null ? '?' : x.expected_lines) + ')' : '') + (x.update_rows_marked ? ' (' + esc(x.update_rows_marked.length) + ' shipments carry the update mark of this batch)' : '') + '. This batch is NOT shown as applied and is not re-added; the Owner decides from this evidence.'; }
+    // PO200-UI (display only): the size and time the server measured for this commit, when it sends them - so a person running a test can
+    // read them off the screen. metrics = { requests, bytes, cells, ms_validate, ms_stage, ms_request, ms_readback, ms_total }, on the answer
+    // or inside its result; every field optional. Only finite numbers >= 0 are shown (never server text); no metrics -> '' (the line as before).
+    function metricsText(r) {
+        var m = r && (r.metrics || (r.result && r.result.metrics));
+        if (!m || typeof m !== 'object') return '';
+        function n(k) { var v = m[k]; return typeof v === 'number' && isFinite(v) && v >= 0 ? v : null; }
+        function sec(k) { var v = n(k); return v === null ? null : (v / 1000).toFixed(1); }
+        var out = [], bytes = n('bytes'), parts = n('requests'), cells = n('cells'), req = [];
+        if (bytes !== null) req.push((bytes / 1e6).toFixed(2) + ' MB' + (parts !== null ? ' in ' + Math.round(parts) + ' parts' : ''));
+        else if (parts !== null) req.push(Math.round(parts) + ' parts');
+        if (cells !== null) req.push(Math.round(cells) + ' cells');
+        if (req.length) out.push('request ' + req.join(', '));
+        var total = sec('ms_total'), steps = [['validate', 'ms_validate'], ['stage', 'ms_stage'], ['write', 'ms_request'], ['readback', 'ms_readback']]
+            .map(function (p) { var s = sec(p[1]); return s === null ? '' : p[0] + ' ' + s; }).filter(Boolean);
+        if (total !== null || steps.length) out.push('server' + (total !== null ? ' ' + total + ' s' : '') + (steps.length ? ' (' + steps.join(' / ') + (total === null ? ' s' : '') + ')' : ''));
+        return out.map(function (s) { return ' · ' + esc(s); }).join('');
+    }
     function result(r) {
         if (r && r.success && (r.status === 'COMMITTED' || r.replayed)) {
             state.uncertain = false; state.committed = true; state.canApply = false;
             var c = (r.result && r.result.counts) || {};
             render();
-            view('ok', (r.replayed ? 'This batch was already applied — nothing was applied again. ' : 'Applied. ') + 'Batch ' + esc(r.import_batch_id) + ' · ' + esc(r.result && r.result.audit_rows != null ? r.result.audit_rows + ' audit rows' : '') + '. Reading the data back…', counts(c));
+            view('ok', (r.replayed ? 'This batch was already applied — nothing was applied again. ' : 'Applied. ') + 'Batch ' + esc(r.import_batch_id) + ' · ' + esc(r.result && r.result.audit_rows != null ? r.result.audit_rows + ' audit rows' : '') + metricsText(r) + '. Reading the data back…', counts(c));
             Promise.resolve(state.adapter.onCommitted ? state.adapter.onCommitted(r) : null).then(function () { view('ok', state.lastView.html.replace('Reading the data back…', 'Data read back.'), counts(c)); },
                 function (e) { view('warn', state.lastView.html.replace('Reading the data back…', 'The import is applied, but the readback failed (' + esc(e && e.message || e) + ') — reload the page; do not import again.'), counts(c)); });
             return;
