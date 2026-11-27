@@ -2179,7 +2179,7 @@ function _fiiOpenLegacyBatchImport() {
 function _fiiOpenBatchImport() {
   function go() { return window.KM.poFactoryImport.open({ onCommitted: _fiiAdoptCombinedReadback }); }
   if (window.KM && window.KM.poFactoryImport) return go();
-  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=operations-repairs-20261125').then(function (ok) {
+  return window.KM.scriptLoader.load('assets/js/utils/po-factory-import.js?v=po200-20261127-v1').then(function (ok) {
     if (!ok || !window.KM.poFactoryImport) throw new Error('Import module unavailable');
     return go();
   }).catch(function (e) { alert(String(e.message || e)); });

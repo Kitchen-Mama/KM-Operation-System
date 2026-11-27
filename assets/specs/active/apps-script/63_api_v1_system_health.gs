@@ -819,7 +819,7 @@ var SYS_MODULE_BUILD_STAMPS_ = [
   {
     "file": "82_api_v1_po_factory_import.gs",
     "symbol": "PFI_BUILD_VERSION_",
-    "expected": "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4",
+    "expected": "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4-PO200",
     "owns": "local shared PO and factory stock import; activation pending"
   },
   {

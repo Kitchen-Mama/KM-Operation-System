@@ -2,6 +2,7 @@
     'use strict';
     window.KM = window.KM || {};
     var factoryCache = null, factoryFlight = null, FACTORY_TTL = 5 * 60 * 1000;
+    var MAX_ROWS = 200;   // PO200: the same limit as PFI_MAX_INPUT_ROWS_ in 82_api_v1_po_factory_import.gs - change both together
     function environment() { return window.KM.DB.envId ? String(window.KM.DB.envId() || '') : ''; }
     function copyOptions(rows) { return rows.map(function (r) { return { value: r.value, label: r.label }; }); }
     function factoryOptions() {
@@ -21,7 +22,7 @@
     }
     function batchId(parsed, template) {
         var rows = (parsed.sheets && parsed.sheets.StockPO || []).filter(function (r) { return String(r.row_type || '').trim() !== 'example'; });
-        if (rows.length > 25) throw new Error('At most 25 rows per PO / factory stock import. Split this file before importing. Nothing was submitted.');
+        if (rows.length > MAX_ROWS) throw new Error('At most ' + MAX_ROWS + ' rows per PO / factory stock import. This file has ' + rows.length + '. Split it before importing. Nothing was submitted.');
         var id = rows.length && String(rows[0].transaction_id || '').trim();
         if (rows.length && rows.every(function (r) { return !String(r.transaction_id || '').trim(); })) {
             if (!window.crypto || !window.crypto.subtle) throw new Error('Secure batch identity is unavailable. Nothing was submitted.');
@@ -66,5 +67,5 @@
             return window.KM.importBatch.open(adapter(options));
         });
     }
-    window.KM.poFactoryImport = { open: open, _adapter: adapter, _batchId: batchId };
+    window.KM.poFactoryImport = { open: open, _adapter: adapter, _batchId: batchId, MAX_ROWS: MAX_ROWS };
 })();

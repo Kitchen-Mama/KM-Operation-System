@@ -40,7 +40,8 @@ function installFactoryAtomic(h, read, gs) {
         assert(x.start.columnIndex + j < h.tables[name].getMaxColumns());
         const row = x.start.rowIndex + i;
         while (staged[name].length <= row) staged[name].push([]);
-        staged[name][row][x.start.columnIndex + j] = Object.values(c.userEnteredValue)[0];
+        // an empty CellData under the userEnteredValue mask clears the cell (PO200 writes one for each blank cell of a new row)
+        staged[name][row][x.start.columnIndex + j] = c.userEnteredValue ? Object.values(c.userEnteredValue)[0] : '';
       }));
     }
     // The mock validates every request before replacing any business grid, as Sheets batchUpdate does.

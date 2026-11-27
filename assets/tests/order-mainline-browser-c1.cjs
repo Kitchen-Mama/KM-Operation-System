@@ -145,7 +145,7 @@ async function scenario(browser, width) {
     });
     await page.locator('#polActionsTrigger').click();
     await page.getByRole('menuitem', { name: 'Import Purchase Order', exact: true }).click();
-    check(width + ' PO import first-entry loads updated StockPO module', await page.evaluate(() => importLoads[0] === 'assets/js/utils/po-factory-import.js?v=operations-repairs-20261125'));
+    check(width + ' PO import first-entry loads updated StockPO module', await page.evaluate(() => importLoads[0] === 'assets/js/utils/po-factory-import.js?v=po200-20261127-v1'));
     check(width + ' No broad DB reloads', !h.calls.some(c => c.action === 'getOperationDb'));
     check(width + ' No unexpected browser exceptions', errors.length === 0);
     check(width + ' No outgoing network requests', outbound.length === 0);

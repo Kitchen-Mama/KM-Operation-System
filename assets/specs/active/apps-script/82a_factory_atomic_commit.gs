@@ -1,6 +1,12 @@
 // Factory imports stage their existing domain writers in memory, then commit all business books in one Sheets API request.
-var PFA_BUILD_VERSION_ = 'FACTORY-ATOMIC-1-20261125';
-var PFA_MAX_BYTES_ = 1800000;
+var PFA_BUILD_VERSION_ = 'FACTORY-ATOMIC-2-20261127-PO200';
+// The size of the ONE atomic request, counted before anything is written; a larger file is refused with no write.
+// PO200 (2026-11-27): 1,800,000 -> 8,000,000. Measured on synthetic 200-row files AFTER the request was compacted
+// (pfaRequests_): one PO with 200 new lines = 3.8 MB; 200 new POs of one line = 6.5 MB; 200 existing lines = 1.0 MB.
+// Most of it is the audit tab (one row per field of every created row), which is kept in full. 8 MB is the measured
+// worst ordinary shape plus about 20 percent. It is NOT a proven Google limit: that this size is accepted, and how
+// long it takes, has only been measured in a mock. NOT_RUN on real Sheets until the isolated Sandbox run.
+var PFA_MAX_BYTES_ = 8000000;
 
 function pfaError_(code, message) { var e = new Error(message || code); e.importCode = code; throw e; }
 function pfaCopy_(v) {
@@ -84,7 +90,28 @@ function pfaRequests_(stage, timezone) {
     var id = t.live.getSheetId(), width = t.proxy.getLastColumn();
     if (width > t.live.getMaxColumns()) pfaError_('IMPORT_STAGE_COLUMN_GROWTH', name);
     if (t.grid.length > t.live.getMaxRows()) requests.push({ appendDimension: { sheetId: id, dimension: 'ROWS', length: t.grid.length - t.live.getMaxRows() } });
+    // PO200: a row past the end of the tab as it was read is a NEW row - every cell of it belongs to this batch.
+    // Runs of such rows go out as ONE updateCells block (a blank cell is an empty CellData, which leaves an empty
+    // cell empty) instead of one request per run of non-blank cells. Same cells, same values, same readback checks;
+    // 200 new lines were ~15,900 requests and are ~10. A new row holding a Date keeps the per-run path below, so the
+    // number-format mask never touches a cell that is not a date. Rows that already existed are untouched by this:
+    // only their changed cells are written, exactly as before.
+    var block = null;
+    function flushBlock() { if (block) { requests.push({ updateCells: { start: { sheetId: id, rowIndex: block.row, columnIndex: 0 }, rows: block.rows, fields: 'userEnteredValue' } }); block = null; } }
     t.grid.forEach(function (line, r) {
+      if (r >= t.before.length && !line.some(function (v) { return v instanceof Date; })) {
+        var last = -1, cells = [];
+        for (var k = 0; k < line.length; k++) if (!pfaSame_(line[k], undefined)) last = k;
+        for (var j = 0; j <= last; j++) {
+          if (pfaSame_(line[j], undefined)) { cells.push({}); continue; }
+          cells.push(pfaCell_(line[j], timezone)); checks.push({ table: name, row: r + 1, col: j + 1, value: line[j] });
+        }
+        if (last < 0) { flushBlock(); return; }
+        if (!block || block.row + block.rows.length !== r) { flushBlock(); block = { row: r, rows: [] }; }
+        block.rows.push({ values: cells });
+        return;
+      }
+      flushBlock();
       var c = 0;
       while (c < line.length) {
         if (pfaSame_(line[c], (t.before[r] || [])[c])) { c++; continue; }
@@ -96,6 +123,7 @@ function pfaRequests_(stage, timezone) {
           fields: date ? 'userEnteredValue,userEnteredFormat.numberFormat' : 'userEnteredValue' } });
       }
     });
+    flushBlock();
   });
   // Count UTF-8 bytes conservatively without requiring a separate API or authorization scope.
   if (unescape(encodeURIComponent(JSON.stringify(requests))).length > PFA_MAX_BYTES_) pfaError_('IMPORT_ATOMIC_PAYLOAD_TOO_LARGE', 'Split this file into smaller batches. Nothing was written.');

@@ -1,10 +1,16 @@
 // Local candidate only. Activation, schema and deployment require separate approval.
 var PFI_SCHEMA_ = 'PO-FACTORY-IMPORT-1';
-var PFI_BUILD_VERSION_ = "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4";
+var PFI_BUILD_VERSION_ = "PFI1-R2-SBX-20261111-AF1-IU1-IU2-IU4-PG12R3-JR4-PO200";
 var PFI_FIELDS_ = ['row_type', 'transaction_id', 'company', 'po_no', 'sku', 'warehouse_id', 'quantity', 'unproduced_qty', 'ordered_qty', 'currency', 'order_date', 'purchase_order_line_id', 'row_version', 'note'];
 var PFI_MODES_ = ['NEW_RECEIPT', 'OPENING_PO_FOR_EXISTING_STOCK', 'UPDATE_REMAINING'];
-// Keep staging and readback bounded even with the atomic factory writer.
-var PFI_MAX_INPUT_ROWS_ = 25;
+// Keep staging and readback bounded even with the atomic factory writer. PO200 (2026-11-27): 25 -> 200 data rows
+// per file. The file is still ONE batch and ONE atomic request (82a); 201 rows are refused before any read.
+var PFI_MAX_INPUT_ROWS_ = 200;
+// PO200: one read of a tab per validation. The receipt gates below were handed a fresh read of purchase_order_lines
+// (and read factory_stock_movements again) for EVERY existing line of the file: about 3 sheet reads per row, 600+ for
+// 200 rows. Validation writes nothing, so one read is the same data - and one moment, not 600 different ones.
+function pfiPolData_(x) { if (!x.polData_) x.polData_ = x.M.T.pol.sheet.getDataRange().getValues(); return x.polData_; }
+function pfiHeaderCache_(x) { if (!x.hdrCache_) x.hdrCache_ = { data: pfiPolData_(x) }; return x.hdrCache_; }
 
 function pfiFail_(code, text) { var e = new Error(text || code); e.importCode = code; throw e; }
 function pfiInt_(v, positive) {
@@ -157,7 +163,7 @@ function pfiInventoryRows_(req, x, wh) {
 }
 function pfiValidate_(ss, req) {
   if (((req.sheets && req.sheets.StockPO) || []).filter(function (r) { return pmiS_(r.row_type) !== 'example'; }).length > PFI_MAX_INPUT_ROWS_)
-    return { issues: [{ sheet: 'StockPO', code: 'PFI_BATCH_TOO_LARGE', message: 'At most 25 rows per PO / factory stock import. Split into separate files before validation; no rows were written.' }], plan: null, preview: { counts: { reject: 1 } }, state: {} };
+    return { issues: [{ sheet: 'StockPO', code: 'PFI_BATCH_TOO_LARGE', message: 'At most ' + PFI_MAX_INPUT_ROWS_ + ' rows per PO / factory stock import. Split into separate files before validation; no rows were written.' }], plan: null, preview: { counts: { reject: 1 } }, state: {} };
   if (req.mode === 'UPDATE_REMAINING') return pfiValidateRemaining_(ss, req);
   var issues = [], empty = { issues: issues, plan: null, preview: { rows: [], counts: { reject: 0 } }, state: {} };
   try {
@@ -197,10 +203,10 @@ function pfiValidate_(ss, req) {
         if (declared && pending !== Number(l.ordered_qty) - Number(l.completed_qty) - q) pfiFail_('PFI_UNPRODUCED_EXISTING_MISMATCH', 'For an existing PO, unproduced_qty must equal ordered_qty - completed_qty - this receipt quantity; historical counters cannot be rewritten.');
         var ev = poReceiptEvaluateLine_({ sku: sku, supplierWarehouseId: wh, warehouse: { isFactory: true, isActive: true }, ordered: l.ordered_qty, completed: l.completed_qty, shipped: l.shipped_qty, recvQtyRaw: q });
         if (ev.status !== 'apply') pfiFail_('PFI_RECEIPT_QUANTITY_INVALID', JSON.stringify(ev));
-        var gate = poRcvGate_(ss, x.M.T.pol.sheet.getDataRange().getValues(), x.M.T.pol.headers,
+        var gate = poRcvGate_(ss, pfiPolData_(x), x.M.T.pol.headers,
           [{ status: 'apply', lineId: l.purchase_order_line_id, row: l.__r, sku: sku, warehouseId: wh }], x.rd.mv, x.rd.st, x.stock.sheet, ss.getSheetByName('factory_stock_movements'), h.purchase_order_id, h.updated_at);
         if (gate) pfiFail_(gate.code, gate.text);
-        var hb12 = poRcvHeaderWriteBlock_(ss, h.purchase_order_id, h.updated_at); if (hb12) pfiFail_(hb12.code, hb12.error);   // PG12R3 (B-0)
+        var hb12 = poRcvHeaderWriteBlock_(ss, h.purchase_order_id, h.updated_at, pfiHeaderCache_(x)); if (hb12) pfiFail_(hb12.code, hb12.error);   // PG12R3 (B-0)
         existing.push({ h: h, l: l, completed: ev.newCompleted, remaining: ev.newRemaining });
       } else {
         if (pmiS_(r.purchase_order_line_id) || pmiS_(r.row_version)) pfiFail_('PFI_NEW_PO_WITH_EXISTING_ID');
@@ -329,10 +335,10 @@ function pfiValidateRemaining_(ss, req) {
       });
       if (q < held) pfiFail_('PFI_BELOW_PO_ALLOCATION', 'Remaining quantity is below ' + held + ' units already allocated from this PO line.');
       if (q !== remaining) {   // PG12R3 (B-0): an unresolved UI receipt on this line or PO is refused here, never overwritten by the count
-        var g12 = poRcvGate_(ss, x.M.T.pol.sheet.getDataRange().getValues(), x.M.T.pol.headers, [{ status: 'apply', lineId: l.purchase_order_line_id, row: l.__r, sku: sku, warehouseId: wh }],
+        var g12 = poRcvGate_(ss, pfiPolData_(x), x.M.T.pol.headers, [{ status: 'apply', lineId: l.purchase_order_line_id, row: l.__r, sku: sku, warehouseId: wh }],
           x.rd.mv, x.rd.st, x.stock.sheet, ss.getSheetByName('factory_stock_movements'), h.purchase_order_id, h.updated_at, { receiptOnly: true });   // the receipt part only
         if (g12) pfiFail_(g12.code, g12.text);
-        var hb12u = poRcvHeaderWriteBlock_(ss, h.purchase_order_id, h.updated_at); if (hb12u) pfiFail_(hb12u.code, hb12u.error);
+        var hb12u = poRcvHeaderWriteBlock_(ss, h.purchase_order_id, h.updated_at, pfiHeaderCache_(x)); if (hb12u) pfiFail_(hb12u.code, hb12u.error);
       }
       delta[sku] = (delta[sku] || 0) + q - remaining;
       changes.push({h:h,l:l,completed:shipped+q,remaining:q,changed:q!==remaining});
