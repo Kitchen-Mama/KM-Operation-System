@@ -1791,7 +1791,7 @@ function _ovsOpenBatchImport() {
   if (window.KM && window.KM.importBatch) return go();
   var L = window.KM && window.KM.scriptLoader;
   if (!L) { alert('The import module could not be loaded.'); return; }
-  return L.load('assets/js/utils/import-batch.js?v=r6103-r3-20261123-sitesku1').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
+  return L.load('assets/js/utils/import-batch.js?v=po200-shared-20261127-v2').then(function (ok) { if (ok && window.KM.importBatch) go(); else alert('The import module could not be loaded. Nothing was changed.'); });
 }
 window._ovsOpenBatchImport = _ovsOpenBatchImport;
 window.openOverseasImportModal = openOverseasImportModal;
