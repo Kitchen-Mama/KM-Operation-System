@@ -6,7 +6,8 @@
 //         post-commit step runs against a placeholder model. The real Factory Stock page, its menu, its read model and its table after
 //         Commit are proven in po-factory-200-rows-factory-stock-browser.cjs (1440 and 390) - not here.
 // In both runs here KM.DB.import* are handed straight to the server handlers and KM.DB.refreshPoFactoryTables is a stub that answers success.
-// The commit answer carries no metrics here, so the result line must be exactly the text it was before metrics could be shown.
+// The server (82a) sends metrics with a commit answer. At 1440 the result line must show the server's own numbers; at 390 the test
+// removes them from the answer (as an older server would send it) and the line must be exactly the text it was before.
 // NOT shown here: real Sheets, real Apps Script time, the live router or session.
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
@@ -24,12 +25,12 @@ function check(label, value, detail) { assert(value, label + (detail === undefin
   fs.mkdirSync(out, { recursive: true }); const browser = await chromium.launch({ channel: 'chrome', headless: true });
   try {
     for (const width of (process.env.KM_PO200_WIDTHS || '1440,390').split(',').map(Number)) {
-      const h = world(), validations = [], commits = [], loads = [];
+      const h = world(), validations = [], commits = [], loads = [], serverMetrics = [];
       h.sheet('sku_regional_details', ['sku', 'site_sku'], Array.from({ length: 201 }, (_, i) => ({ sku: 'CO1150-N', site_sku: skuName(i) })));
       const ui = await openHarness(browser, width, h), { page } = ui;
       await page.exposeFunction('stockPoTemplate', body => plain(h.c.handleImportTemplateGet_(body)));
       await page.exposeFunction('stockPoValidate', body => { const r = plain(h.c.handleImportValidate_(body)); validations.push({ body, r }); return r; });
-      await page.exposeFunction('stockPoCommit', body => { const r = plain(h.c.handleImportCommit_(body)); commits.push({ body, r }); return r; });
+      await page.exposeFunction('stockPoCommit', body => { const r = plain(h.c.handleImportCommit_(body)); serverMetrics.push(r.metrics); if (width !== 1440) delete r.metrics; commits.push({ body, r }); return r; });
       await page.exposeFunction('recordLoad', src => { loads.push(src); });
       for (const file of ['assets/vendor/exceljs-4.4.0.min.js', 'assets/js/utils/template-export.js', 'assets/js/utils/import-batch.js']) await page.addScriptTag({ content: read(file) });
       const moduleSource = read('assets/js/utils/po-factory-import.js');
@@ -111,7 +112,10 @@ function check(label, value, detail) { assert(value, label + (detail === undefin
       const fitDone = await fit();
       check(width + ' applied: the status box "Applied. Batch PFI-auto-..." does not overflow; the dialog has no horizontal scroll', fits(fitDone), fitDone);
       const plainLine = 'Applied. Batch ' + v.body.import_batch_id + ' · ' + c.r.result.audit_rows + ' audit rows. Data read back.';
-      check(width + ' no metrics on the answer: the result line is exactly the text it was before', c.r.metrics === undefined && c.r.result.metrics === undefined && statusAfter === plainLine &&
+      const sm = serverMetrics[0];
+      check(width + ' the server sent metrics with the commit answer', !!sm && sm.requests === h.atomic.calls[0].requests.length && sm.bytes === Buffer.byteLength(JSON.stringify(h.atomic.calls[0].requests)) && sm.max_bytes === 8000000, sm);
+      if (width === 1440) check(width + ' the result line shows the server\'s own size and part count', statusAfter.includes(' audit rows · request ' + (sm.bytes / 1e6).toFixed(2) + ' MB in ' + sm.requests + ' parts') && /· server \d+\.\d s \(/.test(statusAfter) && statusAfter.endsWith('. Data read back.'), statusAfter);
+      else check(width + ' no metrics on the answer (removed, as an older server): the result line is exactly the text it was before', c.r.metrics === undefined && c.r.result.metrics === undefined && statusAfter === plainLine &&
         await page.evaluate(() => document.querySelector('#km-imb-status').innerHTML) === plainLine, statusAfter);
       check(width + ' 200 rows: Commit succeeded as ONE atomic request, read back', commits.length === 1 && c.r.success === true && c.r.result.atomic_commit === true && c.r.result.readback_verified === true && h.atomic.calls.length === 1, c && c.r.code);
       check(width + ' 200 rows: 4 POs, 200 lines, 200 stock rows of 200, 200 movements, one committed receipt', h.rows('purchase_orders').length === 4 && h.rows('purchase_order_lines').length === 200 &&

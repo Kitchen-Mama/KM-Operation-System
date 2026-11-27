@@ -18,7 +18,8 @@
 //   - KM_PRODUCTION_GUARD_: a fixed environment key, so refreshPoFactoryTables' environment check has something to compare.
 //   - KM.lifecycle / KM.partialLoader / KM.loadState / dual-layer resize / index.html: not loaded; the markup is placed in the body.
 //   - Sheets, Apps Script, LockService: the synthetic world of helpers/po-factory-unproduced-world.cjs.
-//   - metrics on the commit answer: the server does not send them yet; this suite adds them to the answer (marked INJECTED below).
+//   - metrics on the commit answer: the server (82a) sends real ones; this suite REPLACES them with fixed numbers (marked INJECTED below)
+//     so the text of the result line can be asserted exactly. The real numbers are asserted in po-factory-200-rows-browser.cjs.
 // NOT shown here: real Sheets, real Apps Script time or limits, the live router, sign-in.
 // CAN FAIL: KM_PO200_FS_MUTANT=adoption-off runs the same suite with the page's post-commit adoption disabled in memory only
 // (nothing is written to disk); that run must end non-zero.
@@ -47,7 +48,7 @@ function check(label, value, detail) {
   assert(value, label + (detail === undefined ? '' : ' :: ' + JSON.stringify(detail))); checks++; console.log('PASS ' + label);
 }
 
-// INJECTED metrics (the server sends none yet). 1440: every field, at the top of the answer. 390: inside result, two usable fields and
+// INJECTED metrics (replacing the server's own). 1440: every field, at the top of the answer. 390: inside result, two usable fields and
 // four that must be ignored (text, negative, not finite, text) - nothing the server sends as text may reach the page.
 const METRICS = {
   1440: { at: 'top', value: { requests: 10, bytes: 3795693, cells: 94000, ms_validate: 400, ms_stage: 2100, ms_request: 8000, ms_readback: 2200, ms_total: 12300 },
@@ -89,7 +90,7 @@ async function run(browser, width) {
     if (action === 'import.validate') { const r = plain(h.c.handleImportValidate_(body)); validations.push({ body, r }); return r; }
     if (action === 'import.commit') {
       const r = plain(h.c.handleImportCommit_(body)); commits.push({ body, r: plain(r) });
-      if (r && r.success) { if (metrics.at === 'top') r.metrics = metrics.value; else r.result = Object.assign({}, r.result, { metrics: metrics.value }); }   // INJECTED
+      if (r && r.success) { delete r.metrics; if (metrics.at === 'top') r.metrics = metrics.value; else r.result = Object.assign({}, r.result, { metrics: metrics.value }); }   // INJECTED
       return r;
     }
     throw Error('Unexpected synthetic action: ' + action);
