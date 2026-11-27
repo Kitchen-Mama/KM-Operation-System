@@ -182,7 +182,7 @@
     // PO status labels (target enum per REQUEST_ORDER_AND_PURCHASE_ORDER_SPEC.md §6). Legacy
     // Phase-1 values (confirmed / ready_to_ship / partially_shipped) still displayed if present.
     var PO_STATUS_LABEL = {
-        draft: 'Draft', issued: 'Issued', in_production: 'In Production',
+        draft: 'Draft', issued: 'In Production', in_production: 'In Production',
         partial_completed: 'Partial Completed', completed: 'Completed',
         partial_shipped: 'Partial Shipped', shipped: 'Shipped',
         closure: 'Closure', cancelled: 'Cancelled',
@@ -331,7 +331,7 @@
     // excluded from this page regardless (applyFilters), so it is not offered as an option.
     var polFilterState = { status: [], supplier: [], category: [], series: [] };
     var POL_STATUS_OPTS = [
-        { value: 'issued', label: 'Issued' }, { value: 'in_production', label: 'In Production' },
+        { value: 'issued', label: 'In Production (Issued PO)' }, { value: 'in_production', label: 'In Production' },
         { value: 'partial_completed', label: 'Partial Completed' }, { value: 'completed', label: 'Completed' },
         { value: 'partial_shipped', label: 'Partial Shipped' }, { value: 'shipped', label: 'Shipped' },
         { value: 'closure', label: 'Closure' }, { value: 'cancelled', label: 'Cancelled' }
@@ -416,8 +416,14 @@
         renderTabCounts(inProd.length, ready.length);
 
         var rows = (polTab === 'ready' ? ready : inProd).slice();
-        // Newest first by PO created_at.
-        rows.sort(function (a, b) { return String(b.o.createdAt || '').localeCompare(String(a.o.createdAt || '')); });
+        // Order date, oldest first; undated orders follow dated orders.
+        rows.sort(function (a, b) {
+            var ad = /^\d{4}-\d{2}-\d{2}/.test(String(a.o.orderDate || '')) ? String(a.o.orderDate).slice(0, 10) : '9999-12-31';
+            var bd = /^\d{4}-\d{2}-\d{2}/.test(String(b.o.orderDate || '')) ? String(b.o.orderDate).slice(0, 10) : '9999-12-31';
+            var an = a.o.poNo || a.o.purchaseOrderNo || a.o.purchaseOrderId || '';
+            var bn = b.o.poNo || b.o.purchaseOrderNo || b.o.purchaseOrderId || '';
+            return ad.localeCompare(bd) || String(an).localeCompare(String(bn)) || String(a.o.purchaseOrderId).localeCompare(String(b.o.purchaseOrderId));
+        });
 
         var meta = document.getElementById('pol-result-meta');
         var pg = document.getElementById('pol-pagination');

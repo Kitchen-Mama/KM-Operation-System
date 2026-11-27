@@ -121,7 +121,7 @@
     if (typeof window !== 'undefined') { window.poRetryRead = poRetryRead; }
 
     var PO_STATUS_LABEL = {
-        draft: 'Draft', issued: 'Issued / Sent', supplier_confirmed: 'Supplier Confirmed',
+        draft: 'Draft', issued: 'In Production', supplier_confirmed: 'Supplier Confirmed',
         confirmed: 'Supplier Confirmed', in_production: 'In Production', partial_completed: 'Partial Completed',
         completed: 'Completed', partial_shipped: 'Partial Shipped', shipped: 'Shipped',
         ready_to_ship: 'Ready to Ship', closure: 'Closure', cancelled: 'Cancelled'
@@ -134,8 +134,6 @@
         in_production: 'in_production', partial_completed: 'in_production'
     };
     function groupOf(status) { return GROUP_OF[status] || null; }
-
-    var STATUS_ORDER = ['draft', 'issued', 'supplier_confirmed', 'confirmed', 'in_production', 'partial_completed'];
 
     var PAGE_SIZE = 25;
 
@@ -225,7 +223,7 @@
                 poNo: o.poNo || o.purchaseOrderNo || o.purchaseOrderId,
                 status: status,
                 group: groupOf(status),
-                orderDate: o.orderDate || o.createdAt || '',
+                orderDate: o.orderDate || '',
                 seriesList: series,
                 supplierExpectedReady: o.supplierExpectedReadyDate || o.expectedReadyDate || '',
                 factoryTab: factoryTabKey(o, whMap),
@@ -250,10 +248,9 @@
             if (state.po !== 'all' && m.poNo !== state.po) return false;
             return true;
         }).sort(function (a, b) {
-            var ai = STATUS_ORDER.indexOf(a.status); if (ai === -1) ai = 99;
-            var bi = STATUS_ORDER.indexOf(b.status); if (bi === -1) bi = 99;
-            if (ai !== bi) return ai - bi;
-            return String(a.poNo).localeCompare(String(b.poNo));
+            var ad = toYMD(a.orderDate) || '9999-12-31';
+            var bd = toYMD(b.orderDate) || '9999-12-31';
+            return ad.localeCompare(bd) || String(a.poNo).localeCompare(String(b.poNo)) || String(a.id).localeCompare(String(b.id));
         });
     }
 

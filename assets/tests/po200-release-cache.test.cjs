@@ -20,7 +20,8 @@ test('all shared-importer callers use the reviewed release token', () => {
 test('each caller is reachable through a freshly versioned entry point', () => {
   const index = read('index.html');
   for (const page of pages.filter(p => p !== 'overseas-stock')) {
-    assert(index.includes('assets/js/pages/' + page + '.js?v=' + token), page);
+    const entryToken = page === 'purchase-order-list' ? 'po-production-orderdate-20261127-v1' : token;
+    assert(index.includes('assets/js/pages/' + page + '.js?v=' + entryToken), page);
   }
   assert(index.includes('assets/js/app.js?v=' + token));
   assert(read('assets/js/app.js').includes('assets/js/pages/overseas-stock.js?v=' + token));
